@@ -50,6 +50,7 @@ $(HTMLDIR)/ref_man.html: \
 	snmpc.xml \
 	snmpa.xml \
 	snmpa_conf.xml \
+	snmpa_discovery_handler.xml \
 	snmpa_error_report.xml \
 	snmpa_error.xml \
 	snmpa_error_io.xml \

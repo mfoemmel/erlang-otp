@@ -2,7 +2,7 @@
 
 {application, eunit,
  [{description, "EUnit"},
-  {vsn, "2.1"},
+  {vsn, "2.1.2"},
   {modules, [eunit,
 	     eunit_autoexport,
 	     eunit_striptests,

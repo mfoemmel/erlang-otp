@@ -320,14 +320,14 @@ Options:
       When analyzing from source, pass the define to Dialyzer (**)
   -I include_dir
       When analyzing from source, pass the include_dir to Dialyzer (**)
+  -pa dir
+      Include dir in the path for Erlang (useful when analyzing files
+      that have '-include_lib()' directives)
   --output_plt file
       Store the plt at the specified file after building it
   --plt plt
       Use the specified plt as the initial plt (if the plt was built 
       during setup the files will be checked for consistency)
-  -pa dir
-      Include dir in the path for Erlang (useful when analyzing files
-      that have '-include_lib()' directives)
   -Wwarn
       A family of options which selectively turn on/off warnings
       (for help on the names of warnings use dialyzer -Whelp)

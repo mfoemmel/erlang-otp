@@ -131,7 +131,6 @@ static int insert_internal_link(Process* p, Eterm rpid)
 BIF_RETTYPE link_1(BIF_ALIST_1)
 {
     DistEntry *dep;
-    int code;
 
     if (IS_TRACED_FL(BIF_P, F_TRACE_PROCS)) {
 	trace_proc(BIF_P, BIF_P, am_link, BIF_ARG_1);
@@ -173,65 +172,57 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
     }
 
     if (is_external_pid(BIF_ARG_1)) {
-	BIF_RETTYPE ret;
 
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
 
 	/* We may earn time by checking first that we're not linked already */
 	if (erts_lookup_link(BIF_P->nlinks, BIF_ARG_1) != NULL) {
-	    ERTS_BIF_PREP_RET(ret, am_true);
+	    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+	    BIF_RET(am_true);
 	}
 	else {
-	    ErtsDistOpData dod;
+	    ErtsLink *lnk;
+	    int code;
+	    ErtsDSigData dsd;
 	    dep = external_pid_dist_entry(BIF_ARG_1);
 	    if (dep == erts_this_dist_entry) {
 		erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
 		goto res_no_proc;
 	    }
 
-	    erts_dist_op_prepare(&dod,
-				 dep,
-				 BIF_P,
-				 ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK);
+	    code = erts_dsig_prepare(&dsd, dep, BIF_P, ERTS_DSP_RLOCK, 0);
+	    switch (code) {
+	    case ERTS_DSIG_PREP_NOT_ALIVE:
+		/* Let the dlink trap handle it */
+	    case ERTS_DSIG_PREP_NOT_CONNECTED:
+		erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+		BIF_TRAP1(dlink_trap, BIF_P, BIF_ARG_1);
 
-	    /* link to net */
-	    if (dep->cid == NIL)
-		ERTS_BIF_PREP_TRAP1(ret, dlink_trap, BIF_P, BIF_ARG_1);
-	    else if ((code = erts_dist_link(&dod, BIF_P->id, BIF_ARG_1)) == 1) {
-		if (is_internal_port(dep->cid)) {
-		    erts_suspend(BIF_P,
-				 ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
-				 dod.dprt);
-		    ERTS_BIF_PREP_YIELD1(ret, bif_export[BIF_link_1], BIF_P, BIF_ARG_1);
-		}
-		else {
-		    ERTS_BIF_PREP_TRAP1(ret, dlink_trap, BIF_P, BIF_ARG_1);
-		}
-	    }
-	    else if (code < 0) { /* XXX is this the correct behaviour ??? */
-		ERTS_BIF_PREP_ERROR(ret, BIF_P, EXC_NOTALIVE);
-	    }
-	    else if (dep->cid == NIL) {/* Might have been disconnected 
-					  during dist_link */
-		ERTS_BIF_PREP_TRAP1(ret, dlink_trap, BIF_P, BIF_ARG_1);
-	    }
-	    else {
-		ErtsLink *lnk;
+	    case ERTS_DSIG_PREP_CONNECTED:
+		/* We are connected. Setup link and send link signal */
 
-		/* insert the link in our own process */
+		erts_smp_de_links_lock(dep);
+
 		erts_add_link(&(BIF_P->nlinks), LINK_PID, BIF_ARG_1);
 		lnk = erts_add_or_lookup_link(&(dep->nlinks),
 					      LINK_PID,
 					      BIF_P->id);
 		ASSERT(lnk != NULL);
 		erts_add_link(&ERTS_LINK_ROOT(lnk), LINK_PID, BIF_ARG_1);
-		ERTS_BIF_PREP_RET(ret, am_true);
-	    }
-	    erts_dist_op_finalize(&dod);
-	}
 
-	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
-	return ret;
+		erts_smp_de_links_unlock(dep);
+		erts_smp_de_runlock(dep);
+		erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+
+		code = erts_dsig_send_link(&dsd, BIF_P->id, BIF_ARG_1);
+		if (code == ERTS_DSIG_SEND_YIELD)
+		    ERTS_BIF_YIELD_RETURN(BIF_P, am_true);
+		BIF_RET(am_true);
+	    default:
+		ASSERT(! "Invalid dsig prepare result");
+		BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR);
+	    }
+	}
     }
 
     BIF_ERROR(BIF_P, BADARG);
@@ -247,11 +238,126 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, EXC_NOPROC);
 }
 
+static BIF_RETTYPE
+remote_demonitor(Process *c_p, DistEntry *dep, Eterm ref, Eterm to)
+{
+    ErtsDSigData dsd;
+    ErtsMonitor *dmon;
+    ErtsMonitor *mon;
+    int code;
+    BIF_RETTYPE ret;
+#ifndef ERTS_SMP
+    int stale_mon = 0;
+#endif
+
+    ERTS_SMP_LC_ASSERT((ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK)
+		       == erts_proc_lc_my_proc_locks(c_p));
+
+    code = erts_dsig_prepare(&dsd, dep, c_p, ERTS_DSP_RLOCK, 0);
+    switch (code) {
+    case ERTS_DSIG_PREP_NOT_ALIVE:
+    case ERTS_DSIG_PREP_NOT_CONNECTED:
+#ifndef ERTS_SMP
+	/* XXX Is this possible? Shouldn't this link
+	   previously have been removed if the node
+	   had previously been disconnected. */
+	ASSERT(0);
+	stale_mon = 1;
+#endif
+	/*
+	 * In the smp case this is possible if the node goes
+	 * down just before the call to demonitor.
+	 */
+	if (dep) {
+	    erts_smp_de_links_lock(dep);
+	    dmon = erts_remove_monitor(&dep->monitors, ref);
+	    erts_smp_de_links_unlock(dep);
+	    if (dmon)
+		erts_destroy_monitor(dmon);
+	}
+	mon = erts_remove_monitor(&c_p->monitors, ref);
+	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_LINK);
+
+	ERTS_BIF_PREP_RET(ret, am_true);
+	break;
+
+    case ERTS_DSIG_PREP_CONNECTED:
+
+	erts_smp_de_links_lock(dep);
+	mon = erts_remove_monitor(&c_p->monitors, ref);
+	dmon = erts_remove_monitor(&dep->monitors, ref);
+	erts_smp_de_links_unlock(dep);
+	erts_smp_de_runlock(dep);
+	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_LINK);
+
+	if (!dmon) {
+#ifndef ERTS_SMP
+	    /* XXX How is this possible? Shouldn't this link
+	       previously have been removed when the distributed
+	       end was removed. */
+	    ASSERT(0);
+	    stale_mon = 1;
+#endif
+	    /*
+	     * This is possible when smp support is enabled.
+	     * 'DOWN' message just arrived.
+	     */
+	    ERTS_BIF_PREP_RET(ret, am_true);
+	}
+	else {
+	    /*
+	     * Soft (no force) send, use ->data in dist slot 
+	     * monitor list since in case of monitor name 
+	     * the atom is stored there. Yield if necessary.
+	     */
+	    code = erts_dsig_send_demonitor(&dsd,
+					    c_p->id, 
+					    (mon->name != NIL
+					     ? mon->name
+					     : mon->pid), 
+					    ref,
+					    0);
+	    if (code == ERTS_DSIG_SEND_YIELD)
+		ERTS_BIF_PREP_YIELD_RETURN(ret, c_p, am_true);
+	    else
+		ERTS_BIF_PREP_RET(ret, am_true);
+	    erts_destroy_monitor(dmon);
+
+	}
+	break;
+    default:
+	ASSERT(! "Invalid dsig prepare result");
+	ERTS_BIF_PREP_ERROR(ret, c_p, EXC_INTERNAL_ERROR);
+	break;
+    }
+
+#ifndef ERTS_SMP
+    if (stale_mon) {
+	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	erts_dsprintf(dsbufp, "Stale process monitor %T to ", ref);
+	if (is_atom(to))
+	    erts_dsprintf(dsbufp, "{%T, %T}", to, dep->sysname);
+	else
+	    erts_dsprintf(dsbufp, "%T", to);
+	erts_dsprintf(dsbufp, " found\n");
+	erts_send_error_to_logger(c_p->group_leader, dsbufp);
+    }
+#endif
+
+    /*
+     * We aren't allowed to destroy 'mon' until now, since 'to'
+     * may refer into 'mon' (external pid).
+     */
+    ASSERT(mon);
+    erts_destroy_monitor(mon);
+
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(c_p));
+    return ret;
+}
 
 BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 {
    ErtsMonitor *mon = NULL;  /* The monitor entry to delete */
-   ErtsMonitor* dmon = NULL; /* dist monitor entry to delete */
    Process  *rp;    /* Local target process */
    Eterm     ref;   /* BIF_ARG_1 */
    Eterm     to = NIL;    /* Monitor link traget */
@@ -259,25 +365,26 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
    DistEntry *dep = NULL;  /* Target's distribution entry */
    int deref_de = 0;
    BIF_RETTYPE res;
-   int stale_mon = 0;
-   ErtsDistOpData dod;
+   int unlock_link = 1;
+
+   ERTS_BIF_PREP_RET(res, am_true); /* Prepare for success */
 
    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
 
    ref = BIF_ARG_1;
    if (is_not_internal_ref(ref)) {
        ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
-       goto error; /* Cannot be this monitor's ref */
+       goto done; /* Cannot be this monitor's ref */
    }
    ref_p = BIF_P->id;
 
    mon = erts_lookup_monitor(BIF_P->monitors, ref);
-   if (mon == NULL) {
-       goto return_true;
-   }
+   if (mon == NULL)
+       goto done;
+
    if (mon->type != MON_ORIGIN) {
        ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
-       goto error;
+       goto done;
    }
    to = mon->pid;
 
@@ -285,78 +392,19 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
        /* Monitoring a name at node to */
        ASSERT(is_node_name_atom(to));
        dep = erts_sysname_to_connected_dist_entry(to);
-       if(!dep) {
-	   /* XXX Is this possible? Shouldn't this link
-	      previously have been removed if the node
-	      had previously been disconnected. */
-	   ASSERT(0);
-	   stale_mon = 1;
-	   mon = erts_remove_monitor(&BIF_P->monitors, ref);
-	   if(mon)
-	       erts_destroy_monitor(mon);
-	   goto return_true;
-       }
        ASSERT(dep != erts_this_dist_entry);
-       deref_de = 1;
+       if (dep)
+	   deref_de = 1;
    } else {
        ASSERT(is_pid(to));
        dep = pid_dist_entry(to);
    }
    if (dep != erts_this_dist_entry) {
-       Sint      code;
-
-       erts_dist_op_prepare(&dod,
-			    dep,
-			    BIF_P,
-			    ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK);
-       dmon = erts_lookup_monitor(dep->monitors, ref);
-       if (!dmon) {
-#ifndef ERTS_SMP
-	   /* XXX How is this possible? Shouldn't this link
-	      previously have been removed when the distributed
-	      end was removed. */
-	   ASSERT(0);
-	   stale_mon = 1;
-#endif
-	   /*
-	    * This is possible when smp support is enabled:
-	    *    Down message arrived when we temporarily released
-	    *    'link lock' in order to acquire 'port lock' above.
-	    */
-	   mon = erts_remove_monitor(&BIF_P->monitors, ref);
-	   if (mon)
-	       erts_destroy_monitor(mon);
-	   goto return_true;
-       }
-       /* Soft (no force) send, use ->data in dist slot 
-	* monitor list since in case of monitor name 
-	* the atom is stored there. Yield if necessary.
-	*/
-       code = erts_dist_demonitor(&dod,
-				  BIF_P->id, 
-				  (mon->name != NIL) ? mon->name : mon->pid, 
-				  ref, 0);
-       if (is_internal_port(dep->cid) && code == 1) {
-	   erts_suspend(BIF_P,
-			ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
-			dod.dprt);
-	   ERTS_BIF_PREP_YIELD1(res, bif_export[BIF_demonitor_1], BIF_P, BIF_ARG_1);
-	   goto error;
-       }
-       mon = erts_remove_monitor(&BIF_P->monitors, ref);
-       if (mon)
-	   erts_destroy_monitor(mon);
-       dmon = erts_remove_monitor(&dep->monitors, ref);
-       if (dmon)
-	   erts_destroy_monitor(dmon);
-       if (code < 0) { /* XXX is this the correct behaviour ??? */
-	   /* Should rarely happen since this node must be 
-	    * distributed for us to start the monitor.
-	    */
-	   ERTS_BIF_PREP_ERROR(res, BIF_P, EXC_NOTALIVE);
-	   goto error;
-       }
-   } else { /* Local monitor */
+       res = remote_demonitor(BIF_P, dep, ref, to);
+       /* remote_demonitor() unlocks link lock on BIF_P */
+       unlock_link = 0;
+   }
+   else { /* Local monitor */
        if (deref_de) {
 	   deref_de = 0;
 	   erts_deref_dist_entry(dep);
@@ -385,29 +433,20 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
        else {
 	   ERTS_SMP_ASSERT_IS_NOT_EXITING(BIF_P);
        }
+
    }
 
+ done:
 
- return_true:
+   if (unlock_link)
+       erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
 
-   ERTS_BIF_PREP_RET(res, am_true);
-
- error:
-
-   if (dep != erts_this_dist_entry && dep)
-       erts_dist_op_finalize(&dod);
-   erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
    if (deref_de) {
        ASSERT(dep);
        erts_deref_dist_entry(dep);
    }
 
-   if (stale_mon) {
-       erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-       erts_dsprintf(dsbufp, "Stale process monitor %T to %T found\n", ref, to);
-       erts_send_error_to_logger(BIF_P->group_leader, dsbufp);
-   }
-
+   ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(BIF_P));
    return res;
 }
 
@@ -451,20 +490,18 @@ erts_queue_monitor_message(Process *p,
     erts_queue_message(p, p_locksp, bp, tup, NIL);
 }
 
-#define MONITOR_RESULT_OK 0
-#define MONITOR_RESULT_BADARG -1
-#define MONITOR_RESULT_YIELD -2
-#define MONITOR_RESULT_NOTALIVE -3
-#define MONITOR_RESULT_TRAP -4
-
-static int local_pid_monitor(Process *p, Eterm target, Eterm *res)
+static BIF_RETTYPE
+local_pid_monitor(Process *p, Eterm target)
 {
+    BIF_RETTYPE ret;
+    Eterm mon_ref;
     Process *rp;
     ErtsProcLocks p_locks = ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK;
 
-    *res = erts_make_ref(p);
+    mon_ref = erts_make_ref(p);
+    ERTS_BIF_PREP_RET(ret, mon_ref);
     if (target == p->id) {
-	return MONITOR_RESULT_OK;
+	return ret;
     }
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_LINK);
@@ -472,45 +509,52 @@ static int local_pid_monitor(Process *p, Eterm target, Eterm *res)
 			   target, ERTS_PROC_LOCK_LINK,
 			   ERTS_P2P_FLG_ALLOW_OTHER_X);
     if (!rp) {
-#ifdef ERTS_SMP
-	ERTS_SMP_ASSERT_IS_NOT_EXITING(p);
-#endif
+	erts_smp_proc_unlock(p, ERTS_PROC_LOCK_LINK);
+	p_locks &= ~ERTS_PROC_LOCK_LINK;
 	erts_queue_monitor_message(p, &p_locks,
-				   *res, am_process, target, am_noproc);
+				   mon_ref, am_process, target, am_noproc);
     }
     else {
 	ASSERT(rp != p);
 
-	erts_add_monitor(&(p->monitors), MON_ORIGIN, *res, target, NIL);
-	erts_add_monitor(&(rp->monitors), MON_TARGET, *res, p->id, NIL);
+	erts_add_monitor(&(p->monitors), MON_ORIGIN, mon_ref, target, NIL);
+	erts_add_monitor(&(rp->monitors), MON_TARGET, mon_ref, p->id, NIL);
 
 	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
     }
 
     erts_smp_proc_unlock(p, p_locks & ~ERTS_PROC_LOCK_MAIN);
 
-    return MONITOR_RESULT_OK;
+    return ret;
 }
 
-static int local_name_monitor(Process *p, Eterm target_name, Eterm *res)
+static BIF_RETTYPE
+local_name_monitor(Process *p, Eterm target_name)
 {
-    int ret = MONITOR_RESULT_OK;
+    BIF_RETTYPE ret;
+    Eterm mon_ref;
     ErtsProcLocks p_locks = ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK;
     Process *rp;
-    *res = erts_make_ref(p);
+
+    mon_ref = erts_make_ref(p);
+    ERTS_BIF_PREP_RET(ret, mon_ref);
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_LINK);
     rp = erts_whereis_process(p, p_locks, target_name, ERTS_PROC_LOCK_LINK,
 			      ERTS_P2P_FLG_ALLOW_OTHER_X);
     if (!rp) {
 	Eterm lhp[3];
 	Eterm item;
+	erts_smp_proc_unlock(p, ERTS_PROC_LOCK_LINK);
+	p_locks &= ~ERTS_PROC_LOCK_LINK;
 	item = TUPLE2(lhp, target_name, erts_this_dist_entry->sysname);
 	erts_queue_monitor_message(p, &p_locks,
-				   *res, am_process, item, am_noproc);
+				   mon_ref, am_process, item, am_noproc);
     }
     else if (rp != p) {
-	erts_add_monitor(&(p->monitors), MON_ORIGIN, *res, rp->id, target_name);
-	erts_add_monitor(&(rp->monitors), MON_TARGET, *res, p->id, target_name);
+	erts_add_monitor(&(p->monitors), MON_ORIGIN, mon_ref, rp->id,
+			 target_name);
+	erts_add_monitor(&(rp->monitors), MON_TARGET, mon_ref, p->id,
+			 target_name);
 	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
     }
 
@@ -519,108 +563,77 @@ static int local_name_monitor(Process *p, Eterm target_name, Eterm *res)
     return ret;
 }
 
-static int
-cleanup_remote_monitor(Process *p, DistEntry *dep, Eterm ref)
+static BIF_RETTYPE
+remote_monitor(Process *p, Eterm bifarg1, Eterm bifarg2,
+	       DistEntry *dep, Eterm target, int byname)
 {
-    ErtsMonitor *mon, *dmon;
-    mon = erts_remove_monitor(&(p->monitors),ref);
-    if (mon) erts_destroy_monitor(mon);
-    dmon = erts_remove_monitor(&(dep->monitors),ref);
-    if (dmon) erts_destroy_monitor(dmon);
-    return mon || dmon;
-}
-
-static int
-remote_monitor(Process *p, DistEntry *dep, Eterm target, Eterm *res, int byname)
-{
-    ErtsDistOpData dod;
-    ErtsProcLocks p_locks = ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK;
-    Eterm nodename;
-    int ret;
-    Sint code;
-    int send_mon_msg = 0;
-
-    ASSERT(dep);
+    ErtsDSigData dsd;
+    BIF_RETTYPE ret;
+    int code;
 
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_LINK);
-    erts_dist_op_prepare(&dod, dep, p, p_locks);
-    
-    nodename = dep->sysname;
-
-    if (is_nil(dep->cid)) {
-	ret = MONITOR_RESULT_TRAP;
-    }
-    else if (!(dep->flags & DFLAG_DIST_MONITOR)
-	     || (byname && !(dep->flags & DFLAG_DIST_MONITOR_NAME))) {
-	ret = MONITOR_RESULT_BADARG;
-    }
-    else {
-	Eterm p_trgt, p_name, d_name;
- 
-	*res = erts_make_ref(p);
-	/* Prepare for success... */
-	ret = MONITOR_RESULT_OK;
-
-	if (byname) {
-	    p_trgt = nodename;
-	    p_name = target;
-	    d_name = target;
+    code = erts_dsig_prepare(&dsd, dep, p, ERTS_DSP_RLOCK, 0);
+    switch (code) {
+    case ERTS_DSIG_PREP_NOT_ALIVE:
+	/* Let the dmonitor_p trap handle it */
+    case ERTS_DSIG_PREP_NOT_CONNECTED:
+	erts_smp_proc_unlock(p, ERTS_PROC_LOCK_LINK);
+	ERTS_BIF_PREP_TRAP2(ret, dmonitor_p_trap, p, bifarg1, bifarg2);
+	break;
+    case ERTS_DSIG_PREP_CONNECTED:
+	if (!(dep->flags & DFLAG_DIST_MONITOR)
+	    || (byname && !(dep->flags & DFLAG_DIST_MONITOR_NAME))) {
+	    erts_smp_de_runlock(dep);
+	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_LINK);
+	    ERTS_BIF_PREP_ERROR(ret, p, BADARG);
 	}
 	else {
-	    p_trgt = target;
-	    p_name = NIL;
-	    d_name = NIL;
-	}
-	    
-	/* SMP NOTE: We need to add monitors locally before we call
-	   dist_monitor() since we potentially might get a response
-	   before dist_monitor() returns. */
-	erts_add_monitor(&(p->monitors), MON_ORIGIN, *res, p_trgt, p_name);
-	erts_add_monitor(&(dep->monitors), MON_TARGET, *res, p->id, d_name);
+	    Eterm p_trgt, p_name, d_name, mon_ref;
 
-	code = erts_dist_monitor(&dod, p->id, target, *res);
+	    mon_ref = erts_make_ref(p);
 
-	if (is_internal_port(dep->cid) && code == 1) {
-	    /* cleanup and do it all over again when port is not busy... */
-	    (void) cleanup_remote_monitor(p, dep, *res);
-	    erts_suspend(p, p_locks, dod.dprt);
-	    ret = MONITOR_RESULT_YIELD;
-	} else if (code < 0) {
-	    (void) cleanup_remote_monitor(p, dep, *res);
-	    ret = MONITOR_RESULT_NOTALIVE;
-	} else if (dep->cid == NIL) {
-	    /* Dist entry died when monitor message was sent */
-	    if (cleanup_remote_monitor(p, dep, *res))
-		send_mon_msg = 1;
-	    /* else: we succeded, but node went down
-	     *       and someone else sent a down message to p
-	     */
+	    if (byname) {
+		p_trgt = dep->sysname;
+		p_name = target;
+		d_name = target;
+	    }
+	    else {
+		p_trgt = target;
+		p_name = NIL;
+		d_name = NIL;
+	    }
+
+	    erts_smp_de_links_lock(dep);
+
+	    erts_add_monitor(&(p->monitors), MON_ORIGIN, mon_ref, p_trgt,
+			     p_name);
+	    erts_add_monitor(&(dep->monitors), MON_TARGET, mon_ref, p->id,
+			     d_name);
+
+	    erts_smp_de_links_unlock(dep);
+	    erts_smp_de_runlock(dep);
+	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_LINK);
+
+	    code = erts_dsig_send_monitor(&dsd, p->id, target, mon_ref);
+	    if (code == ERTS_DSIG_SEND_YIELD)
+		ERTS_BIF_PREP_YIELD_RETURN(ret, p, mon_ref);
+	    else
+		ERTS_BIF_PREP_RET(ret, mon_ref);
 	}
+	break;
+    default:
+	ASSERT(! "Invalid dsig prepare result");
+	ERTS_BIF_PREP_ERROR(ret, p, EXC_INTERNAL_ERROR);
+	break;
     }
 
-    erts_dist_op_finalize(&dod);
-
-    if (send_mon_msg) {
-	Eterm item;
-	Eterm lhp[3];
-	if (byname)
-	    item = TUPLE2(lhp, target, nodename);
-	else
-	    item = target;
-	erts_queue_monitor_message(p, &p_locks,
-				   *res, am_process, item, am_noconnection);
-    }
-
-    erts_smp_proc_unlock(p, p_locks & ~ERTS_PROC_LOCK_MAIN);
-    
     return ret;
 }
 	
 BIF_RETTYPE monitor_2(BIF_ALIST_2)
 {
     Eterm target = BIF_ARG_2;
-    Eterm result;
-    int ret;
+    BIF_RETTYPE ret;
     DistEntry  *dep = NULL; 
     int deref_de = 0;
 
@@ -631,14 +644,14 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 
     if (is_internal_pid(target)) {
     local_pid:
-	ret = local_pid_monitor(BIF_P, target, &result);
+	ret = local_pid_monitor(BIF_P, target);
     } else if (is_external_pid(target)) {
 	dep = external_pid_dist_entry(target);
 	if (dep == erts_this_dist_entry)
 	    goto local_pid;
-	ret = remote_monitor(BIF_P, dep, target, &result, 0);
+	ret = remote_monitor(BIF_P, BIF_ARG_1, BIF_ARG_2, dep, target, 0);
     } else if (is_atom(target)) {
-	ret = local_name_monitor(BIF_P, target, &result);
+	ret = local_name_monitor(BIF_P, target);
     } else if (is_tuple(target)) {
 	Eterm *tp = tuple_val(target);
 	Eterm remote_node;
@@ -650,41 +663,28 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 	if (!is_atom(remote_node) || !is_atom(name)) {
 	    goto error;
 	}
-	if (!erts_is_alive() && remote_node != am_Noname) {
+	if (!erts_is_alive && remote_node != am_Noname) {
 	    goto error; /* Remote monitor from (this) undistributed node */
 	}
 	dep = erts_sysname_to_connected_dist_entry(remote_node);
-	if (!dep) {
-	    ret = MONITOR_RESULT_TRAP;
-	} else if (dep == erts_this_dist_entry) {
+	if (dep == erts_this_dist_entry) {
 	    deref_de = 1;
-	    ret = local_name_monitor(BIF_P, name, &result);
+	    ret = local_name_monitor(BIF_P, name);
 	} else {
-	    deref_de = 1;
-	    ret = remote_monitor(BIF_P, dep, name, &result, 1);
+	    if (dep)
+		deref_de = 1;
+	    ret = remote_monitor(BIF_P, BIF_ARG_1, BIF_ARG_2, dep, name, 1);
 	}
     } else {
     error:
-	ret = MONITOR_RESULT_BADARG;
+	ERTS_BIF_PREP_ERROR(ret, BIF_P, BADARG);
     }
     if (deref_de) {
 	deref_de = 0;
 	erts_deref_dist_entry(dep);
     }
-    switch (ret) {
-    case MONITOR_RESULT_OK:
-	BIF_RET(result);
-    case MONITOR_RESULT_BADARG:
-	BIF_ERROR(BIF_P,BADARG);
-    case MONITOR_RESULT_YIELD:
-	ERTS_BIF_YIELD2(bif_export[BIF_monitor_2], BIF_P, BIF_ARG_1, BIF_ARG_2);
-    case MONITOR_RESULT_NOTALIVE:
-	BIF_ERROR(BIF_P, EXC_NOTALIVE);
-    case MONITOR_RESULT_TRAP:
-	BIF_TRAP2(dmonitor_p_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
-    default:
-	goto error;
-    }
+
+    return ret;
 }
 
 
@@ -890,7 +890,9 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
 
     if (is_external_pid(BIF_ARG_1)) {
-	ErtsDistOpData dod;
+	ErtsDistLinkData dld;
+	int code;
+	ErtsDSigData dsd;
 	/* Blind removal, we might have trapped or anything, this leaves
 	   us in a state where monitors might be inconsistent, but the dist
 	   code should take care of it. */
@@ -900,52 +902,45 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
 	    goto handle_pending_exit;
 #endif
 	l = erts_remove_link(&BIF_P->nlinks,BIF_ARG_1);
-	if (l != NULL)
+
+	erts_smp_proc_unlock(BIF_P,
+			     ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCK_STATUS);
+
+	if (l)
 	    erts_destroy_link(l);
-	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCK_STATUS);
 
 	dep = external_pid_dist_entry(BIF_ARG_1);
-	if (dep == erts_this_dist_entry)
+	if (dep == erts_this_dist_entry) {
+	    BIF_RET(am_true);
+	}
+
+	code = erts_dsig_prepare(&dsd, dep, BIF_P, ERTS_DSP_NO_LOCK, 0);
+	switch (code) {
+	case ERTS_DSIG_PREP_NOT_ALIVE:
+	case ERTS_DSIG_PREP_NOT_CONNECTED:
+#if 1
+	    BIF_RET(am_true);
+#else
+	    /*
+	     * This is how we used to do it, but the link is obviously not
+	     * active, so I see no point in setting up a connection.
+	     * /Rickard
+	     */
+	    BIF_TRAP1(dunlink_trap, BIF_P, BIF_ARG_1);
+#endif
+
+	case ERTS_DSIG_PREP_CONNECTED:
+	    erts_remove_dist_link(&dld, BIF_P->id, BIF_ARG_1, dep);
+	    code = erts_dsig_send_unlink(&dsd, BIF_P->id, BIF_ARG_1);
+	    erts_destroy_dist_link(&dld);
+	    if (code == ERTS_DSIG_SEND_YIELD)
+		ERTS_BIF_YIELD_RETURN(BIF_P, am_true);
 	    BIF_RET(am_true);
 
-	erts_dist_op_prepare(&dod, dep, BIF_P, ERTS_PROC_LOCK_MAIN);
-
-	if (is_nil(dep->cid)) {
-	do_trap:
-	    erts_dist_op_finalize(&dod);
-	    BIF_TRAP1(dunlink_trap, BIF_P, BIF_ARG_1);
+	default:
+	    ASSERT(! "Invalid dsig prepare result");
+	    BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR);
 	}
-	
-	if (erts_dist_unlink(&dod, BIF_P->id, BIF_ARG_1) == 1) {
-	    if (is_internal_port(dep->cid)) {
-		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		erts_dist_op_finalize(&dod);
-		ERTS_BIF_YIELD1(bif_export[BIF_unlink_1], BIF_P, BIF_ARG_1);
-	    }
-	    else {
-		goto do_trap;
-	    }
-	}
-
-
-	l = erts_lookup_link(dep->nlinks,BIF_P->id);
-	if (l) {
-
-	    rl = erts_remove_link(&(ERTS_LINK_ROOT(l)),BIF_ARG_1);
-	
-	    if (ERTS_LINK_ROOT(l) == NULL) { /* last link from this proc to pid 
-				      on that node removed */
-		l = erts_remove_link(&(dep->nlinks), BIF_P->id);
-		ASSERT(l != NULL);
-		erts_destroy_link(l);
-	    }
-
-	    if(rl != NULL) {
-		erts_destroy_link(rl);
-	    }
-	}
-	erts_dist_op_finalize(&dod);
-	BIF_RET(am_true);
     }
 
     /* Internal pid... */
@@ -1153,8 +1148,6 @@ raise_3(Process *c_p, Eterm class, Eterm value, Eterm stacktrace) {
 BIF_RETTYPE exit_2(BIF_ALIST_2)
 {
      Process *rp;
-     DistEntry *dep;
-     int code;
 
      /*
       * If the first argument is not a pid, or a local port it is an error.
@@ -1177,42 +1170,32 @@ BIF_RETTYPE exit_2(BIF_ALIST_2)
 	 BIF_RET(am_true);
      
      /*
-      * If it is a remote pid, send a message to the remote node.
+      * If it is a remote pid, send a signal to the remote node.
       */
 
      if (is_external_pid(BIF_ARG_1)) {
-	 ErtsDistOpData dod;
-	 BIF_RETTYPE ret;
+	 int code;
+	 ErtsDSigData dsd;
+	 DistEntry *dep;
 
 	 dep = external_pid_dist_entry(BIF_ARG_1);
 	 if(dep == erts_this_dist_entry)
 	     BIF_RET(am_true);
 
-	 erts_dist_op_prepare(&dod, dep, BIF_P, ERTS_PROC_LOCK_MAIN);
-	 if (dep->cid == NIL) {
-	     ERTS_BIF_PREP_TRAP2(ret, dexit_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
+	 code = erts_dsig_prepare(&dsd, dep, BIF_P, ERTS_DSP_NO_LOCK, 0);
+	 switch (code) {
+	 case ERTS_DSIG_PREP_NOT_ALIVE:
+	 case ERTS_DSIG_PREP_NOT_CONNECTED:
+	     BIF_TRAP2(dexit_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
+	 case ERTS_DSIG_PREP_CONNECTED:
+	     code = erts_dsig_send_exit2(&dsd, BIF_P->id, BIF_ARG_1, BIF_ARG_2);
+	     if (code == ERTS_DSIG_SEND_YIELD)
+		 ERTS_BIF_YIELD_RETURN(BIF_P, am_true);
+	     BIF_RET(am_true);
+	 default:
+	     ASSERT(! "Invalid dsig prepare result");
+	     BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR);
 	 }
-	 else {
-	     code = erts_dist_exit2(&dod, BIF_P->id, BIF_ARG_1, BIF_ARG_2);
-
-	     if (code == 1) {
-		 if (is_internal_port(dep->cid)) {
-		     erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		     ERTS_BIF_PREP_YIELD2(ret, bif_export[BIF_exit_2],
-					  BIF_P, BIF_ARG_1, BIF_ARG_2);
-		 }
-		 else
-		     ERTS_BIF_PREP_RET(ret, am_true);
-	     }
-	     else if (code < 0) {
-		 ERTS_BIF_PREP_ERROR(ret, BIF_P, EXC_NOTALIVE);
-	     }
-	     else {
-		 ERTS_BIF_PREP_RET(ret, am_true);
-	     }
-	 }
-	 erts_dist_op_finalize(&dod);
-	 return ret;
      }
      else if (is_not_internal_pid(BIF_ARG_1)) {
        BIF_ERROR(BIF_P, BADARG);
@@ -1407,7 +1390,7 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
        erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_STATUS);
        old_value = old ? make_small(old->ix+1) : make_small(0);
        if (yield)
-	   ERTS_BIF_YIELD_RETURN(BIF_P, old_value, am_scheduler);
+	   ERTS_BIF_YIELD_RETURN_X(BIF_P, old_value, am_scheduler);
        else
 	   BIF_RET(old_value);
    }
@@ -1562,12 +1545,65 @@ ebif_bang_2(Process* p, Eterm To, Eterm Message)
  * Send a message to Process, Port or Registered Process.
  * Returns non-negative reduction bump or negative result code.
  */
-#define SEND_TRAP       (-1)
-#define SEND_YIELD      (-2)
-#define SEND_BADARG     (-3)
-#define SEND_USER_ERROR (-4)
+#define SEND_TRAP		(-1)
+#define SEND_YIELD		(-2)
+#define SEND_YIELD_RETURN	(-3)
+#define SEND_BADARG		(-4)
+#define SEND_USER_ERROR		(-5)
+#define SEND_INTERNAL_ERROR	(-6)
 
 Sint do_send(Process *p, Eterm to, Eterm msg, int suspend);
+
+static Sint remote_send(Process *p, DistEntry *dep,
+			Eterm to, Eterm full_to, Eterm msg, int suspend)
+{
+    Sint res;
+    int code;
+    ErtsDSigData dsd;
+
+    ASSERT(is_atom(to) || is_external_pid(to));
+
+    code = erts_dsig_prepare(&dsd, dep, p, ERTS_DSP_NO_LOCK, !suspend);
+    switch (code) {
+    case ERTS_DSIG_PREP_NOT_ALIVE:
+    case ERTS_DSIG_PREP_NOT_CONNECTED:
+	res = SEND_TRAP;
+	break;
+    case ERTS_DSIG_PREP_WOULD_SUSPEND:
+	ASSERT(!suspend);
+	res = SEND_YIELD;
+	break;
+    case ERTS_DSIG_PREP_CONNECTED: {
+
+	if (is_atom(to))
+	    code = erts_dsig_send_reg_msg(&dsd, to, msg);
+	else
+	    code = erts_dsig_send_msg(&dsd, to, msg);
+	/*
+	 * Note that reductions have been bumped on calling
+	 * process by erts_dsig_send_reg_msg() or
+	 * erts_dsig_send_msg().
+	 */
+	if (code == ERTS_DSIG_SEND_YIELD)
+	    res = SEND_YIELD_RETURN;
+	else
+	    res = 0;
+	break;
+    }
+    default:
+	ASSERT(! "Invalid dsig prepare result");
+	res = SEND_INTERNAL_ERROR;
+    }
+
+    if (res >= 0) {
+	if (IS_TRACED(p))
+	    trace_send(p, full_to, msg);
+	if (ERTS_PROC_GET_SAVED_CALLS_BUF(p))
+	    save_calls(p, &exp_send);
+    }
+
+    return res;
+}
 
 Sint
 do_send(Process *p, Eterm to, Eterm msg, int suspend) {
@@ -1594,8 +1630,6 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    return 0;
 	}
     } else if (is_external_pid(to)) {
-	ErtsDistOpData dod;
-	Sint res;
 	dep = external_pid_dist_entry(to);
 	if(dep == erts_this_dist_entry) {
 	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
@@ -1610,38 +1644,7 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    erts_send_error_to_logger(p->group_leader, dsbufp);
 	    return 0;
 	}
-
-	erts_dist_op_prepare(&dod, dep, p, ERTS_PROC_LOCK_MAIN);
-
-	/* Send to remote process */
-	if (is_nil(dep->cid))
-	    res = SEND_TRAP;
-	else if (erts_dist_send(&dod, to, msg) == 1) {
-
-	    if (is_internal_port(dep->cid)) {
-		if (suspend) {
-		    erts_suspend(p, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		    if (erts_system_monitor_flags.busy_dist_port) {
-			monitor_generic(p, am_busy_dist_port, dep->cid);
-		    }
-		}
-		res = SEND_YIELD;
-	    }
-	    else {
-		res = SEND_TRAP;
-	    }
-	}
-	else {
-	    res = 50;
-	    if (IS_TRACED(p))
-		trace_send(p, to, msg);
-	    if (ERTS_PROC_GET_SAVED_CALLS_BUF(p))
-		save_calls(p, &exp_send);
-	}
-	
-	erts_dist_op_finalize(&dod);
-
-	return res;
+	return remote_send(p, dep, to, to, msg, suspend);
     } else if (is_atom(to)) {
 	
 	/* Need to virtual schedule out sending process
@@ -1772,7 +1775,6 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	}
 	return 0;
     } else if (is_tuple(to)) { /* Remote send */
-	ErtsDistOpData dod;
 	int ret;
 	tp = tuple_val(to);
 	if (*tp != make_arityval(2))
@@ -1781,10 +1783,10 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    return SEND_BADARG;
 	
 	/* sysname_to_connected_dist_entry will return NULL if there
-	   is no dist_entry or the dist_entry has no port*/
-	if ((dep = erts_sysname_to_connected_dist_entry(tp[2])) == NULL) {
-	    return SEND_TRAP;
-	}
+	   is no dist_entry or the dist_entry has no port,
+	   but remote_send() will handle that. */
+
+	dep = erts_sysname_to_connected_dist_entry(tp[2]);
 
 	if (dep == erts_this_dist_entry) {
 	    erts_deref_dist_entry(dep);
@@ -1830,34 +1832,9 @@ do_send(Process *p, Eterm to, Eterm msg, int suspend) {
 	    goto send_message;
 	}
 
-	erts_dist_op_prepare(&dod, dep, p, ERTS_PROC_LOCK_MAIN);
-	if (is_nil(dep->cid))
-	    ret = SEND_TRAP;
-	else if (erts_dist_reg_send(&dod, tp[1], msg) == 1) {
-	    if (is_internal_port(dep->cid)) {
-		if (suspend) {
-		    erts_suspend(p, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		    if (erts_system_monitor_flags.busy_dist_port) {
-			monitor_generic(p, am_busy_dist_port, dep->cid);
-		    }
-		}
-		ret = SEND_YIELD;
-	    }
-	    else {
-		ret = SEND_TRAP;
-	    }
-
-	}
-	else {
-	    ret = 0;
-	    if (IS_TRACED(p))
-		trace_send(p, to, msg);
-	    if (ERTS_PROC_GET_SAVED_CALLS_BUF(p))
-		save_calls(p, &exp_send);
-	}
-
-	erts_dist_op_finalize(&dod);
-	erts_deref_dist_entry(dep);
+	ret = remote_send(p, dep, tp[1], to, msg, suspend);
+	if (dep)
+	    erts_deref_dist_entry(dep);
 	return ret;
     } else {
 	if (IS_TRACED(p)) /* XXX Is this really neccessary ??? */
@@ -1940,11 +1917,19 @@ send_3(Process *p, Eterm to, Eterm msg, Eterm opts) {
 	    BIF_RET(am_nosuspend);
 	}
 	break;
+    case SEND_YIELD_RETURN:
+	if (suspend)
+	    ERTS_BIF_YIELD_RETURN(p, am_ok);
+	else
+	    BIF_RET(am_nosuspend);
     case SEND_BADARG:
 	BIF_ERROR(p, BADARG); 
 	break;
     case SEND_USER_ERROR:
 	BIF_ERROR(p, EXC_ERROR); 
+	break;
+    case SEND_INTERNAL_ERROR:
+	BIF_ERROR(p, EXC_INTERNAL_ERROR);
 	break;
     default:
 	ASSERT(! "Illegal send result"); 
@@ -1959,7 +1944,7 @@ send_2(Process *p, Eterm to, Eterm msg) {
     Sint result = do_send(p, to, msg, !0);
     
     if (result > 0) {
-	BUMP_REDS(p, result);
+	ERTS_VBUMP_REDS(p, result);
 	BIF_RET(msg);
     } else switch (result) {
     case 0:
@@ -1971,11 +1956,16 @@ send_2(Process *p, Eterm to, Eterm msg) {
     case SEND_YIELD:
 	ERTS_BIF_YIELD2(bif_export[BIF_send_2], p, to, msg);
 	break;
+    case SEND_YIELD_RETURN:
+	ERTS_BIF_YIELD_RETURN(p, msg);
     case SEND_BADARG:
 	BIF_ERROR(p, BADARG); 
 	break;
     case SEND_USER_ERROR:
 	BIF_ERROR(p, EXC_ERROR); 
+	break;
+    case SEND_INTERNAL_ERROR:
+	BIF_ERROR(p, EXC_INTERNAL_ERROR);
 	break;
     default:
 	ASSERT(! "Illegal send result"); 
@@ -3539,7 +3529,7 @@ BIF_RETTYPE list_to_pid_1(BIF_ALIST_1)
       etp->header = make_external_pid_header(1);
       etp->next = MSO(BIF_P).externals;
       etp->node = enp;
-      etp->data[0] = make_pid_data(c, b);
+      etp->data.ui[0] = make_pid_data(c, b);
 
       MSO(BIF_P).externals = etp;
       erts_deref_dist_entry(dep);
@@ -3567,45 +3557,34 @@ BIF_RETTYPE group_leader_0(BIF_ALIST_0)
 BIF_RETTYPE group_leader_2(BIF_ALIST_2)
 {
     Process* new_member;
-    int code;
-    DistEntry *dep;
 
     if (is_not_pid(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
     if (is_external_pid(BIF_ARG_2)) {
-	ErtsDistOpData dod;
-	BIF_RETTYPE ret;
+	DistEntry *dep;
+	int code;
+	ErtsDSigData dsd;
 	dep = external_pid_dist_entry(BIF_ARG_2);
 	if(dep == erts_this_dist_entry)
 	    BIF_ERROR(BIF_P, BADARG);
 
-	erts_dist_op_prepare(&dod, dep, BIF_P, ERTS_PROC_LOCK_MAIN);
-	if (is_nil(dep->cid)) {
-	dist_trap:
-	    ERTS_BIF_PREP_TRAP2(ret, dgroup_leader_trap, BIF_P,
-				BIF_ARG_1, BIF_ARG_2);
+	code = erts_dsig_prepare(&dsd, dep, BIF_P, ERTS_DSP_NO_LOCK, 0);
+	switch (code) {
+	case ERTS_DSIG_PREP_NOT_ALIVE:
+	    BIF_RET(am_true);
+	case ERTS_DSIG_PREP_NOT_CONNECTED:
+	    BIF_TRAP2(dgroup_leader_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
+	case ERTS_DSIG_PREP_CONNECTED:
+	    code = erts_dsig_send_group_leader(&dsd, BIF_ARG_1, BIF_ARG_2);
+	    if (code == ERTS_DSIG_SEND_YIELD)
+		ERTS_BIF_YIELD_RETURN(BIF_P, am_true);
+	    BIF_RET(am_true);
+	default:
+	    ASSERT(! "Invalid dsig prepare result");
+	    BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR);
 	}
-	else if ((code = erts_dist_group_leader(&dod,
-						BIF_ARG_1,
-						BIF_ARG_2)) == 1) {
-	    if (is_internal_port(dep->cid)) {
-		erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, dod.dprt);
-		ERTS_BIF_PREP_YIELD2(ret, bif_export[BIF_group_leader_2],
-				     BIF_P, BIF_ARG_1, BIF_ARG_2);
-	    }
-	    else
-		goto dist_trap;
-	}
-	else if (code < 0) {  /* XXX is this the correct behaviour ??? */
-	    ERTS_BIF_PREP_ERROR(ret, BIF_P, EXC_NOTALIVE);
-	}
-	else {
-	    ERTS_BIF_PREP_RET(ret, am_true);
-	}
-	erts_dist_op_finalize(&dod);
-	return ret;
     }
     else if (is_internal_pid(BIF_ARG_2)) {
 	new_member = erts_pid2proc(BIF_P,
@@ -3616,9 +3595,6 @@ BIF_RETTYPE group_leader_2(BIF_ALIST_2)
 	    BIF_ERROR(BIF_P, BADARG);
 	}
 
-	/*
-	 * XXX Multi-thread note: Allocating on another process's heap.
-	 */
 	new_member->group_leader = STORE_NC_IN_PROC(new_member, BIF_ARG_1);
 
 	if (new_member != BIF_P)
@@ -3650,8 +3626,8 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 		case ERTS_SCHDLR_SSPND_DONE_MSCHED_BLOCKED:
 		    BIF_RET(am_blocked);
 		case ERTS_SCHDLR_SSPND_YIELD_DONE_MSCHED_BLOCKED:
-		    ERTS_BIF_YIELD_RETURN(BIF_P, am_blocked,
-					  am_multi_scheduling);
+		    ERTS_BIF_YIELD_RETURN_X(BIF_P, am_blocked,
+					    am_multi_scheduling);
 		case ERTS_SCHDLR_SSPND_DONE:
 		    BIF_RET(am_enabled);
 		case ERTS_SCHDLR_SSPND_YIELD_RESTART:
@@ -3659,8 +3635,8 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 		    BIF_TRAP2(bif_export[BIF_system_flag_2],
 			      BIF_P, BIF_ARG_1, BIF_ARG_2);
 		case ERTS_SCHDLR_SSPND_YIELD_DONE:
-		    ERTS_BIF_YIELD_RETURN(BIF_P, am_enabled,
-					  am_multi_scheduling);
+		    ERTS_BIF_YIELD_RETURN_X(BIF_P, am_enabled,
+					    am_multi_scheduling);
 		case ERTS_SCHDLR_SSPND_EINVAL:
 		    goto error;
 		default:
@@ -3692,8 +3668,8 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 	    BIF_TRAP2(bif_export[BIF_system_flag_2],
 		      BIF_P, BIF_ARG_1, BIF_ARG_2);
 	case ERTS_SCHDLR_SSPND_YIELD_DONE:
-	    ERTS_BIF_YIELD_RETURN(BIF_P, make_small(old_no),
-				  am_schedulers_online);
+	    ERTS_BIF_YIELD_RETURN_X(BIF_P, make_small(old_no),
+				    am_schedulers_online);
 	case ERTS_SCHDLR_SSPND_EINVAL:
 	    goto error;
 	default:
@@ -3907,6 +3883,9 @@ BIF_RETTYPE bump_reductions_1(BIF_ALIST_1)
     BIF_RET2(am_true, reds);
 }
 
+/*
+ * Processes doing yield on return in a bif ends up in bif_return_trap().
+ */
 static BIF_RETTYPE bif_return_trap(
 #ifdef DEBUG
     BIF_ALIST_2

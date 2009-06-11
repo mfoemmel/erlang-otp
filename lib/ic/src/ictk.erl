@@ -86,20 +86,20 @@ reg_gen(G, N, X) ->
 	    ok
     end.
 
-reg_light(G, N, X)  when list(X) -> 
+reg_light(G, N, X)  when is_list(X) -> 
     reg_light_list(G, N, X);
-reg_light(G, N, X) when record(X, module) ->
+reg_light(G, N, X) when is_record(X, module) ->
     reg_light_list(G, [get_id2(X) | N], get_body(X));
-reg_light(G, N, X) when record(X, struct) ->
+reg_light(G, N, X) when is_record(X, struct) ->
     emit(ic_genobj:stubfiled(G), "{~p, ~p, struct},\n\t", 
 	 [get_IR_ID(G, N, X), get_module(X, N)]);
-reg_light(G, N, X) when record(X, except) ->
+reg_light(G, N, X) when is_record(X, except) ->
     emit(ic_genobj:stubfiled(G), "{~p, ~p, except},\n\t", 
 	 [get_IR_ID(G, N, X), get_module(X, N)]);
-reg_light(G, N, X) when record(X, union) ->
+reg_light(G, N, X) when is_record(X, union) ->
     emit(ic_genobj:stubfiled(G), "{~p, ~p, union},\n\t", 
 	 [get_IR_ID(G, N, X), get_module(X, N)]);
-reg_light(G, N, X) when record(X, interface) ->
+reg_light(G, N, X) when is_record(X, interface) ->
     emit(ic_genobj:stubfiled(G), "{~p, ~p, interface},\n\t", 
 	 [get_IR_ID(G, N, X), get_module(X, N)]),
     reg_light_list(G, [get_id2(X)|N], get_body(X));
@@ -147,41 +147,41 @@ reg_light_list(G, N, {CFN,Status}, [X | Xs]) ->
 reg2(G, S, N, Var, X) ->
     reg2(G, S, N, "Repository_create_", Var, X).
 
-reg2(G, S, N, C, V, X)  when list(X) -> reg2_list(G, S, N, C, V, X);
+reg2(G, S, N, C, V, X)  when is_list(X) -> reg2_list(G, S, N, C, V, X);
 
-reg2(G, S, N, C, V, X) when record(X, module) ->
+reg2(G, S, N, C, V, X) when is_record(X, module) ->
     NewV = r_emit2(G, S, N, C, V, X, "", []),
     reg2_list(G, S, [get_id2(X) | N], "ModuleDef_create_", NewV, get_body(X));
 
-reg2(G, S, N, C, V, X) when record(X, const) ->
+reg2(G, S, N, C, V, X) when is_record(X, const) ->
     r_emit2(G, S, N, C, V, X, ", ~s, ~p", 
 	    [get_idltype(G, S, N, X), {X#const.tk, X#const.val}]);
 
-reg2(G, S, N, C, V, X) when record(X, struct) ->
+reg2(G, S, N, C, V, X) when is_record(X, struct) ->
     do_struct(G, S, N, C, V, X, ic_forms:get_tk(X));
 
-reg2(G, S, N, C, V, X) when record(X, except) ->
+reg2(G, S, N, C, V, X) when is_record(X, except) ->
     do_except(G, S, N, C, V, X, ic_forms:get_tk(X));
 
-reg2(G, S, N, C, V, X) when record(X, union) ->
+reg2(G, S, N, C, V, X) when is_record(X, union) ->
     do_union(G, S, N, C, V, X, ic_forms:get_tk(X));
 
-reg2(G, S, N, C, V, X) when record(X, enum) ->
+reg2(G, S, N, C, V, X) when is_record(X, enum) ->
     r_emit2(G, S, N, C, V, X, ", ~p", 
 	    [get_enum_member_list(G, S, N, get_body(X))]);
 
-reg2(G, S, N, C, V, X) when record(X, typedef) ->
+reg2(G, S, N, C, V, X) when is_record(X, typedef) ->
     do_typedef(G, S, N, C, V, X),
     look_for_types(G, S, N, C, V, get_body(X));
 
-reg2(G, S, N, C, V, X) when record(X, attr) ->
+reg2(G, S, N, C, V, X) when is_record(X, attr) ->
     XX = #id_of{type=X},
     lists:foreach(fun(Id) -> r_emit2(G, S, N, C, V, XX#id_of{id=Id}, ", ~s, ~p",
 				     [get_idltype(G, S, N, X), get_mode(G, N, X)])
 		  end,
 		  get_idlist(X));
 
-reg2(G, S, N, C, V, X) when record(X, interface) ->
+reg2(G, S, N, C, V, X) when is_record(X, interface) ->
     N2 = [get_id2(X) | N],
     Body = get_body(X), 
     BIs = get_base_interfaces(G,X), %% produce code for the interface inheritance
@@ -189,15 +189,15 @@ reg2(G, S, N, C, V, X) when record(X, interface) ->
     reg2_list(G, S, N2, "InterfaceDef_create_", NewV, Body);
 
 
-reg2(G, S, N, C, V, X) when record(X, op) ->
+reg2(G, S, N, C, V, X) when is_record(X, op) ->
     r_emit2(G, S, N, C, V, X, ", ~s, ~p, [~s], [~s], ~p",
 	    [get_idltype(G, S, N, X), get_mode(G, N, X), 
 	     get_params(G, S, N, X#op.params), get_exceptions(G, S, N, X),
 	     get_context(G, S, N, X)]);
 
-reg2(_G, _S, _N, _C, _V, X)  when record(X, preproc) -> ok;
+reg2(_G, _S, _N, _C, _V, X)  when is_record(X, preproc) -> ok;
 
-reg2(_G, _S, _N, _C, _V, X)  when record(X, pragma) -> ok;
+reg2(_G, _S, _N, _C, _V, X)  when is_record(X, pragma) -> ok;
 
 reg2(_G, _S, _N, _C, _V, _X) ->  ok.
 
@@ -365,7 +365,7 @@ unregister_name(G) ->
 
 
 
-look_for_types(G, S, N, C, V, L) when list(L) ->
+look_for_types(G, S, N, C, V, L) when is_list(L) ->
     lists:foreach(fun(X) -> look_for_types(G, S, N, C, V, X) end, L);
 look_for_types(G, S, N, C, V, {_Name, TK}) ->	% member
     look_for_types(G, S, N, C, V, TK);
@@ -473,12 +473,12 @@ r_emit2(G, _S, N, C, V, X, F, A) ->
 %%r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN) ->
 %%    r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, "", []).
 r_emit_raw(_G, X, Fd, AssignStr, "Repository_create_", Thing, Var, IR_ID, Id, IR_VSN, F, A) 
-  when record(X, module) ->
+  when is_record(X, module) ->
     emit(Fd, "~n    ~s~p(~s, \"~s\", \"~s\", \"~s\"~s),~n", 
 	 [AssignStr, to_atom("oe_get_top_"++Thing), Var, IR_ID, Id, 
 	  IR_VSN, io_lib:format(F, A)]);
 r_emit_raw(G, X, Fd, AssignStr, "ModuleDef_create_", Thing, Var, IR_ID, Id, IR_VSN, F, A) 
-  when record(X, module) ->
+  when is_record(X, module) ->
     emit(Fd, "~n    ~s~p(~s, ~s, \"~s\", \"~s\", \"~s\"~s),~n", 
 	 [AssignStr, to_atom("oe_get_"++Thing), ?IFRID(G), Var, IR_ID, Id, 
 	  IR_VSN, io_lib:format(F, A)]);
@@ -493,9 +493,9 @@ r_emit_raw(_G, _X, Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, F, A) -
 %% Used by r_emit. Returns tuple {Var, Str} where Var is the resulting
 %% output var (if any, otherwise same as input arg) and Str is a
 %% string of the assignment if any ("" or "Var = ")
-get_assign(G, _V, X) when record(X, module) ->
+get_assign(G, _V, X) when is_record(X, module) ->
     mk_assign(G);
-get_assign(G, _V, X) when record(X, interface) ->
+get_assign(G, _V, X) when is_record(X, interface) ->
     mk_assign(G);
 get_assign(_G, V, _X) -> {V, ""}.
 mk_assign(G) ->
@@ -534,28 +534,28 @@ member2str(G, S, N, {Id, TK}) ->
 		  ["#structmember", Id, TK, get_idltype_tk(G, S, N, TK)]).
 
 %% Translates between record names and create operation names. 
-get_thing_name(X) when record(X, op) -> "operation";
-get_thing_name(X) when record(X, const) -> "constant";
-get_thing_name(X) when record(X, typedef) -> "alias";
-get_thing_name(X) when record(X, attr) -> "attribute";
-get_thing_name(X) when record(X, except) -> "exception";
-get_thing_name(X) when record(X, id_of) -> get_thing_name(X#id_of.type);
+get_thing_name(X) when is_record(X, op) -> "operation";
+get_thing_name(X) when is_record(X, const) -> "constant";
+get_thing_name(X) when is_record(X, typedef) -> "alias";
+get_thing_name(X) when is_record(X, attr) -> "attribute";
+get_thing_name(X) when is_record(X, except) -> "exception";
+get_thing_name(X) when is_record(X, id_of) -> get_thing_name(X#id_of.type);
 get_thing_name(X) -> to_list(element(1,X)).
 
 
 %% Returns the mode (in, out, oneway etc) of ops and params. Return
 %% value is an atom.
-get_mode(_G, _N, X) when record(X, op) ->
+get_mode(_G, _N, X) when is_record(X, op) ->
     case X#op.oneway of
 	{oneway, _} -> 'OP_ONEWAY';
 	_ -> 'OP_NORMAL'
     end;
-get_mode(_G, _N, X) when record(X, attr) ->
+get_mode(_G, _N, X) when is_record(X, attr) ->
     case X#attr.readonly of
 	{readonly, _} -> 'ATTR_READONLY';
 	_ -> 'ATTR_NORMAL'
     end;
-get_mode(_G, _N, X) when record(X, param) ->
+get_mode(_G, _N, X) when is_record(X, param) ->
     case X#param.inout of
 	{in, _} -> 'PARAM_IN';
 	{inout, _} -> 'PARAM_INOUT';
@@ -789,40 +789,40 @@ oe_destroy(OE_IFR,IFR_ID) ->
 unreg2(G, N, X) ->
     emit(ic_genobj:stubfiled(G),"~s",[lists:flatten(unreg3(G, N, X))]).
 
-unreg3(G, N, X)  when list(X) -> 
+unreg3(G, N, X)  when is_list(X) -> 
     unreg3_list(G, N, X, []);
 
-unreg3(G, N, X) when record(X, module) ->
+unreg3(G, N, X) when is_record(X, module) ->
     unreg3_list(G, [get_id2(X) | N], get_body(X), [unreg_collect(G, N, X)]);
 
-unreg3(G, N, X) when record(X, const) ->
+unreg3(G, N, X) when is_record(X, const) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, struct) ->
+unreg3(G, N, X) when is_record(X, struct) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, except) ->
+unreg3(G, N, X) when is_record(X, except) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, union) ->
+unreg3(G, N, X) when is_record(X, union) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, enum) ->
+unreg3(G, N, X) when is_record(X, enum) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, typedef) ->
+unreg3(G, N, X) when is_record(X, typedef) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, interface) ->
+unreg3(G, N, X) when is_record(X, interface) ->
     unreg_collect(G, N, X);
 
-unreg3(_G, _N, X) when record(X, op) -> [];
+unreg3(_G, _N, X) when is_record(X, op) -> [];
 
-unreg3(_G, _N, X) when record(X, attr) -> [];
+unreg3(_G, _N, X) when is_record(X, attr) -> [];
 
-unreg3(_G, _N, X)  when record(X, preproc) -> [];
+unreg3(_G, _N, X)  when is_record(X, preproc) -> [];
 
-unreg3(_G, _N, X)  when record(X, pragma) -> [];
+unreg3(_G, _N, X)  when is_record(X, pragma) -> [];
 
 unreg3(_G, _N, _X) ->  [].
 
@@ -856,10 +856,10 @@ unreg3_list(G, N, {CFN,Status}, [X | Xs], Found) ->
 
 
 
-unreg_collect(G, N, X) when record(X, module) ->
+unreg_collect(G, N, X) when is_record(X, module) ->
     io_lib:format("    oe_destroy_if_empty(OE_IFR, ~p),\n", 
 	      [get_IR_ID(G, N, X)]);
-unreg_collect(G, N, X) when record(X, typedef) ->
+unreg_collect(G, N, X) when is_record(X, typedef) ->
     lists:map(fun(Id) ->
 		      io_lib:format("    oe_destroy(OE_IFR, ~p),\n", 
 				    [get_IR_ID(G, N, Id)])

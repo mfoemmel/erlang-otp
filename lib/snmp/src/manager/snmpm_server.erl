@@ -162,10 +162,10 @@ is_started() ->
 	    false
     end.
 
-load_mib(MibFile) when list(MibFile) ->
+load_mib(MibFile) when is_list(MibFile) ->
     call({load_mib, MibFile}).
 
-unload_mib(Mib) when list(Mib) ->
+unload_mib(Mib) when is_list(Mib) ->
     call({unload_mib, Mib}).
 
 
@@ -501,7 +501,7 @@ do_init_net_if(NoteStore) ->
 %% ---------------------------------------------------------------------
 %% ---------------------------------------------------------------------
 
-handle_call({monitor_user, Id, Pid}, _From, State) when pid(Pid) ->
+handle_call({monitor_user, Id, Pid}, _From, State) when is_pid(Pid) ->
     ?vlog("received monitor_user request for ~w [~w]", [Id, Pid]),
     Reply = 
 	case ets:lookup(snmpm_monitor_table, Id) of
@@ -1408,7 +1408,7 @@ handle_snmp_error(#pdu{request_id = ReqId} = Pdu, Reason, State) ->
 
 	    Remaining = 
 		case (catch cancel_timer(Ref)) of
-		    Rem when integer(Rem) ->
+		    Rem when is_integer(Rem) ->
 			Rem;
 		    _ ->
 			0
@@ -1527,7 +1527,8 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 	    #pdu{error_status = EStatus, 
 		 error_index  = EIndex, 
 		 varbinds     = Varbinds} = Pdu,
-	    SnmpResponse = {EStatus, EIndex, Varbinds},
+	    Varbinds2 = fix_vbs_BITS(Varbinds), 
+	    SnmpResponse = {EStatus, EIndex, Varbinds2},
 	    case snmpm_config:user_info(UserId) of
 		{ok, UserMod, UserData} ->
 		    handle_pdu(UserId, UserMod, 
@@ -1579,7 +1580,8 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 	    #pdu{error_status = EStatus, 
 		 error_index  = EIndex, 
 		 varbinds     = Varbinds} = Pdu,
-	    SnmpReply = {EStatus, EIndex, Varbinds},
+	    Varbinds2 = fix_vbs_BITS(Varbinds), 
+	    SnmpReply = {EStatus, EIndex, Varbinds2},
 	    Reply = {ok, SnmpReply, Remaining},
 	    ?vtrace("handle_snmp_pdu(get-response) -> deliver reply",[]), 
 	    gen_server:reply(From, Reply),
@@ -1599,7 +1601,8 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 	    #pdu{error_status = EStatus, 
 		 error_index  = EIndex, 
 		 varbinds     = Varbinds} = Pdu,
-	    SnmpInfo = {EStatus, EIndex, Varbinds},
+	    Varbinds2 = fix_vbs_BITS(Varbinds), 
+	    SnmpInfo = {EStatus, EIndex, Varbinds2},
 	    case snmpm_config:get_agent_user_id(Addr, Port) of
 		{ok, UserId} ->
 		    %% A very late reply or a reply to a request
@@ -1748,7 +1751,8 @@ handle_snmp_trap(#trappdu{enterprise    = Enteprise,
 	    "~n   Port: ~p"
 	    "~n   Trap: ~p", [Addr, Port, Trap]),
 
-    SnmpTrapInfo = {Enteprise, Generic, Spec, Timestamp, Varbinds},
+    Varbinds2 = fix_vbs_BITS(Varbinds), 
+    SnmpTrapInfo = {Enteprise, Generic, Spec, Timestamp, Varbinds2},
     do_handle_snmp_trap(SnmpTrapInfo, Addr, Port, State);
 
 handle_snmp_trap(#pdu{error_status = EStatus, 
@@ -1761,7 +1765,8 @@ handle_snmp_trap(#pdu{error_status = EStatus,
 	    "~n   Port: ~p"
 	    "~n   Trap: ~p", [Addr, Port, Trap]),
 
-    SnmpTrapInfo = {EStatus, EIndex, Varbinds},
+    Varbinds2 = fix_vbs_BITS(Varbinds), 
+    SnmpTrapInfo = {EStatus, EIndex, Varbinds2},
     do_handle_snmp_trap(SnmpTrapInfo, Addr, Port, State);
 
 handle_snmp_trap(CrapTrap, Addr, Port, _State) ->
@@ -1909,7 +1914,8 @@ handle_snmp_inform(Ref,
 	    "~n   Port: ~p"
 	    "~n   Pdu:  ~p", [Addr, Port, Pdu]),
 
-    SnmpInform = {EStatus, EIndex, Varbinds},
+    Varbinds2 = fix_vbs_BITS(Varbinds), 
+    SnmpInform = {EStatus, EIndex, Varbinds2},
     case snmpm_config:get_agent_user_info(Addr, Port) of
 	{ok, UserId, Target, RegType} ->
 	    case snmpm_config:user_info(UserId) of
@@ -2069,7 +2075,8 @@ handle_snmp_report(#pdu{error_status = EStatus,
 	    "~n   Port: ~p"
 	    "~n   Pdu:  ~p", [Addr, Port, Pdu]),
 
-    SnmpReport = {EStatus, EIndex, Varbinds},
+    Varbinds2 = fix_vbs_BITS(Varbinds), 
+    SnmpReport = {EStatus, EIndex, Varbinds2},
     case snmpm_config:get_agent_user_info(Addr, Port) of
  	{ok, UserId, Target, RegType} ->
  	    case snmpm_config:user_info(UserId) of
@@ -2143,7 +2150,8 @@ handle_snmp_report(ReqId,
 	    "~n   Rep:    ~p"
 	    "~n   Pdu:    ~p", [Addr, Port, ReqId, Rep, Pdu]),
 
-    SnmpReport = {EStatus, EIndex, Varbinds},
+    Varbinds2 = fix_vbs_BITS(Varbinds), 
+    SnmpReport = {EStatus, EIndex, Varbinds2},
     Reason     = {ReportReason, Info, SnmpReport},
     
     %% Check if there is someone waiting for this request
@@ -2152,8 +2160,8 @@ handle_snmp_report(ReqId,
 
 	[#request{from     = From, 
 		  ref      = Ref, 
-		  mon      = MonRef}] when From /= undefined, 
-					   Ref  /= undefined ->
+		  mon      = MonRef}] when (From =/= undefined) andalso 
+					   (Ref  =/= undefined) ->
 
 	    ?vdebug("handle_snmp_report -> "
 		    "found corresponding request: "
@@ -2164,7 +2172,7 @@ handle_snmp_report(ReqId,
 
 	    Remaining = 
 		case (catch cancel_timer(Ref)) of
-		    Rem when integer(Rem) ->
+		    Rem when is_integer(Rem) ->
 			Rem;
 		    _ ->
 			0
@@ -2331,6 +2339,9 @@ handle_callback(F) ->
 
     
 handle_down(MonRef) ->
+    (catch do_handle_down(MonRef)).
+
+do_handle_down(MonRef) ->
     %% Clear out all requests from this client
     handle_down_requests_cleanup(MonRef),
 
@@ -2361,10 +2372,16 @@ handle_down_user_cleanup(MonRef) ->
     Fun = fun([Id]) -> 
 		  Agents = snmpm_config:which_agents(Id),
 		  lists:foreach(
-		    fun({A,P}) -> 
+		    fun({Addr,Port}) -> 
+			    %% ** Previous format **
+			    %% Just in case this happens during code upgrade
 			    ?vtrace("unregister agent of monitored user "
-				    "~w: <~w,~w>", [Id,A,P]),
-			    snmpm_config:unregister_agent(Id, A, P)
+				    "~w: <~w,~w>", [Id,Addr,Port]),
+			    snmpm_config:unregister_agent(Id, Addr, Port);
+		       (TargetName) ->
+			    ?vtrace("unregister agent of monitored user "
+				    "~w: ~p", [Id,TargetName]),
+			    snmpm_config:unregister_agent(Id, TargetName)
 		    end,
 		    Agents),
 		  ?vtrace("unregister monitored user: ~w", [Id]),
@@ -2397,7 +2414,7 @@ do_gc('$end_of_table', _) ->
 do_gc(Key, Now) ->
     Next = ets:next(snmpm_request_table, Key),
     case ets:lookup(snmpm_request_table, Key) of
-	[#request{expire = BestBefore}] when BestBefore < Now ->
+	[#request{expire = BestBefore}] when (BestBefore < Now) ->
 	    ets:delete(snmpm_request_table, Key);
 	_ ->
 	    ok
@@ -2507,21 +2524,52 @@ make_pdu_impl(set, Varbinds) ->
 	 varbinds     = Varbinds}.
 
 
+fix_vbs_BITS(Varbinds) ->
+    [fix_vb_BITS(Varbind) || Varbind <- Varbinds].
+
+fix_vb_BITS(#varbind{oid          = Oid,
+		     variabletype = 'OCTET STRING' = _Type,
+		     value        = Value} = Varbind) ->
+    %% BITS are encoded as OCTET STRING, so this could be a BITS
+    %% check with the MiniMIB
+    case type_of_oid(Oid) of
+	{error, _} ->
+	    Varbind;
+	{ok, NewType = 'BITS'} ->
+	    NewValue = snmp_pdus:octet_str_to_bits(Value),
+	    Varbind#varbind{variabletype = NewType,
+			    value        = NewValue};
+	_ ->
+	    Varbind
+    end;
+fix_vb_BITS(Vb) ->
+    Vb.
+
+type_of_oid(Oid) ->
+    Oid2 = case lists:reverse(Oid) of
+	       [0|T] ->
+		   lists:reverse(T);
+	       _ ->
+		   Oid
+	   end,
+    snmpm_config:oid_to_type(Oid2).
+
+
 %%----------------------------------------------------------------------
 %% Purpose: Unnesting of oids like [myTable, 3, 4, "hej", 45] to
 %%          [1,2,3,3,4,104,101,106,45]
 %%----------------------------------------------------------------------
 
-flatten_oid([A|T], MiniMIB) when atom(A) ->
+flatten_oid([A|T], MiniMIB) when is_atom(A) ->
     Oid = [alias2oid(A, MiniMIB)|T],
     check_is_pure_oid(lists:flatten(Oid));
-flatten_oid(Oid, _) when list(Oid) ->
+flatten_oid(Oid, _) when is_list(Oid) ->
     check_is_pure_oid(lists:flatten(Oid));
 flatten_oid(Shit, _) ->
     throw({error, {invalid_oid, Shit}}).
 	       
 check_is_pure_oid([]) -> [];
-check_is_pure_oid([X | T]) when integer(X), X >= 0 ->
+check_is_pure_oid([X | T]) when is_integer(X) andalso (X >= 0) ->
     [X | check_is_pure_oid(T)];
 check_is_pure_oid([X | _T]) ->
     throw({error, {invalid_oid, X}}).
@@ -2546,6 +2594,8 @@ char_to_type(g) -> % Gauge, Gauge32
     'Unsigned32';
 char_to_type(b) -> 
     'BITS';
+char_to_type(ip) -> 
+    'IpAddress';
 char_to_type(ia) -> 
     'IpAddress';
 char_to_type(op) -> 
@@ -2564,7 +2614,7 @@ char_to_type(C) ->
     throw({error, {invalid_value_type, C}}).
 
 
-alias2oid(AliasName, MiniMIB) when atom(AliasName) ->
+alias2oid(AliasName, MiniMIB) when is_atom(AliasName) ->
     case lists:keysearch(AliasName, 2, MiniMIB) of
 	{value, {Oid, _Aliasname, _Type}} -> 
  	    Oid;
@@ -2585,7 +2635,7 @@ oid2type(_Oid, [], utter_nonsense) ->
     throw({error, no_type});
 oid2type(_Oid, [], Type) ->
     Type;
-oid2type(Oid, [{Oid2, _, Type}|MiniMIB], Res) when Oid2 =< Oid ->
+oid2type(Oid, [{Oid2, _, Type}|MiniMIB], Res) when (Oid2 =< Oid) ->
     case lists:prefix(Oid2, Oid) of
         true ->
             oid2type(Oid, MiniMIB, Type); % A better guess
@@ -2624,7 +2674,8 @@ agent_data(TargetName, CtxName, Config) ->
 			DefSecName  = agent_data_item(sec_name,  Info),
 			DefSecLevel = agent_data_item(sec_level, Info),
 				   
-			EngineId    = agent_data_item(engine_id, Config),
+			EngineId    = agent_data_item(engine_id, Info),
+
 			SecModel    = agent_data_item(sec_model,   
 						      Config, 
 						      DefSecModel),
@@ -2772,7 +2823,7 @@ gct(#gct{parent = Parent, state = idle} = State, Timeout) ->
 
 new_timeout(T1, T2) ->
     case T1 - (t() - T2) of
-	T when T > 0 ->
+	T when (T > 0) ->
 	    T;
 	_ ->
 	    0

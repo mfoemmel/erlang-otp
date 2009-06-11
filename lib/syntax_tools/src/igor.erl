@@ -2178,7 +2178,7 @@ protect_call(_Module, _Local, Remote) ->
 %% Renaming record declarations
 
 transform_attribute(T, Env, St) ->
-    {T1, St1} = default_transform(T, Env, St),
+    {T1, St1} = TSt1 = default_transform(T, Env, St),
     case erl_syntax_lib:analyze_attribute(T1) of
 	{record, {R, _}} ->
 	    F = fun(R) ->
@@ -2190,13 +2190,13 @@ transform_attribute(T, Env, St) ->
 	    {V, Text} = rename_record(R, F, Env),
 	    {maybe_modified(V, T1, 2, Text, Env), St1};
 	_ ->
-	    {T1, St1}
+	    TSt1
     end.
 
 %% This handles renaming of records.
 
 transform_record(T, Env, St) ->
-    {T1, St1} = default_transform(T, Env, St),
+    {T1, St1} = TSt1 = default_transform(T, Env, St),
     X = case catch erl_syntax_lib:analyze_record_expr(T1) of
 	    {record_expr, {R, _}} ->
 		F = fun (R) ->
@@ -2229,7 +2229,7 @@ transform_record(T, Env, St) ->
 	    {V, Text} = rename_record(R1, F1, Env),
 	    {maybe_modified(V, T1, 1, Text, Env), St1};
 	false ->
-	    {T1, St1}
+	    TSt1
     end.
 
 rename_record(R, F, Env) ->
@@ -2516,54 +2516,54 @@ get_module_info(Forms) ->
 		throw(R)
 	end,
     {Name, Vars} =
-	case lists:keysearch(module, 1, L) of
-	    {value, {module, {N, Vs}}} ->
-		{N, Vs};
-	    {value, {module, N}} ->
+	case lists:keyfind(module, 1, L) of
+	    {module, {_N, _Vs} = NVs} ->
+		NVs;
+	    {module, N} ->
 		{N, none};
-	    _ ->
+	    false ->
 		report_error("in source code: module name missing."),
 		exit(error)
 	end,
-    case lists:keysearch(errors, 1, L) of
-	{value, {errors, Ds}} when Ds /= [] ->
+    case lists:keyfind(errors, 1, L) of
+	{errors, Ds} when Ds =/= [] ->
 	    report_errors(Ds, Name),
 	    exit(error);
 	_ ->
 	    ok
     end,
-    case lists:keysearch(warnings, 1, L) of
-	{value, {warnings, Ds1}} when Ds1 /= [] ->
+    case lists:keyfind(warnings, 1, L) of
+	{warnings, Ds1} when Ds1 =/= [] ->
 	    report_warnings(Ds1, Name); 
 	_ ->
 	    ok
     end,
-    Functions = case lists:keysearch(functions, 1, L) of
-		    {value, {functions, Fs}} ->
+    Functions = case lists:keyfind(functions, 1, L) of
+		    {functions, Fs} ->
 			ordsets:from_list(Fs);
 		    _ ->
 			[]
 		end,
-    Exports = case lists:keysearch(exports, 1, L) of
-		  {value, {exports, Es}} ->
+    Exports = case lists:keyfind(exports, 1, L) of
+		  {exports, Es} ->
 		      ordsets:from_list(Es);
 		  _ ->
 		      []
 	      end,
-    Imports = case lists:keysearch(imports, 1, L) of
-		  {value, {imports, Is}} ->
+    Imports = case lists:keyfind(imports, 1, L) of
+		  {imports, Is} ->
 		      expand_imports(Is, Name);
 		  _ ->
 		      []
 	      end,
-    Attributes = case lists:keysearch(attributes, 1, L) of
-		     {value, {attributes, As}} ->
+    Attributes = case lists:keyfind(attributes, 1, L) of
+		     {attributes, As} ->
 			 ordsets:from_list(As);
 		     _ ->
 			 []
 		 end,
-    Records = case lists:keysearch(records, 1, L) of
-		  {value, {records, Rs}} ->
+    Records = case lists:keyfind(records, 1, L) of
+		  {records, Rs} ->
 		      fold_record_fields(Rs);
 		  _ ->
 		      []
@@ -2580,8 +2580,8 @@ get_module_info(Forms) ->
 fold_record_fields(Rs) ->
     [{N, [fold_record_field(F) || F <- Fs]} || {N, Fs} <- Rs].
 
-fold_record_field({Name, none}) ->
-    {Name, none};
+fold_record_field({_Name, none} = None) ->
+    None;
 fold_record_field({Name, F}) ->
     case erl_syntax:is_literal(F) of
 	true ->
@@ -2657,9 +2657,9 @@ open_output_file(FName) ->
     case catch file:open(FName, [write]) of
 	{ok, FD} ->
 	    FD;
-	{error, R} ->
+	{error, _} = Error ->
 	    error_open_output(FName),
-	    exit({error, R});
+	    exit(Error);
 	{'EXIT', R} ->
 	    error_open_output(FName),
 	    exit(R);
@@ -2705,9 +2705,9 @@ read_module_2(Name, Options) ->
 	{ok, Forms} ->
 	    check_forms(Forms, Name), 
 	    Forms;
-	{error, R} ->
+	{error, _} = Error ->
 	    error_read_file(Name),
-	    exit({error, R})
+	    exit(Error)
     end.
 
 read_module_3(Name, Options) ->
@@ -2756,9 +2756,9 @@ file_type(Name) ->
 	    {value, Env#file_info.type};
 	{error, enoent} ->
 	    none;
-	{error, R} ->
+	{error, _} = Error ->
 	    error_read_file_info(Name),
-	    exit({error, R});
+	    exit(Error);
 	{'EXIT', R} ->
 	    error_read_file_info(Name),
 	    exit(R);
@@ -2970,11 +2970,11 @@ split_lines_1(Cs, Cs1, Ls) ->
 
 warning_unsafe_call(Name, Module, Target) ->
     report_warning("call to `~w' in module `~w' "
-		   "possibly unsafe in `~w'.", [Name, Module, Target]).
+		   "possibly unsafe in `~s'.", [Name, Module, Target]).
 
 warning_apply_2(Module, Target) ->
     report_warning("call to `apply/2' in module `~w' "
-		   "possibly unsafe in `~w'.", [Module, Target]).
+		   "possibly unsafe in `~s'.", [Module, Target]).
 
 error_open_output(Name) ->
     report_error("cannot open file `~s' for output.", [filename(Name)]).

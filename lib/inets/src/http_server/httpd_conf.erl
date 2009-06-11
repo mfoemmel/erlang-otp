@@ -91,7 +91,7 @@ is_file(_Type,_Access,FileInfo,_File) ->
 %% Description: make_integer/1 returns an integer representation of String. 
 %%-------------------------------------------------------------------------
 make_integer(String) ->
-    case regexp:match(clean(String),"[0-9]+") of
+    case inets_regexp:match(clean(String),"[0-9]+") of
 	{match, _, _} ->
 	    {ok, list_to_integer(clean(String))};
 	nomatch ->
@@ -106,7 +106,7 @@ make_integer(String) ->
 %%-------------------------------------------------------------------------
 clean(String) ->
     {ok,CleanedString,_} = 
-	regexp:gsub(String, "^[ \t\n\r\f]*|[ \t\n\r\f]*\$",""),
+	inets_regexp:gsub(String, "^[ \t\n\r\f]*|[ \t\n\r\f]*\$",""),
     CleanedString.
 %%-------------------------------------------------------------------------
 %% custom_clean(String,Before,After) -> Stripped
@@ -117,7 +117,7 @@ clean(String) ->
 %% spaces and custom characters from String. 
 %%-------------------------------------------------------------------------
 custom_clean(String,MoreBefore,MoreAfter) ->
-    {ok,CleanedString,_} = regexp:gsub(String,"^[ \t\n\r\f"++MoreBefore++
+    {ok,CleanedString,_} = inets_regexp:gsub(String,"^[ \t\n\r\f"++MoreBefore++
 				       "]*|[ \t\n\r\f"++MoreAfter++"]*\$",""),
     CleanedString.
 %%-------------------------------------------------------------------------
@@ -271,7 +271,7 @@ load("KeepAliveTimeout " ++ Timeout, []) ->
 	    {error, ?NICE(clean(Timeout)++" is an invalid KeepAliveTimeout")}
     end;
 load("Modules " ++ Modules, []) ->
-    {ok, ModuleList} = regexp:split(Modules," "),
+    {ok, ModuleList} = inets_regexp:split(Modules," "),
     {ok, [], {modules,[list_to_atom(X) || X <- ModuleList]}};
 load("ServerAdmin " ++ ServerAdmin, []) ->
     {ok, [], {server_admin,clean(ServerAdmin)}};
@@ -326,7 +326,7 @@ load("SSLCertificateKeyFile " ++ SSLCertificateKeyFile, []) ->
     end;
 load("SSLVerifyClient " ++ SSLVerifyClient, []) ->
     case make_integer(clean(SSLVerifyClient)) of
-	{ok, Integer} when Integer >=0,Integer =< 2 ->
+	{ok, Integer} when (Integer >=0) andalso (Integer =< 2) ->
 	    {ok, [], {ssl_verify_client,Integer}};
 	{ok, _Integer} ->
 	    {error,?NICE(clean(SSLVerifyClient) ++
@@ -391,32 +391,31 @@ load_mime_types(MimeTypesFile) ->
 validate_config_params([]) ->
     ok;
 validate_config_params([{max_header_size, Value} | Rest]) 
-  when is_integer(Value), Value > 0 ->
+  when is_integer(Value) andalso (Value > 0) ->
     validate_config_params(Rest);
 validate_config_params([{max_header_size, Value} | _]) ->
     throw({max_header_size, Value});
 
 validate_config_params([{max_body_size, Value} | Rest]) 
-  when is_integer(Value), Value > 0 ->
+  when is_integer(Value) andalso (Value > 0) ->
     validate_config_params(Rest);
 validate_config_params([{max_body_size, Value} | _]) -> 
     throw({max_body_size, Value});
 
 validate_config_params([{server_name, Value} | Rest])  
-  when is_list(Value)->
+  when is_list(Value) ->
     validate_config_params(Rest);
 validate_config_params([{server_name, Value} | _]) ->
     throw({server_name, Value});
 
 validate_config_params([{socket_type, Value} | Rest]) 
-  when Value == ip_comm;
-       Value == ssl ->
+  when (Value =:= ip_comm) orelse (Value =:= ssl) ->
     validate_config_params(Rest);
 validate_config_params([{socket_type, Value} | _]) ->
     throw({socket_type, Value});
 
 validate_config_params([{port, Value} | Rest]) 
-  when is_integer(Value), Value >= 0 ->
+  when is_integer(Value) andalso (Value >= 0) ->
     validate_config_params(Rest);
 validate_config_params([{port, Value} | _]) -> 
     throw({port, Value});
@@ -430,20 +429,19 @@ validate_config_params([{bind_address, Value} | Rest])  ->
     end;
 
 validate_config_params([{keep_alive, Value} | Rest])  
-  when Value == true;
-       Value == false ->
+  when (Value =:= true) orelse (Value =:= false) ->
     validate_config_params(Rest);
 validate_config_params([{keep_alive, Value} | _]) ->
     throw({keep_alive, Value});
 
 validate_config_params([{max_keep_alive_request, Value} | Rest]) 
-  when is_integer(Value), Value > 0 ->
+  when is_integer(Value) andalso (Value > 0) ->
     validate_config_params(Rest);
 validate_config_params([{max_keep_alive_request, Value} | _]) ->
     throw({max_header_size, Value});
 
 validate_config_params([{keep_alive_timeout, Value} | Rest]) 
-  when is_integer(Value), Value >= 0 ->
+  when is_integer(Value) andalso (Value >= 0) ->
     validate_config_params(Rest);
 validate_config_params([{keep_alive_timeout, Value} | _]) ->
     throw({keep_alive_timeout, Value});
@@ -452,7 +450,7 @@ validate_config_params([{modules, Value} | Rest]) ->
     ok = httpd_util:modules_validate(Value),
     validate_config_params(Rest);
 	  
-validate_config_params([{server_admin, Value} | Rest]) when is_list(Value)->
+validate_config_params([{server_admin, Value} | Rest]) when is_list(Value) ->
     validate_config_params(Rest);
 validate_config_params([{server_admin, Value} | _]) ->
     throw({server_admin, Value});
@@ -466,7 +464,7 @@ validate_config_params([{mime_types, Value} | Rest]) ->
     validate_config_params(Rest);
 
 validate_config_params([{max_clients, Value} | Rest]) 
-  when is_integer(Value), Value > 0 ->
+  when is_integer(Value) andalso (Value > 0) ->
     validate_config_params(Rest);
 validate_config_params([{max_clients, Value} | _]) ->
     throw({max_clients, Value});
@@ -480,20 +478,20 @@ validate_config_params([{default_type, Value} | Rest]) when is_list(Value) ->
 validate_config_params([{default_type, Value} | _]) ->
     throw({default_type, Value});
 
-validate_config_params([{ssl_certificate_file, Value} | Rest]) ->
-    ok = httpd_util:file_validate(ssl_certificate_file, Value),
+validate_config_params([{ssl_certificate_file = Key, Value} | Rest]) ->
+    ok = httpd_util:file_validate(Key, Value),
     validate_config_params(Rest);
 
-validate_config_params([{ssl_certificate_key_file, Value} | Rest]) ->
-    ok = httpd_util:file_validate(ssl_certificate_file, Value),
+validate_config_params([{ssl_certificate_key_file = Key, Value} | Rest]) ->
+    ok = httpd_util:file_validate(Key, Value),
     validate_config_params(Rest);
 
-validate_config_params([{ssl_verify_client, Value} | Rest]) when 
-  Value == 0; Value == 1; Value == 2 ->
+validate_config_params([{ssl_verify_client, Value} | Rest]) 
+  when (Value =:= 0) orelse (Value =:= 1) orelse (Value =:= 2) ->
     validate_config_params(Rest);
 
 validate_config_params([{ssl_verify_client_depth, Value} | Rest]) 
-  when is_integer(Value), Value >= 0 ->
+  when is_integer(Value) andalso (Value >= 0) ->
     validate_config_params(Rest);
 validate_config_params([{ssl_verify_client_depth, Value} | _]) ->
     throw({ssl_verify_client_depth, Value});
@@ -503,8 +501,8 @@ validate_config_params([{ssl_ciphers, Value} | Rest]) when is_list(Value) ->
 validate_config_params([{ssl_ciphers, Value} | _]) ->
     throw({ssl_ciphers, Value});
 
-validate_config_params([{ssl_ca_certificate_file, Value} | Rest]) ->
-    ok = httpd_util:file_validate(ssl_certificate_file, Value),
+validate_config_params([{ssl_ca_certificate_file = Key, Value} | Rest]) ->
+    ok = httpd_util:file_validate(Key, Value),
     validate_config_params(Rest);
 
 validate_config_params([{ssl_password_callback_module, Value} | Rest]) 
@@ -526,7 +524,8 @@ validate_config_params([{ssl_password_callback_arguments, Value} | _]) ->
     throw({ssl_password_callback_arguments, Value});
 
 validate_config_params([{disable_chunked_transfer_encoding_send, Value} |
-			Rest])  when Value == true; Value == false ->
+			Rest])  
+  when (Value =:= true) orelse (Value =:= false) ->
     validate_config_params(Rest);
 validate_config_params([{disable_chunked_transfer_encoding_send, Value} |
 			_ ]) ->
@@ -586,12 +585,12 @@ store({mime_types,MimeTypesList},ConfigList) ->
     Name = httpd_util:make_name("httpd_mime",Addr,Port),
     {ok, MimeTypesDB} = store_mime_types(Name,MimeTypesList),
     {ok, {mime_types,MimeTypesDB}};
-store({log_format, LogFormat}, _ConfigList) when LogFormat == common; 
-						 LogFormat == combined ->
+store({log_format, LogFormat}, _ConfigList) 
+  when (LogFormat =:= common) orelse (LogFormat =:= combined) ->
     {ok,{log_format, LogFormat}};
-store({log_format, LogFormat}, _ConfigList) when LogFormat == compact; 
-						 LogFormat == pretty ->
-    {ok,{log_format, LogFormat}};
+store({log_format, LogFormat}, _ConfigList) 
+  when (LogFormat =:= compact) orelse (LogFormat =:= pretty) ->
+    {ok, {log_format, LogFormat}};
 store(ConfigListEntry, _ConfigList) ->
     {ok, ConfigListEntry}.
 
@@ -635,7 +634,7 @@ bootstrap([]) ->
 bootstrap([Line|Config]) ->
     case Line of
 	"Modules " ++ Modules ->
-	    {ok, ModuleList} = regexp:split(Modules," "),
+	    {ok, ModuleList} = inets_regexp:split(Modules," "),
 	    TheMods = [list_to_atom(X) || X <- ModuleList],
 	    case verify_modules(TheMods) of
 		ok ->
@@ -692,11 +691,11 @@ load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts,
 	{ok, NewContext} ->
 	    load_traverse(Line, Contexts, Modules, 
 			  [NewContext|NewContexts], ConfigList,yes);
-	{ok, NewContext, ConfigEntry} when tuple(ConfigEntry) ->
+	{ok, NewContext, ConfigEntry} when is_tuple(ConfigEntry) ->
 	  load_traverse(Line, Contexts, 
 			Modules, [NewContext|NewContexts],
 			  [ConfigEntry|ConfigList], yes);
-	{ok, NewContext, ConfigEntry} when list(ConfigEntry) ->
+	{ok, NewContext, ConfigEntry} when is_list(ConfigEntry) ->
 	    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
 			  lists:append(ConfigEntry, ConfigList), yes);
 	{error, Reason} ->
@@ -735,7 +734,7 @@ read_config_file(Stream, SoFar) ->
 	    %% Ignore commented lines for efficiency later ..
 	    read_config_file(Stream, SoFar);
 	Line ->
-	    {ok, NewLine, _}=regexp:sub(clean(Line),"[\t\r\f ]"," "),
+	    {ok, NewLine, _}=inets_regexp:sub(clean(Line),"[\t\r\f ]"," "),
 	    case NewLine of
 		[] ->
 		    %% Also ignore empty lines ..
@@ -762,7 +761,7 @@ parse_mime_types(Stream, MimeTypesList, "") ->
 parse_mime_types(Stream, MimeTypesList, [$#|_]) ->
     parse_mime_types(Stream, MimeTypesList);
 parse_mime_types(Stream, MimeTypesList, Line) ->
-    case regexp:split(Line, " ") of
+    case inets_regexp:split(Line, " ") of
 	{ok, [NewMimeType|Suffixes]} ->
 	    parse_mime_types(Stream,
 			     lists:append(suffixes(NewMimeType,Suffixes),
@@ -782,10 +781,10 @@ store(ConfigDB, _ConfigList, _Modules,[]) ->
     {ok, ConfigDB};
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
     case store_traverse(ConfigListEntry,ConfigList,Modules) of
-	{ok, ConfigDBEntry} when tuple(ConfigDBEntry) ->
+	{ok, ConfigDBEntry} when is_tuple(ConfigDBEntry) ->
 	    ets:insert(ConfigDB,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
-	{ok, ConfigDBEntry} when list(ConfigDBEntry) ->
+	{ok, ConfigDBEntry} when is_list(ConfigDBEntry) ->
 	    lists:foreach(fun(Entry) ->
 				  ets:insert(ConfigDB,Entry)
 			  end,ConfigDBEntry),
@@ -892,7 +891,7 @@ ssl_password(ConfigDB) ->
 			   end,
 	       
 		    case catch apply(Module, Function, Args) of
-			Password when list(Password) ->
+			Password when is_list(Password) ->
 			    [{password, Password}];
 			Error ->
 			    error_report(ssl_password,Module,Function,Error),

@@ -29,6 +29,31 @@
   </header>
   <p>This document describes the changes made to the wxErlang
     application.</p>
+
+<section><title>Wx 0.98.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+            <p>Olle Mattson have made a large demo, see
+            <c>examples/demo/</c>, that triggered the following bugs
+            and new features:</p> <p>New book controls.</p> <p>Added
+            wxToolbar:addTool/6.</p> <p>Empty binaries will be used
+            to indicate NULL where applicable.</p>
+          <p>
+            Own Id: OTP-7943</p>
+        </item>
+	<item>
+          <p>Applied patch from Nico Kruber,
+	    which fixes building on some wxwidgets installations.
+	  </p>
+          <p>Open source</p>            
+        </item>
+      </list>
+    </section>
+
+</section>
+
   <section><title>Wx 0.98.1</title>
 
     <section><title>Improvements and New Features</title>

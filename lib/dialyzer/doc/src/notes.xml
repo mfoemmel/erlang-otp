@@ -30,6 +30,29 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.9.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Fixed problem with type inference going into an
+	    infinite loop when analyzing a strongly connected
+	    component of functions that do not return but also
+	    contain an erroneous call which makes them fail and be
+	    assigned the type none() instead of the type unit().</p>
+	    <p>More accurate type information for some BIFs and
+	    library files.</p>
+	    <p>Introduced boolean() as the `official' name for the
+	    type was so far known as bool(). The latter is still
+	    accepted as well as boolean().</p>
+          <p>
+	    Own Id: OTP-8037</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Dialyzer 1.9.1</title>
 
     <section><title>Improvements and New Features</title>

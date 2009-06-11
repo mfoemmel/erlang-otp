@@ -88,9 +88,9 @@ eval(Tree)     -> eval(Tree, []).
 
 %% Leaf expressions (literals and idents).
 eval('$empty', _)               -> true;
-eval(Lit, _Env) when number(Lit) -> Lit;
-eval(Lit, _Env) when list(Lit)   -> Lit; %list == string
-eval(Lit, _Env) when atom(Lit)   -> Lit;   %atom == bool
+eval(Lit, _Env) when is_number(Lit) -> Lit;
+eval(Lit, _Env) when is_list(Lit)   -> Lit; %list == string
+eval(Lit, _Env) when is_atom(Lit)   -> Lit;   %atom == bool
 eval({component, V}, []) ->
     %% Cannot evaluate variables at this stage.
     throw({error, {unbound_variable, V}});
@@ -161,7 +161,7 @@ eval({'~', Needle, Haystack}, Env) ->		%substring match
     N = eval(Needle, Env),
     H = eval(Haystack, Env),
     if
-	list(N), list(H) ->
+	is_list(N) andalso is_list(H) ->
 	    string:str(H, N) /= 0;
 	true ->
 	    throw({error, {bad_type, Needle, Haystack}})
@@ -170,7 +170,7 @@ eval({'in', Needle, Haystack}, Env) ->		%set membership
     N = eval(Needle, Env),
     H = eval(Haystack, Env),
     if
-	list(H) ->
+	is_list(H) ->
 	    lists:member(N, H);
 	true ->
 	    throw({error, {bad_type, Needle, Haystack}})
@@ -198,7 +198,7 @@ eval(_T, _Env) ->
 eval_bool({Fun, X}, Env) ->
     Xe = eval(X, Env),
     if 
-	atom(Xe) ->
+	is_atom(Xe) ->
 	    Fun(Xe);
 	true ->
 	    throw({error, {bad_type, X}})
@@ -211,7 +211,7 @@ eval_and_bool({Fun, X, Y}, Env) ->
 	Xe ->
 	    Ye = eval(Y, Env),
 	    if 
-		atom(Xe), atom(Ye) ->
+		is_atom(Xe) andalso is_atom(Ye) ->
 		    Fun(Xe, Ye);
 		true ->
 		    throw({error, {bad_type, X, Y}})
@@ -225,7 +225,7 @@ eval_or_bool({Fun, X, Y}, Env) ->
 	Xe ->
 	    Ye = eval(Y, Env),
 	    if 
-		atom(Xe), atom(Ye) ->
+		is_atom(Xe) andalso is_atom(Ye) ->
 		    Fun(Xe, Ye);
 		true ->
 		    throw({error, {bad_type, X, Y}})
@@ -256,7 +256,7 @@ eval_or_bool({Fun, X, Y}, Env) ->
 %% encoded as 1 and 0 in GIOP. Does not imply that booleans may be used as numeric.
 %% But, they have stated that this should be the case so..... 
 
-remap_bool(Num) when number(Num) -> Num;
+remap_bool(Num) when is_number(Num) -> Num;
 remap_bool(true) -> 1;
 remap_bool(false) -> 0;
 remap_bool(X) -> throw({error, {bad_type, X}}).
@@ -273,11 +273,11 @@ eval_rel({Fun, X, Y}, Env) ->
     Xe = eval(X, Env),
     Ye = eval(Y, Env),
     if 
-	number(Xe), number(Ye) ->
+	is_number(Xe) andalso is_number(Ye) ->
 	    Fun(Xe, Ye);
-	list(Xe), list(Ye) ->
+	is_list(Xe) andalso is_list(Ye) ->
 	    Fun(Xe, Ye);
-	atom(Xe), atom(Ye) ->
+	is_atom(Xe) andalso is_atom(Ye) ->
 	    Fun(Xe, Ye);
 	true ->
 	    throw({error, {bad_type, X, Y}})
@@ -295,14 +295,14 @@ eval_rel({Fun, X, Y}, Env) ->
 %%            If not found we will then look in the 'remainder_of_body'
 %%------------------------------------------------------------
 
-get_variable([], ID, Any) when record(Any, any) ->
+get_variable([], ID, Any) when is_record(Any, any) ->
     case {any:get_value(Any), any:get_typecode(Any)} of
 	{#'CosNotification_Property'{name=ID, value=A}, _} ->
 	    any:get_value(A);
-	{_, TC} when atom(TC) ->
+	{_, TC} when is_atom(TC) ->
 	    %% Since TC atom it must be a simple type, which don't have members.
 	    throw({error, {bad_id, ID}});
-	{Value, {tk_alias,_,ID,_}} when record(Value, any) ->
+	{Value, {tk_alias,_,ID,_}} when is_record(Value, any) ->
 	    %% {tk_alias, IFRId, ID, TypeCode}
 	    any:get_value(Value);
 	{Value, {tk_alias,_,ID,_}} ->
@@ -315,7 +315,7 @@ get_variable([], ID, #'CosNotification_Property'{name=ID, value=Any}) ->
     any:get_value(Any);
 get_variable([], ID, [#'CosNotification_Property'{name=ID, value=Any}|_]) ->
     any:get_value(Any);
-get_variable([], ID, [H|T]) when record(H, 'CosNotification_Property') ->
+get_variable([], ID, [H|T]) when is_record(H, 'CosNotification_Property') ->
     get_variable([], ID, T);
 get_variable([], ID, false) ->
     throw({error, {bad_id, ID}});
@@ -376,7 +376,7 @@ get_variable([_|T], ID, Any) ->
 lookup([],S,_) -> {ok, S};
 lookup('$empty', #'CosNotification_StructuredEvent'{remainder_of_body = Any},_) -> 
     {ok, any:get_value(Any)};
-lookup('$empty',S,_) when record(S, any) -> 
+lookup('$empty',S,_) when is_record(S, any) -> 
     {ok, any:get_value(S)};
 
 %%------- varid --------
@@ -407,7 +407,7 @@ lookup([{varid, "type_name"}|T],
 	{fixed_header = #'CosNotification_FixedEventHeader'
 	 {event_type =  #'CosNotification_EventType'{type_name=TN}}}}, Op) ->
     lookup(T, TN, Op);
-lookup([{varid, "type_name"}|T], Any, Op) when record(Any, any) ->
+lookup([{varid, "type_name"}|T], Any, Op) when is_record(Any, any) ->
     case locate_var([?TYPE_PATH, ?VARIABLE_PATH("type_name"), 
 		     ?FILTERABLE_PATH("type_name")], Any, Op) of
 	{ok, Val} ->
@@ -421,7 +421,7 @@ lookup([{varid, "domain_name"}|T],
 	{fixed_header = #'CosNotification_FixedEventHeader'
 	 {event_type =  #'CosNotification_EventType'{domain_name=DN}}}}, Op) ->
     lookup(T, DN, Op);
-lookup([{varid, "domain_name"}|T], Any, Op) when record(Any, any) ->
+lookup([{varid, "domain_name"}|T], Any, Op) when is_record(Any, any) ->
     case locate_var([?DOMAIN_PATH, ?VARIABLE_PATH("domain_name"), 
 		     ?FILTERABLE_PATH("domain_name")], Any, Op) of
 	{ok, Val} ->
@@ -435,7 +435,7 @@ lookup([{varid, "event_name"}|T],
 	{fixed_header = #'CosNotification_FixedEventHeader'
 	 {event_name =  EN}}}, Op) ->
     lookup(T, EN, Op);
-lookup([{varid, "event_name"}|T], Any, Op) when record(Any, any) ->
+lookup([{varid, "event_name"}|T], Any, Op) when is_record(Any, any) ->
     case locate_var([?EVENT_PATH, ?VARIABLE_PATH("event_name"), 
 		     ?FILTERABLE_PATH("event_name")], Any, Op) of
 	{ok, Val} ->
@@ -502,19 +502,19 @@ lookup([{dotid, ID}|T],
 lookup([{dotid, ID}|T], Any, Op) ->
     lookup(T, get_variable([], ID, Any), Op);
 
-lookup([{associd, ID}|T], S, Op) when list(S) ->
+lookup([{associd, ID}|T], S, Op) when is_list(S) ->
     %% Refers to an associative array, i.e., a list of
     %% #'CosNotification_Property'{name=ID, value=A}
     lookup(T, get_variable(S, ID, false), Op);
 
-lookup([{dotint, Position}|T], S, Op) when record(S, any) ->
+lookup([{dotint, Position}|T], S, Op) when is_record(S, any) ->
     lookup(T, element(Position+2, any:get_value(S)), Op);
 lookup([{dotint, Position}|T], S, Op) ->
     lookup(T, element(Position+2, S), Op);
 
-lookup([{uint, ID}|T], S, Op) when record(S, any) ->
+lookup([{uint, ID}|T], S, Op) when is_record(S, any) ->
     lookup([{uint, ID}|T], any:get_value(S), Op);
-lookup([{uint, ID} |T], S, Op) when tuple(S) ->
+lookup([{uint, ID} |T], S, Op) when is_tuple(S) ->
     case catch element(2, S) of
 	ID ->
 	    %% The supplied union do contain the requested discriminator.
@@ -542,9 +542,9 @@ lookup([{uint, ID} |T], S, Op) when tuple(S) ->
 		    end
 	    end
     end;
-lookup([{ustr, ID}|T], S, Op) when record(S, any) ->
+lookup([{ustr, ID}|T], S, Op) when is_record(S, any) ->
     lookup([{ustr, ID}|T], any:get_value(S), Op);
-lookup([{ustr, ID}|T], S, Op) when tuple(S) ->
+lookup([{ustr, ID}|T], S, Op) when is_tuple(S) ->
     M = element(1, S),
     case catch M:tc() of
 	{tk_union,_,_,_,DefNo, UList} ->
@@ -562,9 +562,9 @@ lookup([{ustr, ID}|T], S, Op) when tuple(S) ->
 		    end
 	    end
     end;
-lookup([default|T], S, Op) when record(S, any) ->
+lookup([default|T], S, Op) when is_record(S, any) ->
     lookup([default|T], any:get_value(S), Op);
-lookup([default|T], S, Op) when tuple(S) ->
+lookup([default|T], S, Op) when is_tuple(S) ->
     M = element(1, S),
     case catch M:tc() of
 	{tk_union,_,_,_,DefNo, _UList} when DefNo < 0 ->
@@ -583,7 +583,7 @@ lookup([default|T], S, Op) when tuple(S) ->
 	    throw({error, {bad_id, "Bad Union"}})
     end;
 
-lookup([{arrindex, Index}|T], S, Op) when tuple(S) ->
+lookup([{arrindex, Index}|T], S, Op) when is_tuple(S) ->
     %% The OMG uses c/c++ index. We must add one.
     lookup(T, element(Index+1,S), Op);
 
@@ -592,11 +592,11 @@ lookup([{arrindex, Index}|T], S, Op) when tuple(S) ->
 lookup(['_length'],
 	     #'CosNotification_StructuredEvent'{remainder_of_body = Any}, _Op) ->
     {ok, length(any:get_value(Any))};
-lookup(['_length'], S, _Op)  when record(S, any) ->
+lookup(['_length'], S, _Op)  when is_record(S, any) ->
     {ok, length(any:get_value(S))};
-lookup(['_length'], S, _Op)  when list(S) ->
+lookup(['_length'], S, _Op)  when is_list(S) ->
     {ok, length(S)};
-lookup(['_length'], S, _Op)  when tuple(S) ->
+lookup(['_length'], S, _Op)  when is_tuple(S) ->
     {ok, length(tuple_to_list(S))};
 
 %% got '$._d', which maps to the 'remainder_of_body'
@@ -610,7 +610,7 @@ lookup(['_d'],
        #'CosNotification_StructuredEvent'{remainder_of_body = Any}, 
        default_component) ->
     lookup(['_d'], any:get_value(Any), default_component);
-lookup(['_d'], S, default_component) when record(S, any) ->
+lookup(['_d'], S, default_component) when is_record(S, any) ->
     lookup(['_d'], any:get_value(S), default_component);
 lookup(['_d'], S, default_component) ->
     M = element(1, S),
@@ -627,23 +627,23 @@ lookup(['_d'], S, default_component) ->
 lookup(['_d'], 
        #'CosNotification_StructuredEvent'{remainder_of_body = Any}, _Op) ->
     {ok, element(2, any:get_value(Any))};
-lookup(['_d'], S, _Op) when record(S, any) ->
+lookup(['_d'], S, _Op) when is_record(S, any) ->
     {ok, element(2, any:get_value(S))};
 lookup(['_d'], S, _Op) ->
     {ok, element(2, S)};
 
 
-lookup(['_type_id'], S, _Op) when record(S,'CosNotification_StructuredEvent') ->
+lookup(['_type_id'], S, _Op) when is_record(S,'CosNotification_StructuredEvent') ->
     {ok, "StructuredEvent"};
-lookup(['_type_id'], S, _Op) when record(S,'CosNotification_EventHeader') ->
+lookup(['_type_id'], S, _Op) when is_record(S,'CosNotification_EventHeader') ->
     {ok, "EventHeader"};
-lookup(['_type_id'], S, _Op) when record(S,'CosNotification_FixedEventHeader') ->
+lookup(['_type_id'], S, _Op) when is_record(S,'CosNotification_FixedEventHeader') ->
     {ok, "FixedEventHeader"};
-lookup(['_type_id'], S, _Op) when record(S,'CosNotification_EventType') ->
+lookup(['_type_id'], S, _Op) when is_record(S,'CosNotification_EventType') ->
     {ok, "EventType"};
-lookup(['_type_id'], S, _Op) when record(S,'CosNotification_Property') ->
+lookup(['_type_id'], S, _Op) when is_record(S,'CosNotification_Property') ->
     {ok, "Property"};
-lookup(['_type_id'], S, _Op) when tuple(S) ->
+lookup(['_type_id'], S, _Op) when is_tuple(S) ->
     M=element(1, S),
     Name = case catch M:tc() of
 	       {tk_union,_,ID,_,_,_} ->
@@ -659,17 +659,17 @@ lookup(['_type_id'], S, _Op) when tuple(S) ->
 	   end,
     {ok, Name};
 
-lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_StructuredEvent') ->
+lookup(['_repos_id'], S, _Op) when is_record(S,'CosNotification_StructuredEvent') ->
     {ok, 'CosNotification_StructuredEvent':id()};
-lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_EventHeader') ->
+lookup(['_repos_id'], S, _Op) when is_record(S,'CosNotification_EventHeader') ->
     {ok, 'CosNotification_EventHeader':id()};
-lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_FixedEventHeader') ->
+lookup(['_repos_id'], S, _Op) when is_record(S,'CosNotification_FixedEventHeader') ->
     {ok, 'CosNotification_FixedEventHeader':id()};
-lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_EventType') ->
+lookup(['_repos_id'], S, _Op) when is_record(S,'CosNotification_EventType') ->
     {ok, 'CosNotification_EventType':id()};
-lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_Property') ->
+lookup(['_repos_id'], S, _Op) when is_record(S,'CosNotification_Property') ->
     {ok, 'CosNotification_Property':id()};
-lookup(['_repos_id'], S, _Op) when tuple(S) ->
+lookup(['_repos_id'], S, _Op) when is_tuple(S) ->
     M = element(1, S),
     {ok, M:id()};
 
@@ -823,40 +823,40 @@ check_types([#'CosNotification_EventType'{domain_name="*",type_name = ""}|_T],_,
 check_types([#'CosNotification_EventType'{domain_name="*",type_name = "*"}|_T],_,_) ->
     true;
 %% The following cases means that all events must be tested using this constraint.
-check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], domain,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], domain,WC) when is_list(Ty) ->
     check_wildcard(T, all, WC, "", Ty);
-check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], domain, WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], domain, WC) when is_list(Ty) ->
     check_wildcard(T, all, WC, "", Ty);
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], type,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], type,WC) when is_list(Do) ->
     check_wildcard(T, all, WC, Do, "");
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], type,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], type,WC) when is_list(Do) ->
     check_wildcard(T, all, WC, Do, "");
 %% The following cases is used to prevent other cases from converting,
 %% for example, all->type.
-check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], all,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], all,WC) when is_list(Ty) ->
     check_wildcard(T, all, WC, "", Ty);
-check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], all,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], all,WC) when is_list(Ty) ->
     check_wildcard(T, all, WC, "", Ty);
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], all,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], all,WC) when is_list(Do) ->
     check_wildcard(T, all, WC, Do, "");
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], all,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], all,WC) when is_list(Do) ->
     check_wildcard(T, all, WC, Do, "");
 %% The following cases means that all events with matching Type must be 
 %% tested using this constraint.
-check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], _W,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], _W,WC) when is_list(Ty) ->
     check_wildcard(T, type, WC, "", Ty);
-check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], _W,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], _W,WC) when is_list(Ty) ->
     check_wildcard(T, type, WC, "", Ty);
 %% The following cases means that all events with matching Domain must be 
 %% tested using this constraint.
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], _W,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], _W,WC) when is_list(Do) ->
     check_wildcard(T, domain, WC, Do, "");
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], _W,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], _W,WC) when is_list(Do) ->
     check_wildcard(T, domain, WC, Do, "");
 %% Sorry, no shortcuts.
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name=Ty}|T], W,WC) when list(Do), list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name=Ty}|T], W,WC) when is_list(Do) andalso is_list(Ty) ->
     check_wildcard(T, W, WC, Do, Ty);
-check_types([H|_], _,_) when record(H, 'CosNotification_EventType') ->
+check_types([H|_], _,_) when is_record(H, 'CosNotification_EventType') ->
     %% Not valid.
     corba:raise(#'CosNotifyComm_InvalidEventType'{type=H});
 check_types(_,_,_) ->
@@ -950,10 +950,10 @@ match_types(Domain, Type, [_|T]) ->
 validate_types([]) ->
     ok;
 validate_types([#'CosNotification_EventType'{domain_name=Do,type_name=Ty}|T]) 
-  when list(Do), list(Ty) ->
+  when is_list(Do) andalso is_list(Ty) ->
     validate_types(T);
 validate_types([H|_]) 
-  when record(H, 'CosNotification_EventType') ->
+  when is_record(H, 'CosNotification_EventType') ->
     %% Not valid.
     corba:raise(#'CosNotifyComm_InvalidEventType'{type=H});
 validate_types(_) ->

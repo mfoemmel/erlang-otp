@@ -340,7 +340,7 @@ scan_preproc(G, BE, Str, Line, Out) ->
     {List, Rest} = scan_to_nl(strip(Str), []),
     NewLine = get_new_line_nr(strip(List), Line+1, []),
     case scan_number(G, BE, List, [], Line, [{'#', Line} | Out]) of
-	L when list(L) ->
+	L when is_list(L) ->
 	    scan(G, BE, Rest, NewLine, [{'#', Line} | L])
     end.
 

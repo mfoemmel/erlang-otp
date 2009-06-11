@@ -708,6 +708,7 @@ static Eterm
 process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap,
 		  int *yield)
 {
+    int want_messages = 0;
     int def_res_elem_ix_buf[ERTS_PI_DEF_RES_ELEM_IX_BUF_SZ];
     int *res_elem_ix = &def_res_elem_ix_buf[0];
     int res_elem_ix_ix = -1;
@@ -735,6 +736,8 @@ process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap,
 	    res = THE_NON_VALUE;
 	    goto done;
 	}
+	if (arg == am_messages)
+	    want_messages = 1;
 	locks |= pi_locks(arg);
 	res_elem_ix_ix++;
 	if (res_elem_ix_ix >= res_elem_ix_sz) {
@@ -779,10 +782,24 @@ process_info_list(Process *c_p, Eterm pid, Eterm list, int always_wrap,
 	goto done;
     }
 
+    /*
+     * We always handle 'messages' first if should be part
+     * of the result. This since if both 'messages' and
+     * 'message_queue_len' are wanted, 'messages' may
+     * change the result of 'message_queue_len' (in case
+     * the queue contain bad distribution messages).
+     */
+    if (want_messages) {
+	ix = pi_arg2ix(am_messages);
+	ASSERT(part_res[ix] == THE_NON_VALUE);
+	part_res[ix] = process_info_aux(c_p, rp, pid, am_messages, always_wrap);
+	ASSERT(part_res[ix] != THE_NON_VALUE);
+    }
+
     for (; res_elem_ix_ix >= 0; res_elem_ix_ix--) {
 	ix = res_elem_ix[res_elem_ix_ix];
-	arg = pi_ix2arg(ix);
 	if (part_res[ix] == THE_NON_VALUE) {
+	    arg = pi_ix2arg(ix);
 	    part_res[ix] = process_info_aux(c_p, rp, pid, arg, always_wrap);
 	    ASSERT(part_res[ix] != THE_NON_VALUE);
 	}
@@ -1016,66 +1033,149 @@ process_info_aux(Process *BIF_P,
 	if (n == 0 || rp->trace_flags & F_SENSITIVE) {
 	    hp = HAlloc(BIF_P, 3);
 	} else {
+	    int remove_bad_messages = 0;
 	    struct {
 		Uint copy_struct_size;
 		ErlMessage* msgp;
 	    } *mq = erts_alloc(ERTS_ALC_T_TMP, n*sizeof(*mq));
 	    Sint i = 0;
 	    Uint heap_need = 3;
-#ifdef DEBUG
 	    Eterm *hp_end;
-#endif
 
 	    for (mp = rp->msg.first; mp; mp = mp->next) {
 		heap_need += 2;
 		mq[i].msgp = mp;
 		if (rp != BIF_P) {
 		    Eterm msg = ERL_MESSAGE_TERM(mq[i].msgp);
-		    mq[i].copy_struct_size = (is_immed(msg)
+		    if (is_value(msg)) {
+			mq[i].copy_struct_size = (is_immed(msg)
 #ifdef HYBRID
-					      || NO_COPY(msg)
+						  || NO_COPY(msg)
 #endif
-					      ? 0
-					      : size_object(msg));
+						  ? 0
+						  : size_object(msg));
+		    }
+		    else if (mq[i].msgp->data.attached) {
+			mq[i].copy_struct_size
+			    = erts_msg_attached_data_size(mq[i].msgp);
+		    }
+		    else {
+			/* Bad distribution message; ignore */
+			remove_bad_messages = 1;
+			mq[i].copy_struct_size = 0;
+		    }
 		    heap_need += mq[i].copy_struct_size;
 		}
 		else {
 		    mq[i].copy_struct_size = 0;
-		    if (mp->bp)
-			heap_need += mp->bp->size;
+		    if (mp->data.attached)
+			heap_need += erts_msg_attached_data_size(mp);
 		}
 		i++;
 	    }
 
 	    hp = HAlloc(BIF_P, heap_need);
-#ifdef DEBUG
-	    hp_end = hp + heap_need - 3;
+	    hp_end = hp + heap_need;
 	    ASSERT(i == n);
-#endif
 	    for (i--; i >= 0; i--) {
 		Eterm msg = ERL_MESSAGE_TERM(mq[i].msgp);
 		if (rp != BIF_P) {
-		    if (mq[i].copy_struct_size)
-			msg = copy_struct(msg,
-					  mq[i].copy_struct_size,
-					  &hp,
-					  &MSO(BIF_P));
+		    if (is_value(msg)) {
+			if (mq[i].copy_struct_size)
+			    msg = copy_struct(msg,
+					      mq[i].copy_struct_size,
+					      &hp,
+					      &MSO(BIF_P));
+		    }
+		    else if (mq[i].msgp->data.attached) {
+			ErlHeapFragment *hfp;
+			/*
+			 * Decode it into a message buffer and attach it
+			 * to the message instead of the attached external
+			 * term.
+			 *
+			 * Note that we may not pass a process pointer
+			 * to erts_msg_distext2heap(), since it would then
+			 * try to alter locks on that process.
+			 */
+			msg = erts_msg_distext2heap(
+			    NULL, NULL, &hfp, &ERL_MESSAGE_TOKEN(mq[i].msgp),
+			    mq[i].msgp->data.dist_ext);
+
+			ERL_MESSAGE_TERM(mq[i].msgp) = msg;
+			mq[i].msgp->data.heap_frag = hfp;
+
+			if (is_non_value(msg)) {
+			    ASSERT(!mq[i].msgp->data.heap_frag);
+			    /* Bad distribution message; ignore */
+			    remove_bad_messages = 1;
+			    continue;
+			}
+			else {
+			    /* Make our copy of the message */
+			    ASSERT(size_object(msg) == hfp->size);
+			    msg = copy_struct(msg,
+					      hfp->size,
+					      &hp,
+					      &MSO(BIF_P));
+			}
+		    }
+		    else {
+			/* Bad distribution message; ignore */
+			remove_bad_messages = 1;
+			continue;
+		    }
 		}
 		else {
-		    if (mq[i].msgp->bp) {
-			erts_move_msg_mbuf_to_heap(&hp,
-						   &MSO(BIF_P),
-						   mq[i].msgp);
+		    if (mq[i].msgp->data.attached) {
+			/* Decode it on the heap */
+			erts_move_msg_attached_data_to_heap(&hp,
+							    &MSO(BIF_P),
+							    mq[i].msgp);
 			msg = ERL_MESSAGE_TERM(mq[i].msgp);
-			ASSERT(!mq[i].msgp->bp);
+			ASSERT(!mq[i].msgp->data.attached);
+			if (is_non_value(msg)) {
+			    /* Bad distribution message; ignore */
+			    remove_bad_messages = 1;
+			    continue;
+			}
 		    }
 		}
 		    
 		res = CONS(hp, msg, res);
 		hp += 2;
 	    }
-	    ASSERT(hp == hp_end);
+	    HRelease(BIF_P, hp_end, hp+3);
 	    erts_free(ERTS_ALC_T_TMP, mq);
+	    if (remove_bad_messages) {
+		ErlMessage **mpp;
+		/*
+		 * We need to remove bad distribution messages from
+		 * the queue, so that the value returned for
+		 * 'message_queue_len' is consistent with the value
+		 * returned for 'messages'.
+		 */
+		mpp = &rp->msg.first;
+		mp = rp->msg.first;
+		while (mp) {
+		    if (is_value(ERL_MESSAGE_TERM(mp))) {
+			mpp = &mp->next;
+			mp = mp->next;
+		    }
+		    else {
+			ErlMessage* bad_mp = mp;
+			ASSERT(!mp->data.attached);
+			if (rp->msg.save == &mp->next)
+			    rp->msg.save = mpp;
+			if (rp->msg.last == &mp->next)
+			    rp->msg.last = mpp;
+			*mpp = mp->next;
+			mp = mp->next;
+			rp->msg.len--;
+			free_message(bad_mp);
+		    }
+		}
+	    }
 	}
 	break;
     }
@@ -1259,8 +1359,8 @@ process_info_aux(Process *BIF_P,
 	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(rp);
 
 	for (mp = rp->msg.first; mp; mp = mp->next)
-	    if (mp->bp)
-		total_heap_size += mp->bp->size;
+	    if (mp->data.attached)
+		total_heap_size += erts_msg_attached_data_size(mp);
 
 	(void) erts_bld_uint(NULL, &hsz, total_heap_size);
 	hp = HAlloc(BIF_P, hsz);
@@ -1295,8 +1395,8 @@ process_info_aux(Process *BIF_P,
 	size += rp->msg.len * sizeof(ErlMessage);
 
 	for (mp = rp->msg.first; mp; mp = mp->next)
-	    if (mp->bp)
-		size += mp->bp->size*sizeof(Eterm);
+	    if (mp->data.attached)
+		size += erts_msg_attached_data_size(mp)*sizeof(Eterm);
 
 	if (rp->arg_reg != rp->def_arg_reg) {
 	    size += rp->arity * sizeof(rp->arg_reg[0]);
@@ -1839,7 +1939,9 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
     } else if (ERTS_IS_ATOM_STR("dist_ctrl", BIF_ARG_1)) {
 	DistEntry *dep;
 	i = 0;
-	ERTS_SMP_LOCK_NODE_TABLES_AND_ENTRIES;
+	/* Need to be the only thread running... */
+	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	erts_smp_block_system(0);
 	for (dep = erts_visible_dist_entries; dep; dep = dep->next) 
 	    ++i;
 	for (dep = erts_hidden_dist_entries; dep; dep = dep->next)
@@ -1862,7 +1964,8 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	    res = CONS(hp, tpl, res);
 	    hp += 2;
 	}
-	ERTS_SMP_UNLOCK_NODE_TABLES_AND_ENTRIES;
+	erts_smp_release_system();
+	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_system_version) {
 	erts_dsprintf_buf_t *dsbufp = erts_create_tmp_dsbuf(0);
@@ -2906,6 +3009,10 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	    /* Used by process_SUITE (emulator) */
 	    BIF_RET(erts_debug_processes_bif_info(BIF_P));
 	}
+	else if (ERTS_IS_ATOM_STR("max_atom_out_cache_index", BIF_ARG_1)) {
+	    /* Used by distribution_SUITE (emulator) */
+	    BIF_RET(make_small((Uint) erts_debug_max_atom_out_cache_index()));
+	}
 	else if (ERTS_IS_ATOM_STR("available_internal_state", BIF_ARG_1)) {
 	    BIF_RET(am_true);
 	}
@@ -2955,10 +3062,10 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		    DistEntry *dep = erts_find_dist_entry(tp[2]);
 		    if(dep) {
 			Eterm subres;
-			erts_smp_dist_entry_lock(dep);
+			erts_smp_de_links_lock(dep);
 			subres = make_link_list(BIF_P, dep->nlinks, NIL);
 			subres = make_link_list(BIF_P, dep->node_links, subres);
-			erts_smp_dist_entry_unlock(dep);
+			erts_smp_de_links_unlock(dep);
 			erts_deref_dist_entry(dep);
 			BIF_RET(subres);
 		    } else {
@@ -2987,9 +3094,9 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		    DistEntry *dep = erts_find_dist_entry(tp[2]);
 		    if(dep) {
 			Eterm ml;
-			erts_smp_dist_entry_lock(dep);
+			erts_smp_de_links_lock(dep);
 			ml = make_monitor_list(BIF_P, dep->monitors);
-			erts_smp_dist_entry_unlock(dep);
+			erts_smp_de_links_unlock(dep);
 			erts_deref_dist_entry(dep);
 			BIF_RET(ml);
 		    } else {
@@ -3060,13 +3167,36 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		    }
 		    BIF_RET(res);
 		}
-	    } else if (ERTS_IS_ATOM_STR("term_to_binary_no_funs", tp[1])) {
+	    }
+	    else if (ERTS_IS_ATOM_STR("term_to_binary_no_funs", tp[1])) {
 		Uint dflags = (DFLAG_EXTENDED_REFERENCES |
 			       DFLAG_EXTENDED_PIDS_PORTS |
 			       DFLAG_BIT_BINARIES);
 		BIF_RET(erts_term_to_binary(BIF_P, tp[2], 0, dflags));
 	    }
-
+	    else if (ERTS_IS_ATOM_STR("dist_port", tp[1])) {
+		Eterm res = am_undefined;
+		DistEntry *dep = erts_sysname_to_connected_dist_entry(tp[2]);
+		if (dep) {
+		    erts_smp_de_rlock(dep);
+		    if (is_internal_port(dep->cid))
+			res = dep->cid;
+		    erts_smp_de_runlock(dep);
+		    erts_deref_dist_entry(dep);
+		}
+		BIF_RET(res);
+	    }
+	    else if (ERTS_IS_ATOM_STR("atom_out_cache_index", tp[1])) {
+		/* Used by distribution_SUITE (emulator) */
+		if (is_atom(tp[2])) {
+		    BIF_RET(make_small(
+				(Uint)
+				erts_debug_atom_to_out_cache_index(tp[2])));
+		}
+	    }
+	    else if (ERTS_IS_ATOM_STR("fake_scheduler_bindings", tp[1])) {
+		return erts_fake_scheduler_bindings(BIF_P, tp[2]);
+	    }
 	    break;
 	}
 	default:
@@ -3090,7 +3220,7 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 	if (on) {
 	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	    erts_dsprintf(dsbufp, "Process %T ", BIF_P->id);
-	    if (erts_is_alive())
+	    if (erts_is_alive)
 		erts_dsprintf(dsbufp, "on node %T ", erts_this_node->sysname);
 	    erts_dsprintf(dsbufp,
 			  "enabled access to the emulator internal state.\n");
@@ -3285,6 +3415,30 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 	}
 	else if (ERTS_IS_ATOM_STR("abort", BIF_ARG_1)) {
 	    erl_exit(ERTS_ABORT_EXIT, "%T\n", BIF_ARG_2);
+	}
+	else if (ERTS_IS_ATOM_STR("kill_dist_connection", BIF_ARG_1)) {
+	    DistEntry *dep = erts_sysname_to_connected_dist_entry(BIF_ARG_2);
+	    if (!dep)
+		BIF_RET(am_false);
+	    else {
+		Uint32 con_id;
+		erts_smp_de_rlock(dep);
+		con_id = dep->connection_id;
+		erts_smp_de_runlock(dep);
+		erts_kill_dist_connection(dep, con_id);
+		erts_deref_dist_entry(dep);
+		BIF_RET(am_true);
+	    }
+	}
+	else if (ERTS_IS_ATOM_STR("processor_node_topology", BIF_ARG_1)) {
+	    if (BIF_ARG_2 == am_true) {
+		erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+		erts_smp_block_system(0);
+		erts_init_enable_processor_node_topology();
+		erts_smp_release_system();
+		erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+		BIF_RET(am_true);
+	    }
 	}
     }
 

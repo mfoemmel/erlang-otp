@@ -56,7 +56,7 @@ export_text([$> | T], Cont) ->
     "&gt;" ++ export_text(T, Cont);
 export_text([$& | T], Cont) ->
     "&amp;" ++ export_text(T, Cont);
-export_text([C | T], Cont) when integer(C) ->
+export_text([C | T], Cont) when is_integer(C) ->
     [C | export_text(T, Cont)];
 export_text([T | T1], Cont) ->
     export_text(T, [T1 | Cont]);
@@ -73,7 +73,7 @@ export_text(Bin, Cont) ->
 flatten_text(T) ->
     flatten_text(T, []).
 
-flatten_text([C | T], Cont) when integer(C) ->
+flatten_text([C | T], Cont) when is_integer(C) ->
     [C | flatten_text(T, Cont)];
 flatten_text([T | T1], Cont) ->
     flatten_text(T, [T1 | Cont]);
@@ -89,9 +89,9 @@ flatten_text(Bin, Cont) ->
 %% markup-generating functions (`start_tag', `end_tag', ...) always use
 %% `"' to delimit the attribute values.)
 
-export_attribute(I) when integer(I) ->
+export_attribute(I) when is_integer(I) ->
     integer_to_list(I);
-export_attribute(A) when atom(A) ->
+export_attribute(A) when is_atom(A) ->
     export_attribute(atom_to_list(A), []);
 export_attribute(S) ->
     export_attribute(S, []).
@@ -102,7 +102,7 @@ export_attribute([$& | T], Cont) ->
     "&amp;" ++ export_attribute(T, Cont);
 export_attribute([$" | T], Cont) ->
     "&quot;" ++ export_attribute(T, Cont);
-export_attribute([C | T], Cont) when integer(C) ->
+export_attribute([C | T], Cont) when is_integer(C) ->
     [C | export_attribute(T, Cont)];
 export_attribute([T | T1], Cont) ->
     export_attribute(T, [T1 | Cont]);
@@ -169,27 +169,27 @@ expand_element(E = #xmlComment{}, Pos, Parents, Norm) ->
 expand_element(E = #xmlDecl{}, _Pos, _Parents, _Norm) ->
     Attrs = expand_attributes(E#xmlDecl.attributes, 1, []),
     E#xmlDecl{attributes = Attrs};
-expand_element({Tag, Attrs, Content}, Pos, Parents, Norm) when atom(Tag) ->
+expand_element({Tag, Attrs, Content}, Pos, Parents, Norm) when is_atom(Tag) ->
     NewParents = [{Tag, Pos} | Parents],
     #xmlElement{name = Tag,
 		pos = Pos,
 		parents = Parents,
 		attributes = expand_attributes(Attrs, 1, NewParents),
 		content = expand_content(Content, 1, NewParents, Norm)};
-expand_element({Tag, Content}, Pos, Parents, Norm) when atom(Tag) ->
+expand_element({Tag, Content}, Pos, Parents, Norm) when is_atom(Tag) ->
     NewParents = [{Tag, Pos} | Parents],
     #xmlElement{name = Tag,
 		pos = Pos,
 		parents = Parents,
 		attributes = [],
 		content = expand_content(Content, 1, NewParents, Norm)};
-expand_element(Tag, Pos, Parents, _Norm) when atom(Tag) ->
+expand_element(Tag, Pos, Parents, _Norm) when is_atom(Tag) ->
     #xmlElement{name = Tag,
 		pos = Pos,
 		parents = Parents,
 		attributes = [],
 		content = []};
-expand_element(String, Pos, Parents, Norm) when list(String) ->
+expand_element(String, Pos, Parents, Norm) when is_list(String) ->
     #xmlText{pos = Pos,
 	     parents = Parents,
 	     value = expand_text(String, Norm)}.
@@ -269,13 +269,13 @@ simplify_element(#xmlElement{expanded_name = Name,
     {Name, simplify_attributes(Attrs), simplify_content(Content)};
 simplify_element(#xmlText{value = Text}) ->
     Text;
-simplify_element({Tag, Attrs, Content}) when atom(Tag) ->
+simplify_element({Tag, Attrs, Content}) when is_atom(Tag) ->
     {Tag, simplify_attributes(Attrs), simplify_content(Content)};
-simplify_element({Tag, Content}) when atom(Tag) ->
+simplify_element({Tag, Content}) when is_atom(Tag) ->
     {Tag, [], simplify_content(Content)};
-simplify_element(Tag) when atom(Tag) ->
+simplify_element(Tag) when is_atom(Tag) ->
     {Tag, [], []};
-simplify_element(Text) when list(Text) ->
+simplify_element(Text) when is_list(Text) ->
     Text.
 
 simplify_content([#xmlPI{} | T]) ->
@@ -290,9 +290,9 @@ simplify_content([]) ->
     [].
 
 simplify_attributes([#xmlAttribute{name = K, value = V} | T])
-  when atom(K) ->
+  when is_atom(K) ->
     [{K, expand_value(V)} | simplify_attributes(T)];
-simplify_attributes([H = {K, _} | T]) when atom(K) ->
+simplify_attributes([H = {K, _} | T]) when is_atom(K) ->
     [H | simplify_attributes(T)];
 simplify_attributes([]) ->
     [].
@@ -319,7 +319,7 @@ markup(Tag, Attrs, Data) ->
 start_tag(TagStr) ->
     start_tag(TagStr, []).
 
-start_tag(Tag, Attrs) when atom(Tag) ->
+start_tag(Tag, Attrs) when is_atom(Tag) ->
     start_tag(atom_to_list(Tag), Attrs);
 start_tag(TagStr, []) ->
     ["<", TagStr, ">"];
@@ -329,14 +329,14 @@ start_tag(TagStr, Attrs) ->
 empty_tag(Tag) ->
     empty_tag(Tag, []).
 
-empty_tag(Tag, Attrs) when atom(Tag) ->
+empty_tag(Tag, Attrs) when is_atom(Tag) ->
     empty_tag(atom_to_list(Tag), Attrs);
 empty_tag(TagStr, []) ->
     ["<", TagStr, "/>"];
 empty_tag(TagStr, Attrs) ->
     ["<", TagStr, attributes(Attrs), "/>"].
 
-end_tag(Tag) when atom(Tag) ->
+end_tag(Tag) when is_atom(Tag) ->
     end_tag(atom_to_list(Tag));
 end_tag(TagStr) ->
     ["</", TagStr, ">"].
@@ -382,7 +382,7 @@ mapxml(Fun, #xmlElement{}= E) ->
     C1 = Fun(E),
     C2 = mapxml(Fun,lists:flatten(C1#xmlElement.content)),
     C1#xmlElement{content=C2};
-mapxml(Fun, List) when list(List) ->
+mapxml(Fun, List) when is_list(List) ->
     AFun = fun(E) -> mapxml(Fun, E) end,
     lists:map(AFun, List);
 mapxml(Fun, E) ->
@@ -394,7 +394,7 @@ mapxml(Fun, E) ->
 foldxml(Fun, Accu0, #xmlElement{content=C}=E) ->
     Accu1 = Fun(E, Accu0),
     foldxml(Fun, Accu1, C);
-foldxml(Fun, Accu, List) when list(List) ->
+foldxml(Fun, Accu, List) when is_list(List) ->
     AFun = fun(E,A) -> foldxml(Fun, A, E) end,
     lists:foldl(AFun, Accu, List);
 foldxml(Fun, Accu, E) ->
@@ -407,7 +407,7 @@ mapfoldxml(Fun, Accu0, #xmlElement{}=E) ->
     {C1,Accu1} = Fun(E, Accu0),
     {C2,Accu2} = mapfoldxml(Fun, Accu1, lists:flatten(C1#xmlElement.content)),
     {C1#xmlElement{content=C2},Accu2};
-mapfoldxml(Fun, Accu, List) when list(List) ->
+mapfoldxml(Fun, Accu, List) when is_list(List) ->
     AFun = fun(E,A) -> mapfoldxml(Fun, A, E) end,
     lists:mapfoldl(AFun, Accu, List);
 mapfoldxml(Fun, Accu, E) ->
@@ -432,7 +432,7 @@ detect_charset(Content) ->
 %%%   ExtCharset is any externally declared character set (e.g. in HTTP
 %%%   Content-Type header) and Content is an XML Document.
 %%% 
-detect_charset(ExtCharset,Content) when list(ExtCharset) ->
+detect_charset(ExtCharset,Content) when is_list(ExtCharset) ->
     %% FIXME! Don't allow both atom and list for character set names
     detect_charset(list_to_atom(ExtCharset),Content);
 detect_charset(ExtCharset,Content) ->
@@ -513,7 +513,7 @@ autodetect(ExtCharset,Content) ->
     {ExtCharset, Content}.
 
 
-is_ncname(A) when atom(A) ->
+is_ncname(A) when is_atom(A) ->
     is_ncname(atom_to_list(A));
 is_ncname([$_|T]) ->
     is_name1(T);
@@ -524,7 +524,7 @@ is_ncname([H|T]) ->
 	_ -> false
     end.
 
-is_name(A) when atom(A) ->
+is_name(A) when is_atom(A) ->
     is_name(atom_to_list(A));
 is_name([$_|T]) ->
     is_name1(T);

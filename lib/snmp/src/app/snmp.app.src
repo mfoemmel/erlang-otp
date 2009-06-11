@@ -43,6 +43,8 @@
              snmpa_authentication_service, 
              snmpa_conf,
              snmpa_error,
+             snmpa_discovery_handler,
+             snmpa_discovery_handler_default,
              snmpa_error_io,
              snmpa_error_logger,
              snmpa_error_report,

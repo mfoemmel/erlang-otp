@@ -595,6 +595,8 @@ bif os:getenv/1
 bif 'erl.system.os':getenv/1	ebif_os_getenv_1
 bif os:getpid/0
 bif 'erl.system.os':pid/0	ebif_os_pid_0 os_getpid_0
+bif os:timestamp/0
+bif 'erl.system.os':timestamp/0	ebif_os_timestamp_0 os_timestamp_0
 
 #
 # Bifs in the erl_ddll module (the module actually does not exist)
@@ -648,8 +650,8 @@ bif erts_debug:set_internal_state/2
 bif 'erl.system.debug':set_internal_state/2 ebif_erts_debug_set_internal_state_2
 bif erts_debug:display/1
 bif 'erl.system.debug':display/1 ebif_erts_debug_display_1
-
-
+bif erts_debug:dist_ext_to_term/2
+bif 'erl.system.debug':dist_ext_to_term/2 ebif_erts_debug_dist_ext_to_term_2
 
 #
 # Monitor testing bif's...
@@ -731,7 +733,11 @@ bif erlang:atom_to_binary/2
 bif erlang:binary_to_atom/2
 bif erlang:binary_to_existing_atom/2
 bif net_kernel:dflag_unicode_io/1
-
+#
+# New Bifs in R13B-1
+#
+bif ets:give_away/3
+bif ets:setopts/2
 
 #
 # Obsolete

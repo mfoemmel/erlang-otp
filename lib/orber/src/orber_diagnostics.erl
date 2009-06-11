@@ -206,7 +206,7 @@ iter_names(NS, Prefix, Iter, true, Ping) ->
 			corba_object:non_existent(Object);
 		    _ when Ping == true ->
 			case catch corba_object:non_existent(Object) of
-			    Boolean when atom(Boolean) ->
+			    Boolean when is_atom(Boolean) ->
 				Boolean;
 			    _Other ->
 				undefined

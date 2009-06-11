@@ -734,24 +734,24 @@ run_test_case_msgloop(Ref, Pid, CaptureStdout, Terminate, Comment) ->
 		    %% group leader process or io will cause deadlock,
 		    %% so we spawn a dedicated process for the operation
 		    %% and let the group leader go back to handle io.
-		    spawn_fw_call(Mod,Func,{timetrap_timeout,TVal},Loc1,self()),
+		    spawn_fw_call(Mod,Func,Pid,{timetrap_timeout,TVal},Loc1,self()),
 		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
 		{testcase_aborted,Reason,Loc} ->
 		    Loc1 = mod_loc(Loc),
 		    {Mod,Func} = get_mf(Loc1),
-		    spawn_fw_call(Mod,Func,{testcase_aborted,Reason},Loc1,self()),
+		    spawn_fw_call(Mod,Func,Pid,{testcase_aborted,Reason},Loc1,self()),
 		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
 		killed ->			
 		    %% result of an exit(TestCase,kill) call, which is the
 		    %% only way to abort a testcase process that traps exits 
 		    %% (see abort_current_testcase)
-		    spawn_fw_call(undefined,undefined,testcase_aborted_or_killed,
+		    spawn_fw_call(undefined,undefined,Pid,testcase_aborted_or_killed,
 				  unknown,self()),
 		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment);
 		_ ->
 		    %% the testcase has terminated because of Reason (e.g. an exit
 		    %% because a linked process failed)
-		    spawn_fw_call(undefined,undefined,Reason,unknown,self()),
+		    spawn_fw_call(undefined,undefined,Pid,Reason,unknown,self()),
 		    run_test_case_msgloop(Ref,Pid,CaptureStdout,Terminate,Comment)
 	    end;
 	{_FwCallPid,fw_notify_done,Error,Loc} ->
@@ -803,7 +803,7 @@ run_test_case_msgloop_io(ReplyAs,CaptureStdout,Msg,From,Func) ->
 output(Msg,Sender) ->
     local_or_remote_apply({test_server_ctrl,output,[Msg,Sender]}).
 
-spawn_fw_call(Mod,Func,Error,Loc,SendTo) ->
+spawn_fw_call(Mod,Func,Pid,Error,Loc,SendTo) ->
     FwCall =
 	fun() ->
 		case catch fw_error_notify(Mod,Func,[],
@@ -817,7 +817,7 @@ spawn_fw_call(Mod,Func,Error,Loc,SendTo) ->
 		Conf = [{tc_status,{failed,timetrap}}],
 		case catch test_server_sup:framework_call(end_tc,
 							  [?pl2a(Mod),Func,
-							   [Conf]]) of
+							   {Pid,Error,[Conf]}]) of
 		    {'EXIT',FwEndTCErr} ->
 			exit({fw_notify_done,end_tc,FwEndTCErr});
 		    _ ->
@@ -884,17 +884,17 @@ run_test_case_eval(Mod, Func, Args0, Name, Ref, Run_init, MultiplyTimetrap) ->
 					    {ok,Args0}) of
 	    {ok,Args} ->
 		run_test_case_eval1(Mod, Func, Args, Name, Run_init);
-	    {error,Reason} ->
+	    Error = {error,Reason} ->
 		CB = os:getenv("TEST_SERVER_FRAMEWORK"),
 		SkipReason = io_lib:format("{init_tc_failed,~s,~p}",
 					   [CB,Reason]),
 		Return = {{0,{skip,SkipReason}},{list_to_atom(CB),init_tc},[]},
-		test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,Args0]),
+		test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,{Error,Args0}]),
 		Return;
-	    {skip,Reason} ->
+	    Skip = {skip,Reason} ->
 		SkipReason = io_lib:format("~p",[Reason]),
 		Return = {{0,{skip,SkipReason}},{Mod,Func},[]},
-		test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,Args0]),
+		test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,{Skip,Args0}]),
 		Return
 	end,
     exit({Ref,Time,Value,Loc,Opts}).
@@ -905,15 +905,16 @@ run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
 	    put(test_server_loc, {Mod,{init_per_testcase,Func}}),
 	    ensure_timetrap(Args),
 	    case init_per_testcase(Mod,Func,Args) of
-		{skip,Reason} ->
+		Skip = {skip,Reason} ->
 		    Line = get_loc(),
 		    Conf = [{tc_status,{skipped,Reason}}],
-		    test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,[Conf]]),
+		    test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,{Skip,[Conf]}]),
 		    {{0,{skip,Reason}},Line,[]};
 		{skip_and_save,Reason,SaveCfg} ->
 		    Line = get_loc(),
 		    Conf = [{tc_status,{skipped,Reason}},{save_config,SaveCfg}],
-		    test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,[Conf]]),
+		    test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,
+							   {{skip,Reason},[Conf]}]),
 		    {{0,{skip,Reason}},Line,[]};
 		{ok,New_conf} ->
 		    %% init_per_testcase defined,
@@ -921,21 +922,23 @@ run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
 		    put(test_server_loc, {Mod,Func}),
 		    %% execute the test case
 		    {{T,Return},Loc} = {ts_tc(Mod, Func, [New_conf]),get_loc()},
-		    {End_conf,Return1} =
+		    {End_conf,TSReturn,FWReturn} =
 			case Return of
 			    {E,TCError} when E=='EXIT' ; E==failed ->
 				fw_error_notify(Mod,Func,New_conf,
 						TCError,mod_loc(Loc)),
-				{[{tc_status,{failed,TCError}}|New_conf],Return};
+				{[{tc_status,{failed,TCError}}|New_conf],
+				 Return,{error,TCError}};
 			    SaveCfg={save_config,_} ->
-				{[{tc_status,ok},SaveCfg|New_conf],Return};
+				{[{tc_status,ok},SaveCfg|New_conf],Return,ok};
 			    {skip_and_save,Why,SaveCfg} ->
+				Skip = {skip,Why},
 				{[{tc_status,{skipped,Why}},{save_config,SaveCfg}|New_conf],
-				 {skip,Why}};
+				 Skip,Skip};
 			    {skip,Why} ->
-				{[{tc_status,{skipped,Why}}|New_conf],Return};
+				{[{tc_status,{skipped,Why}}|New_conf],Return,Return};
 			    _ ->
-				{[{tc_status,ok}|New_conf],Return}
+				{[{tc_status,ok}|New_conf],Return,ok}
 			end,
 		    End_conf1 =
 			case end_per_testcase(Mod,Func,End_conf) of
@@ -944,13 +947,14 @@ run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
 			    _ -> 
 				End_conf
 			end,
-		    case test_server_sup:framework_call(end_tc, [?pl2a(Mod),Func,[End_conf1]]) of
+		    case test_server_sup:framework_call(end_tc, [?pl2a(Mod),Func,
+								 {FWReturn,[End_conf1]}]) of
 			{fail,Reason} ->
 			    FW = list_to_atom(os:getenv("TEST_SERVER_FRAMEWORK")),
 			    fw_error_notify(Mod, Func, End_conf1, Reason),
 			    {{T,{'EXIT',Reason}},FW,[]};
 			_ ->
-			    {{T,Return1},Loc,[]}
+			    {{T,TSReturn},Loc,[]}
 		    end
 	    end;
 	skip_init ->
@@ -983,7 +987,7 @@ process_return_val([Return], M,F,A, Loc, Final) when is_list(Return) ->
 	true ->		     % must be return value from end conf case
 	    process_return_val1(Return, M,F,A, Loc, Final, []);
 	false ->	     % must be Config value from init conf case
-	    test_server_sup:framework_call(end_tc, [?pl2a(M),F,A]),
+	    test_server_sup:framework_call(end_tc, [?pl2a(M),F,{ok,A}]),
 	    {Return,[]}
     end;
 %% the return value is not a list, so it's the return value from an
@@ -991,16 +995,17 @@ process_return_val([Return], M,F,A, Loc, Final) when is_list(Return) ->
 process_return_val(Return, M,F,A, Loc, Final) ->
     process_return_val1(Return, M,F,A, Loc, Final, []).
 
-process_return_val1([Failed={E,TCError}|_], M,F,A, Loc, _, SaveOpts) when E=='EXIT'; 
-									  E==failed ->
+process_return_val1([Failed={E,TCError}|_], M,F,A=[Args], Loc, _, SaveOpts) when E=='EXIT'; 
+										 E==failed ->
     fw_error_notify(M,F,A, TCError, mod_loc(Loc)),
     test_server_sup:framework_call(end_tc,
-				   [?pl2a(M),F,[[{tc_status,{failed,TCError}}|A]]]),
+				   [?pl2a(M),F,{{error,TCError},
+						[[{tc_status,{failed,TCError}}|Args]]}]),
     {Failed,SaveOpts};
-process_return_val1([SaveCfg={save_config,_}|Opts], M,F,A, Loc, Final, SaveOpts) ->    
-    process_return_val1(Opts, M,F,[SaveCfg|A], Loc, Final, SaveOpts);
-process_return_val1([{skip_and_save,Why,SaveCfg}|Opts], M,F,A, Loc, _, SaveOpts) ->    
-    process_return_val1(Opts, M,F,[{save_config,SaveCfg}|A], Loc, {skip,Why}, SaveOpts);
+process_return_val1([SaveCfg={save_config,_}|Opts], M,F,[Args], Loc, Final, SaveOpts) ->    
+    process_return_val1(Opts, M,F,[[SaveCfg|Args]], Loc, Final, SaveOpts);
+process_return_val1([{skip_and_save,Why,SaveCfg}|Opts], M,F,[Args], Loc, _, SaveOpts) ->    
+    process_return_val1(Opts, M,F,[[{save_config,SaveCfg}|Args]], Loc, {skip,Why}, SaveOpts);
 process_return_val1([GR={return_group_result,_}|Opts], M,F,A, Loc, Final, SaveOpts) ->
     process_return_val1(Opts, M,F,A, Loc, Final, [GR|SaveOpts]);
 process_return_val1([RetVal={Tag,_}|Opts], M,F,A, Loc, _, SaveOpts) when Tag==skip;
@@ -1009,7 +1014,7 @@ process_return_val1([RetVal={Tag,_}|Opts], M,F,A, Loc, _, SaveOpts) when Tag==sk
 process_return_val1([_|Opts], M,F,A, Loc, Final, SaveOpts) ->
     process_return_val1(Opts, M,F,A, Loc, Final, SaveOpts);
 process_return_val1([], M,F,A, _Loc, Final, SaveOpts) ->
-    test_server_sup:framework_call(end_tc, [?pl2a(M),F,A]),
+    test_server_sup:framework_call(end_tc, [?pl2a(M),F,{Final,A}]),
     {Final,lists:reverse(SaveOpts)}.
 
 init_per_testcase(Mod,Func,Args) ->
@@ -1048,8 +1053,7 @@ init_per_testcase(Mod,Func,Args) ->
 				      "ERROR! init_per_testcase crashed!\n"
 				      "\tLocation: ~s\n\tReason: ~p\n",
 				      [FormattedLoc, Reason]},  
-		    SkipReason = io_lib:format("{init_per_testcase_failed,~p",
-					       [Reason]),
+		    SkipReason = {init_per_testcase_failed,Reason},
 		    {skip,SkipReason};
 		Other ->
 		    Line = get_loc(),
@@ -1058,8 +1062,7 @@ init_per_testcase(Mod,Func,Args) ->
 				      "ERROR! init_per_testcase thrown!\n"
 				      "\tLocation: ~s\n\tReason: ~p\n",
 				      [FormattedLoc, Other]},  
-		    SkipReason = io_lib:format("{init_per_testcase_thrown,~p}",
-					       [Other]),
+		    SkipReason = {init_per_testcase_thrown,Other},
 		    {skip,SkipReason}
 	    end;
 	false ->

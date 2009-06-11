@@ -33,6 +33,164 @@
   </header>
 
   <section>
+    <title>SNMP Development Toolkit 4.13.3</title>
+
+    <p>Version 4.13.3 supports code replacement in runtime from/to
+      version 4.13.2, 4.13.1 and 4.13.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+
+      <!-- 
+      <list type="bulleted">
+        <item>
+          <p>[agent] Support for the discovery process. </p>
+          <p>The agent can both initiate discovery itself (see the
+            <seealso marker="snmp_agent_funct_descr#discovery">discovery</seealso> chapter
+            for more info) and respond to discovery initiated by a manager.</p>
+          <p>Own Id: OTP-7571</p>
+	  <p>Aux Id: Seq 11053</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[manager] A request for an oid of type BITS was actually
+            returned as OCTET STRING. </p>
+          <p>Values of type BITS are encoded as OCTET STRING,
+            which makes it impossible for the decoder to know that 
+            they should really be of type BITS. 
+            Instead, this has to be done higher up in the stack, where 
+            there is knowledge of the MIB (assuming that the mib has 
+            been loaded, there is info about the type of the mibentry). </p>
+          <p>This problem has now been fixed, but requires that the MIB 
+            defining this mib-entry is loaded! </p>
+          <p>The utility function 
+            <seealso marker="snmpm#oid_to_type">oid_to_type</seealso>
+            has been added, for debug purpose. </p>
+          <p>The utility function(s)  
+            <seealso marker="snmp#octet_string_to_bits">octet_string_to_bits</seealso>
+            and 
+            <seealso marker="snmp#bits_to_octet_string">bits_to_octet_string</seealso>
+            has also been added. These can be used if the user prefers to 
+            handle the conversion on their own. </p>
+          <p>Own Id: OTP-8015</p>
+	  <p>Aux Id: Seq 11285</p>
+        </item>
+
+        <item>
+          <p>[agent] Fixed some issues with the discovery handling. </p>
+          <p>Changed the API of the 
+            <seealso marker="snmpa#discovery">discovery</seealso>
+            function to solve some 
+            of these problems. </p>
+          <p>Introduced various options for controlling the discovery
+            process. See the 
+            <seealso marker="snmp_app#configuration">configuration</seealso> 
+            chapter for more info about the discovery options.</p>
+          <p>Own Id: OTP-8020</p>
+	  <p>Aux Id: Seq 11295</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.13.3 -->
+
+
+  <section>
+    <title>SNMP Development Toolkit 4.13.2</title>
+
+    <p>Version 4.13.2 supports code replacement in runtime from/to
+      version 4.13.1 and 4.13.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+
+      <!-- 
+      <list type="bulleted">
+        <item>
+          <p>[agent] Support for the discovery process. </p>
+          <p>The agent can both initiate discovery itself (see the
+            <seealso marker="snmp_agent_funct_descr#discovery">discovery</seealso> chapter
+            for more info) and respond to discovery initiated by a manager.</p>
+          <p>Own Id: OTP-7571</p>
+	  <p>Aux Id: Seq 11053</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[manager] Failure during downed user cleanup.
+            As part of the cleanup after a crashed user,
+            the manager attempts to unregister the agents
+            registered by this user. This however failed,
+            causing a server crash. </p>
+          <p>Own Id: OTP-7961</p>
+	  <p>Aux Id: Seq 11275</p>
+        </item>
+
+        <item>
+          <p>[manager] Incorrectly documented value type for 
+            IpAddress (ip). The value type for IpAddress is
+            documented as ip but is actually ia. The value type
+            ip has been added. The old (not documented) value
+            type ia still works. </p>
+          <p>Own Id: OTP-7977</p>
+	  <p>Aux Id: Seq 11279</p>
+        </item>
+
+        <item>
+          <p>[manager] EngineId lookup failes when using version-3. </p>
+          <p>Own Id: OTP-7983</p>
+	  <p>Aux Id: Seq 11275</p>
+        </item>
+
+        <item>
+          <p>[agent] As of version 4.13 the possible return values
+            of the function 
+            <seealso marker="snmpa_mpd#process_packet">snmpa_mpd:process_packet/4</seealso> 
+            changed, but this was not documented. </p>
+          <p>Own Id: OTP-7989</p>
+	  <p>Aux Id: Seq 11275</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.13.2 -->
+
+  <section>
     <title>SNMP Development Toolkit 4.13.1</title>
 
     <p>Version 4.13.1 supports code replacement in runtime from/to

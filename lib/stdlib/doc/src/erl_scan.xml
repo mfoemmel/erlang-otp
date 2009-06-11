@@ -172,7 +172,8 @@ attributes() = line() | list() | tuple()</code>
               </item>
               <tag><c>{error, ErrorInfo, EndLocation}</c></tag>
               <item>
-                <p>An error occurred.</p>
+                <p>An error occurred. <c>LeftOverChars</c> is always
+                  an empty list in this case.</p>
               </item>
             </taglist>
           </item>
@@ -184,7 +185,7 @@ attributes() = line() | list() | tuple()</code>
           </item>
         </taglist>
         <p>The <c>CharSpec</c> <c>eof</c> signals end of file.
-        <c>LeftoverChars</c> will then take the value <c>eof</c> as
+        <c>LeftOverChars</c> will then take the value <c>eof</c> as
           well.</p>
         <p><c>tokens(Continuation, CharSpec, StartLocation)</c> is
           equivalent to <c>tokens(Continuation, CharSpec,

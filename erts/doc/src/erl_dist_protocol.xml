@@ -556,7 +556,54 @@ If Result > 0, the packet only consists of [119, Result].
       </section>
 
       <section>
+        <marker id="connected_nodes"/>
 	<title>Protocol between connected nodes</title>
+	<p>
+	  As of erts version 5.7.2 the runtime system passes a distribution
+	  flag in the handshake stage that enables the use of a
+	  <seealso marker="erl_ext_dist#distribution_header">distribution
+	  header</seealso> on all messages passed. Messages passed between
+	  nodes are in this case on the following format:
+	</p>
+	<table align="left">
+	  <row>
+	    <cell align="center">4</cell>
+	    <cell align="center">d</cell>
+	    <cell align="center">n</cell>
+	    <cell align="center">m</cell>
+	  </row>
+	  <row>
+	    <cell align="center"><c>Length</c></cell>
+	    <cell align="center"><c>DistributionHeader</c></cell>
+	    <cell align="center"><c>ControlMessage</c></cell>
+	    <cell align="center"><c>Message</c></cell>
+	  </row>
+	<tcaption></tcaption></table>
+	<p>
+	  where:
+	</p>
+	<p>
+	  <c>Length</c> is equal to d + n + m
+	</p>
+	<p>
+	  <c>ControlMessage</c> is a tuple passed using the external format of
+	  Erlang.
+	</p>
+	<p>
+	  <c>Message</c> is the message sent to another node using the '!'
+	  (in external format). Note that <c>Message</c> is only passed in
+	  combination with a <c>ControlMessage</c> encoding a send ('!').
+	</p>
+	<p>
+	  Also note that <seealso marker="erl_ext_dist#overall_format">the
+	  version number is omitted from the terms that follow a
+	  distribution header</seealso>.
+	</p>
+	<p>
+	  Nodes with an erts version less than 5.7.2 does not pass the
+	  distribution flag that enables the distribution header. Messages
+	  passed between nodes are in this case on the following format:
+	</p>
 	<table align="left">
 	  <row>
 	    <cell align="center">4</cell>
@@ -565,95 +612,94 @@ If Result > 0, the packet only consists of [119, Result].
 	    <cell align="center">m</cell>
 	  </row>
 	  <row>
-	    <cell align="center">Length</cell>
-	    <cell align="center">Type</cell>
-	    <cell align="center">ControlMsg</cell>
-	    <cell align="center">Message</cell>
+	    <cell align="center"><c>Length</c></cell>
+	    <cell align="center"><c>Type</c></cell>
+	    <cell align="center"><c>ControlMessage</c></cell>
+	    <cell align="center"><c>Message</c></cell>
 	  </row>
 	<tcaption></tcaption></table>
 	<p>
 	  where:
 	</p>
 	<p>
-	  Length is equal to 1 + n + m
-	  
-	  Type is: 112 - pass through
-	  
-	  ControlMsg is a tuple passed using the external format of
-	  Erlang.
-	  
-	  Message is the message sent to another node using the '!'
-	  (in external format).
-	  But, Message is only passed in combination with a ControlMsg
-	  encoding a send ('!').
-	</p>
-	
+	  <c>Length</c> is equal to 1 + n + m
+  	</p>
 	<p>
-	  The control message is a tuple, where the first element indicates
-	  which distributed operation it encodes.
+	  Type is: 112 (pass through)
+	</p>
+	<p>
+	  <c>ControlMessage</c> is a tuple passed using the external format of
+	  Erlang.
+	</p>
+	<p>
+	  <c>Message</c> is the message sent to another node using the '!'
+	  (in external format).  Note that <c>Message</c> is only passed in
+	  combination with a <c>ControlMessage</c> encoding a send ('!').
+	</p>
+	<p>
+	  The <c>ControlMessage</c> is a tuple, where the first element
+	  indicates which distributed operation it encodes.
 	</p>
 	<taglist>
 	  <tag><c>LINK</c></tag>
 	  <item>
 	    <p>
-	      {1, FromPid, ToPid}
+	      <c>{1, FromPid, ToPid}</c>
 	    </p>
 	  </item>
 	  
-	  <tag>SEND</tag>
+	  <tag><c>SEND</c></tag>
 	  <item>
 	    <p>
-	      {2, Cookie, ToPid}
-	      
+	      <c>{2, Cookie, ToPid}</c>
+	    </p>
+	    <p>
+	    <em>Note</em> followed by <c>Message</c>
 	    </p>
 	  </item>
-	</taglist>
-	
-	<note><p>Message is sent as well.</p></note>
-	
-	<taglist>
-	  <tag>EXIT</tag>
+
+	  <tag><c>EXIT</c></tag>
 	  <item>
 	    <p>
-	      {3, FromPid, ToPid, Reason}
-	    </p>
-	  </item>
-	  
-	  <tag>UNLINK</tag>
-	  <item>
-	    <p>
-	      {4, FromPid, ToPid}
+	      <c>{3, FromPid, ToPid, Reason}</c>
 	    </p>
 	  </item>
 	  
-	  <tag>NODE_LINK</tag>
+	  <tag><c>UNLINK</c></tag>
 	  <item>
 	    <p>
-	      {5}
+	      <c>{4, FromPid, ToPid}</c>
 	    </p>
 	  </item>
 	  
-	  <tag>REG_SEND</tag>
+	  <tag><c>NODE_LINK</c></tag>
 	  <item>
 	    <p>
-	      {6, FromPid, Cookie, ToName}
+	      <c>{5}</c>
 	    </p>
 	  </item>
-	</taglist>
-	<note><p>Message is sent as well.</p></note>
-	
-	<taglist>
-	  <tag>GROUP_LEADER</tag>
+	  
+	  <tag><c>REG_SEND</c></tag>
 	  <item>
 	    <p>
-	      {7, FromPid, ToPid}
+	      <c>{6, FromPid, Cookie, ToName}</c>
+	    </p>
+	    <p>
+	    <em>Note</em> followed by <c>Message</c>
+	    </p>
+	  </item>
+
+	  <tag><c>GROUP_LEADER</c></tag>
+	  <item>
+	    <p>
+	      <c>{7, FromPid, ToPid}</c>
 	    </p>
 	  </item>
 	
-	  <tag>EXIT2</tag>
+	  <tag><c>EXIT2</c></tag>
 	  <item>
 	    <p>
-	      {8, FromPid, ToPid, Reason}
+	      <c>{8, FromPid, ToPid, Reason}</c>
 	    </p>
 	  </item>
 	</taglist>
@@ -662,38 +708,41 @@ If Result > 0, the packet only consists of [119, Result].
   
     <section>
       <title>New Ctrlmessages for distrvsn = 1 (OTP R4)</title>
-      <section>
-	<title>SEND_TT</title>
+      <taglist>
+	<tag><c>SEND_TT</c></tag>
+	<item>
 	<p>
-	  {12, Cookie, ToPid, TraceToken}
-	  
+	  <c>{12, Cookie, ToPid, TraceToken}</c>
 	</p>
-	<note><p>Message is sent as well.</p></note>
-      </section>
+	<p>
+	<em>Note</em> followed by <c>Message</c>
+	</p>
+	</item>
+
+	<tag><c>EXIT_TT</c></tag>
+	<item>
+	<p>
+	  <c>{13, FromPid, ToPid, TraceToken, Reason}</c>	  
+	</p>
+	</item>
       
-      <section>
-	<title>EXIT_TT</title>
+	<tag><c>REG_SEND_TT</c></tag>
+	<item>
 	<p>
-	  {13, FromPid, ToPid, TraceToken, Reason}
-	  
+	  <c>{16, FromPid, Cookie, ToName, TraceToken}</c>
 	</p>
-      </section>
+	<p>
+	<em>Note</em> followed by <c>Message</c>
+	</p>
+	</item>
       
-      <section>
-	<title>REG_SEND_TT</title>
+	<tag><c>EXIT2_TT</c></tag>
+	<item>
 	<p>
-	  {16, FromPid, Cookie, ToName, TraceToken}
-	  
+	  <c>{18, FromPid, ToPid, TraceToken, Reason}</c>
 	</p>
-	<note><p>Message is sent as well.</p></note>
-      </section>
-      
-      <section>
-	<title>EXIT2_TT</title>
-	<p>
-	  {18, FromPid, ToPid, TraceToken, Reason}
-	</p>
-      </section>
+	</item>
+      </taglist>
     </section>
     
     <section>
@@ -715,38 +764,38 @@ If Result > 0, the packet only consists of [119, Result].
       <p>
 	These are only recognized by Erlang nodes, not by hidden nodes.
       </p>
-      <section>
-	<title>MONITOR_P</title>
+      <taglist>
+	<tag><c>MONITOR_P</c></tag>
+	<item>
 	<p>
-	  {19, FromPid, ToProc, Ref}
+	  <c>{19, FromPid, ToProc, Ref}</c>
 	  
-	  FromPid = monitoring process
-	  ToProc = monitored process pid or name (atom)
+	  <c>FromPid</c> = monitoring process
+	  <c>ToProc</c> = monitored process pid or name (atom)
 	</p>
-      </section>
+	</item>
       
-      <section>
-	<title>DEMONITOR_P</title>
+	<tag><c>DEMONITOR_P</c></tag>
+	<item>
 	<p>
-	  {20, FromPid, ToProc, Ref}
+	  <c>{20, FromPid, ToProc, Ref}</c>
 	  We include the FromPid just in case we want to trace this.
 	  
-	  FromPid = monitoring process
-	  ToProc = monitored process pid or name (atom)
+	  <c>FromPid</c> = monitoring process
+	  <c>ToProc</c> = monitored process pid or name (atom)
 	</p>
-      </section>
-      
-      <section>
-	<title>MONITOR_P_EXIT</title>
+	</item>
+
+	<tag><c>MONITOR_P_EXIT</c></tag>
+	<item>
 	<p>
-	  {21, FromProc, ToPid, Ref, Reason}
+	  <c>{21, FromProc, ToPid, Ref, Reason}</c>
 	  
-	  FromProc = monitored process pid or name (atom)
-	  ToPid = monitoring process
-	  Reason = exit reason for the monitored process
+	  <c>FromProc</c> = monitored process pid or name (atom)
+	  <c>ToPid</c> = monitoring process
+	  <c>Reason</c> = exit reason for the monitored process
 	</p>
-      </section>
+	</item>
+      </taglist>
     </section>
   </chapter>
-  
-

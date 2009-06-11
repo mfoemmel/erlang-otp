@@ -535,7 +535,7 @@ handle_msg(#ssh_msg_channel_open{sender_channel = ChannelId}, Connection,
     FailMsg = channel_open_failure_msg(ChannelId, 
 				       ?SSH_OPEN_ADMINISTRATIVELY_PROHIBITED,
 				       "Not allowed", "en"),
-    {replies, [{connection_reply, ConnectionPid, FailMsg}], Connection};
+    {{replies, [{connection_reply, ConnectionPid, FailMsg}]}, Connection};
 
 handle_msg(#ssh_msg_channel_request{recipient_channel = ChannelId,
 				    request_type = "exit-status",

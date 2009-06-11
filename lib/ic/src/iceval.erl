@@ -40,7 +40,7 @@
 eval_const(G, S, N, tk_fixed, Expr) ->
     case catch eval_e(G, S, N, tk_fixed, Expr) of
 	T when element(1, T) == error -> 0;
-	V when record(V, fixed) -> 
+	V when is_record(V, fixed) -> 
 	    {ok, {tk_fixed, V#fixed.digits, V#fixed.scale}, V};
 	V ->
 	    ic_error:error(G, {bad_tk_match, Expr, tk_fixed, get_val(V)})		      
@@ -80,22 +80,22 @@ check_op(G, S, N, Tk, Types, Op, E1) ->
 %% Match the declared type TK against the factual value of an constant
 %%
 check_tk(_G, _Any, default) -> true;		% Default case in union
-check_tk(_G, positive_int, V) when integer(V), V >= 0 -> true;
-check_tk(_G, tk_long, V) when integer(V) -> true;
-check_tk(_G, tk_longlong, V) when integer(V) -> true;  %% LLON_G
-check_tk(_G, tk_short, V) when integer(V) -> true;
-check_tk(_G, tk_ushort, V) when integer(V), V >= 0 -> true;
-check_tk(_G, tk_ulong, V) when integer(V), V >= 0 -> true;
-check_tk(_G, tk_ulonglong, V) when integer(V), V >= 0 -> true;  %% ULLON_G
-check_tk(_G, tk_float, V) when float(V) -> true;
-check_tk(_G, tk_double, V) when float(V) -> true;
+check_tk(_G, positive_int, V) when is_integer(V) andalso V >= 0 -> true;
+check_tk(_G, tk_long, V) when is_integer(V) -> true;
+check_tk(_G, tk_longlong, V) when is_integer(V) -> true;  %% LLON_G
+check_tk(_G, tk_short, V) when is_integer(V) -> true;
+check_tk(_G, tk_ushort, V) when is_integer(V) andalso V >= 0 -> true;
+check_tk(_G, tk_ulong, V) when is_integer(V) andalso V >= 0 -> true;
+check_tk(_G, tk_ulonglong, V) when is_integer(V) andalso V >= 0 -> true;  %% ULLON_G
+check_tk(_G, tk_float, V) when is_float(V) -> true;
+check_tk(_G, tk_double, V) when is_float(V) -> true;
 check_tk(_G, tk_boolean, V) -> is_bool(V);
 check_tk(_G, tk_char, {char, _V}) -> true;
 check_tk(_G, tk_wchar, {wchar, _V}) -> true; %% WCHAR
 check_tk(_G, {tk_string, _Len}, {string, _V}) -> true;
 check_tk(_G, {tk_wstring, _Len}, {wstring, _V}) -> true;  %% WSTRING
 check_tk(_G, {tk_fixed, Digits, Scale}, {fixed, Digits, Scale, _V}) -> true;
-check_tk(_G, tk_octet, V) when integer(V) -> true;
+check_tk(_G, tk_octet, V) when is_integer(V) -> true;
 %%check_tk(_G, tk_null, V) when integer(V) -> true;
 %%check_tk(_G, tk_void, V) when integer(V) -> true;
 %%check_tk(_G, tk_any, V) when integer(V) -> true;
@@ -116,11 +116,11 @@ get_val({enum_id, X}) -> X;
 get_val(X) -> X.
 
 check_types(G, Op, Expr, TypeList, V) ->
-    case until(fun(int) when integer(V) -> true;
-		  (float) when float(V) -> true;
+    case until(fun(int) when is_integer(V) -> true;
+		  (float) when is_float(V) -> true;
 		  (bool) when V==true -> true;
 		  (bool) when V==false -> true;
-		  (fixed) when record(V, fixed) -> true;
+		  (fixed) when is_record(V, fixed) -> true;
 		  (_) -> false end,
 	       TypeList) of
 	true -> true;
@@ -142,16 +142,16 @@ until(_F, []) -> false.
 
 %% Section of all the boolean operators (because Erlang ops don't like
 %% boolean values.
-e_or(X, Y) when integer(X), integer(Y) -> X bor Y;
+e_or(X, Y) when is_integer(X) andalso is_integer(Y) -> X bor Y;
 e_or(true, _) -> true;
 e_or(_, true) -> true;
 e_or(_, _) -> false.
 
-e_and(X, Y) when integer(X), integer(Y) -> X band Y;
+e_and(X, Y) when is_integer(X) andalso is_integer(Y) -> X band Y;
 e_and(true, true) -> true;
 e_and(_, _) -> false.
 
-e_xor(X, Y) when integer(X), integer(Y) -> X bxor Y;
+e_xor(X, Y) when is_integer(X) andalso is_integer(Y) -> X bxor Y;
 e_xor(X, X) -> false;
 e_xor(_, _) -> true.
 
@@ -202,10 +202,10 @@ e_fixed_div(#fixed{digits = D1, scale = S1, value = V1},
 %% interchangeable, and all types are allowed with themselves. No
 %% other combinations are allowed
 %%
-check_comb(X, Y) when integer(X), integer(Y) -> true;
-check_comb(X, Y) when float(X), integer(Y) -> true;
-check_comb(X, Y) when integer(X), float(Y) -> true;
-check_comb(X, Y) when float(X), float(Y) -> true;
+check_comb(X, Y) when is_integer(X) andalso is_integer(Y) -> true;
+check_comb(X, Y) when is_float(X) andalso is_integer(Y) -> true;
+check_comb(X, Y) when is_integer(X) andalso is_float(Y) -> true;
+check_comb(X, Y) when is_float(X) andalso is_float(Y) -> true;
 check_comb({X, _}, {X, _}) -> true;		% Strings and chars are tuples
 check_comb({fixed, _, _, _}, {fixed, _, _, _}) -> true;
 check_comb(X, Y) ->
@@ -247,14 +247,14 @@ eval_e(G, S, N, Tk, {'lshift', T1, T2}) ->
 %%%% (19)
 eval_e(G, S, N, Tk, {'+', T1, T2}) ->
     case check_op(G, S, N, Tk, [int, float, fixed], '+', T1, T2) of
-	{F1, F2} when record(F1,fixed), record(F2,fixed) ->
+	{F1, F2} when is_record(F1,fixed) andalso is_record(F2,fixed) ->
 	    e_fixed_add(F1, F2);
 	{E1, E2} ->
 	    E1 + E2
     end;
 eval_e(G, S, N, Tk, {'-', T1, T2}) ->
     case check_op(G, S, N, Tk, [int, float, fixed], '-', T1, T2) of
-	{F1, F2} when record(F1,fixed), record(F2,fixed) ->
+	{F1, F2} when is_record(F1,fixed) andalso is_record(F2,fixed) ->
 	    e_fixed_sub(F1, F2);
 	{E1, E2} ->
 	    E1 - E2
@@ -263,14 +263,14 @@ eval_e(G, S, N, Tk, {'-', T1, T2}) ->
 %%%% (20)
 eval_e(G, S, N, Tk, {'*', T1, T2}) ->
     case check_op(G, S, N, Tk, [int, float, fixed], '*', T1, T2) of
-	{F1, F2} when record(F1,fixed), record(F2,fixed) ->
+	{F1, F2} when is_record(F1,fixed) andalso is_record(F2,fixed) ->
 	    e_fixed_mul(F1, F2);
 	{E1, E2} ->
 	    E1 * E2
     end;
 eval_e(G, S, N, Tk, {'/', T1, T2}) ->
     case check_op(G, S, N, Tk, [int, float, fixed], '/', T1, T2) of
-	{F1, F2} when record(F1,fixed), record(F2,fixed) ->
+	{F1, F2} when is_record(F1,fixed) andalso is_record(F2,fixed) ->
 	    e_fixed_div(F1, F2);
 	{E1, E2} ->
 	    E1 / E2
@@ -282,7 +282,7 @@ eval_e(G, S, N, Tk, {'%', T1, T2}) ->
 %%%% (21)
 eval_e(G, S, N, Tk, {{'-', _Line}, T}) ->
     case check_op(G, S, N, Tk, [int, float, fixed], '-', T) of
-	F when record(F,fixed) ->
+	F when is_record(F,fixed) ->
 	    F#fixed{value = -(F#fixed.value)};
 	Number ->
 	    -Number

@@ -58,14 +58,20 @@ int
 main(int argc, char *argv[])
 {
     int i, from, to;
+    int erts_spawn_executable = 0;
 
     /* OBSERVE!
      * Keep child setup after fork() (implemented in sys.c) up to date
      * if changes are made here.
      */
 
-    if (argc != CS_ARGV_NO_OF_ARGS)
-	return 1;
+    if (argc != CS_ARGV_NO_OF_ARGS) {
+	if (argc < CS_ARGV_NO_OF_ARGS) {
+	    return 1;
+	} else {
+	    erts_spawn_executable = 1;
+	}
+    }
 
     if (strcmp("false", argv[CS_ARGV_UNBIND_IX]) != 0)
 	if (erts_unbind_from_cpu_str(argv[CS_ARGV_UNBIND_IX]) != 0)
@@ -102,6 +108,15 @@ main(int argc, char *argv[])
     sys_sigrelease(SIGINT);
     sys_sigrelease(SIGUSR1);
 
-    execl("/bin/sh", "sh", "-c", argv[CS_ARGV_CMD_IX], (char *) NULL);
+    if (erts_spawn_executable) {
+	if (argv[CS_ARGV_NO_OF_ARGS + 1] == NULL) {
+	    execl(argv[CS_ARGV_NO_OF_ARGS],argv[CS_ARGV_NO_OF_ARGS],
+		  (char *) NULL);
+	} else {
+	    execv(argv[CS_ARGV_NO_OF_ARGS],&(argv[CS_ARGV_NO_OF_ARGS + 1]));
+	}
+    } else {
+	execl("/bin/sh", "sh", "-c", argv[CS_ARGV_CMD_IX], (char *) NULL);
+    }
     return 1;
 }

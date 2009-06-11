@@ -400,11 +400,10 @@ emend(Expr, S, Var) ->
 	      false -> Expr
 	    end,
   SRC2 = ?RTL:alu_src2(NewExpr),
-  NewExpr2 = case SRC2 =:= S of
-	       true  -> ?RTL:alu_src2_update(NewExpr,Var);
-	       false -> NewExpr
-	     end,
-  NewExpr2.
+  case SRC2 =:= S of
+    true  -> ?RTL:alu_src2_update(NewExpr,Var);
+    false -> NewExpr
+  end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1230,11 +1229,10 @@ prepare_inst(Expr) ->
 	      #temp{} -> ?RTL:alu_src1_update(Expr,S1#temp.var);
 	      _ -> Expr
 	    end,
-  NewExpr = case S2 of
-	      #temp{} -> ?RTL:alu_src2_update(NewInst,S2#temp.var);
-	      _ -> NewInst
-	    end,
-  NewExpr.
+  case S2 of
+    #temp{} -> ?RTL:alu_src2_update(NewInst,S2#temp.var);
+    _ -> NewInst
+  end.
 
 get_insertions([],OpAcc,InsertionsAcc,_Visited,_Expr,_XsiG) ->
   {OpAcc,InsertionsAcc};
@@ -1246,8 +1244,8 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
       case gb_trees:lookup(Pred,InsertionsAcc) of
         {value,Insertion} ->
           From = Insertion#insertion.from,
-          case lists:keysearch(Op,1,From) of
-            false -> 
+          case lists:keyfind(Op, 1, From) of
+            false ->
               ?pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Dst = Op#bottom.var,
               Expr2 = ?RTL:alu_dst_update(Expr,Dst),
@@ -1255,7 +1253,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
               Code = Insertion#insertion.code,
               NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
               NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc);
-            {value,{_,Val}} ->
+            {_, Val} ->
               ?pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
@@ -1272,8 +1270,8 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
       case gb_trees:lookup(Pred,InsertionsAcc) of
         {value,Insertion} ->
           From = Insertion#insertion.from,
-          case lists:keysearch(Op,1,From) of
-            false -> 
+          case lists:keyfind(Op, 1, From) of
+            false ->
               ?pp_debug("~nThere have been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Dst = Op#const_expr.var,
               Val = Op#const_expr.value,
@@ -1281,7 +1279,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
               Code = Insertion#insertion.code,
               NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
               NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc);
-            {value,{_,Val}} ->
+            {_, Val} ->
               ?pp_debug("~nThere have been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
@@ -1300,8 +1298,8 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
       case gb_trees:lookup(Pred,InsertionsAcc) of
         {value,Insertion} ->
           From = Insertion#insertion.from,
-          case lists:keysearch(Op,1,From) of
-            false -> 
+          case lists:keyfind(Op, 1, From) of
+            false ->
               ?pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Dst = Op#eop.var,
               Expr2 = ?RTL:alu_dst_update(Expr,Dst),
@@ -1309,7 +1307,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
               Code = Insertion#insertion.code,
               NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
               NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc);
-            {value,{_,Val}} ->
+            {_, Val} ->
               ?pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
@@ -1326,8 +1324,8 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
       case gb_trees:lookup(Pred,InsertionsAcc) of
         {value,Insertion} ->
           From = Insertion#insertion.from,
-          case lists:keysearch(Op,1,From) of
-            false -> 
+          case lists:keyfind(Op, 1, From) of
+            false ->
               ?pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Key = Op#temp.key,
               {_V,Xsi} = ?GRAPH:vertex(XsiG,Key),      
@@ -1345,7 +1343,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
                   NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
                   NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc)
               end;
-            {value,{_,Val}} ->
+            {_, Val} ->
               ?pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too (Op=~w)",[Pred,Op]),
               ?pp_debug("~nThis means, this temp is a WBA Xsi's definition",[]),
               Dst = Val,
@@ -1420,10 +1418,10 @@ make_insertions(L, [OldPred|Is], ITree, Cfg) ->
 xsi_oplist(#xsi{opList=OpList}) ->
   case OpList of undefined -> [] ; _ -> OpList end.
 xsi_arg(Xsi, Pred) ->
-  case lists:keysearch(Pred, #xsi_op.pred ,xsi_oplist(Xsi)) of
+  case lists:keyfind(Pred, #xsi_op.pred, xsi_oplist(Xsi)) of
     false ->
       undetermined_operand;
-    {value,R} ->
+    R ->
       R#xsi_op.op
   end.
 xsi_arg_update(Xsi, Pred, Op) ->

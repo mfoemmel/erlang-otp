@@ -33,28 +33,33 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(timers, {request_timers = [], % [ref()]
-		 queue_timer % ref()
-	      }).
+-record(timers, 
+	{
+	  request_timers = [], % [ref()]
+	  queue_timer          % ref()
+	 }).
 
--record(state, {request,        % #request{}
-                session,        % #tcp_session{} 
-                status_line,    % {Version, StatusCode, ReasonPharse}
-                headers,        % #http_response_h{}
-                body,           % binary()
-                mfa,            % {Moduel, Function, Args}
-                pipeline = queue:new(),% queue() 
-		keep_alive = queue:new(),% queue() 
-		status = new,          % new | pipeline | keep_alive | close | ssl_tunnel
-		canceled = [],	       % [RequestId]
-                max_header_size = nolimit,   % nolimit | integer() 
-                max_body_size = nolimit,     % nolimit | integer()
-		options,                     % #options{}
-		timers = #timers{},          % #timers{}
-		profile_name,                % atom() - id of httpc_manager
-					     % process.
-		once                         % send | undefined 
-	       }).
+-record(state, 
+	{
+	  request,                   % #request{}
+	  session,                   % #tcp_session{} 
+	  status_line,               % {Version, StatusCode, ReasonPharse}
+	  headers,                   % #http_response_h{}
+	  body,                      % binary()
+	  mfa,                       % {Moduel, Function, Args}
+	  pipeline = queue:new(),    % queue() 
+	  keep_alive = queue:new(),  % queue() 
+	  status = new,   % new | pipeline | keep_alive | close | ssl_tunnel
+	  canceled = [],	     % [RequestId]
+	  max_header_size = nolimit, % nolimit | integer() 
+	  max_body_size = nolimit,   % nolimit | integer()
+	  options,                   % #options{}
+	  timers = #timers{},        % #timers{}
+	  profile_name,              % atom() - id of httpc_manager process.
+	  once                       % send | undefined 
+	 }).
+
+
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -83,6 +88,7 @@ start_link(Request, Options, ProfileName) ->
     {ok, proc_lib:spawn_link(?MODULE, init, [[Request, Options, 
 					      ProfileName]])}.
 
+
 %%--------------------------------------------------------------------
 %% Function: send(Request, Pid) -> ok 
 %%	Request = #request{}
@@ -93,6 +99,7 @@ start_link(Request, Options, ProfileName) ->
 %%--------------------------------------------------------------------
 send(Request, Pid) ->
     call(Request, Pid, 5000).
+
 
 %%--------------------------------------------------------------------
 %% Function: cancel(RequestId, Pid) -> ok
@@ -116,6 +123,7 @@ cancel(RequestId, Pid) ->
 stream_next(Pid) ->
     cast(stream_next, Pid).
 
+
 %%--------------------------------------------------------------------
 %% Function: stream(BodyPart, Request, Code) -> _
 %%	BodyPart = binary()
@@ -132,23 +140,23 @@ stream(BodyPart, Request = #request{stream = none}, _) ->
     {BodyPart, Request};
 
 %% Stream to caller
-stream(BodyPart, Request = #request{stream = Self}, 
-       Code) when ((Code == 200) or (Code == 206)) and 
-		  ((Self == self) or (Self == {self, once})) ->
+stream(BodyPart, Request = #request{stream = Self}, Code) 
+  when ((Code =:= 200) orelse  (Code =:= 206)) andalso 
+       ((Self =:= self) orelse (Self =:= {self, once})) ->
     
     httpc_response:send(Request#request.from, 
 			{Request#request.id, stream, BodyPart}),
     {<<>>, Request};
 
 stream(BodyPart, Request = #request{stream = Self}, 404) 
-  when Self == self; Self == {self, once} ->
+  when (Self =:= self) orelse (Self =:= {self, once}) ->
     httpc_response:send(Request#request.from,
                        {Request#request.id, stream, BodyPart}),
     {<<>>, Request};
 
+%% Stream to file
 stream(BodyPart, Request = #request{stream = Filename}, Code)
-  when ((Code == 200) or (Code == 206)) 
-       and is_list(Filename) -> % Stream to file
+  when ((Code =:= 200) orelse (Code =:= 206)) andalso is_list(Filename) -> 
     case file:open(Filename, [write, raw, append, delayed_write]) of
 	{ok, Fd} ->
 	    stream(BodyPart, Request#request{stream = Fd}, 200);
@@ -156,8 +164,9 @@ stream(BodyPart, Request = #request{stream = Filename}, Code)
 	    exit({stream_to_file_failed, Reason})
     end;
 
+%% Stream to file
 stream(BodyPart, Request = #request{stream = Fd}, Code)  
-  when ((Code == 200) or (Code == 206)) -> % Stream to file
+  when ((Code =:= 200) orelse (Code =:= 206)) -> 
     case file:write(Fd, BodyPart) of
 	ok ->
 	    {<<>>, Request};
@@ -167,6 +176,7 @@ stream(BodyPart, Request = #request{stream = Fd}, Code)
 
 stream(BodyPart, Request,_) -> % only 200 and 206 responses can be streamed
     {BodyPart, Request}.
+
 
 %%====================================================================
 %% Server functions
@@ -189,6 +199,7 @@ stream(BodyPart, Request,_) -> % only 200 and 206 responses can be streamed
 %%--------------------------------------------------------------------
 init([Request, Options, ProfileName]) ->
     process_flag(trap_exit, true),
+
     handle_verbose(Options#options.verbose),
     Address = handle_proxy(Request#request.address, Options#options.proxy),
     {ok, State} =
@@ -313,7 +324,7 @@ handle_call(Request, _, #state{session = Session =
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
 
-%% When the request in process has been canceld the handler process is
+%% When the request in process has been canceled the handler process is
 %% stopped and the pipelined requests will be reissued or remaining
 %% requests will be sent on a new connection. This is is
 %% based on the assumption that it is proably cheaper to reissue the
@@ -351,12 +362,14 @@ handle_info({Proto, _Socket, Data}, State =
 		   request = #request{method = Method, 
 				      stream = Stream} = Request, 
 		   session = Session, status_line = StatusLine}) 
-  when Proto == tcp; Proto == ssl; Proto == httpc_handler ->
+  when (Proto =:= tcp) orelse 
+       (Proto =:= ssl) orelse 
+       (Proto =:= httpc_handler) ->
 
     try Module:Function([Data | Args]) of
         {ok, Result} ->
             handle_http_msg(Result, State); 
-        {_, whole_body, _} when Method == head ->
+        {_, whole_body, _} when Method =:= head ->
 	    handle_response(State#state{body = <<>>}); 
 	{Module, whole_body, [Body, Length]} ->
 	    {_, Code, _} = StatusLine,
@@ -397,7 +410,7 @@ handle_info({Proto, _Socket, Data}, State =
     end;
 
 %% The Server may close the connection to indicate that the
-%% whole body is now sent instead of sending an lengh
+%% whole body is now sent instead of sending an length
 %% indicator.
 handle_info({tcp_closed, _}, State = #state{mfa = {_, whole_body, Args}}) ->
     handle_response(State#state{body = hd(Args)}); 
@@ -411,10 +424,16 @@ handle_info({ssl_closed, _}, State = #state{request = undefined}) ->
     {stop, normal, State};
 
 %%% Error cases
-handle_info({tcp_closed, _}, State) ->
-    {stop, session_remotly_closed, State};
-handle_info({ssl_closed, _}, State) ->
-    {stop, session_remotly_closed, State};
+handle_info({tcp_closed, _}, #state{session = Session0} = State) ->
+    Socket  = Session0#tcp_session.socket,
+    Session = Session0#tcp_session{socket = {remote_close, Socket}},
+    %% {stop, session_remotly_closed, State};
+    {stop, normal, State#state{session = Session}};
+handle_info({ssl_closed, _}, #state{session = Session0} = State) ->
+    Socket  = Session0#tcp_session.socket,
+    Session = Session0#tcp_session{socket = {remote_close, Socket}},
+    %% {stop, session_remotly_closed, State};
+    {stop, normal, State#state{session = Session}};
 handle_info({tcp_error, _, _} = Reason, State) ->
     {stop, Reason, State};
 handle_info({ssl_error, _, _} = Reason, State) ->
@@ -459,22 +478,50 @@ handle_info({'EXIT', _, _}, State = #state{request = undefined}) ->
 handle_info({'EXIT', _, _}, State) ->
     {noreply, State#state{status = close}}.
     
+
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> _  (ignored by gen_server)
 %% Description: Shutdown the httpc_handler
 %%--------------------------------------------------------------------
+
+%% Init error there is no socket to be closed.
 terminate(normal, #state{session = undefined}) ->
-    ok;  %% Init error there is no socket to be closed.
+    ok;  
+
+%% Init error sending, no session information has been setup but
+%% there is a socket that needs closing.
 terminate(normal, #state{request = Request,
 			 session = #tcp_session{id = undefined,
 						socket = Socket}}) ->  
-    %% Init error sending, no session information has been setup but
-    %% there is a socket that needs closing.
     http_transport:close(socket_type(Request), Socket);
 
-terminate(_, State = #state{session = Session, request = undefined,
+%% Socket closed remotely
+terminate(normal, 
+	  #state{session = #tcp_session{socket = {remote_close, Socket},
+					id     = Id}, 
+		 profile_name = ProfileName,
+		 request = Request,
+		 timers  = Timers,
+		 pipeline = Pipeline}) ->  
+    %% Clobber session
+    (catch httpc_manager:delete_session(Id, ProfileName)),
+
+    %% Cancel timers
+    #timers{request_timers = ReqTmrs, queue_timer = QTmr} = Timers, 
+    cancel_timer(QTmr, timeout_queue),
+    lists:foreach(fun({_, Timer}) -> cancel_timer(Timer, timeout) end, 
+		  ReqTmrs),
+
+    %% Maybe deliver answers to requests
+    deliver_answers([Request | queue:to_list(Pipeline)]),
+
+    %% And, just in case, close our side (**really** overkill)
+    http_transport:close(socket_type(Request), Socket);
+
+terminate(_, State = #state{session      = Session, 
+			    request      = undefined,
 			    profile_name = ProfileName,
-			    timers = Timers}) -> 
+			    timers       = Timers}) -> 
     catch httpc_manager:delete_session(Session#tcp_session.id,
 				       ProfileName),
     
@@ -485,19 +532,30 @@ terminate(_, State = #state{session = Session, request = undefined,
 	    ok
     end,
     cancel_timer(Timers#timers.queue_timer, timeout_queue),
-    http_transport:close(socket_type(Session#tcp_session.scheme),
-			 Session#tcp_session.socket);
+    Socket = Session#tcp_session.socket, 
+    http_transport:close(socket_type(Session#tcp_session.scheme), Socket);
 
-terminate(Reason, State = #state{request = Request})-> 
-    NewState = case Request#request.from of
-		   answer_sent ->
-		       State;
-		   _ ->
-		       answer_request(Request, 
-				      httpc_response:error(Request, Reason), 
-				      State)
-	       end,
+terminate(Reason, State = #state{request = Request}) -> 
+    NewState = maybe_send_answer(Request, 
+				 httpc_response:error(Request, Reason), 
+				 State),
     terminate(Reason, NewState#state{request = undefined}).
+
+maybe_send_answer(#request{from = answer_sent}, _Reason, State) ->
+    State;
+maybe_send_answer(Request, Answer, State) ->
+    answer_request(Request, Answer, State).
+
+deliver_answers([]) ->
+    ok;
+deliver_answers([#request{from = From} = Request | Requests]) 
+  when is_pid(From) ->
+    Response = httpc_response:error(Request, socket_closed_remotely),
+    httpc_response:send(From, Response),
+    deliver_answers(Requests);
+deliver_answers([_|Requests]) ->
+    deliver_answers(Requests).
+
 
 %%--------------------------------------------------------------------
 %% Func: code_change(_OldVsn, State, Extra) -> {ok, NewState}
@@ -542,19 +600,53 @@ new_queue(Queue, Fun) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-send_first_request(Address, Request, 
-		   #state{options = #options{ipv6 = Ipv6} = Options} 
-		   = State) ->
-    SessionType = httpc_manager:session_type(Options),
+
+connect(SocketType, ToAddress, #options{ipfamily = IpFamily,
+					ip       = FromAddress,
+					port     = FromPort}, Timeout) ->
+    Opts1 = 
+	case FromPort of
+	    default ->
+		[];
+	    _ ->
+		[{port, FromPort}]
+	end,
+    Opts2 = 
+	case FromAddress of
+	    default ->
+		Opts1;
+	    _ ->
+		[{ip, FromAddress} | Opts1]
+	end,
+    case IpFamily of
+	inet6fb4 ->
+	    Opts3 = [inet6 | Opts2],
+	    case http_transport:connect(SocketType, ToAddress, Opts3, Timeout) of
+		{error, Reason} when ((Reason =:= nxdomain) orelse 
+				      (Reason =:= eafnosupport)) -> 
+		    Opts4 = [inet | Opts2], 
+		    http_transport:connect(SocketType, ToAddress, Opts4, Timeout);
+		Other ->
+		    Other
+	    end;
+	_ ->
+	    Opts3 = [IpFamily | Opts2], 
+	    http_transport:connect(SocketType, ToAddress, Opts3, Timeout)
+    end.
+		
+    
+send_first_request(Address, Request, #state{options = Options} = State) ->
+
     SocketType = socket_type(Request),
-    TimeOut = (Request#request.settings)#http_options.timeout,
-    case http_transport:connect(SocketType, Address, Ipv6, TimeOut) of
+    Timeout = (Request#request.settings)#http_options.timeout,
+    case connect(SocketType, Address, Options, Timeout) of
 	{ok, Socket} ->
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
 		    ClientClose = 
 			httpc_request:is_client_closing(
 			  Request#request.headers),
+		    SessionType = httpc_manager:session_type(Options),
 		    Session =
 			#tcp_session{id = {Request#request.address, self()},
 				     scheme = Request#request.scheme,
@@ -573,7 +665,8 @@ send_first_request(Address, Request,
 					   Socket, [{active, once}]),
 		    NewState = activate_request_timeout(TmpState),
 		    {ok, NewState};
-		{error, Reason} -> 
+
+		{error, Reason} -> 		    
 		    %% Commented out in wait of ssl support to avoid
 		    %% dialyzer warning
 		    %%case State#state.status of
@@ -592,7 +685,8 @@ send_first_request(Address, Request,
 		    %%	    {stop, normal, NewState}
 		    %%    end
 	    end;
-	{error, Reason} -> 
+
+	{error, Reason} -> 	    
 	    %% Commented out in wait of ssl support to avoid
 	    %% dialyzer warning
 	    %% case State#state.status of
@@ -662,7 +756,7 @@ handle_http_body(Body, State = #state{headers = Headers,
 		    handle_response(State#state{headers = NewHeaders, 
 						body = NewBody})
 	    end;
-        Encoding when list(Encoding) ->
+        Encoding when is_list(Encoding) ->
 	    NewState = answer_request(Request, 
 				      httpc_response:error(Request, 
 							   unknown_encoding),
@@ -880,7 +974,7 @@ handle_keep_alive_queue(State = #state{status = keep_alive,
 			Data) ->
     case queue:out(State#state.keep_alive) of
 	{empty, _} ->
-	    %% The server may choose too teminate an idle keep_alive session
+	    %% The server may choose too terminate an idle keep_alive session
 	    %% in this case we want to receive the close message
 	    %% at once and not when trying to send the next
 	    %% request.
@@ -958,10 +1052,10 @@ is_pipeline_enabled_client(#tcp_session{type = pipeline}) ->
 is_pipeline_enabled_client(_) ->
     false.
 
-is_keep_alive_enabled_server("HTTP/1." ++ N, _) when hd(N) >= $1 ->
+is_keep_alive_enabled_server("HTTP/1." ++ N, _) when (hd(N) >= $1) ->
     true;
 is_keep_alive_enabled_server("HTTP/1.0", 
-			   #http_response_h{connection = "keep-alive"}) ->
+			     #http_response_h{connection = "keep-alive"}) ->
     true;
 is_keep_alive_enabled_server(_,_) ->
     false.
@@ -1124,12 +1218,12 @@ socket_type(https) ->
 start_stream(_, #request{stream = none}) ->
     ok;
 start_stream({{_, Code, _}, Headers}, Request = #request{stream = self}) 
-  when Code == 200; Code == 206 ->
+  when (Code =:= 200) orelse (Code =:= 206) ->
     Msg = httpc_response:stream_start(Headers, Request, ignore),
     httpc_response:send(Request#request.from, Msg);
 start_stream({{_, Code, _}, Headers}, Request = #request{stream = 
 							 {self, once}}) 
-  when Code == 200; Code == 206 ->
+  when (Code =:= 200) orelse (Code =:= 206) ->
     Msg = httpc_response:stream_start(Headers, Request, self()),
     httpc_response:send(Request#request.from, Msg);
 start_stream(_, _) ->
@@ -1188,7 +1282,7 @@ handle_verbose(_) ->
     ok.    
 
 %%% Normaly I do not comment out code, I throw it away. But this might
-%%% actually be used on day if ssl is improved.
+%%% actually be used one day if ssl is improved.
 %% send_ssl_tunnel_request(Address, Request = #request{address = {Host, Port}}, 
 %% 			State) ->
 %%     %% A ssl tunnel request is a special http request that looks like
@@ -1236,3 +1330,15 @@ handle_verbose(_) ->
 %% 		      httpc_response:error(Request, Reason)},
 %% 	    {ok, State#state{request = Request}}
 %%     end.
+
+%% d(F) ->
+%%    d(F, []).
+
+%% d(F, A) -> 
+%%     d(get(dbg), F, A).
+
+%% d(true, F, A) ->
+%%     io:format(user, "~w:~w:" ++ F ++ "~n", [self(), ?MODULE | A]);
+%% d(_, _, _) ->
+%%     ok.
+

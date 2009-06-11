@@ -92,11 +92,11 @@ ws_action_mode({external,_},Content,#xmerl_scanner{standalone=yes}) ->
 ws_action_mode(_,_,_) ->
     preserve.
 
-element_content(A) when atom(A),A /= any, A /= empty ->
+element_content(A) when is_atom(A),A /= any, A /= empty ->
     children;
-element_content({choice,L}) when list(L) ->
+element_content({choice,L}) when is_list(L) ->
     element_content(L);
-element_content({seq,L}) when list(L) ->
+element_content({seq,L}) when is_list(L) ->
     element_content(L);
 element_content(['#PCDATA'|_T]) ->
     mixed;
@@ -178,7 +178,7 @@ valid_attribute(Name,DataType,IF,DefaultDecl,List_of_Attributes,Env,S)->
 	    #xmlAttribute{name=Name,value=A}; % FIXED declare value becomes default.
 	{'#FIXED',A,B} ->
 	    exit({error,{fixed_default_value_missmatch,A,B}});
-	{_,Value,no_attribute} when list(Value)->
+	{_,Value,no_attribute} when is_list(Value)->
 	    #xmlAttribute{name=Name,value=Value};
 	{_,_,#xmlAttribute{}=Attr}->
 	    %% do test data value, and default_value
@@ -209,7 +209,7 @@ vc_Name_Token_IDREFS([],_) -> ok.
 
 valid_nmtoken_value([],'NMTOKENS') ->
     exit({error,{at_least_one_Nmtoken_required}});
-% valid_nmtoken_value([H|_T] = L,'NMTOKENS') when list(H) ->
+% valid_nmtoken_value([H|_T] = L,'NMTOKENS') when is_list(H) ->
 %     ValidChar =
 % 	fun(X) ->
 % 		case xmerl_lib:is_namechar(X) of
@@ -306,7 +306,7 @@ test_attribute_value('NMTOKEN',#xmlAttribute{name=Name,value=V}=Attr,
 	end,
     lists:foreach(Fun,V),
     if 
-	list(Default) ->
+	is_list(Default) ->
 	    lists:foreach(Fun,Default);
 	true -> ok
     end,
@@ -326,7 +326,7 @@ test_attribute_value('NMTOKENS',#xmlAttribute{name=Name,value=V}=Attr,
 	end,
     lists:foreach(Fun,V),
     if 
-	list(Default) ->
+	is_list(Default) ->
 	    lists:foreach(Fun,Default);
 	true -> ok
     end,
@@ -357,7 +357,7 @@ test_attribute_value({Type,L},#xmlAttribute{value=Value}=Attr,Default,_S)
   when Type == enumeration; Type == notation ->
     ValidDefault = 
 	if 
-	    atom(Default) -> true;
+	    is_atom(Default) -> true;
 	    true -> lists:member(list_to_atom(Default),L)
 	end,
     NoDuplicatesFun =
@@ -434,7 +434,7 @@ parse({'?',SubRule},XMLS,Rules,_WSaction,S)->
 parse({seq,List},XMLS,Rules,WSaction,S) ->
     seq(List,XMLS,Rules,WSaction,S);
 parse(El_Name,[#xmlElement{name=El_Name}=XML|T],Rules,_WSaction,S) 
-  when atom(El_Name)->
+  when is_atom(El_Name)->
     case do_validation(read_rules(Rules,El_Name),XML,Rules,S) of
 	{error,R} ->
 %	    {error,R};
@@ -450,7 +450,7 @@ parse(any,Cont,Rules,_WSaction,S) ->
 	Err = {error,_} -> Err;
 	ValidContents -> {ValidContents,[]}
     end;
-parse(El_Name,[#xmlElement{name=Name}|_T]=S,_Rules,_WSa,_S) when atom(El_Name)->
+parse(El_Name,[#xmlElement{name=Name}|_T]=S,_Rules,_WSa,_S) when is_atom(El_Name)->
     {error,
      {element_seq_not_conform,{wait,El_Name},{is,Name}},
      {{next,S},{act,[]}} };
@@ -607,7 +607,7 @@ seq2([H|T],Toks,Rules,Tree,WSaction,S) ->
 	    {error,E};
 	{[],Toks2}->
 	    seq2(T,Toks2,Rules,Tree,WSaction,S);
-	{Tree1,Toks2} when list(Tree1)->
+	{Tree1,Toks2} when is_list(Tree1)->
 	    seq2(T,Toks2,Rules,Tree++WS++Tree1,WSaction,S);
 	{Tree1,Toks2}->
 	    seq2(T,Toks2,Rules,Tree++WS++[Tree1],WSaction,S)
@@ -653,7 +653,7 @@ ws_action(always_preserve=A,_)  ->
 ws_action(_,B) ->
     B.
 
-scan_name(N,_) when atom(N) ->
+scan_name(N,_) when is_atom(N) ->
     N;
 scan_name([$\s|T],Acc) ->
     {list_to_atom(lists:reverse(Acc)),T};

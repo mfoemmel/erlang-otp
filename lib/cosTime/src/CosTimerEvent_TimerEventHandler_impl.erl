@@ -182,7 +182,7 @@ set_timer(_OE_THIS, State, 'TTAbsolute', TriggerTime) ->
      case catch {'CosTime_UTO':'_get_time'(TriggerTime), 
 		 'CosTime_UTO':'_get_time'(
 		   'CosTime_TimeService':universal_time(?get_TimeObj(State)))} of
-	 {Time, CurrentTime} when integer(Time), integer(CurrentTime),
+	 {Time, CurrentTime} when is_integer(Time) andalso is_integer(CurrentTime) andalso
 				  Time > CurrentTime ->
 	     %% Set a timer to send a message in (Time-CurrentTime)*10^-7 secs.
 	     case timer:send_after(?convert_TimeT2TimerT(Time-CurrentTime), oe_event) of
@@ -194,7 +194,7 @@ set_timer(_OE_THIS, State, 'TTAbsolute', TriggerTime) ->
 		 _->
 		     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	     end;
-	 {Time, CurrentTime} when integer(Time), integer(CurrentTime) ->
+	 {Time, CurrentTime} when is_integer(Time) andalso is_integer(CurrentTime) ->
 	     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
 	 _->
 	     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
@@ -203,7 +203,7 @@ set_timer(_OE_THIS, State, 'TTRelative', TriggerTime) ->
     NewState = clear_timer(State),
     ?time_TypeCheck(TriggerTime, 'CosTime_UTO'),
     case catch {'CosTime_UTO':'_get_time'(TriggerTime), ?get_Time(State)} of
-	{0,OldTime} when ?is_NotAbsolute(NewState), integer(OldTime) ->
+	{0,OldTime} when ?is_NotAbsolute(NewState) andalso is_integer(OldTime) ->
 	    %% Set a timer to send a message within Time*10^-7 secs
 	    case timer:send_after(OldTime, oe_event) of
 		{ok, TRef} ->
@@ -214,7 +214,7 @@ set_timer(_OE_THIS, State, 'TTRelative', TriggerTime) ->
 		_->
 		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	    end;
-	{UtoTime,_} when integer(UtoTime) ->
+	{UtoTime,_} when is_integer(UtoTime) ->
 	    %% Set a timer to send a message within Time*10^-7 secs
 	    Time = ?convert_TimeT2TimerT(UtoTime),
 	    case timer:send_after(Time, oe_event) of
@@ -235,7 +235,7 @@ set_timer(_OE_THIS, State, 'TTPeriodic', TriggerTime) ->
     NewState = clear_timer(State),
     ?time_TypeCheck(TriggerTime, 'CosTime_UTO'),
     case catch {'CosTime_UTO':'_get_time'(TriggerTime), ?get_Time(State)} of
-	{0,OldTime} when ?is_NotAbsolute(NewState), integer(OldTime) ->
+	{0,OldTime} when ?is_NotAbsolute(NewState) andalso is_integer(OldTime) ->
 	    %% Set a timer to send a message within Time*10^-7 secs
 	    case timer:send_interval(OldTime, oe_periodic_event) of
 		{ok, TRef} ->
@@ -246,7 +246,7 @@ set_timer(_OE_THIS, State, 'TTPeriodic', TriggerTime) ->
 		_->
 		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	    end;
-	{UtoTime,_} when integer(UtoTime) ->
+	{UtoTime,_} when is_integer(UtoTime) ->
 	    %% Set a timer to send a message within Time*10^-7 secs
 	    Time = ?convert_TimeT2TimerT(UtoTime),
 	    case timer:send_interval(Time, oe_periodic_event) of
@@ -287,7 +287,7 @@ cancel_timer(_OE_THIS, State) ->
 %% Arguments: EventData - any#
 %% Returns  : ok
 %%-----------------------------------------------------------
-set_data(_OE_THIS, State, EventData) when record(EventData, any) ->
+set_data(_OE_THIS, State, EventData) when is_record(EventData, any) ->
     {reply, ok, ?set_Event(State, EventData)};
 set_data(_OE_THIS, _State, _EventData) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).

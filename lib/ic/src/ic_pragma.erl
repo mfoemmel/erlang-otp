@@ -136,31 +136,31 @@ cleanup([],C) -> C;
 cleanup([X|Xs],CSF) ->
     cleanup(Xs, CSF++cleanup(X)).
 
-cleanup(X) when list(X) -> cleanup(X,[]);
-cleanup(X) when record(X, preproc) -> [X];
-cleanup(X) when record(X, pragma) -> [];
-cleanup(X) when record(X, op) -> % Clean inside operation parameters
+cleanup(X) when is_list(X) -> cleanup(X,[]);
+cleanup(X) when is_record(X, preproc) -> [X];
+cleanup(X) when is_record(X, pragma) -> [];
+cleanup(X) when is_record(X, op) -> % Clean inside operation parameters
     [ X#op{params = cleanup(X#op.params,[])}];
 
-cleanup(X) when record(X, module) ->  % Clean inside module body
+cleanup(X) when is_record(X, module) ->  % Clean inside module body
     [ X#module{body = cleanup(X#module.body,[])}];
 
-cleanup(X) when record(X, interface) ->  % Clean inside interface body
+cleanup(X) when is_record(X, interface) ->  % Clean inside interface body
     [ X#interface{body = cleanup(X#interface.body,[])}];
 
-cleanup(X) when record(X, except) ->  % Clean inside exception body
+cleanup(X) when is_record(X, except) ->  % Clean inside exception body
     [ X#except{body = cleanup(X#except.body,[])}];
 
-cleanup(X) when record(X, struct) ->  % Clean inside struct body
+cleanup(X) when is_record(X, struct) ->  % Clean inside struct body
     [ X#struct{body = cleanup(X#struct.body,[])}];
 
-cleanup(X) when record(X, case_dcl) ->  % Clean inside union body
+cleanup(X) when is_record(X, case_dcl) ->  % Clean inside union body
     [ X#case_dcl{label = cleanup(X#case_dcl.label,[])}];
 
-cleanup(X) when record(X, union) ->  % Clean inside union body
+cleanup(X) when is_record(X, union) ->  % Clean inside union body
     [ X#union{body = cleanup(X#union.body,[])}];
 
-cleanup(X) when record(X, enum) ->  % Clean inside enum body
+cleanup(X) when is_record(X, enum) ->  % Clean inside enum body
     [ X#enum{body = cleanup(X#enum.body,[])}];
 
 cleanup(X) -> [X].
@@ -176,7 +176,7 @@ pragma_reg_all(G, S, N, [X|Xs]) ->
 
 
 %% pragma_reg is top level registration for pragmas 
-pragma_reg(G, S, N, X)  when list(X) -> pragma_reg_list(G, S, N, X);
+pragma_reg(G, S, N, X)  when is_list(X) -> pragma_reg_list(G, S, N, X);
 pragma_reg(_G, S, _N, X)  when element(1, X) == preproc ->
     case X#preproc.aux of
 	[{_, _, "1"}] ->
@@ -229,17 +229,17 @@ pragma_reg(G, S, N, X)  when element(1, X) == pragma ->
     end,
     ok;
 
-pragma_reg(G, S, N, X) when record(X, module) ->
+pragma_reg(G, S, N, X) when is_record(X, module) ->
     mk_ref(G,[get_id2(X) | N],mod_ref),
     mk_file_data(G,X,N,module),
     pragma_reg_all(G, S, [get_id2(X) | N], get_body(X));
 
-pragma_reg(G, S, N, X) when record(X, interface) ->
+pragma_reg(G, S, N, X) when is_record(X, interface) ->
     mk_ref(G,[get_id2(X) | N],ifc_ref),
     mk_file_data(G,X,N,interface),
     pragma_reg_all(G, S, [get_id2(X) | N], get_body(X));
 
-pragma_reg(G, S, N, X) when record(X, op) ->  
+pragma_reg(G, S, N, X) when is_record(X, op) ->  
     %% Add operation in table
     insert(S,{op,
 	      get_id2(X),
@@ -249,16 +249,16 @@ pragma_reg(G, S, N, X) when record(X, op) ->
     mk_file_data(G,X,N,op),
     pragma_reg_all(G, S, N, X#op.params);
 
-pragma_reg(G, S, N, X) when record(X, except) -> 
+pragma_reg(G, S, N, X) when is_record(X, except) -> 
     mk_ref(G,[get_id2(X) | N],except_ref),
     mk_file_data(G,X,N,except),
     pragma_reg_all(G, S, N, X#except.body);
 
-pragma_reg(G, _S, N, X) when record(X, const) ->  
+pragma_reg(G, _S, N, X) when is_record(X, const) ->  
     mk_ref(G,[get_id2(X) | N],const_ref),
     mk_file_data(G,X,N,const);
 
-pragma_reg(G, _S, N, X) when record(X, typedef) ->  
+pragma_reg(G, _S, N, X) when is_record(X, typedef) ->  
     XX = #id_of{type=X},
     lists:foreach(fun(Id) ->
 			  mk_ref(G,[get_id2(Id) | N],typedef_ref),
@@ -266,22 +266,22 @@ pragma_reg(G, _S, N, X) when record(X, typedef) ->
 		  end,
 		  ic_forms:get_idlist(X));
 
-pragma_reg(G, S, N, X) when record(X, enum) ->  
+pragma_reg(G, S, N, X) when is_record(X, enum) ->  
     mk_ref(G,[get_id2(X) | N],enum_ref),
     mk_file_data(G,X,N,enum),
     pragma_reg_all(G, S, N, X#enum.body);
 
-pragma_reg(G, S, N, X) when record(X, union) ->  
+pragma_reg(G, S, N, X) when is_record(X, union) ->  
     mk_ref(G,[get_id2(X) | N],union_ref),
     mk_file_data(G,X,N,union),
     pragma_reg_all(G, S, N, X#union.body);
 
-pragma_reg(G, S, N, X) when record(X, struct) -> 
+pragma_reg(G, S, N, X) when is_record(X, struct) -> 
     mk_ref(G,[get_id2(X) | N],struct_ref),
     mk_file_data(G,X,N,struct),
     pragma_reg_all(G, S, N, X#struct.body);
 
-pragma_reg(G, _S, N, X) when record(X, attr) -> 
+pragma_reg(G, _S, N, X) when is_record(X, attr) -> 
     XX = #id_of{type=X},
     lists:foreach(fun(Id) ->
 			  mk_ref(G,[get_id2(Id) | N],attr_ref),
@@ -1195,14 +1195,14 @@ get_pragma_error_nr(S) ->
 
 
 %% Short check 
-is_short(N_str) when list(N_str) ->
+is_short(N_str) when is_list(N_str) ->
     case is_short_decimal_str(N_str) of
 	true ->
 	    true;
 	false ->
 	    false
     end;
-is_short(N) when integer(N)->
+is_short(N) when is_integer(N)->
     (N < 65535) and (N > -65536);
 is_short(_) -> false.
 
@@ -1333,7 +1333,7 @@ defaultBrokerData(G) ->
 
 
 %% Loops through the form and sdds inheritence data 
-preproc(G, N, [X|Xs]) when record(X, interface) ->
+preproc(G, N, [X|Xs]) when is_record(X, interface) ->
     %% Add inheritence data to pragmatab
     ic_pragma:add_inh_data(G,N,X),
     N2 = [get_id2(X) | N],
@@ -1342,7 +1342,7 @@ preproc(G, N, [X|Xs]) when record(X, interface) ->
 		  X#interface.inherit_body), 
     preproc(G, N, Xs);
 
-preproc(G,N,[X|Xs]) when record(X, module) ->
+preproc(G,N,[X|Xs]) when is_record(X, module) ->
     N2 = [get_id2(X) | N],
     preproc(G, N2, get_body(X)),
     preproc(G,N,Xs);
@@ -1398,7 +1398,7 @@ getBrokerData(G,X,RS,Scope,CSF) ->
 
 
 
-getBrokerData(G,S,X,RS,[[[First]|Rest]],CSF) when integer(First) ->
+getBrokerData(G,S,X,RS,[[[First]|Rest]],CSF) when is_integer(First) ->
     Scope = [[First]|Rest],
     case ets:match(S,{codeopt,Scope,'$1','_','_','_'}) of
 	[] ->
@@ -1445,7 +1445,7 @@ getBrokerData(G,S,X,RS,[Scope],CSF) ->
 
 
 %% Special treatment when X is an operation
-getBrokerDataInh(G,S,X,RS,Scope,CSF,InhList) when record(X,op)->
+getBrokerDataInh(G,S,X,RS,Scope,CSF,InhList) when is_record(X,op)->
    %io:format(" 8"),
     case ets:match(S,{op,get_id2(X),'$1','_','_'}) of
 	[] ->
@@ -1523,7 +1523,7 @@ getBrokerDataLoop(G,_,_X,_RS,[],BrokerDataList,_CSF) ->
 	    end
     end;
 
-getBrokerDataLoop(G,S,X,RS,[[Scope]|Scopes],_Found,CSF) when integer(Scope) ->
+getBrokerDataLoop(G,S,X,RS,[[Scope]|Scopes],_Found,CSF) when is_integer(Scope) ->
    getBrokerData(G,S,X,RS,[[Scope]|Scopes],CSF); 
 
 getBrokerDataLoop(G,S,X,RS,[[Scope]|Scopes],Found,CSF) ->

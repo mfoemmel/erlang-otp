@@ -95,7 +95,7 @@
 -define(is_NotSetDef(S),        S#state.myType =/= ?PropertySetDef).
 -define(no_PropertyLimits(S),   S#state.okProperties == []).
 -define(no_TypeLimits(S),       S#state.okTypes == []).
--define(is_NotStatic(S),        binary(S#state.dbKey)).
+-define(is_NotStatic(S),        is_binary(S#state.dbKey)).
 
 %% Fun:s
 -define(Local2Property,      fun({N,V,_M}) -> 
@@ -107,9 +107,9 @@
 			  end).
 -define(MemberName(N),    fun(R) -> 
 				  case R of
-				      Property when record(R, 'CosPropertyService_Property') ->
+				      Property when is_record(R, 'CosPropertyService_Property') ->
 					  Property#'CosPropertyService_Property'.property_name == N;
-				      PropertyDef when record(R, 'CosPropertyService_PropertyDef') ->
+				      PropertyDef when is_record(R, 'CosPropertyService_PropertyDef') ->
 					  PropertyDef#'CosPropertyService_PropertyDef'.property_name == N;
 				      _->
 					  false
@@ -180,7 +180,7 @@ define_property(_OE_This, State, Name, Value) when ?is_NotStatic(State) ->
 			case catch update_property(X, Name, value, Value, 
 						   ?get_DefaultMode(State)) of
 			    {'EXCEPTION', E} when 
-				  record(E, 'CosPropertyService_PropertyNotFound') ->
+				  is_record(E, 'CosPropertyService_PropertyNotFound') ->
 				mnesia_write(State, [{Name, Value, ?get_DefaultMode(State)}|X]);
 			    {'EXCEPTION', E} ->
 				{'EXCEPTION', E};
@@ -194,7 +194,7 @@ define_property(_OE_This, State, Name, Value) ->
     evaluate_property_data(State, Value, Name),
     X = ?get_DBKey(State),
     case catch update_property(X, Name, value, Value, ?get_DefaultMode(State)) of
- 	{'EXCEPTION', E} when record(E, 'CosPropertyService_PropertyNotFound') ->
+ 	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_PropertyNotFound') ->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
  	{'EXCEPTION', E} ->
 	    corba:raise(E);
@@ -290,7 +290,7 @@ define_properties_helper(State, [#'CosPropertyService_Property'
 			    {property_name = Name,
 			     property_value = Value}|T], Properties, Exc) ->
     case catch update_property(Properties, Name, value, Value, ?get_DefaultMode(State)) of
- 	{'EXCEPTION', E} when record(E, 'CosPropertyService_PropertyNotFound') ->
+ 	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_PropertyNotFound') ->
  	     define_properties_helper(State, T, [{Name, Value, ?get_DefaultMode(State)}|Properties], Exc);
  	{'EXCEPTION', E} ->
  	     define_properties_helper(State, T, Properties, 
@@ -581,7 +581,7 @@ define_property_with_mode(_OE_THIS, State, Name, Value, Mode)
 		    X ->
 			case catch update_property(X, Name, both, Value, Mode) of
 			    {'EXCEPTION', E} 
-			    when record(E, 'CosPropertyService_PropertyNotFound') ->
+			    when is_record(E, 'CosPropertyService_PropertyNotFound') ->
 				mnesia_write(State, [{Name, Value, Mode}|X]);
 			    {'EXCEPTION', E} ->
 				{'EXCEPTION', E};
@@ -595,7 +595,7 @@ define_property_with_mode(_OE_THIS, State, Name, Value, Mode) ->
     evaluate_property_data(State, Value, Name),
     X = lookup_table(?get_DBKey(State)),
     case catch update_property(X, Name, both, Value, Mode) of
-	{'EXCEPTION', E} when record(E, 'CosPropertyService_PropertyNotFound') ->
+	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_PropertyNotFound') ->
 	    %% Should get not allowed exception.
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 	{'EXCEPTION', E} ->
@@ -653,7 +653,7 @@ define_properties_with_modes_helper([#'CosPropertyService_PropertyDef'
 				      property_value = Value,
 				      property_mode = Mode}|T], X, Exc, State) ->
     case catch update_property(X, Name, both, Value, Mode) of
-	{'EXCEPTION', E} when record(E, 'CosPropertyService_PropertyNotFound') ->
+	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_PropertyNotFound') ->
 	    define_properties_with_modes_helper(T, [{Name, Value, Mode}|X], Exc, State);
 	{'EXCEPTION', E} ->
 	    define_properties_with_modes_helper(T, X, 
@@ -879,7 +879,7 @@ update_property([H|T], Name, Which, Value, Mode, Acc) ->
     update_property(T, Name, Which, Value, Mode, [H|Acc]).
 
    
-lookup_table(Key) when binary(Key) ->
+lookup_table(Key) when is_binary(Key) ->
     _RF = ?read_function({oe_CosPropertyService, Key}),
     case mnesia:transaction(_RF) of
         {atomic, [#oe_CosPropertyService{properties=Properties}]} ->
@@ -889,7 +889,7 @@ lookup_table(Key) when binary(Key) ->
         _Other ->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
-lookup_table(Key) when list(Key) ->
+lookup_table(Key) when is_list(Key) ->
     Key;
 lookup_table(_) ->
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
@@ -938,12 +938,12 @@ evaluate_properties_data(State, [#'CosPropertyService_Property'
 	    evaluate_properties_data(State, T, [#'CosPropertyService_Property'
 						{property_name = Name,
 						 property_value = Value}|Acc], Exc);
- 	{'EXCEPTION', E} when record(E, 'CosPropertyService_UnsupportedTypeCode') ->
+ 	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_UnsupportedTypeCode') ->
 	    evaluate_properties_data(State, T, Acc, 
 				     [#'CosPropertyService_PropertyException'
 				      {reason = unsupported_type_code,
 				       failing_property_name = Name}|Exc]);
- 	{'EXCEPTION', E} when record(E, 'CosPropertyService_UnsupportedProperty') ->
+ 	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_UnsupportedProperty') ->
 	    evaluate_properties_data(State, T, Acc, 
 				     [#'CosPropertyService_PropertyException'
 				      {reason = unsupported_property,
@@ -959,12 +959,12 @@ evaluate_properties_data(State, [#'CosPropertyService_PropertyDef'
 						{property_name = Name,
 						 property_value = Value,
 						 property_mode = Mode}|Acc], Exc);
- 	{'EXCEPTION', E} when record(E, 'CosPropertyService_UnsupportedTypeCode') ->
+ 	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_UnsupportedTypeCode') ->
 	    evaluate_properties_data(State, T, Acc, 
 				     [#'CosPropertyService_PropertyException'
 				      {reason = unsupported_type_code,
 				       failing_property_name = Name}|Exc]);
- 	{'EXCEPTION', E} when record(E, 'CosPropertyService_UnsupportedProperty') ->
+ 	{'EXCEPTION', E} when is_record(E, 'CosPropertyService_UnsupportedProperty') ->
 	    evaluate_properties_data(State, T, Acc, 
 				     [#'CosPropertyService_PropertyException'
 				      {reason = unsupported_property,

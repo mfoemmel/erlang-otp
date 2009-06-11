@@ -598,8 +598,7 @@ code_handler(Name, Args, Dict, File) ->
             LF = {value,fun(I, J) -> code_handler(I, J, Dict, File) end},
             case erl_eval:match_clause(Cs, Args,erl_eval:new_bindings(),LF) of
                 {Body, Bs} ->
-                    {value, Val, _Bs1} = erl_eval:exprs(Body, Bs, LF),
-                    Val;
+                    eval_exprs(Body, Bs, LF, none, none);
                 nomatch ->
                     erlang:error({function_clause,[{local,Name,Args}]})
             end;
@@ -613,6 +612,14 @@ code_handler(Name, Args, Dict, File) ->
                     my_halt(127)
             end
     end.
+
+eval_exprs([E], Bs0, Lf, Ef, _RBs) ->
+    RBs1 = value,
+    erl_eval:expr(E, Bs0, Lf, Ef, RBs1);
+eval_exprs([E|Es], Bs0, Lf, Ef, RBs) ->
+    RBs1 = none,
+    {value,_V,Bs} = erl_eval:expr(E, Bs0, Lf, Ef, RBs1),
+    eval_exprs(Es, Bs, Lf, Ef, RBs).
 
 format_exception(Class, Reason) ->
     PF = fun(Term, I) -> 

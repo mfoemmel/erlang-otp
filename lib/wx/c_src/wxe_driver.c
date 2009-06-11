@@ -203,5 +203,13 @@ standard_outputv(ErlDrvData drv_data, ErlIOVec* ev)
       binref->bin = bin;
       binref->next = sd->bin;
       sd->bin = binref;      
+   } else { /* Empty binary (becomes NULL) */ 
+      binref = driver_alloc(sizeof(WXEBinRef));
+      binref->base = NULL;
+      binref->size = 0;
+      binref->from = driver_caller(sd->port);
+      binref->bin = NULL;
+      binref->next = sd->bin;
+      sd->bin = binref;
    }
 }

@@ -291,11 +291,11 @@ expr(#c_fun{anno=A,vars=Cvs,body=Cb}, Sub0, #kern{ff=OldFF}=St0) ->
 	     undefined ->
 		 St0#kern.func;
 	     _ ->
-		 case lists:keysearch(id, 1, A) of
-		     {value,{id,{_,_,Name}}} -> Name;
+		 case lists:keyfind(id, 1, A) of
+		     {id,{_,_,Name}} -> Name;
 		     _ ->
-			 case lists:keysearch(letrec_name, 1, A) of
-			     {value,{letrec_name,Name}} -> Name;
+			 case lists:keyfind(letrec_name, 1, A) of
+			     {letrec_name,Name} -> Name;
 			     _ -> unknown_fun
 			 end
 		 end
@@ -1640,8 +1640,8 @@ uexpr(#ifun{anno=A,vars=Vs,body=B0}=IFun, {break,Rs}, St0) ->
     Fvs = make_vars(Free),
     Arity = length(Vs) + length(Free),
     {{Index,Uniq,Fname}, St3} =
-	case lists:keysearch(id, 1, A) of 
-	    {value,{id,Id}} ->
+	case lists:keyfind(id, 1, A) of 
+	    {id,Id} ->
 		{Id, St1};
 	    false ->
 		%% No id annotation. Must invent one.

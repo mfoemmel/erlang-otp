@@ -377,7 +377,7 @@ main(int argc, char **argv)
 #endif
     strcpy(program_name, argv[0]);
     notify_ack(erlout_fd);
-    cmd[0] = (unsigned char) NULL;
+    cmd[0] = '\0';
     do_terminate(message_loop(erlin_fd,erlout_fd));
     return 0;
 }
@@ -483,13 +483,12 @@ message_loop(erlin_fd, erlout_fd)
 				/* override the HEART_COMMAND_ENV command */
 			        memcpy(&cmd, &(mp->fill[0]), 
 				       tlen-MSG_HDR_PLUS_OP_SIZE);
-			        cmd[tlen-MSG_HDR_PLUS_OP_SIZE] = 
-				    (unsigned char) NULL;
+			        cmd[tlen-MSG_HDR_PLUS_OP_SIZE] = '\0';
 			        notify_ack(erlout_fd);
 			        break;
 			case CLEAR_CMD:
 				/* use the HEART_COMMAND_ENV command */
-				cmd[0] = (unsigned char) NULL;
+				cmd[0] = '\0';
 				notify_ack(erlout_fd);
 				break;
 			case GET_CMD:

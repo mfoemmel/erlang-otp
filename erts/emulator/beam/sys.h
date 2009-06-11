@@ -246,10 +246,12 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 typedef unsigned long Eterm;
 typedef unsigned long Uint;
 typedef long          Sint;
+#define ERTS_SIZEOF_ETERM SIZEOF_LONG
 #elif SIZEOF_VOID_P == SIZEOF_INT
 typedef unsigned int Eterm;
 typedef unsigned int Uint;
 typedef int          Sint;
+#define ERTS_SIZEOF_ETERM SIZEOF_INT
 #else
 #error Found no appropriate type to use for 'Eterm', 'Uint' and 'Sint'
 #endif
@@ -296,6 +298,16 @@ typedef unsigned char byte;
 
 #if defined(ARCH_64) && !HAVE_INT64
 #error 64-bit architecture, but no appropriate type to use for Uint64 and Sint64 found 
+#endif
+
+#if defined(ARCH_64)
+#  define ERTS_WORD_ALIGN_PAD_SZ(X) \
+    (((size_t) 8) - (((size_t) (X)) & ((size_t) 7)))
+#elif defined(ARCH_32)
+#  define ERTS_WORD_ALIGN_PAD_SZ(X) \
+    (((size_t) 4) - (((size_t) (X)) & ((size_t) 3)))
+#else
+#error "Not supported..."
 #endif
 
 #include "erl_lock_check.h"
@@ -522,7 +534,10 @@ typedef struct _SysDriverOpts {
     int exit_status;		/* Report exit status of subprocess. */
     char *envir;		/* Environment of the port process, */
 				/* in Windows format. */
+    char **argv;                /* Argument vector in Unix'ish format. */
     char *wd;			/* Working directory. */
+    unsigned spawn_type;        /* Bitfield of ERTS_SPAWN_DRIVER | 
+				   ERTS_SPAWN_EXTERNAL | both*/ 
 
 #ifdef _OSE_
     enum PROCESS_TYPE process_type;
@@ -531,6 +546,7 @@ typedef struct _SysDriverOpts {
 
 } SysDriverOpts;
 
+extern char *erts_default_arg0;
 
 extern char os_type[];
 
@@ -620,6 +636,7 @@ int univ_to_local(Sint *year, Sint *month, Sint *day,
 int local_to_univ(Sint *year, Sint *month, Sint *day, 
 		  Sint *hour, Sint *minute, Sint *second, int isdst);
 void get_now(Uint*, Uint*, Uint*);
+void get_sys_now(Uint*, Uint*, Uint*);
 EXTERN_FUNCTION(void, set_break_quit, (void (*)(void), void (*)(void)));
 
 void os_flavor(char*, unsigned);
@@ -960,6 +977,7 @@ ERTS_GLB_INLINE void erts_refc_inc(erts_refc_t *refcp, long min_val);
 ERTS_GLB_INLINE long erts_refc_inctest(erts_refc_t *refcp, long min_val);
 ERTS_GLB_INLINE void erts_refc_dec(erts_refc_t *refcp, long min_val);
 ERTS_GLB_INLINE long erts_refc_dectest(erts_refc_t *refcp, long min_val);
+ERTS_GLB_INLINE void erts_refc_add(erts_refc_t *refcp, long diff, long min_val);
 ERTS_GLB_INLINE long erts_refc_read(erts_refc_t *refcp, long min_val);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
@@ -1022,6 +1040,20 @@ erts_refc_dectest(erts_refc_t *refcp, long min_val)
 		 val, min_val);
 #endif
     return val;
+}
+
+ERTS_GLB_INLINE void
+erts_refc_add(erts_refc_t *refcp, long diff, long min_val)
+{
+#ifdef ERTS_REFC_DEBUG
+    long val = erts_smp_atomic_addtest((erts_smp_atomic_t *) refcp, diff);
+    if (val < min_val)
+	erl_exit(ERTS_ABORT_EXIT,
+		 "erts_refc_add(%ld): Bad refc found (refc=%ld < %ld)!\n",
+		 diff, val, min_val);
+#else
+    erts_smp_atomic_add((erts_smp_atomic_t *) refcp, diff);
+#endif
 }
 
 ERTS_GLB_INLINE long

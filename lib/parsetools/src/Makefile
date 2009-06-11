@@ -34,11 +34,12 @@ RELSYSDIR = $(RELEASE_PATH)/lib/parsetools-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = \
+	leex \
 	yecc \
 	yeccparser \
 	yeccscan
 
-HRL_FILES = ../include/yeccpre.hrl
+HRL_FILES = ../include/yeccpre.hrl ../include/leexinc.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 

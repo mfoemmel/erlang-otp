@@ -146,10 +146,10 @@
 %% Callback event: {@link wxFocusEvent}
 -record(wxFocus, {type}). 
 
-%% @type wxDate() = #wxDate{type=wxEventType()}.
+%% @type wxDate() = #wxDate{type=wxEventType(),date=wx:datetime()}.
 %% <dl><dt>EventType:</dt> <dd><em>date_changed</em></dd></dl>
 %% Callback event: {@link wxDateEvent}
--record(wxDate, {type}). 
+-record(wxDate,{type, date}). 
 
 %% @type wxHelp() = #wxHelp{type=wxEventType()}.
 %% <dl><dt>EventType:</dt> <dd><em>help</em>, <em>detailed_help</em></dd></dl>
@@ -333,6 +333,13 @@
 -define(wxCHOICEDLG_STYLE, (?wxDEFAULT_DIALOG_STYLE bor ?wxRESIZE_BORDER bor ?wxOK bor ?wxCANCEL bor ?wxCENTRE)).
 -define(wxCHOICE_WIDTH, 200).
 -define(wxCHOICE_HEIGHT, 150).
+% From define::From choicebk.h 
+-define(wxCHB_ALIGN_MASK, ?wxBK_ALIGN_MASK).
+-define(wxCHB_RIGHT, ?wxBK_RIGHT).
+-define(wxCHB_LEFT, ?wxBK_LEFT).
+-define(wxCHB_BOTTOM, ?wxBK_BOTTOM).
+-define(wxCHB_TOP, ?wxBK_TOP).
+-define(wxCHB_DEFAULT, ?wxBK_DEFAULT).
 % From define::From clrpicker.h 
 -define(wxCLRP_DEFAULT_STYLE, 0).
 -define(wxCLRP_USE_TEXTCTRL, ?wxPB_USE_TEXTCTRL).
@@ -597,6 +604,13 @@
 -define(wxLC_ICON, 4).
 -define(wxLC_HRULES, 2).
 -define(wxLC_VRULES, 1).
+% From define::From listbook.h 
+-define(wxLB_ALIGN_MASK, ?wxBK_ALIGN_MASK).
+-define(wxLB_RIGHT, ?wxBK_RIGHT).
+-define(wxLB_LEFT, ?wxBK_LEFT).
+-define(wxLB_BOTTOM, ?wxBK_BOTTOM).
+-define(wxLB_TOP, ?wxBK_TOP).
+-define(wxLB_DEFAULT, ?wxBK_DEFAULT).
 % From define::From log.h 
 -define(wxTRACE_OleCalls, ?wxEmptyString).
 -define(wxTraceRefCount, 8).
@@ -2043,6 +2057,8 @@
 -define(wxHAS_TEXT_WINDOW_STREAM, 0).
 % From define::From textdlgg.h 
 -define(wxTextEntryDialogStyle, (?wxOK bor ?wxCANCEL bor ?wxCENTRE bor ?wxWS_EX_VALIDATE_RECURSIVELY)).
+% From define::From toolbook.h 
+-define(wxBK_BUTTONBAR, 256).
 % From define::From toplevel.h 
 -define(wxTOPLEVEL_EX_DIALOG, 8).
 -define(wxDEFAULT_FRAME_STYLE, (?wxSYSTEM_MENU bor ?wxRESIZE_BORDER bor ?wxMINIMIZE_BOX bor ?wxMAXIMIZE_BOX bor ?wxCLOSE_BOX bor ?wxCAPTION bor ?wxCLIP_CHILDREN)).
@@ -2126,6 +2142,8 @@
 % From wxBitmap::Representation 
 -define(wxBitmap_Pixmap, 0).
 -define(wxBitmap_Pixbuf, 1).
+% From class wxChoicebook 
+-define(wxChoicebook_SetSelection_SendEvent, 1).
 % From wxDateTime::Calendar 
 -define(wxDateTime_Gregorian, 0).
 -define(wxDateTime_Julian, 1).
@@ -2336,6 +2354,8 @@
 % From wxHtmlEasyPrinting::FontMode 
 -define(wxHtmlEasyPrinting_FontMode_Explicit, 0).
 -define(wxHtmlEasyPrinting_FontMode_Standard, 1).
+% From class wxListbook 
+-define(wxListbook_SetSelection_SendEvent, 1).
 % From class wxNavigationKeyEvent 
 -define(wxNavigationKeyEvent_IsBackward, 0).
 -define(wxNavigationKeyEvent_IsForward, 1).
@@ -2357,6 +2377,10 @@
 % From class wxTextCtrl 
 -define(wxTextCtrl_SetValue_SendEvent, 1).
 -define(wxTextCtrl_SetValue_SelectionOnly, 2).
+% From class wxToolbook 
+-define(wxToolbook_SetSelection_SendEvent, 1).
+% From class wxTreebook 
+-define(wxTreebook_SetSelection_SendEvent, 1).
 % From wxWindow::MoveKind 
 -define(wxWindow_MoveBefore, 0).
 -define(wxWindow_MoveAfter, 1).

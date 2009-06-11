@@ -260,6 +260,9 @@ check_instruction(_, {apply, {Module, Function, Args}}, _, Modules)
      check_module(Module, Modules),
      check_apply(Module, Function, Args);
 
+check_instruction(_, {restart_application, ?APPLICATION}, _AllInstr, _Modules) ->
+    ok;
+
 check_instruction(_, Instr, _AllInstr, _Modules) ->
     d("check_instruction -> entry when unknown instruction with"
       "~n   Instr: ~p", [Instr]),

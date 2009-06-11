@@ -162,20 +162,20 @@ transmit(Self, State, Heuristics) ->
 		     State};
 		'VoteReadOnly' ->
 		    {stop, normal, ok, State};
-		{'EXCEPTION', E} when record(E,'CosTransactions_HeuristicMixed'),
+		{'EXCEPTION', E} when is_record(E,'CosTransactions_HeuristicMixed'),
 				      Heuristics==true->
 		    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 		    {stop, normal, {'EXCEPTION', E}, State};
-		{'EXCEPTION', E} when record(E,'CosTransactions_HeuristicHazard'),
+		{'EXCEPTION', E} when is_record(E,'CosTransactions_HeuristicHazard'),
 				      Heuristics==true->
 		    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 		    {stop, normal, {'EXCEPTION', E}, State};
-		{'EXCEPTION', E} when record(E,'CosTransactions_HeuristicMixed') ->
+		{'EXCEPTION', E} when is_record(E,'CosTransactions_HeuristicMixed') ->
 		    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 		    {stop, normal, 
 		     {'EXCEPTION',#'TRANSACTION_ROLLEDBACK'{completion_status=?COMPLETED_YES}},
 		     State};
-		{'EXCEPTION', E} when record(E,'CosTransactions_HeuristicHazard') ->
+		{'EXCEPTION', E} when is_record(E,'CosTransactions_HeuristicHazard') ->
 		    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 		    {stop, normal, 
 		     {'EXCEPTION', #'TRANSACTION_ROLLEDBACK'{completion_status=?COMPLETED_YES}},
@@ -215,35 +215,35 @@ evaluate_answer(_Self, State, Heuristics, Vote) ->
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusCommitted'),
 	    {stop, normal, ok, State};
-	{'EXCEPTION', E} when Heuristics == true,
-			      record(E,'CosTransactions_HeuristicMixed') ->
+	{'EXCEPTION', E} when Heuristics == true andalso
+			      is_record(E,'CosTransactions_HeuristicMixed') ->
 	    log_safe(?tr_get_terminator(State), {heuristic, State, E}),
 	    ?eval_debug_fun({_Self, commit_heuristic1}, State),
 	    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
 	    {stop, normal, {'EXCEPTION', E}, State};
-	{'EXCEPTION', E} when Heuristics == true,
-			      record(E, 'CosTransactions_HeuristicHazard') ->
+	{'EXCEPTION', E} when Heuristics == true andalso
+			      is_record(E, 'CosTransactions_HeuristicHazard') ->
 	    log_safe(?tr_get_terminator(State), {heuristic, State, E}),
 	    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
 	    {stop, normal, {'EXCEPTION', E}, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    log_safe(?tr_get_terminator(State), rolled_back),
 	    {stop, normal, {'EXCEPTION', ?tr_hazard}, State};
-	{'EXCEPTION', E} when record(E, 'TRANSACTION_ROLLEDBACK') ->
+	{'EXCEPTION', E} when is_record(E, 'TRANSACTION_ROLLEDBACK') ->
 	    log_safe(?tr_get_terminator(State), rolled_back),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
 	    {stop, normal, {'EXCEPTION', E}, State};
-	{'EXCEPTION', E} when record(E, 'CosTransactions_HeuristicCommit') ->
+	{'EXCEPTION', E} when is_record(E, 'CosTransactions_HeuristicCommit') ->
 	    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusRolledBack'),
 	    {stop, normal, ok, State};
-	{'EXCEPTION', E} when record(E, 'CosTransactions_HeuristicRollback') ->
+	{'EXCEPTION', E} when is_record(E, 'CosTransactions_HeuristicRollback') ->
 	    catch 'ETraP_Server':forget(?tr_get_etrap(State)),
 %	    catch 'ETraP_Server':after_completion(?tr_get_etrap(State),
 %						  'StatusCommitted'),

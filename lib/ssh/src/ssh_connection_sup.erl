@@ -16,7 +16,6 @@
 %% 
 %% %CopyrightEnd%
 %%
-
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Ssh connection supervisor.
@@ -56,7 +55,8 @@ connection_manager(SupPid) ->
 %%%  Supervisor callback
 %%%=========================================================================
 init([Args]) ->  
-    RestartStrategy = one_for_all,
+    RestartStrategy = one_for_one,
+%    RestartStrategy = one_for_all,
     MaxR = 0,
     MaxT = 3600,
     Children = child_specs(Args),
@@ -83,7 +83,8 @@ child_specs(handler, Opts) ->
 manager_spec([server = Role, Socket, Opts]) ->
     Name = make_ref(), 
     StartFunc = {ssh_connection_manager, start_link, [[Role, Socket, Opts]]},
-    Restart = permanent, 
+    Restart = transient, 
+%    Restart = permanent, 
     Shutdown = 3600,
     Modules = [ssh_connection_manager],
     Type = worker,
@@ -93,7 +94,9 @@ manager_spec([client = Role | Opts]) ->
     Name = make_ref(), 
     StartFunc = {ssh_connection_manager, start_link, [[Role, Opts]]},
     %%TODO restarttype?
-    Restart = permanent, 
+    Restart = temporary,
+%    Restart = transient, 
+%    Restart = permanent, 
     Shutdown = 3600,
     Modules = [ssh_connection_manager],
     Type = worker,
@@ -103,7 +106,8 @@ handler_spec([Role, Socket, Opts]) ->
     Name = make_ref(), 
     StartFunc = {ssh_connection_handler, 
 		 start_link, [Role, self(), Socket, Opts]},
-    Restart = permanent, 
+    Restart = transient, 
+%    Restart = permanent, 
     Shutdown = 3600,
     Modules = [ssh_connection_handler],
     Type = worker,

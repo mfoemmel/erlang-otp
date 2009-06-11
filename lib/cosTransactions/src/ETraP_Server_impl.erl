@@ -510,10 +510,10 @@ commit_one_phase(_Self, {Env, Local}) ->
 				'VoteReadOnly' ->
 				    {stop, normal, ok, {Env, NewL}};
 				{'EXCEPTION', E} 
-				when record(E, 'CosTransactions_HeuristicMixed') ->
+				when is_record(E, 'CosTransactions_HeuristicMixed') ->
 				    {reply, {'EXCEPTION', E}, {Env, NewL}};
 				{'EXCEPTION', E} 
-				when record(E, 'CosTransactions_HeuristicHazard') ->
+				when is_record(E, 'CosTransactions_HeuristicHazard') ->
 				    {reply, {'EXCEPTION', E}, {Env, NewL}};
 				Other ->
 				    ?tr_error_msg("Coordinator:prepare( ~p ) failed. REASON ~p~n", 
@@ -1106,25 +1106,25 @@ send_prepare([Rhead|Rtail], VC, Alarm) ->
 		    send_info(Rtail, 'CosTransactions_Resource', rollback),
 		    {rollback, VC}
 	    end;
-	{'EXCEPTION',E} when record(E, 'TIMEOUT') ->
+	{'EXCEPTION',E} when is_record(E, 'TIMEOUT') ->
 	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
 			  [Rhead]),
 	    %% Since we use presumed abort we will rollback the transaction.
 	    send_info(Rtail, 'CosTransactions_Resource', rollback),
 	    {rollback, VC};
-	{'EXCEPTION',E} when record(E, 'TRANSIENT') ->
+	{'EXCEPTION',E} when is_record(E, 'TRANSIENT') ->
 	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
 			  [Rhead]),
 	    %% Since we use presumed abort we will rollback the transaction.
 	    send_info(Rtail, 'CosTransactions_Resource', rollback),
 	    {rollback, VC};
-	{'EXCEPTION',E} when record(E, 'COMM_FAILURE') ->
+	{'EXCEPTION',E} when is_record(E, 'COMM_FAILURE') ->
 	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
 			  [Rhead]),
 	    %% Since we use presumed abort we will rollback the transaction.
 	    send_info(Rtail, 'CosTransactions_Resource', rollback),
 	    {rollback, VC};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
 			  [Rhead]),
 	    send_info(Rtail, 'CosTransactions_Resource', rollback),
@@ -1173,10 +1173,10 @@ type_check(_, ID, Func, Obj) ->
 %% Effect   : Returns true if the exception is a heuristic exc.
 %%------------------------------------------------------------
 
-is_heuristic(E) when record(E, 'CosTransactions_HeuristicMixed')    -> true;
-is_heuristic(E) when record(E, 'CosTransactions_HeuristicHazard')   -> true;
-is_heuristic(E) when record(E, 'CosTransactions_HeuristicCommit')   -> true;
-is_heuristic(E) when record(E, 'CosTransactions_HeuristicRollback') -> true;
+is_heuristic(E) when is_record(E, 'CosTransactions_HeuristicMixed')    -> true;
+is_heuristic(E) when is_record(E, 'CosTransactions_HeuristicHazard')   -> true;
+is_heuristic(E) when is_record(E, 'CosTransactions_HeuristicCommit')   -> true;
+is_heuristic(E) when is_record(E, 'CosTransactions_HeuristicRollback') -> true;
 is_heuristic(_)            -> false.
 
 %%-----------------------------------------------------------%
@@ -1203,9 +1203,9 @@ exception_set({Env,Local}) ->
 %% Effect   : Set the correct tuple member to true.
 %%------------------------------------------------------------
 
-set_exception(Exc, E) when record(E, 'CosTransactions_HeuristicMixed')  -> 
+set_exception(Exc, E) when is_record(E, 'CosTransactions_HeuristicMixed')  -> 
     Exc#exc{mixed  = true};
-set_exception(Exc, E) when record(E, 'CosTransactions_HeuristicHazard') -> 
+set_exception(Exc, E) when is_record(E, 'CosTransactions_HeuristicHazard') -> 
     Exc#exc{hazard = true};
 set_exception(Exc, _)            -> Exc.
 
@@ -1295,8 +1295,8 @@ send_decision({Env, Local}, Reply, [Rhead|Rtail], Vote, Exc, Failed, Times) ->
         ok ->
 	    ?etr_log(?tr_get_etrap(Env),{sent, Rhead}),
             send_decision({Env, Local}, Reply, Rtail, Vote, Exc, Failed, Times);
-        {'EXCEPTION', E} when Vote == commit,
-			      record(E, 'CosTransactions_NotPrepared') ->
+        {'EXCEPTION', E} when Vote == commit andalso
+			      is_record(E, 'CosTransactions_NotPrepared') ->
 	    ?debug_print("send_decision resource unprepared~n",[]),
             case catch 'CosTransactions_Resource':prepare(Rhead) of
                 'VoteCommit' ->
@@ -1399,15 +1399,15 @@ send_info([Rhead|Rtail], M, F) ->
 %%------------------------------------------------------------
 
 evaluate_answer(E, Rhead, _Vote, Exc, Log, Local) 
-  when record(E, 'CosTransactions_HeuristicMixed') ->
+  when is_record(E, 'CosTransactions_HeuristicMixed') ->
     ?etr_log(Log, {heuristic, {Rhead, E}}),
     {Exc#exc{mixed = true}, ?etr_add_raisedH(Local, Rhead), []};
 evaluate_answer(E, Rhead, _Vote, Exc, Log, Local)
-  when record(E, 'CosTransactions_HeuristicHazard') ->
+  when is_record(E, 'CosTransactions_HeuristicHazard') ->
     ?etr_log(Log, {heuristic, {Rhead, E}}),
     {Exc#exc{hazard = true}, ?etr_add_raisedH(Local, Rhead), []};
 evaluate_answer(E, Rhead, Vote, Exc, Log, Local)
-  when record(E, 'CosTransactions_HeuristicCommit') ->
+  when is_record(E, 'CosTransactions_HeuristicCommit') ->
     case Vote of
 	commit ->
 	    ?etr_log(Log, {heuristic, {Rhead, E}}),
@@ -1417,7 +1417,7 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local)
 	    {Exc#exc{mixed = true}, ?etr_add_raisedH(Local, Rhead), []}
     end;
 evaluate_answer(E, Rhead, Vote, Exc, Log, Local) 
-  when record(E, 'CosTransactions_HeuristicRollback')->
+  when is_record(E, 'CosTransactions_HeuristicRollback')->
     case Vote of
 	rollback ->
 	    ?etr_log(Log, {heuristic, {Rhead, ?tr_rollback}}),
@@ -1427,10 +1427,10 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local)
 	    {Exc#exc{mixed = true}, ?etr_add_raisedH(Local, Rhead), []}
     end;
 evaluate_answer(E, Rhead, Vote, Exc, Log, Local) 
-  when Vote == commit, record(E, 'TRANSACTION_ROLLEDBACK') ->
+  when Vote == commit andalso is_record(E, 'TRANSACTION_ROLLEDBACK') ->
     ?etr_log(Log, {heuristic, {Rhead, ?tr_mixed}}),
     {Exc#exc{mixed = true}, ?etr_add_raisedH(Local, Rhead), []};
-evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'TIMEOUT') ->
+evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when is_record(E, 'TIMEOUT') ->
     ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
 		  [Vote, Rhead, E]),
     case catch corba_object:non_existent(Rhead) of
@@ -1442,7 +1442,7 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'TIMEOUT') ->
 	_ ->
 	    {Exc, Local, [Rhead]}
     end;
-evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'TRANSIENT') ->
+evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when is_record(E, 'TRANSIENT') ->
     ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
 		  [Vote, Rhead, E]),
     case catch corba_object:non_existent(Rhead) of
@@ -1454,7 +1454,7 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'TRANSIENT') ->
 	_ ->
 	    {Exc, Local, [Rhead]}
     end;
-evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'COMM_FAILURE') ->
+evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when is_record(E, 'COMM_FAILURE') ->
     ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
 		  [Vote, Rhead, E]),
     case catch corba_object:non_existent(Rhead) of
@@ -1466,7 +1466,7 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'COMM_FAILURE') 
 	_ ->
 	    {Exc, Local, [Rhead]}
     end;
-evaluate_answer(E, Rhead, Vote, Exc, Log, Local)when record(E, 'OBJECT_NOT_EXIST') ->
+evaluate_answer(E, Rhead, Vote, Exc, Log, Local)when is_record(E, 'OBJECT_NOT_EXIST') ->
     ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
 		  [Vote, Rhead, E]),
     %% Since we have presumed abort, the child will
@@ -1507,7 +1507,7 @@ test_exc(#exc{mixed = true}, _, _, {Env, Local}) ->
 test_exc(#exc{hazard = true}, _, _, {Env, Local}) ->
     {reply, {'EXCEPTION', ?tr_hazard}, {Env, ?etr_set_exc(Local, ?tr_hazard)}};
 test_exc(_, _, {'EXCEPTION', E}, {Env, Local}) 
-  when record(E, 'TRANSACTION_ROLLEDBACK')->
+  when is_record(E, 'TRANSACTION_ROLLEDBACK')->
     {stop, normal, {'EXCEPTION', E}, {Env, Local}};
 %% Replace the case above if allow synchronization
 %test_exc(_, _, {'EXCEPTION', E}, {Env, Local}) 

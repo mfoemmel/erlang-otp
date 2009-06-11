@@ -346,7 +346,7 @@
           <item>
             <pre>
   #sctp_paddr_change{
-        addr      = ip_address(),
+        addr      = {ip_address(),port()},
         state     = atom(),
         error     = int(),
         assoc_id  = assoc_id()
@@ -369,6 +369,9 @@
               </item>
               <item>
                 <p><c>addr_made_prim</c>.</p>
+              </item>
+              <item>
+                <p><c>addr_confirmed</c>.</p>
               </item>
             </list>
             <p>In case of an error (e.g. <c>addr_unreachable</c>), the
@@ -987,16 +990,16 @@
   -include_lib("kernel/include/inet_sctp.hrl").
   
   server() -&gt;
-      server([any,2006]).
+      server(any, 2006).
   
   server([Host,Port]) when is_list(Host), is_list(Port) -&gt;
       {ok, #hostent{h_addr_list = [IP|_]}} = inet:gethostbyname(Host),
       io:format("~w -&gt; ~w~n", [Host, IP]),
-      server([IP, list_to_integer(Port)]);
+      server([IP, list_to_integer(Port)]).
   
-  server(IP, Port) when is_tuple(IP) orlese IP == any orelse IP == loopback,
+  server(IP, Port) when is_tuple(IP) orelse IP == any orelse IP == loopback,
                         is_integer(Port) -&gt;
-      {ok,S} = gen_sctp:open([{ip,IP},{port,Port}],[{sctp_recbuf,65536}]),
+      {ok,S} = gen_sctp:open([{ip,IP},{port,Port}],[{recbuf,65536}]),
       io:format("Listening on ~w:~w. ~w~n", [IP,Port,S]),
       ok     = gen_sctp:listen(S, true),
       server_loop(S).
@@ -1006,7 +1009,7 @@
       {error, Error} -&gt;
           io:format("SCTP RECV ERROR: ~p~n", [Error]);
       Data -&gt;
-          io:format("Error: ~p~n", [Data])
+          io:format("Received: ~p~n", [Data])
       end,
       server_loop(S).        </pre>
         <p></p>
@@ -1023,21 +1026,22 @@
   -module(sctp_client).
   
   -export([client/0, client/1, client/2]).
-  -include("inet.hrl").
+  -include_lib("kernel/include/inet.hrl").
+  -include_lib("kernel/include/inet_sctp.hrl").
  
   client() -&gt;
       client([localhost]).
   
   client([Host]) -&gt;
-      client([Host,2006]);
+      client(Host, 2006);
   
   client([Host, Port]) when is_list(Host), is_list(Port) -&gt;
       client(Host,list_to_integer(Port)),
-      init:stop();
+      init:stop().
   
   client(Host, Port) when is_integer(Port) -&gt;
       {ok,S}     = gen_sctp:open(),
-      {ok Assoc} = gen_sctp:connect
+      {ok,Assoc} = gen_sctp:connect
           (S, Host, Port, [{sctp_initmsg,#sctp_initmsg{num_ostreams=5}}]),
       io:format("Connection Successful, Assoc=~p~n", [Assoc]),
       

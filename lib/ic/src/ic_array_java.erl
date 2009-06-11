@@ -26,12 +26,12 @@
 -include("icforms.hrl").
 
 
-gen(G, N, X, Array) when record(X, member) ->
+gen(G, N, X, Array) when is_record(X, member) ->
     ArrayName =  ic_forms:get_java_id(Array),
     ArrayElement = ic_forms:get_type(X),
     emit_holder_class(G, N, X, Array, ArrayName, ArrayElement),
     emit_helper_class(G, N, X, Array, ArrayName, ArrayElement);
-gen(G, N, X, Array) when record(X, case_dcl) ->
+gen(G, N, X, Array) when is_record(X, case_dcl) ->
     ArrayName =  ic_forms:get_java_id(Array),
     ArrayElement = ic_forms:get_type(X),
     emit_holder_class(G, N, X, Array, ArrayName, ArrayElement),
@@ -250,7 +250,7 @@ mk_array_dim_list(G,N,Array) ->
 mk_array_dim_list2(_G,_N,[]) ->
     [];
 
-mk_array_dim_list2(G,N,[D |Ds]) when record(D,scoped_id) ->
+mk_array_dim_list2(G,N,[D |Ds]) when is_record(D,scoped_id) ->
     {FSN, _, _, _} = ic_symtab:get_full_scoped_name(G, N, D),
     [ ic_util:to_dot(G,FSN) | mk_array_dim_list2(G,N,Ds)];
 

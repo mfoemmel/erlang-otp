@@ -29,9 +29,11 @@
 %% API
 -export([request/1, request/2, request/4, request/5,
 	 cancel_request/1, cancel_request/2,
+	 set_option/2, set_option/3,
 	 set_options/1, set_options/2,
 	 verify_cookies/2, verify_cookies/3, cookie_header/1, 
-	 cookie_header/2, stream_next/1]).
+	 cookie_header/2, stream_next/1,
+	 default_profile/0]).
 
 %% Behavior callbacks
 -export([start_standalone/1, start_service/1, 
@@ -39,6 +41,9 @@
 
 -include("http_internal.hrl").
 -include("httpc_internal.hrl").
+
+-define(DEFAULT_PROFILE, default).
+
 
 %%%=========================================================================
 %%%  API
@@ -51,11 +56,13 @@
 %%	Url - string() 
 %% Description: Calls request/4 with default values.
 %%--------------------------------------------------------------------------
+
 request(Url) ->
-    request(Url, default).
+    request(Url, default_profile()).
 
 request(Url, Profile) ->
     request(get, {Url, []}, [], [], Profile).
+
 
 %%--------------------------------------------------------------------------
 %% request(Method, Request, HTTPOptions, Options [, Profile]) ->
@@ -94,23 +101,27 @@ request(Url, Profile) ->
 %%--------------------------------------------------------------------------
 
 request(Method, Request, HttpOptions, Options) ->
-    request(Method, Request, HttpOptions, Options, default). 
+    request(Method, Request, HttpOptions, Options, default_profile()). 
 
 request(Method, {Url, Headers}, HTTPOptions, Options, Profile) 
-  when Method==options;Method==get;Method==head;Method==delete;Method==trace ->
+  when (Method =:= options) orelse 
+       (Method =:= get) orelse 
+       (Method =:= head) orelse 
+       (Method =:= delete) orelse 
+       (Method =:= trace) ->
     case http_uri:parse(Url) of
-	{error,Reason} ->
-	    {error,Reason};
+	{error, Reason} ->
+	    {error, Reason};
 	ParsedUrl ->
 	    handle_request(Method, Url, {ParsedUrl, Headers, [], []}, 
 			   HTTPOptions, Options, Profile)
     end;
      
 request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options, Profile) 
-  when Method==post;Method==put ->
+  when (Method =:= post) orelse (Method =:= put) ->
     case http_uri:parse(Url) of
-	{error,Reason} ->
-	    {error,Reason};
+	{error, Reason} ->
+	    {error, Reason};
 	ParsedUrl ->
 	    handle_request(Method, Url, 
 			   {ParsedUrl, Headers, ContentType, Body}, 
@@ -124,7 +135,7 @@ request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options, Profile)
 %% Description: Cancels a HTTP-request.
 %%-------------------------------------------------------------------------
 cancel_request(RequestId) ->
-    cancel_request(RequestId, default).
+    cancel_request(RequestId, default_profile()).
 
 cancel_request(RequestId, Profile) ->
     ok = httpc_manager:cancel_request(RequestId, profile_name(Profile)), 
@@ -137,27 +148,35 @@ cancel_request(RequestId, Profile) ->
 	    ok
     end.
 
+
+set_option(Key, Value) ->
+    set_option(Key, Value, default_profile()).
+
+set_option(Key, Value, Profile) ->
+    set_options([{Key, Value}], Profile).
+
+
 %%--------------------------------------------------------------------------
 %% set_options(Options [, Profile]) -> ok | {error, Reason}
 %%   Options - [Option]
 %%   Profile - atom()
 %%   Option - {proxy, {Proxy, NoProxy}} | {max_sessions, MaxSessions} | 
 %%            {max_pipeline_length, MaxPipeline} | 
-%%            {pipeline_timeout, PipelineTimeout} | {cookies, CookieMode}
-%%            | {ipv6, Ipv6Mode}
+%%            {pipeline_timeout, PipelineTimeout} | {cookies, CookieMode} | 
+%%            {ipfamily, IpFamily}
 %%   Proxy - {Host, Port}
 %%   NoProxy - [Domain | HostName | IPAddress]   
 %%   MaxSessions, MaxPipeline, PipelineTimeout = integer()   
 %%   CookieMode - enabled | disabled | verify
-%%   Ipv6Mode - enabled | disabled
+%%   IpFamily - inet | inet6 | inet6fb4
 %% Description: Informs the httpc_manager of the new settings. 
 %%-------------------------------------------------------------------------
 set_options(Options) ->
-    set_options(Options, default).
+    set_options(Options, default_profile()).
 set_options(Options, Profile) ->
     case validate_options(Options) of
-	ok ->
-	    try httpc_manager:set_options(Options, profile_name(Profile)) of
+	{ok, Opts} ->
+	    try httpc_manager:set_options(Opts, profile_name(Profile)) of
 		Result ->
 		    Result
 	    catch
@@ -168,16 +187,18 @@ set_options(Options, Profile) ->
 	    {error, Reason}
     end.
 
+
 %%--------------------------------------------------------------------------
 %% verify_cookies(SetCookieHeaders, Url [, Profile]) -> ok | {error, reason} 
 %%   
 %%                                 
-%% Description: Store the cookies from <SetCookieHeaders> in the cookie database
+%% Description: Store the cookies from <SetCookieHeaders> 
+%%              in the cookie database
 %% for the profile <Profile>. This function shall be used when the option
 %% cookie is set to verify. 
 %%-------------------------------------------------------------------------
 verify_cookies(SetCookieHeaders, Url) ->
-    verify_cookies(SetCookieHeaders, Url, default).
+    verify_cookies(SetCookieHeaders, Url, default_profile()).
 
 verify_cookies(SetCookieHeaders, Url, Profile) ->
     {_, _, Host, Port, Path, _} = http_uri:parse(Url),
@@ -198,7 +219,7 @@ verify_cookies(SetCookieHeaders, Url, Profile) ->
 %% a request to <Url>.
 %%-------------------------------------------------------------------------
 cookie_header(Url) ->
-    cookie_header(Url, default).
+    cookie_header(Url, default_profile()).
 
 cookie_header(Url, Profile) ->
     try httpc_manager:cookies(Url, profile_name(Profile)) of
@@ -253,14 +274,15 @@ service_info(Pid) ->
 	    {error, service_not_available} 
     end.
 
+
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
-handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
-			Headers, ContentType, Body}, 
+handle_request(Method, Url, 
+	       {{Scheme, UserInfo, Host, Port, Path, Query}, Headers, ContentType, Body}, 
 	       HTTPOptions, Options, Profile) ->
+
     HTTPRecordOptions = http_options(HTTPOptions, #http_options{}),
-    
     Sync = proplists:get_value(sync, Options, true),
     NewHeaders = lists:map(fun({Key, Val}) -> 
 				   {http_util:to_lower(Key), Val} end,
@@ -275,16 +297,19 @@ handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
 	    RecordHeaders = header_record(NewHeaders, #http_request_h{}, 
 					  Host, Version),
 	    Request = #request{from = self(),
-			       scheme = Scheme, address = {Host,Port},
-			       path = Path, pquery = Query, method = Method,
+			       scheme = Scheme, 
+			       address = {Host,Port},
+			       path = Path, 
+			       pquery = Query, 
+			       method = Method,
 			       headers = RecordHeaders, 
 			       content = {ContentType,Body},
 			       settings = 
 			       HTTPRecordOptions#http_options{version = Version},
-			       abs_uri = Url, userinfo = UserInfo, 
+			       abs_uri = Url, 
+			       userinfo = UserInfo, 
 			       stream = Stream, 
-			       headers_as_is = 
-			       headers_as_is(Headers, Options)},
+			       headers_as_is = headers_as_is(Headers, Options)},
 	    try httpc_manager:request(Request, profile_name(Profile)) of
 		{ok, RequestId} ->
 		    handle_answer(RequestId, Sync, Options);
@@ -348,65 +373,178 @@ headers_as_is(Headers, Options) ->
 http_options([], Acc) ->
     Acc;
 http_options([{timeout, Val} | Settings], Acc) 
-  when is_integer(Val), Val >= 0->
+  when is_integer(Val) andalso (Val >= 0) ->
     http_options(Settings, Acc#http_options{timeout = Val});
 http_options([{timeout, infinity} | Settings], Acc) ->
     http_options(Settings, Acc#http_options{timeout = infinity});
 http_options([{autoredirect, Val} | Settings], Acc)   
-  when Val == true; Val == false ->
+  when (Val =:= true) orelse (Val =:= false) ->
     http_options(Settings, Acc#http_options{autoredirect = Val});
 http_options([{ssl, Val} | Settings], Acc) ->
     http_options(Settings, Acc#http_options{ssl = Val});
 http_options([{relaxed, Val} | Settings], Acc)
-  when Val == true; Val == false ->
+  when (Val =:= true) orelse (Val =:= false) ->
     http_options(Settings, Acc#http_options{relaxed = Val});
 http_options([{proxy_auth, Val = {User, Passwd}} | Settings], Acc) 
-  when is_list(User),
-       is_list(Passwd) ->
+  when is_list(User) andalso is_list(Passwd) ->
     http_options(Settings, Acc#http_options{proxy_auth = Val});
 http_options([{version, Val} | Settings], Acc) 
-  when is_atom(Val)->
+  when is_atom(Val) ->
+    http_options(Settings, Acc#http_options{version = atom_to_list(Val)});
+http_options([{version, Val} | Settings], Acc) 
+  when is_list(Val) ->
     http_options(Settings, Acc#http_options{version = Val});
 http_options([Option | Settings], Acc) ->
     Report = io_lib:format("Invalid option ~p ignored ~n", [Option]),
     error_logger:info_report(Report),
     http_options(Settings, Acc).
 
-validate_options([]) ->
-    ok;
-validate_options([{proxy, {{ProxyHost, ProxyPort}, NoProxy}}| Tail]) when
-		 is_list(ProxyHost), is_integer(ProxyPort), 
-		 is_list(NoProxy) ->
-    validate_options(Tail);
-validate_options([{pipeline_timeout, Value}| Tail]) when is_integer(Value) ->
-    validate_options(Tail);
-validate_options([{pipeline_timeout, infinity}| Tail]) ->
-    validate_options(Tail);
-validate_options([{keep_alive_timeout, Value}| Tail]) when is_integer(Value) ->
-    validate_options(Tail);
-validate_options([{keep_alive_timeout, infinity}| Tail]) ->
-    validate_options(Tail);
-validate_options([{max_pipeline_length, Value}| Tail]) 
-  when is_integer(Value) ->
-    validate_options(Tail);
-validate_options([{max_pipeline_length, Value}| Tail]) 
-  when is_integer(Value) ->
-    validate_options(Tail);
-validate_options([{max_sessions, Value}| Tail]) when is_integer(Value) ->
-    validate_options(Tail);
-validate_options([{cookies, Value}| Tail]) 
-  when Value == enabled; Value == disabled; Value == verify ->
-    validate_options(Tail);
-validate_options([{ipv6, Value}| Tail]) 
-  when Value == enabled; Value == disabled ->
-    validate_options(Tail);
-validate_options([{verbose, Value}| Tail]) when Value == false;
-						Value == verbose;
-						Value == debug;
-						Value == trace ->
-    validate_options(Tail);
-validate_options([{_, _} = Opt| _]) ->
+
+validate_options(Options) ->
+    (catch validate_options(Options, [])).
+
+validate_options([], ValidateOptions) ->
+    {ok, lists:reverse(ValidateOptions)};
+
+validate_options([{proxy, Proxy} = Opt| Tail], Acc) ->
+    validate_proxy(Proxy),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{max_sessions, Value} = Opt| Tail], Acc) ->
+    validate_max_sessions(Value),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{keep_alive_timeout, Value} = Opt| Tail], Acc) ->
+    validate_keep_alive_timeout(Value),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{max_keep_alive_length, Value} = Opt| Tail], Acc) ->
+    validate_max_keep_alive_length(Value),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{pipeline_timeout, Value} = Opt| Tail], Acc) ->
+    validate_pipeline_timeout(Value),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{max_pipeline_length, Value} = Opt| Tail], Acc) ->
+    validate_max_pipeline_length(Value), 
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{cookies, Value} = Opt| Tail], Acc) ->
+    validate_cookies(Value),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{ipfamily, Value} = Opt| Tail], Acc) ->
+    validate_ipfamily(Value), 
+    validate_options(Tail, [Opt | Acc]);
+
+%% For backward compatibillity
+validate_options([{ipv6, Value}| Tail], Acc) ->
+    NewValue = validate_ipv6(Value), 
+    Opt = {ipfamily, NewValue},
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{ip, Value} = Opt| Tail], Acc) ->
+    validate_ip(Value),
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{port, Value} = Opt| Tail], Acc) ->
+    validate_port(Value), 
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{verbose, Value} = Opt| Tail], Acc) ->
+    validate_verbose(Value), 
+    validate_options(Tail, [Opt | Acc]);
+
+validate_options([{_, _} = Opt| _], _Acc) ->
     {error, {not_an_option, Opt}}.
+
+
+validate_proxy({{ProxyHost, ProxyPort}, NoProxy} = Proxy) 
+  when is_list(ProxyHost) andalso 
+       is_integer(ProxyPort) andalso 
+       is_list(NoProxy) ->
+    Proxy;
+validate_proxy(BadProxy) ->
+    bad_option(proxy, BadProxy).
+
+validate_max_sessions(Value) when is_integer(Value) andalso (Value >= 0) ->
+    Value;
+validate_max_sessions(BadValue) ->
+    bad_option(max_sessions, BadValue).
+
+validate_keep_alive_timeout(Value) when is_integer(Value) andalso (Value >= 0) ->
+    Value;
+validate_keep_alive_timeout(infinity = Value) ->
+    Value;
+validate_keep_alive_timeout(BadValue) ->
+    bad_option(keep_alive_timeout, BadValue).
+
+validate_max_keep_alive_length(Value) when is_integer(Value) andalso (Value >= 0) ->
+    Value;
+validate_max_keep_alive_length(BadValue) ->
+    bad_option(max_keep_alive_length, BadValue).
+
+validate_pipeline_timeout(Value) when is_integer(Value) ->
+    Value;
+validate_pipeline_timeout(infinity = Value) ->
+    Value;
+validate_pipeline_timeout(BadValue) ->
+    bad_option(pipeline_timeout, BadValue).
+
+validate_max_pipeline_length(Value) when is_integer(Value) ->
+    Value;
+validate_max_pipeline_length(BadValue) ->
+    bad_option(max_pipeline_length, BadValue).
+
+validate_cookies(Value) 
+  when ((Value =:= enabled)  orelse 
+	(Value =:= disabled) orelse 
+	(Value =:= verify)) ->
+    Value;
+validate_cookies(BadValue) ->
+    bad_option(cookies, BadValue).
+
+validate_ipv6(Value) when (Value =:= enabled) orelse (Value =:= disabled) ->
+    case Value of
+	enabled ->
+	    inet6fb4;
+	disabled ->
+	    inet
+    end;  
+validate_ipv6(BadValue) ->
+    bad_option(ipv6, BadValue).
+
+validate_ipfamily(Value) 
+  when (Value =:= inet) orelse (Value =:= inet6) orelse (Value =:= inet6fb4) ->
+    Value;
+validate_ipfamily(BadValue) ->
+    bad_option(ipfamily, BadValue).
+
+validate_ip(Value) 
+  when is_tuple(Value) andalso ((size(Value) =:= 4) orelse (size(Value) =:= 8)) ->
+    Value;
+validate_ip(BadValue) ->
+    bad_option(ip, BadValue).
+    
+validate_port(Value) when is_integer(Value) ->
+    Value;
+validate_port(BadValue) ->
+    bad_option(port, BadValue).
+
+validate_verbose(Value) 
+  when ((Value =:= false) orelse 
+	(Value =:= verbose) orelse 
+	(Value =:= debug) orelse 
+	(Value =:= trace)) ->
+    ok;
+validate_verbose(BadValue) ->
+    bad_option(verbose, BadValue).
+
+bad_option(Option, BadValue) ->
+    throw({error, {bad_option, Option, BadValue}}).
+
+
 
 header_record([], RequestHeaders, Host, Version) ->
     validate_headers(RequestHeaders, Host, Version);
@@ -555,7 +693,11 @@ validate_headers(RequestHeaders = #http_request_h{host = undefined},
 validate_headers(RequestHeaders, _, _) ->
     RequestHeaders.
 
-profile_name(default) ->
+
+default_profile() ->
+    ?DEFAULT_PROFILE.
+
+profile_name(?DEFAULT_PROFILE) ->
     httpc_manager;
 profile_name(Pid) when is_pid(Pid) ->
     Pid;
@@ -575,4 +717,15 @@ child_name(Pid, [{Name, Pid} | _]) ->
     Name;
 child_name(Pid, [_ | Children]) ->
     child_name(Pid, Children).
+
+%% d(F) ->
+%%    d(F, []).
+
+%% d(F, A) -> 
+%%     d(get(dbg), F, A).
+
+%% d(true, F, A) ->
+%%     io:format(user, "~w:~w:" ++ F ++ "~n", [self(), ?MODULE | A]);
+%% d(_, _, _) ->
+%%     ok.
 

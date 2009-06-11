@@ -46,6 +46,7 @@ typedef struct process Process;
 #include "erl_bif_timer.h"
 #include "erl_time.h"
 #include "erl_atom_table.h"
+#include "external.h"
 
 #ifdef HIPE
 #include "hipe_process.h"
@@ -142,27 +143,33 @@ extern Uint erts_no_run_queues;
    | ERTS_RUNQ_FLG_INACTIVE \
    | ERTS_RUNQ_FLG_OUT_OF_WORK \
    | ERTS_RUNQ_FLG_HALFTIME_OUT_OF_WORK)
- 
+
+#define ERTS_RUNQ_FLG_EMIGRATE(PRIO) \
+  (((Uint32) 1) << (ERTS_RUNQ_FLGS_EMIGRATE_SHFT + (PRIO)))
 #define ERTS_CHK_RUNQ_FLG_EMIGRATE(FLGS, PRIO) \
-  ((FLGS) & (((Uint32) 1) << (ERTS_RUNQ_FLGS_EMIGRATE_SHFT + (PRIO))))
+  ((FLGS) & ERTS_RUNQ_FLG_EMIGRATE((PRIO)))
 #define ERTS_SET_RUNQ_FLG_EMIGRATE(FLGS, PRIO) \
-  ((FLGS) |= (((Uint32) 1) << (ERTS_RUNQ_FLGS_EMIGRATE_SHFT + (PRIO))))
+  ((FLGS) |= ERTS_RUNQ_FLG_EMIGRATE((PRIO)))
 #define ERTS_UNSET_RUNQ_FLG_EMIGRATE(FLGS, PRIO) \
-  ((FLGS) &= ~(((Uint32) 1) << (ERTS_RUNQ_FLGS_EMIGRATE_SHFT + (PRIO))))
+  ((FLGS) &= ~ERTS_RUNQ_FLG_EMIGRATE((PRIO)))
 
+#define ERTS_RUNQ_FLG_IMMIGRATE(PRIO) \
+  (((Uint32) 1) << (ERTS_RUNQ_FLGS_IMMIGRATE_SHFT + (PRIO)))
 #define ERTS_CHK_RUNQ_FLG_IMMIGRATE(FLGS, PRIO) \
-  ((FLGS) & (((Uint32) 1) << (ERTS_RUNQ_FLGS_IMMIGRATE_SHFT + (PRIO))))
+  ((FLGS) & ERTS_RUNQ_FLG_IMMIGRATE((PRIO)))
 #define ERTS_SET_RUNQ_FLG_IMMIGRATE(FLGS, PRIO) \
-  ((FLGS) |= (((Uint32) 1) << (ERTS_RUNQ_FLGS_IMMIGRATE_SHFT + (PRIO))))
+  ((FLGS) |= ERTS_RUNQ_FLG_IMMIGRATE((PRIO)))
 #define ERTS_UNSET_RUNQ_FLG_IMMIGRATE(FLGS, PRIO) \
-  ((FLGS) &= ~(((Uint32) 1) << (ERTS_RUNQ_FLGS_IMMIGRATE_SHFT + (PRIO))))
+  ((FLGS) &= ~ERTS_RUNQ_FLG_IMMIGRATE((PRIO)))
 
+#define ERTS_RUNQ_FLG_EVACUATE(PRIO) \
+  (((Uint32) 1) << (ERTS_RUNQ_FLGS_EVACUATE_SHFT + (PRIO)))
 #define ERTS_CHK_RUNQ_FLG_EVACUATE(FLGS, PRIO) \
-  ((FLGS) & (((Uint32) 1) << (ERTS_RUNQ_FLGS_EVACUATE_SHFT + (PRIO))))
+  ((FLGS) & ERTS_RUNQ_FLG_EVACUATE((PRIO)))
 #define ERTS_SET_RUNQ_FLG_EVACUATE(FLGS, PRIO) \
-  ((FLGS) |= (((Uint32) 1) << (ERTS_RUNQ_FLGS_EVACUATE_SHFT + (PRIO))))
+  ((FLGS) |= ERTS_RUNQ_FLG_EVACUATE((PRIO)))
 #define ERTS_UNSET_RUNQ_FLG_EVACUATE(FLGS, PRIO) \
-  ((FLGS) &= ~(((Uint32) 1) << (ERTS_RUNQ_FLGS_EVACUATE_SHFT + (PRIO))))
+  ((FLGS) &= ~ERTS_RUNQ_FLG_EVACUATE((PRIO)))
 
 #define ERTS_RUNQ_IFLG_SUSPENDED		(((long) 1) << 0)
 #define ERTS_RUNQ_IFLG_NONEMPTY			(((long) 1) << 1)
@@ -218,10 +225,12 @@ typedef enum {
 #define ERTS_FULL_REDS_HISTORY_SIZE \
    ((1 << ERTS_FULL_REDS_HISTORY_AVG_SHFT) - 1)
 
-typedef struct _process_list {
-    Eterm pid;			/* Waiting process. (internal pid) */
-    struct _process_list* next;	/* Next waiting process. */
-} ProcessList;
+typedef struct ErtsProcList_ ErtsProcList;
+struct ErtsProcList_ {
+    Eterm pid;
+    SysTimeval started;
+    ErtsProcList* next;
+};
 
 typedef struct ErtsMiscOpList_ ErtsMiscOpList;
 struct ErtsMiscOpList_ {
@@ -277,7 +286,7 @@ struct ErtsRunQueue_ {
 
     struct {
 	int len;
-	ProcessList *pending_exiters;
+	ErtsProcList *pending_exiters;
 	Uint context_switches;
 	Uint reductions;
 
@@ -341,6 +350,8 @@ struct ErtsSchedulerData_ {
     ErtsRunQueue *run_queue;
     int virtual_reds;
     int cpu_id;			/* >= 0 when bound */
+
+    ErtsAtomCacheMap atom_cache_map;
 
 #ifdef ERTS_SMP
     /* NOTE: These fields are modified under held mutexes by other threads */
@@ -911,9 +922,38 @@ extern struct erts_system_profile_flags_t erts_system_profile_flags;
 	    (p)->flags &= ~F_TIMO; \
     } while (0)
 
+
+#define ERTS_INIT_SCHED_BIND_TYPE_SUCCESS		0
+#define ERTS_INIT_SCHED_BIND_TYPE_NOT_SUPPORTED		1
+#define ERTS_INIT_SCHED_BIND_TYPE_ERROR_NO_CPU_TOPOLOGY	2
+#define ERTS_INIT_SCHED_BIND_TYPE_ERROR_NO_BAD_TYPE	3
+
+int erts_init_scheduler_bind_type(char *how);
+
+#define ERTS_INIT_CPU_TOPOLOGY_OK			0
+#define ERTS_INIT_CPU_TOPOLOGY_INVALID_ID		1
+#define ERTS_INIT_CPU_TOPOLOGY_INVALID_ID_RANGE		2
+#define ERTS_INIT_CPU_TOPOLOGY_INVALID_HIERARCHY	3
+#define ERTS_INIT_CPU_TOPOLOGY_INVALID_ID_TYPE		4
+#define ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES		5
+#define ERTS_INIT_CPU_TOPOLOGY_MISSING_LID		6
+#define ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_LIDS		7
+#define ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_ENTITIES	8
+#define ERTS_INIT_CPU_TOPOLOGY_MISSING			9
+
+int erts_init_cpu_topology(char *topology_str);
+
+void erts_init_enable_processor_node_topology(void);
+
 void erts_pre_init_process(void);
 void erts_late_init_process(void);
+void erts_early_init_scheduling(void);
 void erts_init_scheduling(int, int, int);
+
+ErtsProcList *erts_proclist_create(Process *);
+void erts_proclist_destroy(ErtsProcList *);
+int erts_proclist_same(ErtsProcList *, Process *);
+
 #ifdef DEBUG
 void erts_dbg_multi_scheduling_return_trap(Process *, Eterm);
 #endif
@@ -977,6 +1017,7 @@ Uint erts_get_total_context_switches(void);
 void erts_get_total_reductions(Uint *, Uint *);
 void erts_get_exact_total_reductions(Process *, Uint *, Uint *);
 
+Eterm erts_fake_scheduler_bindings(Process *p, Eterm how);
 
 void erts_sched_stat_modify(int what);
 Eterm erts_sched_stat_term(Process *p, int total);
@@ -985,6 +1026,8 @@ void erts_free_proc(Process *);
 
 void erts_suspend(Process*, ErtsProcLocks, struct port*);
 void erts_resume(Process*, ErtsProcLocks);
+int erts_resume_processes(ErtsProcList *);
+
 int erts_send_exit_signal(Process *,
 			  Eterm,
 			  Process *,
@@ -1359,6 +1402,20 @@ erts_smp_runqs_unlock(ErtsRunQueue *rq1, ErtsRunQueue *rq2)
 }
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
+
+ERTS_GLB_INLINE ErtsAtomCacheMap *erts_get_atom_cache_map(Process *c_p);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+ERTS_GLB_INLINE ErtsAtomCacheMap *
+erts_get_atom_cache_map(Process *c_p)
+{
+    ErtsSchedulerData *esdp = (c_p
+			       ? ERTS_PROC_GET_SCHDATA(c_p)
+			       : erts_get_scheduler_data());
+    ASSERT(esdp);
+    return &esdp->atom_cache_map;
+}
+#endif
 
 #ifdef ERTS_SMP
 

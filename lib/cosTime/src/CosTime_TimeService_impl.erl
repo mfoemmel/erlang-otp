@@ -117,8 +117,8 @@ secure_universal_time(_OE_THIS, _State) ->
 %% Returns  : CosTime::UTO
 %%-----------------------------------------------------------
 new_universal_time(OE_THIS, State, Time, Inaccuracy, Tdf) when 
-  integer(Time), integer(Inaccuracy), integer(Tdf), Tdf=<12, 
-  Inaccuracy=<?max_Inaccuracy, Time=<?max_TimeT ->
+  is_integer(Time) andalso is_integer(Inaccuracy) andalso is_integer(Tdf) andalso
+  Tdf=<12 andalso Inaccuracy=<?max_Inaccuracy andalso Time=<?max_TimeT ->
     Utc = #'TimeBase_UtcT'{time=Time, inacclo = ?low_TimeT(Inaccuracy), 
 			   inacchi = ?high_TimeT(Inaccuracy), tdf = Tdf},
     {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}|?CREATE_OPTS]), State};
@@ -130,7 +130,7 @@ new_universal_time(_, _, _, _, _) ->
 %% Arguments: Utc - TimeBase::UtcT
 %% Returns  : CosTime::UTO
 %%-----------------------------------------------------------
-uto_from_utc(OE_THIS, State, Utc) when record(Utc, 'TimeBase_UtcT') ->
+uto_from_utc(OE_THIS, State, Utc) when is_record(Utc, 'TimeBase_UtcT') ->
     {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS],[{pseudo,true}|?CREATE_OPTS]),State};
 uto_from_utc(_, _, _) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -141,7 +141,7 @@ uto_from_utc(_, _, _) ->
 %%            Upper - TimeBase::TimeT
 %% Returns  : CosTime::TIO
 %%-----------------------------------------------------------
-new_interval(OE_THIS, State, Lower, Upper) when integer(Lower), integer(Upper),
+new_interval(OE_THIS, State, Lower, Upper) when is_integer(Lower) andalso is_integer(Upper) andalso
 						Lower=<Upper ->
     {reply, 'CosTime_TIO':oe_create([#'TimeBase_IntervalT'{lower_bound=Lower, 
 							   upper_bound=Upper},
@@ -169,7 +169,7 @@ create_universal_time() ->
     {MS,S,US} = now(),
     case catch calendar:datetime_to_gregorian_seconds(
 		 calendar:now_to_universal_time({MS,S,US})) of
-	Secs when integer(Secs) ->
+	Secs when is_integer(Secs) ->
 	    {ok, (Secs-?ABSOLUTE_TIME_DIFF)*10000000 + US*10};
 	_ ->
 	    corba:raise(#'CosTime_TimeUnavailable'{})

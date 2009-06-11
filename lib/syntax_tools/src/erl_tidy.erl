@@ -675,8 +675,8 @@ analyze_forms(Forms, File) ->
 
 -spec get_module_name([info_pair()], string()) -> atom().
 get_module_name(List, File) ->
-    case lists:keysearch(module, 1, List) of
-        {value, {module, M}} ->
+    case lists:keyfind(module, 1, List) of
+        {module, M} ->
             M;
         _ ->
             report_error({File, 0,
@@ -685,8 +685,8 @@ get_module_name(List, File) ->
     end.
 
 get_module_attributes(List) ->
-    case lists:keysearch(attributes, 1, List) of
-        {value, {attributes, As}} ->
+    case lists:keyfind(attributes, 1, List) of
+        {attributes, As} ->
             As;
         _ ->
             []
@@ -694,8 +694,8 @@ get_module_attributes(List) ->
 
 -spec get_module_exports([info_pair()]) -> [{atom(), byte()}].
 get_module_exports(List) ->
-    case lists:keysearch(exports, 1, List) of
-        {value, {exports, Es}} ->
+    case lists:keyfind(exports, 1, List) of
+        {exports, Es} ->
             Es;
         _ ->
             []
@@ -703,8 +703,8 @@ get_module_exports(List) ->
 
 -spec get_module_imports([info_pair()]) -> [{atom(), atom()}].
 get_module_imports(List) ->
-    case lists:keysearch(imports, 1, List) of
-        {value, {imports, Is}} ->
+    case lists:keyfind(imports, 1, List) of
+        {imports, Is} ->
             flatten_imports(Is);
         _ ->
             []
@@ -1799,8 +1799,8 @@ filename(N) ->
     exit(error).
 
 get_env(Tree) ->
-    case lists:keysearch(env, 1, erl_syntax:get_ann(Tree)) of
-        {value, {env, Env}} ->
+    case lists:keyfind(env, 1, erl_syntax:get_ann(Tree)) of
+        {env, Env} ->
             Env;
         _ ->
             []

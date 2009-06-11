@@ -20,7 +20,7 @@
 
 %% An evaluator for Erlang abstract syntax.
 
--export([exprs/2,exprs/3,exprs/4,expr/2,expr/3,expr/4,
+-export([exprs/2,exprs/3,exprs/4,expr/2,expr/3,expr/4,expr/5,
          expr_list/2,expr_list/3,expr_list/4]).
 -export([new_bindings/0,bindings/1,binding/2,add_binding/3,del_binding/2]).
 

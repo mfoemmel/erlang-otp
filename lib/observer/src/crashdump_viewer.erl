@@ -2424,10 +2424,8 @@ parse_term([$N|Line], D) ->			%[] (nil).
 parse_term([$I|Line0], D) ->			%Small.
     {Int,Line} = string:to_integer(Line0),
     {Int,Line,D};
-parse_term([$A|Line0], D) ->			%Atom.
-    {N,":"++Line1} = get_hex(Line0),
-    {Chars,Line} = get_chars(N, Line1),
-    {list_to_atom(Chars),Line,D};
+parse_term([$A|_]=Line, D) ->			%Atom.
+    parse_atom(Line, D);
 parse_term([$P|Line0], D) ->			%Pid.
     {Pid,Line} = get_id(Line0),
     {"#CDVPid"++Pid,Line,D};
@@ -2436,7 +2434,46 @@ parse_term([$p|Line0], D) ->			%Port.
     {"#CDVPort"++Port,Line,D};
 parse_term([$S|Str0], D) ->			%Information string.
     Str = lists:reverse(skip_blanks(lists:reverse(Str0))),
-    {Str,[],D}.
+    {Str,[],D};
+parse_term([$D|Line0], D) ->                    %DistExternal
+    try
+	{AttabSize,":"++Line1} = get_hex(Line0),
+	{Attab, "E"++Line2} = parse_atom_translation_table(AttabSize, Line1, []),
+	{Bin,Line3} = get_binary(Line2),
+	{try
+	     erts_debug:dist_ext_to_term(Attab, Bin)
+	 catch
+	     error:_ -> '<invalid-distribution-message>'
+	 end,
+	 Line3,
+	 D}
+    catch
+	error:_ -> 
+	    {'#CDVBadDistExt', skip_dist_ext(Line0), D}
+    end.
+
+skip_dist_ext(Line) ->
+    skip_dist_ext(lists:reverse(Line), []).
+
+skip_dist_ext([], SeqTraceToken) ->
+    SeqTraceToken;
+skip_dist_ext([$:| _], SeqTraceToken) ->
+    [$:|SeqTraceToken];
+skip_dist_ext([C|Cs], KeptCs) ->
+    skip_dist_ext(Cs, [C|KeptCs]).
+
+parse_atom([$A|Line0], D) ->
+    {N,":"++Line1} = get_hex(Line0),
+    {Chars, Line} = get_chars(N, Line1),
+    {list_to_atom(Chars), Line, D}.
+
+parse_atom_translation_table(0, Line0, As) ->
+    {list_to_tuple(lists:reverse(As)), Line0};
+parse_atom_translation_table(N, Line0, As) ->
+    {A, Line1, _} = parse_atom(Line0, []),
+    parse_atom_translation_table(N-1, Line1, [A|As]).
+    
+    
 
 deref_ptr(Ptr, Line, D0) ->
     case gb_trees:lookup(Ptr, D0) of

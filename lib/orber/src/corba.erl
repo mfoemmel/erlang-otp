@@ -228,11 +228,11 @@ list_initial_services() ->
 get_prefixes([], Acc) ->
     Acc;
 %% A list of ORBInitRef's
-get_prefixes([H|T], Acc) when list(H) ->
+get_prefixes([H|T], Acc) when is_list(H) ->
     [Key|_] = string:tokens(H, "="),
     get_prefixes(T, [Key|Acc]);
 %% A single ORBInitRef
-get_prefixes(InitRef, _Acc) when list(InitRef) ->
+get_prefixes(InitRef, _Acc) when is_list(InitRef) ->
     [Key|_] = string:tokens(InitRef, "="),
     [Key];
 get_prefixes(What, _) ->
@@ -268,7 +268,7 @@ use_local_host(ObjectId) ->
 check_prefixes([], _) ->
     false;
 %% A list of ORBInitRef's
-check_prefixes([H|T], ObjectId) when list(H) ->
+check_prefixes([H|T], ObjectId) when is_list(H) ->
     case prefix(ObjectId, H) of
 	false ->
 	    check_prefixes(T, ObjectId);
@@ -276,7 +276,7 @@ check_prefixes([H|T], ObjectId) when list(H) ->
 	    UseRef
     end;
 %% A single ORBInitRef
-check_prefixes(InitRef, ObjectId) when list(InitRef) ->
+check_prefixes(InitRef, ObjectId) when is_list(InitRef) ->
     case prefix(ObjectId, InitRef) of
 	false ->
 	    false;
@@ -310,7 +310,7 @@ resolve_initial_references_remote(ObjectId, Address) ->
 resolve_initial_references_remote(_ObjectId, [], _Ctx) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
 resolve_initial_references_remote(ObjectId, [RemoteModifier| Rest], Ctx) 
-  when list(RemoteModifier) ->
+  when is_list(RemoteModifier) ->
     case lists:prefix("iiop://", RemoteModifier) of
        true ->
 	    [_, Host, Port] = string:tokens(RemoteModifier, ":/"),
@@ -331,7 +331,7 @@ list_initial_services_remote(Address) ->
 
 list_initial_services_remote([], _Ctx) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
-list_initial_services_remote([RemoteModifier| Rest], Ctx) when list(RemoteModifier) ->
+list_initial_services_remote([RemoteModifier| Rest], Ctx) when is_list(RemoteModifier) ->
     case lists:prefix("iiop://", RemoteModifier) of
 	true ->
 	    [_, Host, Port] = string:tokens(RemoteModifier, ":/"),
@@ -356,20 +356,20 @@ list_initial_services_remote(_, _) ->
 object_to_string(Object) ->
     iop_ior:string_code(Object).
 
-object_to_string(Object, [H|_] = Hosts) when list(H) ->
+object_to_string(Object, [H|_] = Hosts) when is_list(H) ->
     iop_ior:string_code(Object, Hosts);
 object_to_string(_Object, _Hosts) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
-object_to_string(Object, [H|_] = Hosts, Port) when list(H), 
-						   integer(Port) ->
+object_to_string(Object, [H|_] = Hosts, Port) when is_list(H) andalso
+						   is_integer(Port) ->
     iop_ior:string_code(Object, Hosts, Port);
 object_to_string(_Object, _Hosts, _Port) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
-object_to_string(Object, [H|_] = Hosts, Port, SSLPort) when list(H), 
-							    integer(Port),
-							    integer(SSLPort)->
+object_to_string(Object, [H|_] = Hosts, Port, SSLPort) when is_list(H) andalso 
+							    is_integer(Port) andalso
+							    is_integer(SSLPort)->
     iop_ior:string_code(Object, Hosts, Port, SSLPort);
 object_to_string(_Object, _Hosts, _Port, _SSLPort) ->
     raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -378,7 +378,7 @@ object_to_string(_Object, _Hosts, _Port, _SSLPort) ->
 string_to_object(IORString) ->
     string_to_object(IORString, []).
 
-string_to_object(IORString, Ctx) when list(Ctx) ->
+string_to_object(IORString, Ctx) when is_list(Ctx) ->
     case lists:prefix("IOR", IORString) of
 	true ->
 	    {ObjRef, _, _} = iop_ior:string_decode(IORString),
@@ -392,7 +392,7 @@ string_to_object(IORString, Ctx) when list(Ctx) ->
 		_ ->
 		    Data = orber_cosnaming_utils:select_type(IORString),
 		    case orber_cosnaming_utils:lookup(Data, Ctx) of
-			String when list(String) ->
+			String when is_list(String) ->
 			    {Obj, _, _} = iop_ior:string_decode(String),
 			    Obj;
 			ObjRef ->
@@ -473,12 +473,12 @@ common_create_remote(Node, Module, TypeID, Env, Options, StartMethod) ->
 node_check(Node) ->
     lists:member(Node,orber:orber_nodes()).
 
-common_create(Module, _TypeID, Env, Options, StartMethod) when list(Options) ->
+common_create(Module, _TypeID, Env, Options, StartMethod) when is_list(Options) ->
     Opt = evaluate_options(Options, #options{}),
     case Opt#options.regname of
 	[] ->
 	    ok;
-	{'local', Atom} when atom(Atom), Opt#options.persistent == false ->
+	{'local', Atom} when is_atom(Atom) andalso Opt#options.persistent == false ->
 	    ok;
 	{'global', _} ->
 	    ok;
@@ -574,7 +574,7 @@ create_nil_objref() ->
 %%              sub-object field changed to the given value.
 %% Description: Initially, this field is set to 'undefined'
 %%----------------------------------------------------------------------
-create_subobject_key(Objkey, B) when binary(B) ->
+create_subobject_key(Objkey, B) when is_binary(B) ->
     iop_ior:set_privfield(Objkey, B);
 create_subobject_key(Objkey, T) ->
     create_subobject_key(Objkey, term_to_binary(T)).
@@ -600,7 +600,7 @@ get_pid(Objkey) ->
     case iop_ior:get_key(Objkey) of
 	{'internal', Key, _, _, _} ->
 	    orber_objectkeys:get_pid(Key);
-	{'internal_registered', Key, _, _, _} when atom(Key) ->
+	{'internal_registered', Key, _, _, _} when is_atom(Key) ->
 	    case whereis(Key) of
 		undefined ->
 		    raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
@@ -667,7 +667,7 @@ print_object(Object, IoDevice) ->
 %% Returns    : A local IOR with a TAG_ALTERNATE_IIOP_ADDRESS component.
 %% Description: 
 %%----------------------------------------------------------------------
-add_alternate_iiop_address(Obj, Host, Port) when list(Host), integer(Port) ->
+add_alternate_iiop_address(Obj, Host, Port) when is_list(Host) andalso is_integer(Port) ->
     TC = #'IOP_TaggedComponent'{tag = ?TAG_ALTERNATE_IIOP_ADDRESS, 
 				component_data = #'ALTERNATE_IIOP_ADDRESS'{
 				  'HostID' = Host, 
@@ -690,9 +690,9 @@ add_alternate_iiop_address(_, Host, Port) ->
 %% Description: 
 %%----------------------------------------------------------------------
 add_FTGroup_component(Obj, FTDomain, GroupID, GroupVer) 
-  when list(FTDomain), integer(GroupID), integer(GroupVer),
-       GroupID >= ?ULONGLONGMIN, GroupID =< ?ULONGLONGMAX,
-       GroupVer >= ?ULONGMIN, GroupVer =< ?ULONGMAX ->
+  when is_list(FTDomain) andalso is_integer(GroupID) andalso is_integer(GroupVer) andalso
+       GroupID >= ?ULONGLONGMIN andalso GroupID =< ?ULONGLONGMAX andalso
+       GroupVer >= ?ULONGMIN andalso GroupVer =< ?ULONGMAX ->
     TC = #'IOP_TaggedComponent'{tag = ?TAG_FT_GROUP,
 				component_data = #'FT_TagFTGroupTaggedComponent'{
 				  version = #'GIOP_Version'{major = 1, minor = 0},
@@ -962,7 +962,7 @@ handle_exit(InternalState, State, {undef, [{M, F, _}|_]} = Reason,
 	    reply_after_exit(InternalState, State, Reason, OnewayOp,
 			     #'OBJ_ADAPTER'{minor=(?ORBER_VMCID bor 2),
 					    completion_status=?COMPLETED_MAYBE});
-	Exports when list(Exports) ->
+	Exports when is_list(Exports) ->
 	    orber:dbg("~p:~p/~p doesn't exist.~n"
 		      "~p:~p~s do exists.~nCheck export-attributes etc",
 		      [M, F, length(A), M, F, Exports], ?DEBUG_LEVEL),
@@ -995,7 +995,7 @@ handle_exit(InternalState, State, {undef, [{M2, F2, A2}|_]} = Reason,
 	    reply_after_exit(InternalState, State, Reason, OnewayOp,
 			     #'OBJ_ADAPTER'{minor=(?ORBER_VMCID bor 6),
 					    completion_status=?COMPLETED_MAYBE});
-	Exports when list(Exports) ->
+	Exports when is_list(Exports) ->
 	    orber:dbg("~p:~p/~p doesn't exist.~n"
 		      "~p:~p~s do exist(s).~nCheck export-attributes etc~n"
 		      "~p:~p/~p invoked the operation above~n",
@@ -1096,7 +1096,7 @@ call(Obj, Func, Args, TypesOrMod, [{context, Ctx}]) ->
     call_helper(Obj, Func, Args, TypesOrMod, infinity, Ctx);
 call(Obj, Func, Args, TypesOrMod, [{timeout, Timeout}]) ->
     call_helper(Obj, Func, Args, TypesOrMod, Timeout, []);
-call(Obj, Func, Args, TypesOrMod, Extra) when list(Extra) ->
+call(Obj, Func, Args, TypesOrMod, Extra) when is_list(Extra) ->
     ExtraData = extract_extra_data(Extra, #extra{}),
     call_helper(Obj, Func, Args, TypesOrMod, ExtraData#extra.timeout, 
 		ExtraData#extra.context);
@@ -1115,7 +1115,7 @@ call_helper(Obj, Func, Args, TypesOrMod, Timeout, InCtx) ->
 	    call_internal(Key, Obj, Func, Args, TypesOrMod,
 			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), 
 			  ?ORB_FLAG_TEST(Flags, ?ORB_USE_PI), Mod, Timeout, Ctx);
-	{'external', Key} when atom(TypesOrMod) ->		   
+	{'external', Key} when is_atom(TypesOrMod) ->		   
 	    case catch TypesOrMod:oe_tc(Func) of
 		{'EXIT', What} ->
 		    orber:dbg("[~p] corba:call_helper(~p);~n"
@@ -1183,7 +1183,7 @@ extract_extra_data([{timeout, Timeout}|T], ED) ->
     extract_extra_data(T, ED#extra{timeout = Timeout}).
 
 call_internal(Pid, Obj, Func, Args, Types, Check, PI, Mod, Timeout, Ctx) 
-  when pid(Pid), node(Pid) == node() ->
+  when is_pid(Pid) andalso node(Pid) == node() ->
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
     typecheck_request(Check, Args, Types, Func),
     case catch gen_server:call(Pid, {Obj, Ctx, Func, Args}, Timeout) of
@@ -1208,7 +1208,7 @@ call_internal(Pid, Obj, Func, Args, Types, Check, PI, Mod, Timeout, Ctx)
 	    Res
     end;
 call_internal(Pid, Obj, Func, Args, Types, Check, PI, 
-	      _Mod, Timeout, Ctx) when pid(Pid) ->
+	      _Mod, Timeout, Ctx) when is_pid(Pid) ->
     typecheck_request(Check, Args, Types, Func),
     case catch rpc:call(node(Pid), corba, call_relay, 
 			[Pid, {Obj, Ctx, Func, Args}, Timeout]) of
@@ -1371,7 +1371,7 @@ call_internal({passive, Module}, Obj, Func, Args, Types, Check, PI,
 	    raise(Exc)
     end;
 call_internal(Registered, Obj, Func, Args, Types, Check, PI,
-	      _Mod, Timeout, Ctx) when atom(Registered)->
+	      _Mod, Timeout, Ctx) when is_atom(Registered)->
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
     typecheck_request(Check, Args, Types, Func),
     case whereis(Registered) of
@@ -1426,7 +1426,7 @@ invoke_pi_reply(_, Obj, Ctx, Func, Res) ->
 
 typecheck_request(false, _, _, _) ->
     ok;
-typecheck_request(true, Args, Mod, Func) when atom(Mod) ->
+typecheck_request(true, Args, Mod, Func) when is_atom(Mod) ->
     case catch Mod:oe_tc(Func) of
 	undefined ->
 	    raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
@@ -1476,7 +1476,7 @@ typecheck_request_helper(Types, Args, Mod, Func) ->
 	    ok
     end.
 
-typecheck_reply(true, Args, Mod, Func) when atom(Mod) ->
+typecheck_reply(true, Args, Mod, Func) when is_atom(Mod) ->
     case catch Mod:oe_tc(Func) of
 	undefined ->
 	    raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
@@ -1590,7 +1590,7 @@ cast_helper(Obj, Func, Args, TypesOrMod, InCtx) ->
 	    cast_internal(Key, Obj, Func, Args, TypesOrMod, 
 			  ?ORB_FLAG_TEST(Flags, ?ORB_TYPECHECK), 
 			  ?ORB_FLAG_TEST(Flags, ?ORB_USE_PI), Mod, Ctx);
-	{'external', Key} when atom(TypesOrMod) ->
+	{'external', Key} when is_atom(TypesOrMod) ->
 	    case catch TypesOrMod:oe_tc(Func) of
 		{'EXIT', What} ->
 		    orber:dbg("[~p] corba:cast_helper(~p);~n"
@@ -1612,12 +1612,12 @@ cast_helper(Obj, Func, Args, TypesOrMod, InCtx) ->
     end.
 
 cast_internal(Pid, Obj, Func, Args, Types, Check, PI, _Mod, Ctx)
-  when pid(Pid), node(Pid) == node() ->
+  when is_pid(Pid) andalso node(Pid) == node() ->
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
     typecheck_request(Check, Args, Types, Func),
     catch gen_server:cast(Pid, {Obj, Ctx, Func, Args}),
     ok;
-cast_internal(Pid, Obj, Func, Args, Types, Check, PI, Mod, Ctx) when pid(Pid) ->
+cast_internal(Pid, Obj, Func, Args, Types, Check, PI, Mod, Ctx) when is_pid(Pid) ->
     invoke_pi_request(PI, Obj, Ctx, Func, Args),
     typecheck_request(Check, Args, Types, Func),
     case catch rpc:call(node(Pid), corba, cast_relay, [Pid, {Obj, Ctx, Func, Args}]) of
@@ -1704,7 +1704,7 @@ request_from_iiop(_, '_FT_HB', _, _, _, _) ->
 
 %% "Ordinary" operations.
 request_from_iiop({Mod, _, _, _, _, _}, oe_get_interface, 
-		  _, _, _, _ServiceCtx) when atom(Mod) ->
+		  _, _, _, _ServiceCtx) when is_atom(Mod) ->
     case catch Mod:oe_get_interface() of
 	{'EXIT', What} ->
 	    orber:dbg("[~p] corba:request_from_iiop(~p);~n"
@@ -1846,15 +1846,15 @@ request_from_iiop({_Mod, _Type, Key, _UserDef, _OrberDef, _Flags} = ObjRef,
 %% Internal stuff
 %%------------------------------------------------------------
 
-convert_key_to_pid(Key) when binary(Key) ->
+convert_key_to_pid(Key) when is_binary(Key) ->
     orber_objectkeys:get_pid(Key);
-convert_key_to_pid(Name) when atom(Name) ->
+convert_key_to_pid(Name) when is_atom(Name) ->
     Name.
 
 mk_objkey(Mod, Pid, RegName, Persistent) ->
     mk_objkey(Mod, Pid, RegName, Persistent, 0).
 
-mk_objkey(Mod, Pid, [], _, Flags) when pid(Pid) ->
+mk_objkey(Mod, Pid, [], _, Flags) when is_pid(Pid) ->
     Key = make_objkey(),
     case orber_objectkeys:register(Key, Pid, false) of
 	ok ->
@@ -1864,7 +1864,7 @@ mk_objkey(Mod, Pid, [], _, Flags) when pid(Pid) ->
 		      "unable to store key(~p).", [?LINE, Mod, R], ?DEBUG_LEVEL),
 	    raise(#'INTERNAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO})
     end;
-mk_objkey(Mod, Pid, {'global', RegName}, Persitent, Flags) when pid(Pid) ->
+mk_objkey(Mod, Pid, {'global', RegName}, Persitent, Flags) when is_pid(Pid) ->
     Key = term_to_binary(RegName),
     case orber_objectkeys:register(Key, Pid, Persitent) of
 	ok ->
@@ -1875,7 +1875,7 @@ mk_objkey(Mod, Pid, {'global', RegName}, Persitent, Flags) when pid(Pid) ->
 		      [?LINE, Mod, RegName, R], ?DEBUG_LEVEL),
 	    raise(#'INTERNAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO})
     end;
-mk_objkey(Mod, Pid, {'local', RegName}, Persistent, Flags) when pid(Pid), atom(RegName) ->
+mk_objkey(Mod, Pid, {'local', RegName}, Persistent, Flags) when is_pid(Pid) andalso is_atom(RegName) ->
     register(RegName, Pid),
     Key = make_objkey(),
     case orber_objectkeys:register(Key, Pid, Persistent) of
@@ -1958,10 +1958,10 @@ evaluate_options([{pseudo, true}|Rest], #options{passive = false} = Options) ->
 %% FT stuff
 evaluate_options([{passive, true}|Rest], #options{pseudo = false} = Options) ->
     evaluate_options(Rest, Options#options{passive = true});
-evaluate_options([{group_id, ID}|Rest], Options) when integer(ID) ->
+evaluate_options([{group_id, ID}|Rest], Options) when is_integer(ID) ->
     evaluate_options(Rest, Options#options{group_id = ID});
 %% Options accepted by gen_server (e.g. dbg).
-evaluate_options([{create_options, COpt}|Rest], Options) when list(COpt) ->
+evaluate_options([{create_options, COpt}|Rest], Options) when is_list(COpt) ->
     evaluate_options(Rest, Options#options{create_options = COpt});
 %% When starting object as supervisor child.
 evaluate_options([{sup_child, false}|Rest], Options) ->

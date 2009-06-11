@@ -38,6 +38,41 @@
     thus constitutes one section in this document. The title of each
     section is the version number of Mnesia.</p>
   
+  <section><title>Mnesia 4.4.10</title>
+    
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Mnesia crashed if a qlc query was running inside a
+            transaction when mnesia stopped at another node. Thanks
+            Teemu Antti-Poika.</p>
+          <p>
+            Own Id: OTP-7968</p>
+        </item>
+        <item>
+          <p>
+            Mnesia could crash when loading local_content tables.</p>
+          <p>
+            Own Id: OTP-8002 Aux Id: seq11277 </p>
+        </item>
+      </list>
+    </section>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Minor (smp) optimizations.</p>
+          <p>
+            Own Id: OTP-7928</p>
+        </item>
+      </list>
+    </section>
+    
+  </section>
+
+
   <section><title>Mnesia 4.4.9</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

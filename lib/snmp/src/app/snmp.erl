@@ -52,6 +52,8 @@
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7,
 	 change_log_size/2,
 
+	 octet_string_to_bits/1, bits_to_octet_string/1, 
+
 	 enable_trace/0, disable_trace/0, 
 	 set_trace/1, reset_trace/1, 
 	 set_trace/2, set_trace/3]).
@@ -377,13 +379,13 @@ print_versions(Versions) ->
     print_versions("", Versions).
 
 print_versions(Prefix, Versions) 
-  when is_list(Prefix) and is_list(Versions) ->
+  when is_list(Prefix) andalso is_list(Versions) ->
     do_print_versions(Prefix, Versions);
 print_versions(Prefix, Versions) 
-  when (is_integer(Prefix) and (Prefix >= 0)) and is_list(Versions) ->
+  when (is_integer(Prefix) andalso (Prefix >= 0)) andalso is_list(Versions) ->
     do_print_versions(lists:duplicate(Prefix, $ ), Versions);
 print_versions(Prefix, BadVersions) 
-  when is_list(Prefix) or (is_integer(Prefix) and (Prefix >= 0)) ->
+  when is_list(Prefix) orelse (is_integer(Prefix) andalso (Prefix >= 0)) ->
     {error, {bad_versions, BadVersions}};
 print_versions(Prefix, BadVersions) 
   when is_list(BadVersions) ->
@@ -398,7 +400,7 @@ do_print_versions(Prefix, Versions) ->
 
 print_sys_info(Prefix, Versions) ->
     case key1search(sys_info, Versions) of
-        {value, SysInfo} when list(SysInfo) ->
+        {value, SysInfo} when is_list(SysInfo) ->
             {value, Arch} = key1search(arch, SysInfo, "Not found"),
             {value, Ver}  = key1search(ver, SysInfo, "Not found"),
             io:format("~sSystem info: "
@@ -415,30 +417,30 @@ print_sys_info(Prefix, Versions) ->
 
 print_os_info(Prefix, Versions) ->
     case key1search(os_info, Versions) of
-        {value, OsInfo} when list(OsInfo) ->
+        {value, OsInfo} when is_list(OsInfo) ->
             Fam =
                 case key1search(fam, OsInfo, "Not found") of
-                    {value, F} when atom(F) ->
+                    {value, F} when is_atom(F) ->
                         atom_to_list(F);
-                    {value, LF} when list(LF) ->
+                    {value, LF} when is_list(LF) ->
                         LF;
                     {value, XF} ->
                         lists:flatten(io_lib:format("~p", [XF]))
                 end,
             Name =
                 case key1search(name, OsInfo) of
-                    {value, N} when atom(N) ->
+                    {value, N} when is_atom(N) ->
                         "[" ++ atom_to_list(N) ++ "]";
-                    {value, LN} when list(LN) ->
+                    {value, LN} when is_list(LN) ->
                         "[" ++ LN ++ "]";
                     not_found ->
                         ""
                 end,
             Ver =
                 case key1search(ver, OsInfo, "Not found") of
-                    {value, T} when tuple(T) ->
+                    {value, T} when is_tuple(T) ->
                         tversion(T);
-                    {value, LV} when list(LV) ->
+                    {value, LV} when is_list(LV) ->
                         LV;
                     {value, XV} ->
                         lists:flatten(io_lib:format("~p", [XV]))
@@ -468,7 +470,7 @@ lversion([A|R]) ->
 
 print_mods_info(Prefix, Versions) ->
     case key1search(mod_info, Versions) of
-        {value, ModsInfo} when list(ModsInfo) ->
+        {value, ModsInfo} when is_list(ModsInfo) ->
             io:format("~sModule info: ~n", [Prefix]),
 	    F = fun(MI) -> print_mod_info(Prefix, MI) end,
             lists:foreach(F, ModsInfo);
@@ -480,21 +482,21 @@ print_mods_info(Prefix, Versions) ->
 print_mod_info(Prefix, {Module, Info}) ->
     Vsn =
         case key1search(vsn, Info) of
-            {value, I} when integer(I) ->
+            {value, I} when is_integer(I) ->
                 integer_to_list(I);
             _ ->
                 "Not found"
         end,
     AppVsn =
         case key1search(app_vsn, Info) of
-            {value, S1} when list(S1) ->
+            {value, S1} when is_list(S1) ->
                 S1;
             _ ->
                 "Not found"
         end,
     CompVer =
         case key1search(compiler_version, Info) of
-            {value, S2} when list(S2) ->
+            {value, S2} when is_list(S2) ->
                 S2;
             _ ->
                 "Not found"
@@ -798,6 +800,17 @@ sys_up_time(agent) ->
 sys_up_time(manager) ->
     snmpm:sys_up_time().
 
+
+
+%%-----------------------------------------------------------------
+%% Utility functions for OCTET-STRING / BITS conversion.
+%%-----------------------------------------------------------------
+
+octet_string_to_bits(S) ->
+    snmp_pdus:octet_str_to_bits(S).
+
+bits_to_octet_string(B) ->
+    snmp_pdus:bits_to_str(B).
 
 
 %%%-----------------------------------------------------------------

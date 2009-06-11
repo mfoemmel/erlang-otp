@@ -254,7 +254,7 @@ pmatch(Cs, Env, _Ren, Ctxt, S0) ->
 		  duplicate_all ->
 		      put('cerl_pmatch_duplicate_code', always),
 		      cerl_pmatch:clauses(Cs, Env);
-		  Other when Other =:= false ->
+		  false ->
 		      Vs0 = new_vars(cerl:clause_arity(hd(Cs)), Env),
 		      {cerl:c_case(cerl:c_values(Vs0), Cs), Vs0}
 	      end,

@@ -444,11 +444,11 @@ string_value(T=#xmlNode{type=text}) ->
     ?string(Txt);
 string_value(infinity) -> ?string("Infinity");
 string_value(neg_infinity) -> ?string("-Infinity");
-string_value(A) when atom(A) ->
+string_value(A) when is_atom(A) ->
     ?string(atom_to_list(A));
-string_value(N) when integer(N) ->
+string_value(N) when is_integer(N) ->
     ?string(integer_to_list(N));
-string_value(N) when float(N) ->
+string_value(N) when is_float(N) ->
     N1 = round(N * 10000000000000000),
     ?string(strip_zeroes(integer_to_list(N1)));
 string_value(Str) when is_list(Str) ->
@@ -646,11 +646,11 @@ ceiling(C, [Arg]) ->
 
 round(C, [Arg]) ->
     case mk_number(C, Arg) of
-	A when atom(A) ->
+	A when is_atom(A) ->
 	    A;
-	N when integer(N) ->
+	N when is_integer(N) ->
 	    N;
-	F when float(F) ->
+	F when is_float(F) ->
 	    round(F)
     end.
 
@@ -704,9 +704,9 @@ mk_string(C0, Expr) ->
 
 
 
-mk_integer(_C0, #xmlObj{type = number, value = V}) when float(V)  ->
+mk_integer(_C0, #xmlObj{type = number, value = V}) when is_float(V)  ->
     round(V);
-mk_integer(_C0, #xmlObj{type = number, value = V}) when integer(V)  ->
+mk_integer(_C0, #xmlObj{type = number, value = V}) when is_integer(V)  ->
     V;
 mk_integer(C, Expr) ->
     mk_integer(C, expr(Expr, C)).
@@ -730,7 +730,7 @@ mk_boolean(_C, #xmlObj{type = boolean, value = V}) ->
     V;
 mk_boolean(_C, #xmlObj{type = number, value = 0}) ->
     false;
-mk_boolean(_C, #xmlObj{type = number, value = V}) when float(V) ; integer(V) ->
+mk_boolean(_C, #xmlObj{type = number, value = V}) when is_float(V) ; is_integer(V) ->
     true;
 mk_boolean(_C, #xmlObj{type = nodeset, value = []}) ->
     false;

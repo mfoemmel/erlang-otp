@@ -60,49 +60,49 @@
 %% This code *must* be amended whenever a new record is added in the
 %% files ifr_objects.hrl or ../include/ifr_types.hrl
 
-select(Record,Field) when record(Record,ir_IRObject) ->
+select(Record,Field) when is_record(Record,ir_IRObject) ->
     select(Record,record_info(fields,ir_IRObject),Field);
-select(Record,Field) when record(Record,ir_Contained) ->
+select(Record,Field) when is_record(Record,ir_Contained) ->
     select(Record,record_info(fields,ir_Contained),Field);
-select(Record,Field) when record(Record,ir_Container) ->
+select(Record,Field) when is_record(Record,ir_Container) ->
     select(Record,record_info(fields,ir_Container),Field);
-select(Record,Field) when record(Record,ir_IDLType) ->
+select(Record,Field) when is_record(Record,ir_IDLType) ->
     select(Record,record_info(fields,ir_IDLType),Field);
-select(Record,Field) when record(Record,ir_Repository) ->
+select(Record,Field) when is_record(Record,ir_Repository) ->
     select(Record,record_info(fields,ir_Repository),Field);
-select(Record,Field) when record(Record,ir_ModuleDef) ->
+select(Record,Field) when is_record(Record,ir_ModuleDef) ->
     select(Record,record_info(fields,ir_ModuleDef),Field);
-select(Record,Field) when record(Record,ir_ConstantDef) ->
+select(Record,Field) when is_record(Record,ir_ConstantDef) ->
     select(Record,record_info(fields,ir_ConstantDef),Field);
-select(Record,Field) when record(Record,ir_TypedefDef) ->
+select(Record,Field) when is_record(Record,ir_TypedefDef) ->
     select(Record,record_info(fields,ir_TypedefDef),Field);
-select(Record,Field) when record(Record,ir_StructDef) ->
+select(Record,Field) when is_record(Record,ir_StructDef) ->
     select(Record,record_info(fields,ir_StructDef),Field);
-select(Record,Field) when record(Record,ir_UnionDef) ->
+select(Record,Field) when is_record(Record,ir_UnionDef) ->
     select(Record,record_info(fields,ir_UnionDef),Field);
-select(Record,Field) when record(Record,ir_EnumDef) ->
+select(Record,Field) when is_record(Record,ir_EnumDef) ->
     select(Record,record_info(fields,ir_EnumDef),Field);
-select(Record,Field) when record(Record,ir_AliasDef) ->
+select(Record,Field) when is_record(Record,ir_AliasDef) ->
     select(Record,record_info(fields,ir_AliasDef),Field);
-select(Record,Field) when record(Record,ir_PrimitiveDef) ->
+select(Record,Field) when is_record(Record,ir_PrimitiveDef) ->
     select(Record,record_info(fields,ir_PrimitiveDef),Field);
-select(Record,Field) when record(Record,ir_StringDef) ->
+select(Record,Field) when is_record(Record,ir_StringDef) ->
     select(Record,record_info(fields,ir_StringDef),Field);
-select(Record,Field) when record(Record,ir_WstringDef) ->
+select(Record,Field) when is_record(Record,ir_WstringDef) ->
     select(Record,record_info(fields,ir_WstringDef),Field);
-select(Record,Field) when record(Record,ir_SequenceDef) ->
+select(Record,Field) when is_record(Record,ir_SequenceDef) ->
     select(Record,record_info(fields,ir_SequenceDef),Field);
-select(Record,Field) when record(Record,ir_ArrayDef) ->
+select(Record,Field) when is_record(Record,ir_ArrayDef) ->
     select(Record,record_info(fields,ir_ArrayDef),Field);
-select(Record,Field) when record(Record,ir_ExceptionDef) ->
+select(Record,Field) when is_record(Record,ir_ExceptionDef) ->
     select(Record,record_info(fields,ir_ExceptionDef),Field);
-select(Record,Field) when record(Record,ir_AttributeDef) ->
+select(Record,Field) when is_record(Record,ir_AttributeDef) ->
     select(Record,record_info(fields,ir_AttributeDef),Field);
-select(Record,Field) when record(Record,ir_OperationDef) ->
+select(Record,Field) when is_record(Record,ir_OperationDef) ->
     select(Record,record_info(fields,ir_OperationDef),Field);
-select(Record,Field) when record(Record,ir_InterfaceDef) ->
+select(Record,Field) when is_record(Record,ir_InterfaceDef) ->
     select(Record,record_info(fields,ir_InterfaceDef),Field);
-select(Record,Field) when record(Record,ir_FixedDef) ->
+select(Record,Field) when is_record(Record,ir_FixedDef) ->
     select(Record,record_info(fields,ir_FixedDef),Field);
 select([],_) -> [];
 select(Record,Field) ->
@@ -134,49 +134,49 @@ index([],Element,Index) ->
 %%% This code *must* be amended whenever a new record is added in the
 %%% files ifr_objects.hrl or ../include/ifr_types.hrl
 
-construct(Record,Field,Value) when record(Record,ir_IRObject) ->
+construct(Record,Field,Value) when is_record(Record,ir_IRObject) ->
     construct(Record,record_info(fields,ir_IRObject),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_Contained) ->
+construct(Record,Field,Value) when is_record(Record,ir_Contained) ->
     construct(Record,record_info(fields,ir_Contained),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_Container) ->
+construct(Record,Field,Value) when is_record(Record,ir_Container) ->
     construct(Record,record_info(fields,ir_Container),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_IDLType) ->
+construct(Record,Field,Value) when is_record(Record,ir_IDLType) ->
     construct(Record,record_info(fields,ir_IDLType),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_Repository) ->
+construct(Record,Field,Value) when is_record(Record,ir_Repository) ->
     construct(Record,record_info(fields,ir_Repository),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_ModuleDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_ModuleDef) ->
     construct(Record,record_info(fields,ir_ModuleDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_ConstantDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_ConstantDef) ->
     construct(Record,record_info(fields,ir_ConstantDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_TypedefDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_TypedefDef) ->
     construct(Record,record_info(fields,ir_TypedefDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_StructDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_StructDef) ->
     construct(Record,record_info(fields,ir_StructDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_UnionDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_UnionDef) ->
     construct(Record,record_info(fields,ir_UnionDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_EnumDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_EnumDef) ->
     construct(Record,record_info(fields,ir_EnumDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_AliasDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_AliasDef) ->
     construct(Record,record_info(fields,ir_AliasDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_PrimitiveDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_PrimitiveDef) ->
     construct(Record,record_info(fields,ir_PrimitiveDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_StringDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_StringDef) ->
     construct(Record,record_info(fields,ir_StringDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_WstringDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_WstringDef) ->
     construct(Record,record_info(fields,ir_WstringDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_SequenceDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_SequenceDef) ->
     construct(Record,record_info(fields,ir_SequenceDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_ArrayDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_ArrayDef) ->
     construct(Record,record_info(fields,ir_ArrayDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_ExceptionDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_ExceptionDef) ->
     construct(Record,record_info(fields,ir_ExceptionDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_AttributeDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_AttributeDef) ->
     construct(Record,record_info(fields,ir_AttributeDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_OperationDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_OperationDef) ->
     construct(Record,record_info(fields,ir_OperationDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_InterfaceDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_InterfaceDef) ->
     construct(Record,record_info(fields,ir_InterfaceDef),Field,Value);
-construct(Record,Field,Value) when record(Record,ir_FixedDef) ->
+construct(Record,Field,Value) when is_record(Record,ir_FixedDef) ->
     construct(Record,record_info(fields,ir_FixedDef),Field,Value);
 construct(Record,Field,Value) ->
     orber:dbg("[~p] orber_ifr_utils:construct(~p, ~p, ~p);~n"

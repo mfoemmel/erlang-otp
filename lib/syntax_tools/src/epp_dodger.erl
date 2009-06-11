@@ -176,8 +176,8 @@ parse_file(File, Parser, Options) ->
             try Parser(Dev, 1, Options)
             after ok = file:close(Dev)
 	    end;
-        {error, IoErr} ->
-            {error, IoErr}
+        {error, _} = Error ->
+            Error
     end.
 
 
@@ -350,7 +350,7 @@ quick_parse_form(Dev, L0) ->
 quick_parse_form(Dev, L0, Options) ->
     parse_form(Dev, L0, fun quick_parser/2, Options).
 
--record(opt, {clever = false}).
+-record(opt, {clever = false :: bool()}).
 
 parse_form(Dev, L0, Parser, Options) ->
     NoFail = proplists:get_bool(no_fail, Options),
@@ -373,10 +373,8 @@ parse_form(Dev, L0, Parser, Options) ->
                 {ok, F} ->
                     {ok, F, L1}
             end;
-        {error, IoErr, L1} ->
-            {error, IoErr, L1};
-        {eof, L1} ->
-            {eof, L1}
+        {error, _IoErr, _L1} = Err -> Err;
+        {eof, _L1} = Eof -> Eof
     end.
 
 io_error(L, Desc) ->
@@ -431,12 +429,12 @@ quickscan_form([{'-', _L}, {atom, La, else} | _Ts]) ->
 quickscan_form([{'-', _L}, {atom, La, endif} | _Ts]) ->
     kill_form(La);
 quickscan_form([{'-', L}, {'?', _}, {Type, _, _}=N | [{'(', _} | _]=Ts])
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% minus, macro and open parenthesis at start of form - assume that
     %% the macro takes no arguments; e.g. `-?foo(...).'
     quickscan_macros_1(N, Ts, [{'-', L}]);
 quickscan_form([{'?', _L}, {Type, _, _}=N | [{'(', _} | _]=Ts])
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro and open parenthesis at start of form - assume that the
     %% macro takes no arguments (see scan_macros for details)
     quickscan_macros_1(N, Ts, []);
@@ -451,14 +449,14 @@ quickscan_macros(Ts) ->
     quickscan_macros(Ts, []).
 
 quickscan_macros([{'?',_}, {Type, _, A} | Ts], [{string, L, S} | As])
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro after a string literal: change to a single string
     {_, Ts1} = skip_macro_args(Ts),
     S1 = S ++ quick_macro_string(A),
     quickscan_macros(Ts1, [{string, L, S1} | As]);
 quickscan_macros([{'?',_}, {Type, _, _}=N | [{'(',_}|_]=Ts],
 		 [{':',_}|_]=As)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro and open parenthesis after colon - check the token
     %% following the arguments (see scan_macros for details)
     Ts1 = case skip_macro_args(Ts) of
@@ -468,7 +466,7 @@ quickscan_macros([{'?',_}, {Type, _, _}=N | [{'(',_}|_]=Ts],
 	  end,
     quickscan_macros_1(N, Ts1, As);
 quickscan_macros([{'?',_}, {Type, _, _}=N | Ts], As)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro with or without arguments
     {_, Ts1} = skip_macro_args(Ts),
     quickscan_macros_1(N, Ts1, As);
@@ -567,12 +565,12 @@ scan_form([{'-', _L}, {atom, La, endif} | Ts], Opt) ->
     [{atom, La, ?pp_form}, {'(', La}, {')', La}, {'->', La},
      {atom, La, endif} | scan_macros(Ts, Opt)];
 scan_form([{'-', L}, {'?', L1}, {Type, _, _}=N | [{'(', _} | _]=Ts], Opt)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% minus, macro and open parenthesis at start of form - assume that
     %% the macro takes no arguments; e.g. `-?foo(...).'
     macro(L1, N, Ts, [{'-', L}], Opt);
 scan_form([{'?', L}, {Type, _, _}=N | [{'(', _} | _]=Ts], Opt)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro and open parenthesis at start of form - assume that the
     %% macro takes no arguments; probably a function declaration on the
     %% form `?m(...) -> ...', which will not parse if it is rewritten as
@@ -586,12 +584,12 @@ scan_macros(Ts, Opt) ->
 
 scan_macros([{'?', _}=M, {Type, _, _}=N | Ts], [{string, L, _}=S | As],
  	    #opt{clever = true}=Opt)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro after a string literal: be clever and insert ++
     scan_macros([M, N | Ts], [{'++', L}, S | As], Opt);
 scan_macros([{'?', L}, {Type, _, _}=N | [{'(',_}|_]=Ts],
 	    [{':',_}|_]=As, Opt)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro and open parentheses after colon - probably a call
     %% `m:?F(...)' so the argument list might belong to the call, not
     %% the macro - but it could also be a try-clause pattern
@@ -607,12 +605,12 @@ scan_macros([{'?', L}, {Type, _, _}=N | [{'(',_}|_]=Ts],
 	    macro(L, N, Ts, As, Opt)
     end;
 scan_macros([{'?', L}, {Type, _, _}=N | [{'(',_}|_]=Ts], As, Opt)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro with arguments
     {Args, Rest} = skip_macro_args(Ts),
     macro_call(Args, L, N, Rest, As, Opt);
 scan_macros([{'?', L }, {Type, _, _}=N | Ts], As, Opt)
-  when Type == atom; Type == var ->
+  when Type =:= atom; Type =:= var ->
     %% macro without arguments
     macro(L, N, Ts, As, Opt);
 scan_macros([T | Ts], As, Opt) ->

@@ -161,7 +161,8 @@ send_multiranges(ValidRanges,Info,PartMimeType,Path)->
     end.
    
 send_multipart_start({{Start,End},{StartByte,EndByte,Size}},Info,
-		     PartMimeType,FileDescriptor)when StartByte<Size->
+		     PartMimeType,FileDescriptor)
+  when StartByte < Size ->
     PartHeader=["\r\n--RangeBoundarySeparator\r\n","Content-type: ",
 		PartMimeType,"\r\n",
                 "Content-Range:bytes=",integer_to_list(StartByte),"-",
@@ -240,7 +241,7 @@ send_part_start(SocketType,Socket,FileDescriptor,Start,End) ->
 	from_start ->
 	    file:position(FileDescriptor,{bof,End}),
 	    send_body(SocketType,Socket,FileDescriptor);
-	Byte when integer(Byte) ->
+	Byte when is_integer(Byte) ->
 	    file:position(FileDescriptor,{bof,Start}),
 	    send_part(SocketType,Socket,FileDescriptor,End)
     end,
@@ -315,7 +316,7 @@ valid_range(from_start,End,FileInfo)->
 	    false
     end;
 
-valid_range(Start,End,FileInfo)when Start=<End->
+valid_range(Start,End,FileInfo) when Start =< End ->
     case FileInfo#file_info.size of
 	FileSize when Start< FileSize ->
 	    case FileInfo#file_info.size of
@@ -347,9 +348,9 @@ get_modification_date(Path)->
 %Calculate the size of the chunk to read
 	
 get_file_chunk_size(Position, End, DefaultChunkSize) 
-  when (Position+DefaultChunkSize) =< End->
+  when (Position+DefaultChunkSize) =< End ->
     DefaultChunkSize;
-get_file_chunk_size(Position, End, _DefaultChunkSize)->
+get_file_chunk_size(Position, End, _DefaultChunkSize) ->
     (End-Position) +1.
 
 

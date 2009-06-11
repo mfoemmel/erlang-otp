@@ -731,6 +731,9 @@ handle_event(S, #wx{id = Id, obj= ObjRef, userData = UserData, event = Event} = 
         #wxCommand{type = command_menu_selected = Type, cmdString = Str}
         when S#state.popup_menu =/= undefined ->
             handle_popup_event(S, Type, Id, ObjRef, UserData, Str);
+	#wxMouse{type = enter_window} ->
+	    wxWindow:setFocus(ObjRef),
+	    S;
         _ ->
 	    case wxNotebook:getPageText(S#state.book, wxNotebook:getSelection(S#state.book)) of
 		?APP_PAGE -> handle_app_event(S, Event, ObjRef, UserData);
@@ -748,7 +751,7 @@ handle_popup_event(#state{popup_menu = #root_popup{dir = OldDir, choices = Choic
     case lists:nth(Pos, Choices) of
         edit ->
             Style = ?wxFD_OPEN bor ?wxFD_FILE_MUST_EXIST,
-            case select_dir(S#state.frame, "Edit root dir", OldDir, Style) of
+            case select_dir(S#state.frame, "Change root directory", OldDir, Style) of
 		{ok, NewDir} when NewDir =:= OldDir ->
 		    %% Same dir.Ignore.
 		    S#state{popup_menu = undefined};
@@ -766,7 +769,7 @@ handle_popup_event(#state{popup_menu = #lib_popup{dir = OldDir, choices = Choice
         add ->
             {ok, Cwd} = file:get_cwd(),
             Style = ?wxFD_OPEN bor ?wxFD_FILE_MUST_EXIST,
-            case select_dir(S#state.frame, "Add new library directory", Cwd, Style) of
+            case select_dir(S#state.frame, "Select a library directory to add", Cwd, Style) of
                 {ok, NewDir} ->
                     case lists:member(NewDir, Sys#sys.lib_dirs) of
                         true ->
@@ -782,7 +785,7 @@ handle_popup_event(#state{popup_menu = #lib_popup{dir = OldDir, choices = Choice
                 end;
         edit ->
             Style = ?wxFD_OPEN bor ?wxFD_FILE_MUST_EXIST,
-            case select_dir(S#state.frame, "Edit library directory", OldDir, Style) of
+            case select_dir(S#state.frame, "Change library directory", OldDir, Style) of
                 {ok, NewDir} ->
                     case lists:member(NewDir, Sys#sys.lib_dirs) of
                         true ->
@@ -818,7 +821,7 @@ handle_popup_event(#state{popup_menu = #escript_popup{file = OldFile, choices = 
                         OldFile
                 end,
             Style = ?wxFD_OPEN bor ?wxFD_FILE_MUST_EXIST,
-            case select_file(S#state.frame, "Add new escript file", OldFile2, Style) of
+            case select_file(S#state.frame, "Select an escript file to add", OldFile2, Style) of
                 {ok, NewFile} ->
                     case lists:member(NewFile, Sys#sys.escripts) of
                         true ->
@@ -834,7 +837,7 @@ handle_popup_event(#state{popup_menu = #escript_popup{file = OldFile, choices = 
             end;
         edit ->
             Style = ?wxFD_OPEN bor ?wxFD_FILE_MUST_EXIST,
-            case select_file(S#state.frame, "Edit escript file", OldFile, Style) of
+            case select_file(S#state.frame, "Change escript file name", OldFile, Style) of
                 {ok, NewFile} ->
                     case lists:member(NewFile, Sys#sys.escripts) of
                         true ->
@@ -869,10 +872,14 @@ handle_system_event(#state{sys = Sys} = S,
                     config_incl_cond) ->
     AppCond = reltool_utils:list_to_incl_cond(Choice),
     Sys2 = Sys#sys{incl_cond = AppCond},
-    do_set_sys(S#state{sys = Sys2}).
+    do_set_sys(S#state{sys = Sys2});
+handle_system_event(S, Event, ObjRef, UserData) ->
+    error_logger:format("~p~p got unexpected wx sys event to ~p with user data: ~p\n\t ~p\n",
+                        [?MODULE, self(), ObjRef, UserData, Event]),
+    S.
 
 handle_release_event(S, _Event, _ObjRef, UserData) ->
-    io:format("Release: ~p\n", [UserData]),
+    io:format("Release data: ~p\n", [UserData]),
     S.
 
 handle_source_event(S, #wxTree{type = command_tree_item_activated, item = Item}, ObjRef, _UserData) ->
@@ -912,9 +919,6 @@ handle_app_event(S, #wxList{type = command_list_item_activated, itemIndex = Pos}
 handle_app_event(S, #wxCommand{type = command_button_clicked}, _ObjRef, {app_button, Action, ListCtrl}) ->
     Items = reltool_utils:get_items(ListCtrl),
     handle_app_button(S, Items, Action);
-handle_app_event(S, #wxMouse{type = enter_window}, ObjRef, _UserData) ->
-    wxWindow:setFocus(ObjRef),
-    S;
 handle_app_event(S, Event, ObjRef, UserData) ->
     error_logger:format("~p~p got unexpected wx app event to ~p with user data: ~p\n\t ~p\n",
                         [?MODULE, self(), ObjRef, UserData, Event]),
@@ -1114,7 +1118,7 @@ undo_config(#state{status_bar = Bar} = S) ->
 
 load_config(#state{status_bar = Bar, config_file = OldFile} = S) ->
     Style = ?wxFD_OPEN bor ?wxFD_FILE_MUST_EXIST,
-    case select_file(S#state.frame, "Load configuration from file", OldFile, Style) of
+    case select_file(S#state.frame, "Select a file to load the configuration from", OldFile, Style) of
         {ok, NewFile} ->
             wxStatusBar:setStatusText(Bar, "Processing libraries..."),
             Status = reltool_server:load_config(S#state.xref_pid, NewFile),
@@ -1125,7 +1129,7 @@ load_config(#state{status_bar = Bar, config_file = OldFile} = S) ->
 
 save_config(#state{config_file = OldFile} = S) ->
     Style = ?wxFD_SAVE bor ?wxFD_OVERWRITE_PROMPT, 
-    case select_file(S#state.frame, "Save configuration to file", OldFile, Style) of
+    case select_file(S#state.frame, "Select a file to save the configuration to", OldFile, Style) of
         {ok, NewFile} ->
             Status = reltool_server:save_config(S#state.xref_pid, NewFile),
             check_and_refresh(S#state{config_file = NewFile}, Status);
@@ -1135,8 +1139,7 @@ save_config(#state{config_file = OldFile} = S) ->
 
 gen_rel_files(#state{target_dir = OldDir} = S) ->
     Style = ?wxFD_SAVE bor ?wxFD_OVERWRITE_PROMPT, 
-    OldDir = filename:join([OldDir, "my_rel_file" ++ ".rel"]),
-    case select_dir(S#state.frame, "Generate rel, script and boot files on directory", OldDir, Style) of
+    case select_dir(S#state.frame, "Select a directory to generate rel, script and boot files to", OldDir, Style) of
         {ok, NewDir} ->
             Status = reltool_server:gen_rel_files(S#state.xref_pid, NewDir),
             check_and_refresh(S, Status);
@@ -1146,7 +1149,7 @@ gen_rel_files(#state{target_dir = OldDir} = S) ->
 
 gen_target(#state{target_dir = OldDir} = S) ->
     Style = ?wxFD_SAVE bor ?wxFD_OVERWRITE_PROMPT, 
-    case select_dir(S#state.frame, "Generate target system to directory", OldDir, Style) of
+    case select_dir(S#state.frame, "Select a directory to generate a target system to", OldDir, Style) of
         {ok, NewDir} ->
             Status = reltool_server:gen_target(S#state.xref_pid, NewDir),
             check_and_refresh(S#state{target_dir = NewDir}, Status);

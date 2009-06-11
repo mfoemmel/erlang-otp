@@ -292,6 +292,34 @@
           or privacy key using MD5 och SHA.  The key is
           localized for EngineID.</p>
 
+        <marker id="octet_string_to_bits"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>octet_string_to_bits(S) -> Val</name>
+      <fsummary>Convert an OCTET-STRING to BITS</fsummary>
+      <type>
+        <v>Val = bits()</v>
+      </type>
+      <desc>
+        <p>Utility function for converting a value of type 
+          <c>OCTET-STRING</c> to <c>BITS</c>. </p>
+
+        <marker id="bits_to_octet_string"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>bits_to_octet_string(B) -> Val</name>
+      <fsummary>Convert an OCTET-STRING to BITS</fsummary>
+      <type>
+        <v>Val = octet_string()</v>
+      </type>
+      <desc>
+        <p>Utility function for converting a value of type <c>BITS</c> 
+          to <c>OCTET-STRING</c>. </p>
+
         <marker id="read_mib"></marker>
       </desc>
     </func>

@@ -47,7 +47,7 @@
 %%-----------------------------------------------------------------
 %% Func: getType/3
 %%-----------------------------------------------------------------
-getType(G, N, T) when record(T, scoped_id) ->
+getType(G, N, T) when is_record(T, scoped_id) ->
     {FullScopedName, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, T),
     BT = ic_code:get_basetype(G, ic_util:to_dot(G,FullScopedName)), 
     case BT of
@@ -79,32 +79,32 @@ getType(G, N, T) when record(T, scoped_id) ->
 	    end
     end;
 
-getType(_G, _N, S) when list(S) ->
+getType(_G, _N, S) when is_list(S) ->
     S;
 
-getType(_G, _N, T) when record(T, string) ->
+getType(_G, _N, T) when is_record(T, string) ->
     "java.lang.String";
 
-getType(_G, _N, T) when record(T, wstring) ->  %% WSTRING
+getType(_G, _N, T) when is_record(T, wstring) ->  %% WSTRING
     "java.lang.String";
 
-getType(G, N, T) when record(T, struct) ->
+getType(G, N, T) when is_record(T, struct) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]);
 
-getType(G, N, T) when record(T, union) ->
+getType(G, N, T) when is_record(T, union) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]);
 
-getType(G, N, T) when record(T, sequence) ->
+getType(G, N, T) when is_record(T, sequence) ->
     getType(G, N, ic_forms:get_type(T)) ++ "[]";
 
-getType(G, N, T) when record(T, enum) ->
+getType(G, N, T) when is_record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]);
 
 %% NOTE i am using the new isJavaElementaryType
 %% to avoid members declared as keywords (except
 %% all java elementary types) to be used as a 
 %% class
-getType(G, N, T) when record(T, member) ->
+getType(G, N, T) when is_record(T, member) ->
     Type = tk2type(G,N,T,ic_forms:get_type_code(G, N, T)),
     case isJavaElementaryType(list_to_atom(Type)) of
 	true ->
@@ -117,7 +117,7 @@ getType(G, N, T) when record(T, member) ->
 		    Type;
 		false -> 
 		    ic_forms:get_java_id(getType(G,N,ic_forms:get_type(T))) ++
-			if record(hd(T#member.id),array) ->
+			if is_record(hd(T#member.id),array) ->
 				arrayEmptyDim(hd(T#member.id));
 			   true ->
 				""
@@ -265,28 +265,28 @@ getHolderType(G, N, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-getHolderType(G, N, S) when list(S) ->
+getHolderType(G, N, S) when is_list(S) ->
     ic_util:to_dot(G,[S|N]) ++ "Holder";
 
-getHolderType(_G, _N, T) when record(T, string) ->
+getHolderType(_G, _N, T) when is_record(T, string) ->
     ?ICPACKAGE ++"StringHolder";
 
-getHolderType(_G, _N, T) when record(T, wstring) ->  %% WSTRING
+getHolderType(_G, _N, T) when is_record(T, wstring) ->  %% WSTRING
     ?ICPACKAGE ++"StringHolder";
 
-getHolderType(G, N, T) when record(T, struct) ->
+getHolderType(G, N, T) when is_record(T, struct) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Holder";
 
-getHolderType(G, N, T) when record(T, union) ->
+getHolderType(G, N, T) when is_record(T, union) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Holder";
 
-getHolderType(G, N, T) when record(T, array) ->
+getHolderType(G, N, T) when is_record(T, array) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Holder";
 
-getHolderType(G, N, T) when record(T, sequence) ->
+getHolderType(G, N, T) when is_record(T, sequence) ->
     getType(G, N, ic_forms:get_type(T)) ++ "Holder[]";
 
-getHolderType(G, N, T) when record(T, enum) ->
+getHolderType(G, N, T) when is_record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Holder";
 
 getHolderType(_G, _N, {boolean, _}) ->
@@ -439,37 +439,37 @@ getUnmarshalType(G, N, X, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-getUnmarshalType(_G, _N, _X, S) when list(S) ->
+getUnmarshalType(_G, _N, _X, S) when is_list(S) ->
     S ++ "Helper";
 
-getUnmarshalType(_G, _N, _X, T) when record(T, string) ->
+getUnmarshalType(_G, _N, _X, T) when is_record(T, string) ->
     ?ERLANGPACKAGE ++ "OtpErlangString";
 
-getUnmarshalType(_G, _N, _X, T) when record(T, wstring) ->  %% WSTRING
+getUnmarshalType(_G, _N, _X, T) when is_record(T, wstring) ->  %% WSTRING
     ?ERLANGPACKAGE ++ "OtpErlangString";
 
-getUnmarshalType(G, N, _X, T) when record(T, struct) ->
+getUnmarshalType(G, N, _X, T) when is_record(T, struct) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, _X, T) when record(T, union) ->
+getUnmarshalType(G, N, _X, T) when is_record(T, union) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, sequence), 
-				  record(X, member) ->
+getUnmarshalType(G, N, X, T) when is_record(T, sequence) andalso
+				  is_record(X, member) ->
     ic_util:to_dot(G,[ic_forms:get_id2(X)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, sequence), 
-				  record(X, case_dcl) ->
+getUnmarshalType(G, N, X, T) when is_record(T, sequence) andalso
+				  is_record(X, case_dcl) ->
     ic_util:to_dot(G,[ic_forms:get_id2(X)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, sequence) ->
+getUnmarshalType(G, N, X, T) when is_record(T, sequence) ->
     getUnmarshalType(G, N, X, ic_forms:get_type(T)) ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, array), 
-				  record(X, case_dcl) ->
+getUnmarshalType(G, N, X, T) when is_record(T, array) andalso
+				  is_record(X, case_dcl) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, _X, T) when record(T, enum) ->
+getUnmarshalType(G, N, _X, T) when is_record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
@@ -609,38 +609,38 @@ getMarshalType(G, N, X, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-getMarshalType(_G, _N, _X, S) when list(S) ->
+getMarshalType(_G, _N, _X, S) when is_list(S) ->
     S ++ "Helper";
 
-getMarshalType(_G, _N, _X, T) when record(T, string) ->
+getMarshalType(_G, _N, _X, T) when is_record(T, string) ->
     "string";
 
-getMarshalType(_G, _N, _X, T) when record(T, wstring) ->  %% WSTRING
+getMarshalType(_G, _N, _X, T) when is_record(T, wstring) ->  %% WSTRING
     "string";
 
-getMarshalType(G, N, _X, T) when record(T, struct) ->
+getMarshalType(G, N, _X, T) when is_record(T, struct) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
-getMarshalType(G, N, _X, T) when record(T, union) ->
+getMarshalType(G, N, _X, T) when is_record(T, union) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
-getMarshalType(G, N, X, T) when record(T, array),
-				record(X, case_dcl) ->
+getMarshalType(G, N, X, T) when is_record(T, array) andalso
+				is_record(X, case_dcl) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ 
 	"Helper";
 
-getMarshalType(G, N, X, T) when record(T, sequence),
-				record(X, member) ->
+getMarshalType(G, N, X, T) when is_record(T, sequence) andalso
+				is_record(X, member) ->
     ic_util:to_dot(G,[ic_forms:get_id2(X)|N]) ++ 
 	"Helper";
 
-getMarshalType(G, N, _X, T) when record(T, sequence) ->
+getMarshalType(G, N, _X, T) when is_record(T, sequence) ->
     getType(G, N, ic_forms:get_type(T)) ++ 
 	"Helper";
 
-getMarshalType(G, N, _X, T) when record(T, enum) ->
+getMarshalType(G, N, _X, T) when is_record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
@@ -755,25 +755,25 @@ unMarshalFun(G, N, X, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-unMarshalFun(_G, _N, _X, S) when list(S) ->
+unMarshalFun(_G, _N, _X, S) when is_list(S) ->
     ".unmarshal()";
 
-unMarshalFun(_G, _N, _X, T) when record(T, string) ->
+unMarshalFun(_G, _N, _X, T) when is_record(T, string) ->
     ".read_string()";
 
-unMarshalFun(_G, _N, _X, T) when record(T, wstring) ->  %% WSTRING
+unMarshalFun(_G, _N, _X, T) when is_record(T, wstring) ->  %% WSTRING
     ".read_string()";
 
-unMarshalFun(_G, _N, _X, T) when record(T, struct) ->
+unMarshalFun(_G, _N, _X, T) when is_record(T, struct) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlangTuple)";
 
-unMarshalFun(_G, _N, _X, T) when record(T, union) ->
+unMarshalFun(_G, _N, _X, T) when is_record(T, union) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlangTuple)";
 
-unMarshalFun(_G, _N, _X, T) when record(T, sequence) ->
+unMarshalFun(_G, _N, _X, T) when is_record(T, sequence) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlanglist)";
 
-unMarshalFun(_G, _N, _X, T) when record(T, enum) ->
+unMarshalFun(_G, _N, _X, T) when is_record(T, enum) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlangAtom)";
 
 unMarshalFun(_G, _N, _X, {boolean, _}) ->
@@ -824,19 +824,19 @@ unMarshalFun(_G, _N, _X, {wchar, _}) ->  %% WCHAR
 %%-----------------------------------------------------------------
 
 
-getFullType(G, N, X, T) when record(X, typedef), record(T, array) -> 
+getFullType(G, N, X, T) when is_record(X, typedef) andalso is_record(T, array) -> 
     FullDim = 
 	tk2FullType(G,N,X,ic_forms:get_tk(X)) ++
 	getFullDim(G,N,T#array.size),
     fixArrayDims(FullDim);
 
-getFullType(G, N, X, T) when record(X, member), record(T, array) -> 
+getFullType(G, N, X, T) when is_record(X, member) andalso is_record(T, array) -> 
     FullDim = 
 	getFullType(G, N, ic_forms:get_type(X)) ++ 
 	getFullDim(G,N,T#array.size),
     fixArrayDims(FullDim);
 
-getFullType(G, N, X, T) when record(X, case_dcl), record(T, array) -> 
+getFullType(G, N, X, T) when is_record(X, case_dcl) andalso is_record(T, array) -> 
     FullDim = 
 	getFullType(G, N, ic_forms:get_type(X)) ++ 
 	getFullDim(G,N,T#array.size),
@@ -847,7 +847,7 @@ getFullType(G, N, _X, T)  ->
 
 
 
-getFullType(G, N, T) when record(T, scoped_id) ->
+getFullType(G, N, T) when is_record(T, scoped_id) ->
     {FullScopedName, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, T),
     case TK of
 	{tk_array,_,_} ->
@@ -864,7 +864,7 @@ getFullType(G, N, T) when record(T, scoped_id) ->
 	    end
     end;
 
-getFullType(G, N, T) when record(T, sequence) ->
+getFullType(G, N, T) when is_record(T, sequence) ->
     fixSeqDims(getType(G,N,T),"_length");
 
 getFullType(G, N, T)  ->
@@ -896,7 +896,7 @@ fixSeqDims(Cs,Length) ->
 
 fixSeqDims([],_Length,Found) ->
     lists:reverse(Found);
-fixSeqDims([91,93|Rest],Length,Found) when list(Length) ->
+fixSeqDims([91,93|Rest],Length,Found) when is_list(Length) ->
     lists:reverse([93|lists:reverse(Length)] ++ 
 		  [91|Found]) ++ Rest;
 fixSeqDims([C|Rest],Length,Found) ->
@@ -907,11 +907,11 @@ fixSeqDims([C|Rest],Length,Found) ->
 %%-----------------------------------------------------------------
 %% Func: inlinedTypes/2
 %%-----------------------------------------------------------------
-inlinedTypes(PkgName, Type) when record(Type, struct) ->
+inlinedTypes(PkgName, Type) when is_record(Type, struct) ->
     "_" ++ PkgName ++ ".";
-inlinedTypes(PkgName, Type) when record(Type, union) ->
+inlinedTypes(PkgName, Type) when is_record(Type, union) ->
     "_" ++ PkgName ++ ".";
-inlinedTypes(PkgName, Type) when record(Type, enum) ->
+inlinedTypes(PkgName, Type) when is_record(Type, enum) ->
     "_" ++ PkgName ++ ".";
 inlinedTypes(_, _) ->
     "".
@@ -935,8 +935,8 @@ isBasicType(G, N, S) when element(1, S) == scoped_id ->
     {_, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     isBasicType(ictype:fetchType(TK));
 
-isBasicType(G, N, X) when record(X, member) ->
-    if record(hd(element(3,X)), array) ->
+isBasicType(G, N, X) when is_record(X, member) ->
+    if is_record(hd(element(3,X)), array) ->
 	    false;
        true ->
 	    isBasicType(G, N, element(2,X))
@@ -1189,12 +1189,12 @@ tkarr2FullDecl2(G,N,X,TkEl,[],Ds) ->
 
 getFullDim(_G,_N,[]) ->
     "";
-getFullDim(G,N,[D|Ds]) when record(D,scoped_id) ->
+getFullDim(G,N,[D|Ds]) when is_record(D,scoped_id) ->
     {FSN, _, _, _} = ic_symtab:get_full_scoped_name(G, N, D),
     "[" ++ ic_util:to_dot(G,FSN) ++ "]" ++ getFullDim(G,N,Ds);
-getFullDim(G,N,[D|Ds]) when integer(D) ->
+getFullDim(G,N,[D|Ds]) when is_integer(D) ->
     "[" ++ integer_to_list(D) ++ "]" ++ getFullDim(G,N,Ds);
-getFullDim(G,N,[D|Ds]) when tuple(D) ->
+getFullDim(G,N,[D|Ds]) when is_tuple(D) ->
     "[" ++ ic_util:eval_java(G,N,D) ++ "]" ++ getFullDim(G,N,Ds).
 
 

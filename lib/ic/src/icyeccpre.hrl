@@ -111,9 +111,9 @@ yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
 yecctoken2string({'dot', _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
-yecctoken2string({Other, _}) when atom(Other) ->
+yecctoken2string({Other, _}) when is_atom(Other) ->
     io_lib:format("~w", [Other]);
-yecctoken2string({_, _, Other}) when list(Other), number(hd(Other)) ->
+yecctoken2string({_, _, Other}) when is_list(Other) andalso is_number(hd(Other)) ->
     Other;
 yecctoken2string({_, _, Other}) ->
     io_lib:format("~p", [Other]);

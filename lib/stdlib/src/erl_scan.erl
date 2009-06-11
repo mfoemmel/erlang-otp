@@ -275,8 +275,6 @@ string_thing(_) -> "string".
 -define(DIGIT(C), C >= $0, C =< $9).
 -define(CHAR(C), is_integer(C), C >= 0).
 
--define(STR(Col, S), if Col =:= no_col -> []; true -> S end).
-
 %% A workaround: Unicode strings are not returned as strings, but as
 %% lists of integers. For instance, "b\x{aaa}c" => [98,2730,99]. This
 %% is to protect the system from character codes greater than 255. To
@@ -634,10 +632,10 @@ scan_dot([$%|_]=Cs, St, Line, Col, Toks, Ncs) ->
     Attrs = attributes(Line, Col, St, Ncs),
     {ok,[{dot,Attrs}|Toks],Cs,Line,incr_column(Col, 1)};
 scan_dot([$\n=C|Cs], St, Line, Col, Toks, Ncs) ->
-    Attrs = attributes(Line, Col, St, ?STR(Col, Ncs++[C])),
+    Attrs = attributes(Line, Col, St, Ncs++[C]),
     {ok,[{dot,Attrs}|Toks],Cs,Line+1,new_column(Col, 1)};
 scan_dot([C|Cs], St, Line, Col, Toks, Ncs) when ?WHITE_SPACE(C) ->
-    Attrs = attributes(Line, Col, St, ?STR(Col, Ncs++[C])),
+    Attrs = attributes(Line, Col, St, Ncs++[C]),
     {ok,[{dot,Attrs}|Toks],Cs,Line,incr_column(Col, 2)};
 scan_dot([]=Cs, _St, Line, Col, Toks, Ncs) ->
     {more,{Cs,Col,Toks,Line,Ncs,fun scan_dot/6}};
@@ -772,24 +770,24 @@ scan_char([$\\|Cs]=Cs0, St, Line, Col, Toks) ->
         {eof,Ncol} ->
             scan_error(char, Line, Col, Line, Ncol);
         {nl,Val,Str,Ncs,Ncol} ->
-            Attrs = attributes(Line, Col, St, ?STR(Ncol, "$\\"++Str)),
+            Attrs = attributes(Line, Col, St, "$\\"++Str),
             Ntoks = [{char,Attrs,Val}|Toks],
             scan1(Ncs, St, Line+1, Ncol, Ntoks);
         {unicode,Val,Str,Ncs,Ncol} ->
-            Attrs = attributes(Line, Col, St, ?STR(Ncol, "$\\"++Str)),
+            Attrs = attributes(Line, Col, St, "$\\"++Str),
             Ntoks = [{integer,Attrs,Val}|Toks], % UNI
             scan1(Ncs, St, Line, Ncol, Ntoks);
         {Val,Str,Ncs,Ncol} ->
-            Attrs = attributes(Line, Col, St, ?STR(Ncol, "$\\"++Str)),
+            Attrs = attributes(Line, Col, St, "$\\"++Str),
             Ntoks = [{char,Attrs,Val}|Toks],
             scan1(Ncs, St, Line, Ncol, Ntoks)
     end;
 scan_char([$\n=C|Cs], St, Line, Col, Toks) ->    
-    Attrs = attributes(Line, Col, St, ?STR(Col, [$$,C])),
+    Attrs = attributes(Line, Col, St, [$$,C]),
     scan1(Cs, St, Line+1, new_column(Col, 1), [{char,Attrs,C}|Toks]);
 scan_char([C|Cs], St, Line, Col, Toks) when ?CHAR(C) ->
     Tag = if ?UNI255(C) -> char; true -> integer end, % UNI
-    Attrs = attributes(Line, Col, St, ?STR(Col, [$$,C])),
+    Attrs = attributes(Line, Col, St, [$$,C]),
     scan1(Cs, St, Line, incr_column(Col, 2), [{Tag,Attrs,C}|Toks]);
 scan_char([], _St, Line, Col, Toks) ->
     {more,{[$$],Col,Toks,Line,[],fun scan/6}};
@@ -797,7 +795,7 @@ scan_char(eof, _St, Line, Col, _Toks) ->
     scan_error(char, Line, Col, Line, incr_column(Col, 1)).
 
 scan_string(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
-    case scan_string0(Cs, Line, Col, $\", Str, Wcs, Uni0) of
+    case scan_string0(Cs, St, Line, Col, $\", Str, Wcs, Uni0) of
         {more,Ncs,Nline,Ncol,Nstr,Nwcs,Uni} ->
             State = {Nwcs,Nstr,Line0,Col0,Uni},
             {more,{Ncs,Ncol,Toks,Nline,State,fun scan_string/6}};
@@ -816,31 +814,31 @@ scan_string(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
 
 %% UNI
 unicode_string_to_list(Line, Col, St, [$"=C|Nstr], Toks) -> %" Emacs
-    Paren = {'[',attributes(Line, Col, St, ?STR(Col, [C]))},
+    Paren = {'[',attributes(Line, Col, St, [C])},
     u2l(Nstr, Line, incr_column(Col, 1), St, [Paren|Toks]).
 
 u2l([$"]=Cs, Line, Col, St, Toks) -> %" Emacs
-    [{']',attributes(Line, Col, St, ?STR(Col, Cs))}|Toks];
+    [{']',attributes(Line, Col, St, Cs)}|Toks];
 u2l([$\n=C|Cs], Line, Col, St, Toks) ->
-    Ntoks = unicode_nl_tokens(Line, Col, ?STR(Col, [C]), C, St, Toks, Cs),
+    Ntoks = unicode_nl_tokens(Line, Col, [C], C, St, Toks, Cs),
     u2l(Cs, Line+1, new_column(Col, 1), St, Ntoks);
 u2l([$\\|Cs], Line, Col, St, Toks) ->
     case scan_escape(Cs, Col) of
         {nl,Val,ValStr,Ncs,Ncol} ->
-            Nstr = ?STR(Ncol, [$\\|ValStr]),
+            Nstr = [$\\|ValStr],
             Ntoks = unicode_nl_tokens(Line, Col, Nstr, Val, St, Toks, Ncs),
             u2l(Ncs, Line+1, Ncol, St, Ntoks);
         {unicode,Val,ValStr,Ncs,Ncol} ->
-            Nstr = ?STR(Ncol, [$\\|ValStr]),
+            Nstr = [$\\|ValStr],
             Ntoks = unicode_tokens(Line, Col, Nstr, Val, St, Toks, Ncs),
             u2l(Ncs, Line, incr_column(Ncol, 1), St, Ntoks);
         {Val,ValStr,Ncs,Ncol} ->
-            Nstr = ?STR(Ncol, [$\\|ValStr]),
+            Nstr = [$\\|ValStr],
             Ntoks = unicode_tokens(Line, Col, Nstr, Val, St, Toks, Ncs),
             u2l(Ncs, Line, incr_column(Ncol, 1), St, Ntoks)
     end;
 u2l([C|Cs], Line, Col, St, Toks) ->
-    Ntoks = unicode_tokens(Line, Col, ?STR(Col, [C]), C, St, Toks, Cs),
+    Ntoks = unicode_tokens(Line, Col, [C], C, St, Toks, Cs),
     u2l(Cs, Line, incr_column(Col, 1), St, Ntoks).
 
 unicode_nl_tokens(Line, Col, Str, Val, St, Toks, Cs) ->
@@ -858,7 +856,7 @@ unicode_tokens(Line, Col, Str, Val, St, Toks, Cs, Cline, Ccol) ->
     [{',',attributes(Cline, Ccol, St, "")} || Cs =/= "\""] ++ [Token|Toks].
 
 scan_qatom(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
-    case scan_string0(Cs, Line, Col, $\', Str, Wcs, Uni0) of
+    case scan_string0(Cs, St, Line, Col, $\', Str, Wcs, Uni0) of
         {more,Ncs,Nline,Ncol,Nstr,Nwcs,Uni} ->
             State = {Nwcs,Nstr,Line0,Col0,Uni},
             {more,{Ncs,Ncol,Toks,Nline,State,fun scan_qatom/6}};
@@ -877,11 +875,13 @@ scan_qatom(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
             end
     end.
 
-scan_string0(Cs, Line, no_col=Col, Q, [], Wcs, Uni) ->
+scan_string0(Cs, #erl_scan{text=false}, Line, no_col=Col, Q, [], Wcs, Uni) ->
     scan_string_no_col(Cs, Line, Col, Q, Wcs, Uni);
-scan_string0(Cs, Line, Col, Q, [], Wcs, Uni) ->
+scan_string0(Cs, #erl_scan{text=true}, Line, no_col=Col, Q, Str, Wcs, Uni) ->
+    scan_string1(Cs, Line, Col, Q, Str, Wcs, Uni);
+scan_string0(Cs, _St, Line, Col, Q, [], Wcs, Uni) ->
     scan_string_col(Cs, Line, Col, Q, Wcs, Uni);
-scan_string0(Cs, Line, Col, Q, Str, Wcs, Uni) ->
+scan_string0(Cs, _St, Line, Col, Q, Str, Wcs, Uni) ->
     scan_string1(Cs, Line, Col, Q, Str, Wcs, Uni).
 
 %% Optimization. Col =:= no_col.
@@ -1057,7 +1057,7 @@ scan_number([$#|Cs], St, Line, Col, Toks, Ncs0) ->
     Ncs = lists:reverse(Ncs0),
     case catch list_to_integer(Ncs) of
         B when B >= 2, B =< 1+$Z-$A+10 ->
-            Bcs = ?STR(Col, Ncs++[$#]),
+            Bcs = Ncs++[$#],
             scan_based_int(Cs, St, Line, Col, Toks, {B,[],Bcs});
         B ->
             Len = length(Ncs),
@@ -1090,7 +1090,7 @@ scan_based_int(Cs, St, Line, Col, Toks, {B,Ncs0,Bcs}) ->
     Ncs = lists:reverse(Ncs0),
     case catch erlang:list_to_integer(Ncs, B) of
         N when is_integer(N) ->
-            tok3(Cs, St, Line, Col, Toks, integer, ?STR(Col, Bcs++Ncs), N);
+            tok3(Cs, St, Line, Col, Toks, integer, Bcs++Ncs, N);
         _ ->
             Len = length(Bcs)+length(Ncs),
             Ncol = incr_column(Col, Len),

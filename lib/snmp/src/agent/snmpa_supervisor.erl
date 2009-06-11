@@ -295,7 +295,7 @@ init([AgentType, Opts]) ->
 
 		%% -- Config --
 		ConfOpts = get_opt(config, Opts, []),
-		?vdebug("[agent table] store config options: ~p",[ConfOpts]),
+		?vdebug("[agent table] store config options: ~p", [ConfOpts]),
 		ets:insert(snmp_agent_table, {config, ConfOpts}),
 
 		ConfigArgs = [Vsns, ConfOpts],
@@ -305,6 +305,11 @@ init([AgentType, Opts]) ->
 
 		%% -- Agent verbosity --
 		AgentVerb  = get_opt(agent_verbosity, Opts, silence),
+
+		%% -- Discovery processing --
+		DiscoOpts = get_opt(discovery, Opts, []),
+		?vdebug("[agent table] store discovery options: ~p", [DiscoOpts]),
+		ets:insert(snmp_agent_table, {discovery, DiscoOpts}),
 
 		%% -- Mibs --
 		Mibs = get_mibs(get_opt(mibs, Opts, []), Vsns),
@@ -392,7 +397,6 @@ init([AgentType, Opts]) ->
     ?vdebug("init done",[]),
     {ok, {SupFlags, [MiscSupSpec, SymStoreSpec, LocalDbSpec, TargetCacheSpec | 
 		     Rest]}}.
-
 
 get_mibs(Mibs, Vsns) ->
     MibDir = filename:join(code:priv_dir(snmp), "mibs"),

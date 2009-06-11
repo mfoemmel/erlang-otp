@@ -29,7 +29,9 @@
 # ----------------------------------------------------
 
 book.dvi: book.tex megaco.tex megaco_architecture.tex \
-		megaco_codec_meas.tex megaco_codec_transform.tex \
+		megaco_codec_meas.tex \
+		megaco_codec_mstone1.tex megaco_codec_mstone2.tex \
+		megaco_codec_transform.tex \
 		megaco_debug.tex megaco_edist_compress.tex \
 		megaco_encode.tex megaco_encoder.tex megaco_examples.tex \
 		megaco_flex_scanner.tex megaco_intro.tex megaco_mib.tex \
@@ -50,8 +52,7 @@ book.tex: ref_man.xml
 book.dvi: call_flow.ps call_flow_cont.ps distr_node_config.ps \
 		megaco_sys_arch.ps single_node_config.ps
 
-book.dvi: decode_time.ps encode_time.ps message_size.ps \
-		total_time.ps
+book.dvi: mstone1.ps
 
 book.dvi: MG-startup_flow_noMID.ps MGC_startup_call_flow.ps \
 		MG_startup_call_flow.ps

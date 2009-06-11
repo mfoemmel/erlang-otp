@@ -1178,11 +1178,11 @@ expand_sep(D, Ds, N) ->
     union(fit(horizontal([D | Ds])),
 	  vertical([D | [nest(N, D1) || D1 <- Ds]])).
 
-expand_par(D, [D1 | Ds], N) ->
+expand_par(D, [D1 | Ds] = DL, N) ->
     union(beside(fit(D),
 		 beside(hspace(),
 			mksep([fit(D1) | Ds], N - 1, true))),
-	  above(D, nest(N, par([D1 | Ds])))).
+	  above(D, nest(N, par(DL)))).
 
 horizontal(Ds) ->
     foldr1(fun (D1, D2) ->

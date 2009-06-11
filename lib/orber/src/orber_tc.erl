@@ -147,7 +147,7 @@ abstract_interface(RepId, Name) ->
 %% Get TypeCode (can be used for constructed types like structs, 
 %% unions and exceptions)
 %%
-get_tc(T) when tuple(T) ->
+get_tc(T) when is_tuple(T) ->
     Type = element(1, T),
     case catch Type:tc() of
 	{'EXIT', R} ->
@@ -158,7 +158,7 @@ get_tc(T) when tuple(T) ->
 	    X
     end;
 %% This call can be used if one have the IFR id and wants a typecode.
-get_tc(IFRId) when list(IFRId) ->
+get_tc(IFRId) when is_list(IFRId) ->
     Rep = orber_ifr:find_repository(),
     Def = orber_ifr:lookup_id(Rep, IFRId),
     Descr = orber_ifr:describe(Def),
@@ -187,13 +187,13 @@ check_tc('tk_octet') -> true;
 check_tc('tk_any') -> true;
 check_tc('tk_TypeCode') -> true;
 check_tc('tk_Principal') -> true;
-check_tc({'tk_objref', RepId, Name}) when list(RepId), 
-					  list(Name) -> true;
-check_tc({'tk_struct', RepId, Name, ElementList}) when list(RepId), 
-						       list(Name) -> 
+check_tc({'tk_objref', RepId, Name}) when is_list(RepId) andalso
+					  is_list(Name) -> true;
+check_tc({'tk_struct', RepId, Name, ElementList}) when is_list(RepId) andalso
+						       is_list(Name) -> 
     Fun = fun(X) -> 			  
 		  case X of
-		      {MemberName, MemberTC} when list(MemberName) ->
+		      {MemberName, MemberTC} when is_list(MemberName) ->
 			  check_tc(MemberTC);
 		      _ ->
 			  false
@@ -201,9 +201,9 @@ check_tc({'tk_struct', RepId, Name, ElementList}) when list(RepId),
 	  end,
     lists:all(Fun, ElementList);
 check_tc({'tk_union', RepId, Name, DiscrTC, 
-	  Default, ElementList}) when list(RepId), 
-				      list(Name),
-				      integer(Default) -> 
+	  Default, ElementList}) when is_list(RepId) andalso
+				      is_list(Name) andalso
+				      is_integer(Default) -> 
     case check_tc(DiscrTC) of
 	false ->
 	    false;
@@ -211,7 +211,7 @@ check_tc({'tk_union', RepId, Name, DiscrTC,
 	    Fun = fun(X) -> 			  
 			  case X of
 			      {_, MemberName, MemberTC} when
-				    list(MemberName) ->
+				    is_list(MemberName) ->
 				  check_tc(MemberTC);
 			      _ ->
 				  false
@@ -219,33 +219,33 @@ check_tc({'tk_union', RepId, Name, DiscrTC,
 		  end,
 	    lists:all(Fun, ElementList)
     end;
-check_tc({'tk_enum', RepId, Name, ElementList}) when list(RepId),
-						     list(Name) -> 
+check_tc({'tk_enum', RepId, Name, ElementList}) when is_list(RepId) andalso
+						     is_list(Name) -> 
     Fun = fun(X) -> 
 		  if
-		      list(X) ->
+		      is_list(X) ->
 			  true;
 		      true ->
 			  false
 		  end
 	  end,
     lists:all(Fun, ElementList);
-check_tc({'tk_string', MaxLength}) when integer(MaxLength) -> true;
-check_tc({'tk_wstring', MaxLength}) when integer(MaxLength) -> true;
-check_tc({'tk_fixed', Digits, Scale}) when integer(Digits), 
-					   integer(Scale) -> true;
-check_tc({'tk_sequence', ElemTC, MaxLength}) when integer(MaxLength) -> 
+check_tc({'tk_string', MaxLength}) when is_integer(MaxLength) -> true;
+check_tc({'tk_wstring', MaxLength}) when is_integer(MaxLength) -> true;
+check_tc({'tk_fixed', Digits, Scale}) when is_integer(Digits) andalso
+					   is_integer(Scale) -> true;
+check_tc({'tk_sequence', ElemTC, MaxLength}) when is_integer(MaxLength) -> 
     check_tc(ElemTC);
-check_tc({'tk_array', ElemTC, Length})  when integer(Length) -> 
+check_tc({'tk_array', ElemTC, Length})  when is_integer(Length) -> 
     check_tc(ElemTC);
-check_tc({'tk_alias', RepId, Name, TC}) when list(RepId), 
-					     list(Name) -> 
+check_tc({'tk_alias', RepId, Name, TC}) when is_list(RepId) andalso
+					     is_list(Name) -> 
     check_tc(TC);
-check_tc({'tk_except', RepId, Name, ElementList}) when list(RepId), 
-						       list(Name) -> 
+check_tc({'tk_except', RepId, Name, ElementList}) when is_list(RepId) andalso
+						       is_list(Name) -> 
     Fun = fun(X) -> 
 		  case X of
-		      {MemberName, TC} when list(MemberName) ->
+		      {MemberName, TC} when is_list(MemberName) ->
 			  check_tc(TC);
 		      _ ->
 			  false
@@ -253,9 +253,9 @@ check_tc({'tk_except', RepId, Name, ElementList}) when list(RepId),
 	  end,
     lists:all(Fun, ElementList);
 check_tc({'tk_value', RepId, Name, ValueModifier, 
-	  TC, ElementList}) when list(RepId), 
-				 list(Name),
-				 integer(ValueModifier) -> 
+	  TC, ElementList}) when is_list(RepId) andalso
+				 is_list(Name) andalso
+				 is_integer(ValueModifier) -> 
     case check_tc(TC) of
 	false ->
 	    false;
@@ -263,7 +263,7 @@ check_tc({'tk_value', RepId, Name, ValueModifier,
 	    Fun = fun(X) -> 
 			  case X of
 			      {MemberName, MemberTC, Visibility} when 
-				    list(MemberName), integer(Visibility) ->
+				    is_list(MemberName) andalso is_integer(Visibility) ->
 				  check_tc(MemberTC);
 			      _ ->
 				  false
@@ -271,13 +271,13 @@ check_tc({'tk_value', RepId, Name, ValueModifier,
 		  end,
 	    lists:all(Fun, ElementList)
     end;
-check_tc({'tk_value_box', RepId, Name, TC}) when list(RepId), 
-						 list(Name) -> 
+check_tc({'tk_value_box', RepId, Name, TC}) when is_list(RepId) andalso
+						 is_list(Name) -> 
     check_tc(TC);
-check_tc({'tk_native', RepId, Name}) when list(RepId), 
-					  list(Name) -> true;
-check_tc({'tk_abstract_interface', RepId, Name}) when list(RepId), 
-						      list(Name) -> true;
-check_tc({'none', Indirection}) when integer(Indirection) -> true;
+check_tc({'tk_native', RepId, Name}) when is_list(RepId) andalso
+					  is_list(Name) -> true;
+check_tc({'tk_abstract_interface', RepId, Name}) when is_list(RepId) andalso
+						      is_list(Name) -> true;
+check_tc({'none', Indirection}) when is_integer(Indirection) -> true;
 check_tc(_) -> false.
     

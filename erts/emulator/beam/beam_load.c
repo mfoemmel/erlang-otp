@@ -1232,12 +1232,12 @@ read_literal_table(LoaderState* stp)
 
 	GetInt(stp, 4, sz);	/* Size of external term format. */
 	GetString(stp, p, sz);
-	if ((heap_size = erts_decoded_size(p, sz, 1)) < 0) {
+	if ((heap_size = erts_decode_ext_size(p, sz, 1)) < 0) {
 	    LoadError1(stp, "literal %d: bad external format", i);
 	}
 	hp = stp->literals[i].heap = erts_alloc(ERTS_ALC_T_LOADER_TMP,
 						heap_size*sizeof(Eterm));
-	val = erts_from_external_format(NULL, &hp, &p, NULL);
+	val = erts_decode_ext(&hp, NULL, &p);
 	stp->literals[i].heap_size = hp - stp->literals[i].heap;
 	if (stp->literals[i].heap_size > heap_size) {
 	    erl_exit(1, "overrun by %d word(s) for literal heap, term %d",
@@ -3449,7 +3449,7 @@ freeze_code(LoaderState* stp)
 	sys_memcpy(attr, stp->chunks[ATTR_CHUNK].start, stp->chunks[ATTR_CHUNK].size);
 	code[MI_ATTR_PTR] = (Eterm) attr;
 	code[MI_ATTR_SIZE] = (Eterm) stp->chunks[ATTR_CHUNK].size;
-	decoded_size = erts_decoded_size(attr, attr_size, 0);
+	decoded_size = erts_decode_ext_size(attr, attr_size, 0);
 	if (decoded_size < 0) {
  	    LoadError0(stp, "bad external term representation of module attributes");
  	}
@@ -3461,7 +3461,7 @@ freeze_code(LoaderState* stp)
 	       stp->chunks[COMPILE_CHUNK].size);
 	code[MI_COMPILE_PTR] = (Eterm) compile_info;
 	code[MI_COMPILE_SIZE] = (Eterm) stp->chunks[COMPILE_CHUNK].size;
-	decoded_size = erts_decoded_size(compile_info, compile_size, 0);
+	decoded_size = erts_decode_ext_size(compile_info, compile_size, 0);
 	if (decoded_size < 0) {
  	    LoadError0(stp, "bad external term representation of compilation information");
  	}
@@ -4479,7 +4479,7 @@ attributes_for_module(Process* p, /* Process whose heap to use. */
     if (ext != NULL) {
 	hp = HAlloc(p, code[MI_ATTR_SIZE_ON_HEAP]);
 	end = hp + code[MI_ATTR_SIZE_ON_HEAP];
-	result = erts_from_external_format(NULL, &hp, &ext, &MSO(p));
+	result = erts_decode_ext(&hp, &MSO(p), &ext);
 	if (is_value(result)) {
 	    ASSERT(hp <= end);
 	}
@@ -4519,7 +4519,7 @@ compilation_info_for_module(Process* p, /* Process whose heap to use. */
     if (ext != NULL) {
 	hp = HAlloc(p, code[MI_COMPILE_SIZE_ON_HEAP]);
 	end = hp + code[MI_COMPILE_SIZE_ON_HEAP];
-	result = erts_from_external_format(NULL, &hp, &ext, &MSO(p));
+	result = erts_decode_ext(&hp, &MSO(p), &ext);
 	if (is_value(result)) {
 	    ASSERT(hp <= end);
 	}
@@ -4690,7 +4690,7 @@ stub_copy_info(LoaderState* stp,
     if (size != 0) {
 	memcpy(info, stp->chunks[chunk].start, size);
 	*ptr_word = (Eterm) info;
-	decoded_size = erts_decoded_size(info, size, 0);
+	decoded_size = erts_decode_ext_size(info, size, 0);
 	if (decoded_size < 0) {
  	    return 0;
  	}

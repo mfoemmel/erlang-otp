@@ -48,7 +48,7 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(Config) when list(Config) ->
+init(Config) when is_list(Config) ->
     Flag = process_flag(trap_exit, true),    
     Res = (catch start()),
     process_flag(trap_exit, Flag),
@@ -60,7 +60,7 @@ init(Config) when list(Config) ->
     end.
     
 
-finish(Config) when list(Config) ->
+finish(Config) when is_list(Config) ->
     case lists:keysearch(flex_scanner, 1, Config) of
 	{value, {flex_scanner, {Pid, _Conf}}} ->
 	    stop(Pid),
@@ -89,7 +89,7 @@ start() ->
     end.
 
 
-scanner_conf(Config) when list(Config) ->
+scanner_conf(Config) when is_list(Config) ->
     case lists:keysearch(flex_scanner, 1, Config) of
 	{value, {flex_scanner, {Pid, Conf}}} ->
 	    case ping_flex_scanner(Pid) of
@@ -118,10 +118,11 @@ stop(Pid) ->
 
 
 handler(Pid) ->
-    case (catch megaco_flex_scanner:start()) of
-	{ok, Port} when port(Port) ->
-	    Pid ! {flex_scanner_started, self(), {flex, Port}},
-	    handler(Pid, Port);
+    SMP = erlang:system_info(smp_support), 
+    case (catch megaco_flex_scanner:start(SMP)) of
+	{ok, PortOrPorts} ->
+	    Pid ! {flex_scanner_started, self(), {flex, PortOrPorts}},
+	    handler(Pid, PortOrPorts);
 	{error, {load_driver, {open_error, Reason}}} ->
 	    Error = {failed_loading_flex_scanner_driver, Reason},
 	    Pid ! {flex_scanner_error, Error},
@@ -136,21 +137,33 @@ handler(Pid) ->
 	    exit(Error)
     end.
 
-handler(Pid, Port) ->
+handler(Pid, PortOrPorts) ->
     receive
 	{ping, Pinger} ->
 	    Pinger ! {pong, self()},
-	    handler(Pid, Port);
-	{'EXIT', Port, Reason} ->
+	    handler(Pid, PortOrPorts);
+	{'EXIT', Port, Reason} when (PortOrPorts =:= Port) ->
 	    Pid ! {flex_scanner_exit, Reason},
 	    exit({flex_scanner_exit, Reason});
+	{'EXIT', Port, Reason} when is_port(Port) ->
+	    case megaco_flex_scanner:is_scanner_port(Port, PortOrPorts) of
+		true ->
+		    Pid ! {flex_scanner_exit, Reason},
+		    exit({flex_scanner_exit, Reason});
+		false ->
+		    io:format("flex scanner handler got port exit "
+			      "from unknown:"
+			      "~n   ~p: ~p", [Port, Reason]),
+		    ok
+	    end,
+	    handler(Pid, PortOrPorts);
 	stop ->
-	    megaco_flex_scanner:stop(Port),
+	    megaco_flex_scanner:stop(PortOrPorts),
 	    exit(normal);
 	Other ->
 	    io:format("flex scanner handler got something:~n"
 		      "~p", [Other]),
-	    handler(Pid, Port)
+	    handler(Pid, PortOrPorts)
     end.
 	    
 

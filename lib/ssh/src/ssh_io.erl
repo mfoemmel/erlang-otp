@@ -27,9 +27,9 @@
 -import(lists, [reverse/1]).
 
 
-read_line(Prompt) when list(Prompt) ->
+read_line(Prompt) when is_list(Prompt) ->
     io:get_line(list_to_atom(Prompt));
-read_line(Prompt) when atom(Prompt) ->
+read_line(Prompt) when is_atom(Prompt) ->
     io:get_line(Prompt).
 
 read_ln(Prompt) ->
@@ -65,7 +65,7 @@ format(Fmt, Args) ->
     io:format(Fmt, Args).
 
 
-trim(Line) when list(Line) ->
+trim(Line) when is_list(Line) ->
     reverse(trim1(reverse(trim1(Line))));
 trim(Other) -> Other.
 

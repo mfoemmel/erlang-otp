@@ -105,7 +105,7 @@
 %%======================================================================================
 %%======================================================================================
 %%======================================================================================
-run(FileName, Flags) when atom(FileName) ->
+run(FileName, Flags) when is_atom(FileName) ->
     run(atom_to_list(FileName), Flags);
 
 run(FileName, Flags) ->
@@ -1881,7 +1881,7 @@ sl_mark_expanded([H|T], Str, Res) ->
 %%===============================================================
 %%  Check the Flags for include directories
 %%===============================================================
-include_dir(Flags) when list(Flags)->
+include_dir(Flags) when is_list(Flags)->
     include_dir(Flags,[]);
 include_dir(_Flags) ->
     [].

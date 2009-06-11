@@ -84,6 +84,7 @@
                        {agent_type,       agent_type()}       |  
                        {agent_verbosity,  verbosity()}        |  
                        {versions,         versions()}         |  
+                       {discovery,        agent_discovery()}  |  
                        {priority,         priority()}         |  
                        {multi_threaded,   multi_threaded()}   |  
                        {db_dir,           db_dir()}           |  
@@ -122,22 +123,66 @@
           started. Otherwise, no agents are started. </p>
         <p>Default is <c>master</c>.</p>
       </item>
+
+      <tag><c><![CDATA[agent_discovery() = [agent_discovery_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>agent_discovery_opt() = 
+          {terminating, agent_terminating_discovery_opts()} | 
+          {originating, agent_originating_discovery_opts()}</c></p>
+        <p>The <c>terminating</c> options effects discovery initiated by 
+          a manager. </p>
+        <p>The <c>originating</c> options effects discovery initiated 
+          by this agent. </p>
+        <p>For defaults see the options in <c>agent_discovery_opt()</c>.</p>
+      </item>
+
+      <tag><c><![CDATA[agent_terminating_discovery_opts() = [agent_terminating_discovery_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>agent_terminating_discovery_opt() = 
+          {enable, boolean()} | 
+          {stage2, discovery | plain}</c></p>
+        <p>These are options effecting discovery <c>terminating</c> in this
+          agent (i.e. initiated by a manager). </p>
+        <p>The default values for the <c>terminating</c> 
+          discovery options are: </p>
+        <list type="bulleted">
+          <item>enable: <c>true</c></item>
+          <item>stage2: <c>discovery</c></item>
+        </list>
+      </item>
+
+      <tag><c><![CDATA[agent_originating_discovery_opts() = [agent_originating_discovery_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>agent_originating_discovery_opt() = 
+          {enable, boolean()}</c></p>
+        <p>These are options effecting discovery <c>originating</c> in this
+          agent. </p>
+        <p>The default values for the <c>originating</c> 
+          discovery options are: </p>
+        <list type="bulleted">
+          <item>enable: <c>true</c></item>
+        </list>
+      </item>
+
       <tag><c><![CDATA[multi_threaded() = bool() <optional>]]></c></tag>
       <item>
         <p>If <c>true</c>, the agent is multi-threaded, with one
           thread for each get request. </p>
         <p>Default is <c>false</c>.</p>
       </item>
+
       <tag><c><![CDATA[db_dir() = string() <mandatory>]]></c></tag>
       <item>
         <p>Defines where the SNMP agent internal db files are stored.</p>
       </item>
+
       <tag><c><![CDATA[local_db() = [local_db_opt()] <optional>]]></c></tag>
       <item>
         <p><c>local_db_opt() = {repair, agent_repair()} | {auto_save, agent_auto_save()} |   {verbosity, verbosity()}</c></p>
         <p>Defines options specific for the SNMP agent local database.</p>
         <p>For defaults see the options in <c>local_db_opt()</c>.</p>
       </item>
+
       <tag><c><![CDATA[agent_repair() = false | true | force <optional>]]></c></tag>
       <item>
         <p>When starting snmpa_local_db it always tries to open an
@@ -147,12 +192,14 @@
           even if it was properly closed. </p>
         <p>Default is <c>true</c>.</p>
       </item>
+
       <tag><c><![CDATA[agent_auto_save() = integer() | infinity <optional>]]></c></tag>
       <item>
         <p>The auto save interval. The table is flushed to disk
           whenever not accessed for this amount of time.</p>
         <p>Default is <c>5000</c>.</p>
       </item>
+
       <tag><c><![CDATA[agent_net_if() = [agent_net_if_opt()] <optional>]]></c></tag>
       <item>
         <p><c>agent_net_if_option() = {module, agent_net_if_module()} | 
@@ -162,6 +209,7 @@
           entity. </p>
         <p>For defaults see the options in <c>agent_net_if_opt()</c>.</p>
       </item>
+
       <tag><c><![CDATA[agent_net_if_module() = atom() <optional>]]></c></tag>
       <item>
         <p>Module which handles the network interface part for the
@@ -467,6 +515,7 @@
         <p>Default is <c>permanent</c> for the agent and <c>transient</c>
           for the manager.</p>
       </item>
+
       <tag><c>db_init_error() = terminate | create</c></tag>
       <item>
         <p>Defines what to do if the agent is unable to open an
@@ -475,23 +524,27 @@
           agent/manager will remove the faulty file(s) and create new ones.</p>
         <p>Default is <c>terminate</c>.</p>
       </item>
+
       <tag><c><![CDATA[priority() = atom() <optional>]]></c></tag>
       <item>
         <p>Defines the Erlang priority for all SNMP processes.</p>
         <p>Default is <c>normal</c>.</p>
       </item>
+
       <tag><c><![CDATA[versions() = [version()] <optional>]]></c></tag>
       <item>
         <p><c>version() = v1 | v2 | v3</c></p>
         <p>Which SNMP versions shall be accepted/used.</p>
         <p>Default is <c>[v1,v2,v3]</c>.</p>
       </item>
+
       <tag><c><![CDATA[verbosity() = silence | info | log | debug | trace <optional>]]></c></tag>
       <item>
         <p>Verbosity for a SNMP process. This specifies now much debug info
           is printed.</p>
         <p>Default is <c>silence</c>.</p>
       </item>
+
       <tag><c><![CDATA[bind_to() = bool() <optional>]]></c></tag>
       <item>
         <p>If <c>true</c>, net_if binds to the IP address.
@@ -499,6 +552,7 @@
           where it is running. </p>
         <p>Default is <c>false</c>.</p>
       </item>
+
       <tag><c><![CDATA[no_reuse() = bool() <optional>]]></c></tag>
       <item>
         <p>If <c>true</c>, net_if does not specify that the IP
@@ -506,6 +560,7 @@
           the address is set to reusable. </p>
         <p>Default is <c>false</c>.</p>
       </item>
+
       <tag><c><![CDATA[recbuf() = integer() <optional>]]></c></tag>
       <item>
         <p>Receive buffer size. </p>
@@ -516,12 +571,14 @@
         <p>Send buffer size. </p>
         <p>Default value is defined by <c>gen_udp</c>.</p>
       </item>
+
       <tag><c><![CDATA[note_store() = [note_store_opt()] <optional>]]></c></tag>
       <item>
         <p><c>note_store_opt() = {timeout, note_store_timeout()} |  {verbosity, verbosity()}</c></p>
         <p>Specifies the options for the SNMP note store.</p>
         <p>For defaults see the options in <c>note_store_opt()</c>.</p>
       </item>
+
       <tag><c><![CDATA[note_store_timeout() = integer() <optional>]]></c></tag>
       <item>
         <p>Note cleanup time. When storing a note in the note store,
@@ -530,6 +587,7 @@
           milli-seconds.</p>
         <p>Default is <c>30000</c>.</p>
       </item>
+
       <tag><c><![CDATA[audit_trail_log() [audit_trail_log_opt()] <optional>]]></c></tag>
       <item>
         <p><c>audit_trail_log_opt() = {type, atl_type()} | {dir, atl_dir()} |  {size, atl_size()} |  {repair, atl_repair()}</c></p>
@@ -539,6 +597,7 @@
           <c>size</c> options are mandatory.</p>
         <p>If not present, audit trail logging is not used.</p>
       </item>
+
       <tag><c><![CDATA[atl_type() = read | write | read_write <optional>]]></c></tag>
       <item>
         <p>Specifies what type of an audit trail log should be used. 
@@ -559,12 +618,14 @@
         </list>
         <p>Default is <c>read_write</c>.</p>
       </item>
+
       <tag><c><![CDATA[atl_dir = dir() <mandatory>]]></c></tag>
       <item>
         <p>Specifies where the audit trail log should be stored.</p>
         <p>If <c>audit_trail_log</c> specifies that logging should take
           place, this parameter <em>must</em> be defined.</p>
       </item>
+
       <tag><c><![CDATA[atl_size() = {integer(), integer()} <mandatory>]]></c></tag>
       <item>
         <p>Specifies the size of the audit
@@ -572,6 +633,7 @@
         <p>If <c>audit_trail_log</c> specifies that logging should 
           take place, this parameter <em>must</em> be defined.</p>
       </item>
+
       <tag><c><![CDATA[atl_repair() = true | false | truncate | snmp_repair <optional>]]></c></tag>
       <item>
         <p>Specifies if and how the audit trail log shall be repaired

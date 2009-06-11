@@ -119,8 +119,8 @@ expand_pmod(Fs0, St0) ->
     end.
 
 get_base(As) ->
-    case lists:keysearch(extends, 1, As) of
-	{value,{extends,[Base]}} when is_atom(Base) ->
+    case lists:keyfind(extends, 1, As) of
+	{extends,[Base]} when is_atom(Base) ->
 	    Base;
 	_ ->
 	    []

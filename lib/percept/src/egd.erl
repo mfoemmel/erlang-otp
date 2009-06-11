@@ -113,7 +113,7 @@ information(Pid) ->
     cast(Pid, information),
     ok.
 
-%% @spec line(egd_image(), point(), point, color()) -> ok
+%% @spec line(egd_image(), point(), point(), color()) -> ok
 %% @doc Creates a line object from P1 to P2 in the image.
 
 -spec(line/4 :: (
@@ -126,8 +126,15 @@ line(Image, P1, P2, Color) ->
     cast(Image, {line, P1, P2, Color}),
     ok.
 
-%% @spec color({byte(), byte(), byte()}) -> color()
+%% @spec color( Value | Name ) -> color()
+%% where
+%%	Value = {byte(), byte(), byte()} | {byte(), byte(), byte(), byte()} 
+%%	Name  = black | silver | gray | white | maroon | red | purple | fuchia | green | lime | olive | yellow | navy | blue | teal | aqua
 %% @doc Creates a color reference.
+
+-spec(color/1 :: (
+	Value :: {byte(), byte(), byte()} | {byte(), byte(), byte(), byte()} | atom()) ->
+	color()).
 
 color(Color) ->
     egd_primitives:color(Color).

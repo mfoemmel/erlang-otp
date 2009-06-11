@@ -681,13 +681,18 @@ _ET_DECLARE_CHECKED(struct erl_node_*,internal_port_node,Eterm);
 
 #ifdef ARCH_64
 #  define ERTS_REF_WORDS	(ERTS_REF_NUMBERS/2 + 1)
+#  define ERTS_REF_32BIT_WORDS  (ERTS_REF_NUMBERS+1)
 #else
 #  define ERTS_REF_WORDS	ERTS_REF_NUMBERS
+#  define ERTS_REF_32BIT_WORDS  ERTS_REF_NUMBERS
 #endif
 
 typedef struct {
-  Eterm      header;
-  Uint       data[ERTS_REF_WORDS];
+    Eterm      header;
+    union {
+	Uint32 ui32[ERTS_REF_32BIT_WORDS];
+	Uint   ui[ERTS_REF_WORDS];
+    } data;
 } RefThing;
 
 #define REF_THING_SIZE (sizeof(RefThing)/sizeof(Uint))
@@ -716,10 +721,10 @@ typedef struct {
 #define write_ref_thing(Hp, R0, R1, R2)					\
 do {									\
   ((RefThing *) (Hp))->header  = make_ref_thing_header(ERTS_REF_WORDS);	\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[0] = ERTS_REF_NUMBERS;		\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[1] = (R0);			\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[2] = (R1);			\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[3] = (R2);			\
+  ((RefThing *) (Hp))->data.ui32[0] = ERTS_REF_NUMBERS;			\
+  ((RefThing *) (Hp))->data.ui32[1] = (R0);				\
+  ((RefThing *) (Hp))->data.ui32[2] = (R1);				\
+  ((RefThing *) (Hp))->data.ui32[3] = (R2);				\
 } while (0)
 
 #else
@@ -727,9 +732,9 @@ do {									\
 #define write_ref_thing(Hp, R0, R1, R2)					\
 do {									\
   ((RefThing *) (Hp))->header  = make_ref_thing_header(ERTS_REF_WORDS);	\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[0] = (R0);			\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[1] = (R1);			\
-  ((Uint32 *) ((RefThing *) (Hp))->data)[2] = (R2);			\
+  ((RefThing *) (Hp))->data.ui32[0] = (R0);				\
+  ((RefThing *) (Hp))->data.ui32[1] = (R1);				\
+  ((RefThing *) (Hp))->data.ui32[2] = (R2);				\
 } while (0)
 
 #endif
@@ -756,8 +761,8 @@ _ET_DECLARE_CHECKED(Eterm*,internal_ref_val,Eterm);
 _ET_DECLARE_CHECKED(Uint,internal_ref_data_words,Eterm);
 #define internal_ref_data_words(x) _ET_APPLY(internal_ref_data_words,(x))
 
-#define _unchecked_internal_ref_data(x) (_unchecked_ref_thing_ptr(x)->data)
-_ET_DECLARE_CHECKED(Uint*,internal_ref_data,Eterm);
+#define _unchecked_internal_ref_data(x) (_unchecked_ref_thing_ptr(x)->data.ui32)
+_ET_DECLARE_CHECKED(Uint32*,internal_ref_data,Eterm);
 #define internal_ref_data(x) _ET_APPLY(internal_ref_data,(x))
 
 #define _unchecked_internal_ref_node(x) erts_this_node
@@ -803,12 +808,15 @@ _ET_DECLARE_CHECKED(struct erl_node_*,internal_ref_node,Eterm);
  */
 
 typedef struct external_thing_ {
-  /*                                 ----+                        */
-  Eterm                   header;     /* |                        */
-  struct external_thing_ *next;       /*  > External thing head   */
-  struct erl_node_       *node;       /* |                        */
-  /*                                 ----+                        */
-  Uint                  data[1];
+    /*                                 ----+                        */
+    Eterm                   header;     /* |                        */
+    struct external_thing_ *next;       /*  > External thing head   */
+    struct erl_node_       *node;       /* |                        */
+    /*                                 ----+                        */
+    union {
+	Uint32              ui32[1];
+	Uint                ui[1];
+    } data;
 } ExternalThing;
 
 #define EXTERNAL_THING_HEAD_SIZE (sizeof(ExternalThing)/sizeof(Uint) - 1)
@@ -869,10 +877,10 @@ _ET_DECLARE_CHECKED(Eterm*,external_val,Eterm);
 _ET_DECLARE_CHECKED(Uint,external_data_words,Eterm);
 #define external_data_words(x) _ET_APPLY(external_data_words,(x))
 
-#define _unchecked_external_data(x) (_unchecked_external_thing_ptr((x))->data)
+#define _unchecked_external_data(x) (_unchecked_external_thing_ptr((x))->data.ui)
 #define _unchecked_external_node(x) (_unchecked_external_thing_ptr((x))->node)
 
-#define external_data(x) (external_thing_ptr((x))->data)
+#define external_data(x) (external_thing_ptr((x))->data.ui)
 #define external_node(x) (external_thing_ptr((x))->node)
 
 #define _unchecked_external_pid_data_words(x) \
@@ -911,8 +919,8 @@ _ET_DECLARE_CHECKED(struct erl_node_*,external_port_node,Eterm);
 _ET_DECLARE_CHECKED(Uint,external_ref_data_words,Eterm);
 #define external_ref_data_words(x) _ET_APPLY(external_ref_data_words,(x))
 
-#define _unchecked_external_ref_data(x) _unchecked_external_data((x))
-_ET_DECLARE_CHECKED(Uint*,external_ref_data,Eterm);
+#define _unchecked_external_ref_data(x) (_unchecked_external_thing_ptr((x))->data.ui32)
+_ET_DECLARE_CHECKED(Uint32*,external_ref_data,Eterm);
 #define external_ref_data(x) _ET_APPLY(external_ref_data,(x))
 
 #define _unchecked_external_ref_node(x) _unchecked_external_node((x))

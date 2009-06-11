@@ -640,7 +640,7 @@ ssl_client_cacertfile_option() ->
     case cosFileTransferApp:ssl_client_cacertfile() of
 	[] ->
 	    [];
-	X when list(X) ->
+	X when is_list(X) ->
 	    {cacertfile, X};
 	_ ->
 	    []
@@ -717,7 +717,7 @@ ssl_server_cacertfile_option() ->
     case cosFileTransferApp:ssl_server_cacertfile() of
 	[] ->
 	    [];
-	X when list(X) ->
+	X when is_list(X) ->
 	    [{cacertfile, X}];
 	_ ->
 	    []

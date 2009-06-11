@@ -30,11 +30,6 @@
 
 #include <ctype.h>
 
-#define NO 0
-#define YES 1
-
-#define ASIZE(a) (sizeof(a)/sizeof(a[0]))
-
 static int debug = 0;		/* Bit flags for debug printouts. */
 
 static char** eargv_base;	/* Base of vector. */
@@ -42,13 +37,23 @@ static char** eargv;		/* First argument for erl. */
 
 static int eargc;		/* Number of arguments in eargv. */
 
+#define BOOL int
+#define FALSE 0
+#define TRUE 1
+
 #ifdef __WIN32__
 #  define QUOTE(s) possibly_quote(s)
 #  define IS_DIRSEP(c) ((c) == '/' || (c) == '\\')
+#  define DIRSEPSTR "\\"
+#  define PATHSEPSTR ";"
+#  define PMAX MAX_PATH
 #  define ERL_NAME "erl.exe"
 #else
 #  define QUOTE(s) s
 #  define IS_DIRSEP(c) ((c) == '/')
+#  define DIRSEPSTR "/"
+#  define PATHSEPSTR ":"
+#  define PMAX PATH_MAX
 #  define ERL_NAME "erl"
 #endif
 
@@ -154,83 +159,184 @@ free_env_val(char *value)
 	efree(value);
 #endif
 }
+/*
+ * Find absolute path to this program
+ */
+
+static char *
+find_prog(char *origpath)
+{
+    char relpath[PMAX];
+    char abspath[PMAX];
+
+    strcpy(relpath, origpath);
+
+    if (strstr(relpath, DIRSEPSTR) == NULL) {
+        /* Just a base name */
+        char *envpath;
+
+        envpath = get_env("PATH");
+        if (envpath) {
+            /* Try to find the executable in the path */
+            char dir[PMAX];
+            char *beg = envpath;
+            char *end;
+            int sz;
+
+#ifdef __WIN32__
+	    HANDLE dir_handle;	        /* Handle to directory. */
+	    char wildcard[PMAX];	/* Wildcard to search for. */
+	    WIN32_FIND_DATA find_data;	/* Data found by FindFirstFile() or FindNext(). */
+#else
+            DIR *dp;             /* Pointer to directory structure. */
+            struct dirent* dirp; /* Pointer to directory entry.     */
+#endif /* __WIN32__ */
+
+            BOOL look_for_sep = TRUE;
+
+            while (look_for_sep) {
+                end = strstr(beg, PATHSEPSTR);
+                if (end != NULL) {
+                    sz = end - beg;
+                    strncpy(dir, beg, sz);
+                    dir[sz] = '\0';
+                } else {
+                    sz = strlen(beg);
+                    strcpy(dir, beg);
+                    look_for_sep = FALSE;
+                }
+                beg = end + 1;
+
+#ifdef __WIN32__
+		strcpy(wildcard, dir);
+		strcat(wildcard, DIRSEPSTR);
+		strcat(wildcard, relpath); /* basename */
+		dir_handle = FindFirstFile(wildcard, &find_data);
+		if (dir_handle == INVALID_HANDLE_VALUE) {
+		    /* Try next directory in path */
+		    continue;
+		} else {
+		    /* Wow we found the executable. */
+		    strcpy(abspath, wildcard);
+		    FindClose(dir_handle);
+		    return strsave(abspath);
+		}
+#else
+                dp = opendir(dir);
+                if (dp != NULL) {
+                    while (TRUE) {
+                        dirp = readdir(dp);
+                        if (dirp == NULL) {
+                            closedir(dp);
+                            /* Try next directory in path */
+                            break;
+                        }
+
+                        if (strcmp(origpath, dirp->d_name) == 0) {
+                            /* Wow we found the executable. */
+                            strcpy(abspath, dir);
+                            strcat(abspath, DIRSEPSTR);
+                            strcat(abspath, dirp->d_name);
+                            closedir(dp);
+			    return strsave(abspath);
+                        }
+                    }
+                }
+#endif /* __WIN32__ */
+            }
+        }
+    }
+    
+    {
+#ifdef __WIN32__
+	DWORD size;
+	char *absrest;
+	size = GetFullPathName(relpath, PMAX, abspath, &absrest);
+	if ((size == 0) || (size > PMAX)) {
+	
+#else
+        if (!realpath(relpath, abspath)) {
+#endif /* __WIN32__ */
+	    /* Cannot determine absolute path to escript. Try the relative.  */
+	    return strsave(relpath);
+	} else {
+	    return strsave(abspath);
+	}
+    }
+}
 
 static void
-append_shebang_args_to_erl_flags(char* argprefix, int argc, char** argv)
+append_shebang_args_to_erl_flags(char* scriptname)
 {
-    if (argc > 1) {
-	/* Open script file */
-	FILE* fd = fopen (argv[1],"r");
+    /* Open script file */
+    FILE* fd = fopen (scriptname,"r");
 
-	if (fd != NULL)	{
-	    /* Read first line in script file */
-	    char linebuf[LINEBUFSZ];
-	    char* ptr = fgets(linebuf, LINEBUFSZ, fd);
+    if (fd != NULL)	{
+	/* Read first line in script file */
+	char linebuf[LINEBUFSZ];
+	char* ptr = fgets(linebuf, LINEBUFSZ, fd);
 
-	    if (ptr != NULL && linebuf[0] == '#' && linebuf[1] == '!') {
-		/* Try to find args on second or third line */
+	if (ptr != NULL && linebuf[0] == '#' && linebuf[1] == '!') {
+	    /* Try to find args on second or third line */
+	    ptr = fgets(linebuf, LINEBUFSZ, fd);
+	    if (ptr != NULL && linebuf[0] == '%' && linebuf[1] == '%' && linebuf[2] == '!') {
+		/* Use second line */
+	    } else {
+		/* Try third line */
 		ptr = fgets(linebuf, LINEBUFSZ, fd);
 		if (ptr != NULL && linebuf[0] == '%' && linebuf[1] == '%' && linebuf[2] == '!') {
-		    /* Use second line */
+		    /* Use third line */
 		} else {
-		    /* Try third line */
-		    ptr = fgets(linebuf, LINEBUFSZ, fd);
-		    if (ptr != NULL && linebuf[0] == '%' && linebuf[1] == '%' && linebuf[2] == '!') {
-			/* Use third line */
-		    } else {
-			/* Do not use any line */
-			ptr = NULL;
+		    /* Do not use any line */
+		    ptr = NULL;
+		}
+	    }
+	  
+	    if (ptr != NULL) {
+		/* Use entire line but the leading chars */
+		char* emulator_flags = linebuf;
+		emulator_flags++;
+		emulator_flags++;
+	    
+		/* Get rid of trailing newline */
+		{
+		    char* linenl = strstr(emulator_flags, "\n");
+		    if (linenl) {
+			linenl[0] = '\0';
 		    }
 		}
-	  
-		if (ptr != NULL) {
-		    /* Use entire line but the leading chars */
-		    char* emulator_flags = linebuf;
+	    
+		/* Skip leading spaces */
+		while (emulator_flags && emulator_flags[0] == ' ') {
 		    emulator_flags++;
-		    emulator_flags++;
+		}
 	    
-		    /* Get rid of trailing newline */
-		    {
-			char* linenl = strstr(emulator_flags, "\n");
-			if (linenl) {
-			    linenl[0] = (char)NULL;
-			}
+		if (emulator_flags) {
+		    /* Read old env setting */
+		    char* varname = "ERL_FLAGS";
+		    char* oldenv = getenv(varname);
+		    if (oldenv) {
+			/* Copy flags from script */
+			char* newenv = emalloc(strlen(oldenv)+LINEBUFSZ);
+			char* tmpenv = newenv;
+			strcpy(tmpenv, emulator_flags);
+			tmpenv += strlen(emulator_flags);
+			/* Append flags from old env setting */
+			strcpy(tmpenv, " ");
+			tmpenv++;
+			strcpy(tmpenv, oldenv);
+			set_env(varname, newenv);
+			efree(newenv);
+		    } else {
+			/* Set new env */
+			set_env(varname, emulator_flags);
 		    }
-	    
-		    /* Skip leading spaces */
-		    while (emulator_flags && emulator_flags[0] == ' ') {
-			emulator_flags++;
-		    }
-	    
-		    if (emulator_flags) {
-			/* Read old env setting */
-			char* varname = "ERL_FLAGS";
-			char* oldenv = getenv(varname);
-			if (oldenv) {
-			    /* Copy flags from script */
-			    char* newenv = emalloc(strlen(oldenv)+LINEBUFSZ);
-			    char* tmpenv = newenv;
-			    strcpy(tmpenv, emulator_flags);
-			    tmpenv += strlen(emulator_flags);
-			    /* Append flags from old env setting */
-			    strcpy(tmpenv, " ");
-			    tmpenv++;
-			    strcpy(tmpenv, oldenv);
-			    set_env(varname, newenv);
-			    efree(newenv);
-			} else {
-			    /* Set new env */
-			    set_env(varname, emulator_flags);
-			}
-		    }
-		} 
-	    }
-	    fclose(fd);
-	} else {
-	    error("Failed to open file: %s", argv[1]);
+		}
+	    } 
 	}
+	fclose(fd);
     } else {
-	error("Missing filename\n");
+	error("Failed to open file: %s", scriptname);
     }
 }
 
@@ -241,7 +347,9 @@ main(int argc, char** argv)
     int eargc_base;		/* How many arguments in the base of eargv. */
     char* emulator;
     char* env;
-    char* invoker = argv[0];
+    char* basename;
+    char* absname;
+    char scriptname[PMAX];
 
     emulator = env = get_env("ESCRIPT_EMULATOR");
     if (emulator == NULL) {
@@ -274,13 +382,45 @@ main(int argc, char** argv)
     PUSH("-noshell");
     PUSH3("-run", "escript", "start");
 
-    /*
-     * Push all options (without the hyphen) before the script name.
-     */
-
-    while (argc > 1 && argv[1][0] == '-') {
-	PUSH(argv[1]+1);
-      	argc--, argv++;
+    for (basename = argv[0]+strlen(argv[0]);
+	 basename > argv[0] && !(IS_DIRSEP(basename[-1]));
+	 --basename)
+	;
+    
+#ifdef __WIN32__
+    if (_stricmp(basename, "escript.exe") == 0) {
+#else
+    if (strcmp(basename, "escript") == 0) {
+#endif
+	/*
+	 * Push all options (without the hyphen) before the script name.
+	 */
+	
+	while (argc > 1 && argv[1][0] == '-') {
+	    PUSH(argv[1]+1);
+	    argc--, argv++;
+	}
+	
+	if (argc <= 1) {
+	    error("Missing filename\n");
+	}
+	strcpy(scriptname, argv[1]);
+	argc--;
+	argv++;
+    } else {
+#ifdef __WIN32__
+	int len;
+#endif
+	absname = find_prog(argv[0]);
+	strcpy(scriptname, absname);
+	efree(absname);
+#ifdef __WIN32__
+	len = strlen(scriptname);
+	if (len >= 4 && _stricmp(scriptname+len-4, ".exe") == 0) {
+	    scriptname[len-4] = '\0';
+	}
+#endif
+	strcat(scriptname, ".escript");
     }
 
     /*
@@ -288,13 +428,14 @@ main(int argc, char** argv)
      * to ERL_FLAGS
      */
 
-    append_shebang_args_to_erl_flags(invoker, argc, argv);
+    append_shebang_args_to_erl_flags(scriptname);
 
     /*
      * Push the script name and everything following it as extra arguments.
      */
 
     PUSH("-extra");
+    PUSH(scriptname);
     while (argc > 1) {
 	PUSH(argv[1]);
 	argc--, argv++;
@@ -507,7 +648,7 @@ get_default_emulator(char* progname)
 static char*
 possibly_quote(char* arg)
 {
-    int mustQuote = NO;
+    int mustQuote = FALSE;
     int n = 0;
     char* s;
     char* narg;
@@ -524,10 +665,10 @@ possibly_quote(char* arg)
     for (s = arg; *s; s++, n++) {
 	switch(*s) {
 	case ' ':
-	    mustQuote = YES;
+	    mustQuote = TRUE;
 	    continue;
 	case '"':
-	    mustQuote = YES;
+	    mustQuote = TRUE;
 	    n++;
 	    continue;
 	case '\\':

@@ -127,7 +127,7 @@ string(Str, Node, Parents, Doc, Options) ->
 	case Parents of
 	    [] ->
 		[];
-	    [{H, P}|_] when atom(H), integer(P) ->
+	    [{H, P}|_] when is_atom(H), is_integer(P) ->
 		full_parents(Parents, Doc)
 	end,
 %io:format("string FullParents=~p~n",[FullParents]),
@@ -650,7 +650,7 @@ update_nodeset(Context = #xmlContext{axis_type = AxisType}, NodeSet) ->
 
 
 
-node_test(F, N, Context) when function(F) ->
+node_test(F, N, Context) when is_function(F) ->
     F(N, Context);
 node_test({wildcard, _}, #xmlNode{type=ElAt}, _Context) 
   when ElAt==element; ElAt==attribute -> 
@@ -747,23 +747,23 @@ expanded_name(Prefix, Local, #xmlContext{namespace = NS}) ->
     end.
 
 
-to_atom(A) when atom(A) -> A;
-to_atom(S) when list(S) -> list_to_atom(S).
+to_atom(A) when is_atom(A) -> A;
+to_atom(S) when is_list(S) -> list_to_atom(S).
 
-to_string(A) when atom(A) -> atom_to_list(A);
-to_string(S) when list(S) -> S.
+to_string(A) when is_atom(A) -> atom_to_list(A);
+to_string(S) when is_list(S) -> S.
 
 
-get_content(#xmlElement{content = C}) when list(C) ->
+get_content(#xmlElement{content = C}) when is_list(C) ->
     C;
-get_content(#xmlElement{content = F} = E) when function(F) ->
+get_content(#xmlElement{content = F} = E) when is_function(F) ->
     case F() of
-	C when list(C) ->
+	C when is_list(C) ->
 	    C;
 	_Other ->
 	    exit({bad_content, E})
     end;
-get_content(#xmlDocument{content = C}) when list(C) ->
+get_content(#xmlDocument{content = C}) when is_list(C) ->
     C;
 get_content(#xmlDocument{content = C}) ->
     [C].

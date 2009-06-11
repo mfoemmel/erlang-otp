@@ -148,7 +148,7 @@ ET_DEFINE_CHECKED(Uint,internal_port_data,Eterm,is_internal_port);
 ET_DEFINE_CHECKED(struct erl_node_*,internal_port_node,Eterm,is_internal_port);
 ET_DEFINE_CHECKED(Eterm*,internal_ref_val,Eterm,is_internal_ref);
 ET_DEFINE_CHECKED(Uint,internal_ref_data_words,Eterm,is_internal_ref);
-ET_DEFINE_CHECKED(Uint*,internal_ref_data,Eterm,is_internal_ref);
+ET_DEFINE_CHECKED(Uint32*,internal_ref_data,Eterm,is_internal_ref);
 ET_DEFINE_CHECKED(struct erl_node_*,internal_ref_node,Eterm,is_internal_ref);
 ET_DEFINE_CHECKED(Eterm*,external_val,Eterm,is_external);
 ET_DEFINE_CHECKED(Uint,external_data_words,Eterm,is_external);
@@ -159,7 +159,7 @@ ET_DEFINE_CHECKED(Uint,external_port_data_words,Eterm,is_external_port);
 ET_DEFINE_CHECKED(Uint,external_port_data,Eterm,is_external_port);
 ET_DEFINE_CHECKED(struct erl_node_*,external_port_node,Eterm,is_external_port);
 ET_DEFINE_CHECKED(Uint,external_ref_data_words,Eterm,is_external_ref);
-ET_DEFINE_CHECKED(Uint*,external_ref_data,Eterm,is_external_ref);
+ET_DEFINE_CHECKED(Uint32*,external_ref_data,Eterm,is_external_ref);
 ET_DEFINE_CHECKED(struct erl_node_*,external_ref_node,Eterm,is_external_ref);
 ET_DEFINE_CHECKED(Eterm*,export_val,Eterm,is_export);
 

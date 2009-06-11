@@ -22,14 +22,14 @@
 -compile(export_all).
 
 lowercase([F|R]) when F >= $A, F =< $Z ->   [F+($a-$A)|R];
-lowercase(Str) when list(Str) ->   Str.
+lowercase(Str) when is_list(Str) ->   Str.
 
 lowercase_all([F|R]) when F >= $A, F =< $Z -> [F+($a-$A)|lowercase_all(R)];
 lowercase_all([F|R])  ->               [F|lowercase_all(R)];
 lowercase_all([]) ->                   [].
 
 uppercase([F|R]) when F >= $a, F =< $z ->    [F+($A-$a)|R];
-uppercase(Str) when list(Str) ->   Str.
+uppercase(Str) when is_list(Str) ->   Str.
 
 uppercase_all([F|R]) when F >= $a, F =< $z -> [F+($A-$a)|uppercase_all(R)];
 uppercase_all([A|R]) ->             [A|uppercase_all(R)];
@@ -61,14 +61,36 @@ close() ->
 		    %% os:cmd("touch " ++ File),
 		    ok;
 		Diff ->
-		    io:format("Diff in ~s ~s ~n", [File, Diff]),
-		    case file:rename(File ++ ".temp", File) of
-			ok -> ok;
-			_ -> 
-			    io:format("*****  Failed to save file ~p ~n",[File])
-		    end		    		    
+		    case check_diff(Diff) of
+			copyright -> %% We ignore copyright changes only
+			    ok = file:delete(File ++ ".temp");
+			_ ->		    
+			    io:format("Diff in ~s~n~s ~n", [File, Diff]),
+			    case file:rename(File ++ ".temp", File) of
+				ok -> ok;
+				_ -> 
+				    io:format("*****  Failed to save file ~p ~n",[File])
+			    end
+		    end
 	    end,
 	    put(current_file, {closed, File})
+    end.
+
+
+check_diff(Diff) ->
+    try 
+	[_,D1,_,D2|Tail] = re:split(Diff, "\n"),
+	case Tail of 
+	    [] -> ok;
+	    [<<>>] -> ok;
+	    _ -> throw(diff)
+	end,
+	<<_, _, "%% Copyright", _/binary>> = D1,
+	<<_, _, "%% Copyright", _/binary>> = D2,
+	copyright
+    catch
+	throw:_ ->  diff;
+	error:{badmatch,_} -> diff
     end.
 
 w(Str) ->
@@ -130,7 +152,7 @@ tokens2([C|S], Seps, Toks, Cs) ->
 tokens2([], _Seps, Toks, Cs) ->
     replace_and_remove([lists:reverse(Cs)|Toks], []).
 
-replace_and_remove([E|R], Acc) when list(E) -> %% Keep everything that is a word
+replace_and_remove([E|R], Acc) when is_list(E) -> %% Keep everything that is a word
     replace_and_remove(R, [E|Acc]);
 replace_and_remove([$\n | R], Acc) ->   %% It is semi line oriented so keep eol
     replace_and_remove(R, [eol|Acc]);

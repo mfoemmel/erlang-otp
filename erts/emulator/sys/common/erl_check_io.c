@@ -104,10 +104,15 @@ typedef struct {
 #ifdef ERTS_SMP
 struct removed_fd {
     struct removed_fd *next;
-    ErtsDrvEventState* state;
-#ifdef DEBUG
+#ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
     ErtsSysFdType fd;
+#else
+    ErtsDrvEventState* state;
+    #ifdef DEBUG
+    ErtsSysFdType fd;
+    #endif
 #endif
+
 };
 #endif
 
@@ -166,6 +171,7 @@ static ERTS_INLINE ErtsDrvEventState* hash_new_drv_ev_state(ErtsSysFdType fd)
 
 static ERTS_INLINE void hash_erase_drv_ev_state(ErtsDrvEventState *state)
 {
+    ASSERT(state->remove_cnt == 0);
     safe_hash_erase(&drv_ev_state_tab, (void *) state);
 }
 
@@ -216,10 +222,12 @@ remember_removed(ErtsDrvEventState *state, struct pollset_info* psi)
 	state->remove_cnt++;
 	ASSERT(state->remove_cnt > 0);
 	fdlp = removed_fd_alloc();
+    #if defined(ERTS_SYS_CONTINOUS_FD_NUMBERS) || defined(DEBUG)
+    	fdlp->fd = state->fd;
+    #endif
+    #ifndef ERTS_SYS_CONTINOUS_FD_NUMBERS
 	fdlp->state = state;
-#ifdef DEBUG
-	fdlp->fd = state->fd;
-#endif
+    #endif
 	erts_smp_spin_lock(&psi->removed_list_lock);
 	fdlp->next = psi->removed_list;
 	psi->removed_list = fdlp;
@@ -244,7 +252,6 @@ is_removed(ErtsDrvEventState *state)
 #endif
 }
 
-
 static void
 forget_removed(struct pollset_info* psi)
 {
@@ -263,12 +270,20 @@ forget_removed(struct pollset_info* psi)
 	erts_driver_t* drv_ptr = NULL;
 	erts_smp_mtx_t* mtx;
 	ErtsSysFdType fd;
-	ErtsDrvEventState *state = fdlp->state;	
-	ASSERT(state);
+	ErtsDrvEventState *state;
+
+#ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
+	fd = fdlp->fd;
+	mtx = fd_mtx(fd);
+	erts_smp_mtx_lock(mtx);
+	state = &drv_ev_state[(int) fd];
+#else
+	state = fdlp->state;
 	fd = state->fd;
 	ASSERT(fd == fdlp->fd);
 	mtx = fd_mtx(fd);
 	erts_smp_mtx_lock(mtx);
+#endif
 	ASSERT(state->remove_cnt > 0);
 	if (--state->remove_cnt == 0) {
 	    switch (state->type) {
@@ -455,6 +470,14 @@ deselect(ErtsDrvEventState *state, int mode)
     }
 }
 
+
+#ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
+#  define IS_FD_UNKNOWN(state) ((state)->type == ERTS_EV_TYPE_NONE && (state)->remove_cnt == 0)
+#else
+#  define IS_FD_UNKNOWN(state) ((state) == NULL)
+#endif
+
+
 int
 ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 			       ErlDrvEvent e,
@@ -469,14 +492,15 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
     ErtsDrvEventState *state;
     int wake_poller;
     int ret;
-
+    
     ERTS_SMP_LC_ASSERT(erts_drvport2port(ix)
 		       && erts_lc_is_port_locked(erts_drvport2port(ix)));
 
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
     if ((unsigned)fd >= (unsigned)erts_smp_atomic_read(&drv_ev_state_len)) {
-	if (fd < 0)
+	if (fd < 0) {
 	    return -1;    
+	}
 	if (fd >= max_fds) {
 	    select_large_fd_error(ix, fd, mode, on);
 	    return -1;
@@ -485,19 +509,27 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
     }
 #endif
 
-    if (!on && (mode&ERL_DRV_USE_NO_CALLBACK) == ERL_DRV_USE) {
-	mode |= (ERL_DRV_READ | ERL_DRV_WRITE);
-	wake_poller = 1; /* to eject fd from pollset (if needed) */
-    }
-    else wake_poller = 0;
-
     erts_smp_mtx_lock(fd_mtx(fd));
 
 #ifdef ERTS_SYS_CONTINOUS_FD_NUMBERS
     state = &drv_ev_state[(int) fd];
 #else
-    /* Could use hash_new directly, but want to keep the normal case fast */
-    state = hash_get_drv_ev_state(fd);
+    state = hash_get_drv_ev_state(fd); /* may be NULL! */
+#endif
+
+    if (!on && (mode&ERL_DRV_USE_NO_CALLBACK) == ERL_DRV_USE) {
+	if (IS_FD_UNKNOWN(state)) {
+	    /* fast track to stop_select callback */
+	    stop_select_fn = erts_drvport2port(ix)->drv_ptr->stop_select;
+	    ret = 0;
+	    goto done_unknown;
+	}
+	mode |= (ERL_DRV_READ | ERL_DRV_WRITE);
+	wake_poller = 1; /* to eject fd from pollset (if needed) */
+    }
+    else wake_poller = 0;
+
+#ifndef ERTS_SYS_CONTINOUS_FD_NUMBERS
     if (state == NULL) {
 	state = hash_new_drv_ev_state(fd);
     }
@@ -538,9 +570,9 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
     ASSERT((state->type == ERTS_EV_TYPE_DRV_SEL) ||
 	   (state->type == ERTS_EV_TYPE_NONE && !state->events));
 
-    if (!on && state->events && !(state->events & ~ctl_events) &&
-	!(state->flags & ERTS_EV_FLAG_USED)) {
-	/* Old driver remove all events. At least wake poller.
+    if (!on && !(state->flags & ERTS_EV_FLAG_USED) 
+	&& state->events && !(state->events & ~ctl_events)) {	
+	/* Old driver removing all events. At least wake poller.
 	   It will not make close() 100% safe but it will prevent
 	   actions delayed by poll timeout. */
 	wake_poller = 1;
@@ -605,8 +637,9 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
 		if (new_events == 0) {
 		    ASSERT(!erts_port_task_is_scheduled(&state->driver.select->intask));
 		    ASSERT(!erts_port_task_is_scheduled(&state->driver.select->outtask));
-		    remember_removed(state, &pollset);
-		    
+		    if (old_events != 0) {
+			remember_removed(state, &pollset);
+		    }		    
 		    if ((mode & ERL_DRV_USE) || !(state->flags & ERTS_EV_FLAG_USED)) {
 			state->type = ERTS_EV_TYPE_NONE;
 			state->flags = 0;
@@ -639,12 +672,13 @@ ERTS_CIO_EXPORT(driver_select)(ErlDrvPort ix,
    
     ret = 0;
 
-done:
+done:;
 #ifndef ERTS_SYS_CONTINOUS_FD_NUMBERS
     if (state->type == ERTS_EV_TYPE_NONE && state->remove_cnt == 0) {
 	hash_erase_drv_ev_state(state);
     }
 #endif
+done_unknown:    
     erts_smp_mtx_unlock(fd_mtx(fd));
     if (stop_select_fn) {
 	int was_unmasked = erts_block_fpe();

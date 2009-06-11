@@ -231,7 +231,7 @@ allowed_opt(_, _)			-> false.
 which_opts(G) ->
     ets:match(G#genobj.options, {{option, '$1'}, '$2'}).
 
-add_opt(G, KList, Val) when list(KList) ->
+add_opt(G, KList, Val) when is_list(KList) ->
     lists:foreach(fun({K, V}) -> add_opt(G, K, V);
 		  (K) -> add_opt(G, K, Val) end,
 		  KList);
@@ -290,7 +290,7 @@ do_add_opt(G, K, V) ->
     case allowed_opt(K, V) of
 	true ->
 	    case expand_opt(K) of
-		L when list(L) ->
+		L when is_list(L) ->
 		    add_opt(G, L, V);
 		_ ->
 		    %%io:format("Add opt: ~p ~p~n", [K, V]),
@@ -350,14 +350,14 @@ is_bool(true) -> true;
 is_bool(false) -> true;
 is_bool(_) -> false.
 
-is_int(V) when integer(V) -> true;
+is_int(V) when is_integer(V) -> true;
 is_int(_) -> false.
 
-is_intorinfinity(X) when integer(X) -> true;
+is_intorinfinity(X) when is_integer(X) -> true;
 is_intorinfinity(infinity) -> true;
 is_intorinfinity(_X) -> false.
 
 
-is_term(Term) when tuple(Term) -> true;
+is_term(Term) when is_tuple(Term) -> true;
 is_term(_NoTerm) -> false.
     

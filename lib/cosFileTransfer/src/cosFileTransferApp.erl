@@ -137,12 +137,12 @@ create_VFS(Type, Content, Host, Port) ->
     create_VFS(Type, Content, Host, Port, []).
 
 create_VFS('FTP', Content, Host, Port, Options) 
-  when list(Host), integer(Port), list(Options) ->
+  when is_list(Host) andalso is_integer(Port) andalso is_list(Options) ->
     'CosFileTransfer_VirtualFileSystem':oe_create(['FTP', Content, Host, Port,
 						   Options],
 						  [{pseudo, true}]);
 create_VFS({'NATIVE', Mod}, Content, Host, Port, Options)
-  when list(Host), integer(Port), list(Options) ->
+  when is_list(Host) andalso is_integer(Port) andalso is_list(Options) ->
     'CosFileTransfer_VirtualFileSystem':oe_create([{'NATIVE', Mod}, Content, 
 						   Host, Port, Options],
 						  [{pseudo, true}]);
@@ -221,7 +221,7 @@ create_name(Type) ->
 %%------------------------------------------------------------
 get_buffert_size() ->
     case application:get_env(cosFileTransfer, buffert_size) of
-	{ok, Size}  when integer(Size) ->
+	{ok, Size}  when is_integer(Size) ->
 	    Size;
 	_ ->
 	    ?DEFAULT_BUFSIZE
@@ -234,33 +234,33 @@ get_buffert_size() ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-configure(buffert_size, Value) when integer(Value) ->
+configure(buffert_size, Value) when is_integer(Value) ->
     do_configure(buffert_size, Value);
-configure(ssl_port, Value) when integer(Value) ->
+configure(ssl_port, Value) when is_integer(Value) ->
     do_safe_configure(ssl_port, Value);
-configure(ssl_server_certfile, Value) when list(Value) ->
+configure(ssl_server_certfile, Value) when is_list(Value) ->
     do_safe_configure(ssl_server_certfile, Value);
-configure(ssl_server_certfile, Value) when atom(Value) ->
+configure(ssl_server_certfile, Value) when is_atom(Value) ->
     do_safe_configure(ssl_server_certfile, atom_to_list(Value));
-configure(ssl_client_certfile, Value) when list(Value) ->
+configure(ssl_client_certfile, Value) when is_list(Value) ->
     do_safe_configure(ssl_client_certfile, Value);
-configure(ssl_client_certfile, Value) when atom(Value) ->
+configure(ssl_client_certfile, Value) when is_atom(Value) ->
     do_safe_configure(ssl_client_certfile, atom_to_list(Value));
-configure(ssl_server_verify, Value) when integer(Value) ->
+configure(ssl_server_verify, Value) when is_integer(Value) ->
     do_safe_configure(ssl_server_verify, Value);
-configure(ssl_client_verify, Value) when integer(Value) ->
+configure(ssl_client_verify, Value) when is_integer(Value) ->
     do_safe_configure(ssl_client_verify, Value);
-configure(ssl_server_depth, Value) when integer(Value) ->
+configure(ssl_server_depth, Value) when is_integer(Value) ->
     do_safe_configure(ssl_server_depth, Value);
-configure(ssl_client_depth, Value) when integer(Value) ->
+configure(ssl_client_depth, Value) when is_integer(Value) ->
     do_safe_configure(ssl_client_depth, Value);
-configure(ssl_server_cacertfile, Value) when list(Value) ->
+configure(ssl_server_cacertfile, Value) when is_list(Value) ->
     do_safe_configure(ssl_server_cacertfile, Value);
-configure(ssl_server_cacertfile, Value) when atom(Value) ->
+configure(ssl_server_cacertfile, Value) when is_atom(Value) ->
     do_safe_configure(ssl_server_cacertfile, atom_to_list(Value));
-configure(ssl_client_cacertfile, Value) when list(Value) ->
+configure(ssl_client_cacertfile, Value) when is_list(Value) ->
     do_safe_configure(ssl_client_cacertfile, Value);
-configure(ssl_client_cacertfile, Value) when atom(Value) ->
+configure(ssl_client_cacertfile, Value) when is_atom(Value) ->
     do_safe_configure(ssl_client_cacertfile, atom_to_list(Value));
 configure(_, _) ->
     exit({error, "Bad configure parameter(s)"}).
@@ -301,7 +301,7 @@ do_safe_configure(Key, Value) ->
 %%------------------------------------------------------------
 ssl_port() ->
     case application:get_env(cosFileTransfer, ssl_port) of
-	{ok, Port} when integer(Port) ->
+	{ok, Port} when is_integer(Port) ->
 	    Port;
 	_ ->
 	    -1
@@ -309,9 +309,9 @@ ssl_port() ->
 
 ssl_server_certfile() ->
     case application:get_env(cosFileTransfer, ssl_server_certfile) of
-	{ok, V1}  when list(V1) ->
+	{ok, V1}  when is_list(V1) ->
 	    V1;
-	{ok, V2}  when atom(V2) ->
+	{ok, V2}  when is_atom(V2) ->
 	    atom_to_list(V2);
 	_What ->
 	    {ok, Cwd} = file:get_cwd(),
@@ -321,9 +321,9 @@ ssl_server_certfile() ->
 
 ssl_client_certfile() ->
     case application:get_env(cosFileTransfer, ssl_client_certfile) of
-	{ok, V1}  when list(V1) ->
+	{ok, V1}  when is_list(V1) ->
 	    V1;
-	{ok, V2}  when atom(V2) ->
+	{ok, V2}  when is_atom(V2) ->
 	    atom_to_list(V2);
 	_ ->
 	    {ok, Cwd} = file:get_cwd(),
@@ -332,7 +332,7 @@ ssl_client_certfile() ->
 
 ssl_server_verify() ->
     Verify = case application:get_env(cosFileTransfer, ssl_server_verify) of
-		 {ok, V} when integer(V) ->
+		 {ok, V} when is_integer(V) ->
 		     V;
 		 _ ->
 		     0
@@ -346,7 +346,7 @@ ssl_server_verify() ->
     
 ssl_client_verify() ->
     Verify = case application:get_env(cosFileTransfer, ssl_client_verify) of
-		 {ok, V1} when integer(V1) ->
+		 {ok, V1} when is_integer(V1) ->
 		     V1;
 		 _ ->
 		     0
@@ -360,7 +360,7 @@ ssl_client_verify() ->
 
 ssl_server_depth() ->
     case application:get_env(cosFileTransfer, ssl_server_depth) of
-	{ok, V1} when integer(V1) ->
+	{ok, V1} when is_integer(V1) ->
 	    V1;
 	_ ->
 	    1
@@ -368,7 +368,7 @@ ssl_server_depth() ->
     
 ssl_client_depth() ->
     case application:get_env(cosFileTransfer, ssl_client_depth) of
-	{ok, V1} when integer(V1) ->
+	{ok, V1} when is_integer(V1) ->
 	    V1;
 	_ ->
 	    1
@@ -377,9 +377,9 @@ ssl_client_depth() ->
 
 ssl_server_cacertfile() ->
     case application:get_env(cosFileTransfer, ssl_server_cacertfile) of
-	{ok, V1}  when list(V1) ->
+	{ok, V1}  when is_list(V1) ->
 	    V1;
-	{ok, V2}  when atom(V2) ->
+	{ok, V2}  when is_atom(V2) ->
 	    atom_to_list(V2);
 	_ ->
 	    []
@@ -387,9 +387,9 @@ ssl_server_cacertfile() ->
     
 ssl_client_cacertfile() ->
     case application:get_env(cosFileTransfer, ssl_client_cacertfile) of
-	{ok, V1}  when list(V1) ->
+	{ok, V1}  when is_list(V1) ->
 	    V1;
-	{ok, V2}  when atom(V2) ->
+	{ok, V2}  when is_atom(V2) ->
 	    atom_to_list(V2);
 	_ ->
 	    []

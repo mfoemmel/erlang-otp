@@ -310,7 +310,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type, socket = Socket,
 	    ets:insert(State#state.db, {Pid, ReqId}),
 	    ets:insert(State#state.db, {ReqId, Pid}),
 	    {noreply, increase_counter(State), State#state.timeout};
-	GIOPHdr when record(GIOPHdr, giop_message) ->
+	GIOPHdr when is_record(GIOPHdr, giop_message) ->
 	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket, 
 					     Env#giop_env{version = 
 							  GIOPHdr#giop_message.giop_version}),

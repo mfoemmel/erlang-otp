@@ -32,6 +32,22 @@
     <file>notes.xml</file>
     </header>
 
+<section><title>Common_Test 1.4.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Various corrections and improvements of Common Test and
+	    Test Server.</p>
+          <p>
+	    Own Id: OTP-7981</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Common_Test 1.4.1</title>
 
     <section><title>Improvements and New Features</title>

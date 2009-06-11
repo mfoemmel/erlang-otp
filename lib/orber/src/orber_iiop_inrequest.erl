@@ -133,7 +133,7 @@ handle_message(GIOPHdr, Message, SocketType, Socket, Env) ->
     %% do it due to performance reasons.
     put(oe_orber_flags, Env#giop_env.flags),
     case catch cdr_decode:dec_message_header(null, GIOPHdr, Message) of
-	Hdr when record(Hdr, cancel_request_header) ->
+	Hdr when is_record(Hdr, cancel_request_header) ->
             %% We just skips this message for the moment, the standard require that 
 	    %% the client handles the reply anyway.
 	    message_error;
@@ -148,10 +148,10 @@ handle_message(GIOPHdr, Message, SocketType, Socket, Env) ->
 	    Reply = handle_locate_request(Env#giop_env{version = Version}, 
 					  {object_forward, Object, ReqId}),
 	    orber_socket:write(SocketType, Socket, Reply);
-	{Version, Hdr} when record(Hdr, locate_request_header) ->
+	{Version, Hdr} when is_record(Hdr, locate_request_header) ->
 	    Reply = handle_locate_request(Env#giop_env{version = Version}, Hdr),
 	    orber_socket:write(SocketType, Socket, Reply);
-	{Version, ReqHdr, Rest, Len, ByteOrder} when record(ReqHdr, request_header) ->
+	{Version, ReqHdr, Rest, Len, ByteOrder} when is_record(ReqHdr, request_header) ->
 	    handle_request(Env#giop_env{version = Version}, ReqHdr, Rest, Len, 
 			   ByteOrder, SocketType, Socket, Message);
 	Other ->

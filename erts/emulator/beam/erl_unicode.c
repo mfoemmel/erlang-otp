@@ -1696,13 +1696,14 @@ binary_to_atom(Process* p, Eterm bin, Eterm enc, int must_exist)
     Uint bin_size;
 
     if ((bytes = erts_get_aligned_binary_bytes(bin, &temp_alloc)) == 0) {
-	goto badarg;
+	BIF_ERROR(p, BADARG);
     }
     bin_size = binary_size(bin);
     if (enc == am_latin1) {
 	Eterm a;
 	if (bin_size > MAX_ATOM_LENGTH) {
 	system_limit:
+	    erts_free_aligned_binary_bytes(temp_alloc);
 	    BIF_ERROR(p, SYSTEM_LIMIT);
 	}
 	if (!must_exist) {
@@ -1792,8 +1793,8 @@ binary_to_atom(Process* p, Eterm bin, Eterm enc, int must_exist)
 	    }
 	}
     } else {
-	erts_free_aligned_binary_bytes(temp_alloc);
     badarg:
+	erts_free_aligned_binary_bytes(temp_alloc);
 	BIF_ERROR(p, BADARG);
     }
 }

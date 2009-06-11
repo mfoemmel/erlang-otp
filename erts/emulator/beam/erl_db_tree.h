@@ -28,15 +28,20 @@ typedef struct tree_db_term {
     DbTerm dbterm;                       /* The actual term */
 } TreeDbTerm;
 
+typedef struct {
+    Uint pos;          /* Current position on stack */
+    Uint slot;         /* "Slot number" of top element or 0 if not set */
+    TreeDbTerm** array; /* The stack */
+} DbTreeStack;
+
 typedef struct db_table_tree {
     DbTableCommon common;
 
     /* Tree-specific fields */
     TreeDbTerm *root;         /* The tree root */
-    TreeDbTerm **stack;       /* The first/next stack */
-    Uint stack_pos;           /* Current position on stack */
-    Uint slot_pos;            /* Current "slot" */
     Uint deletion;		/* Being deleted */
+    erts_smp_atomic_t is_stack_busy;
+    DbTreeStack static_stack;
 } DbTableTree;
 
 /*

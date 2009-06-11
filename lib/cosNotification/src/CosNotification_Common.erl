@@ -220,7 +220,7 @@ notify(Items) ->
 %%            'EXIT', 'COMM_FAILURE' or 'OBJECT_NOT_EXIST'
 %%------------------------------------------------------------
  
-send_stubborn(M, F, A, MaxR, Wait) when list(A) ->
+send_stubborn(M, F, A, MaxR, Wait) when is_list(A) ->
     send_stubborn(M, F, A, MaxR, Wait, 0);
 send_stubborn(M, F, A, MaxR, Wait) ->
     send_stubborn(M, F, [A], MaxR, Wait, 0).
@@ -231,7 +231,7 @@ send_stubborn(M, F, A, MaxR, _Wait, MaxR) ->
 send_stubborn(M, F, A, MaxR, Wait, Times) ->
     ?debug_print("~p:~p(~p)  # of retries: ~p~n", [M,F,A, Times]),    
     case catch apply(M,F,A) of
-        {'EXCEPTION', E} when record(E, 'COMM_FAILURE')->
+        {'EXCEPTION', E} when is_record(E, 'COMM_FAILURE')->
             NewTimes = Times +1,
             timer:sleep(Wait),
             send_stubborn(M, F, A, MaxR, Wait, NewTimes);
@@ -312,7 +312,7 @@ set_adm(Wanted, Current) ->
 
 admin_ok(Req) ->
     case any:get_value(Req#'CosNotification_Property'.value) of
-	Val when integer(Val), Val >= 0 ->
+	Val when is_integer(Val) andalso Val >= 0 ->
 	    {ok, Req};
 	_  ->
 	    {unsupported, 
@@ -630,7 +630,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	    ok;
 	{Val, _} when Val >= ?not_MinTimeout, Val =< ?not_MaxTimeout ->
 	    {ok, Req, LQS};
-	{Val, _} when integer(Val) ->
+	{Val, _} when is_integer(Val) ->
 	    {unsupported, 
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_VALUE', 
@@ -674,7 +674,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	    ok;
 	{Val, _, L, H} when Val >= L, Val =< H ->
 	    {ok, Req, LQS};
-	{Val, _, L, H} when integer(Val) ->
+	{Val, _, L, H} when is_integer(Val) ->
 	    {unsupported, 
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_VALUE', 
@@ -718,7 +718,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	    ok;
 	{Val, _, L, H} when Val >= L, Val =< H ->
 	    {ok, Req, LQS};
-	{Val, _, L, H} when integer(Val) ->
+	{Val, _, L, H} when is_integer(Val) ->
 	    {unsupported, 
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_VALUE', 
@@ -761,7 +761,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	    ok;
 	{Val, _} when Val >= ?not_MinBatchSize, Val =< ?not_MaxBatchSize ->
 	    {ok, Req, LQS};
-	{Val, _} when integer(Val) ->
+	{Val, _} when is_integer(Val) ->
 	    {unsupported, 
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_VALUE', 
@@ -811,7 +811,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	    ok;
 	{Val, _} when Val >= ?not_MinPacing, Val =< ?not_MaxPacing ->
 	    {ok, Req, LQS};
-	{Val, _} when integer(Val) ->
+	{Val, _} when is_integer(Val) ->
 	    {unsupported, 
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_VALUE', 
@@ -852,11 +852,11 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	  ?not_GetMaxEventsPerConsumer(LQS)} of
 	{Val, Val} ->
 	    ok;
-	{Val, _} when integer(Val),
-		      Val >= ?not_MinConsumerEvents, 
+	{Val, _} when is_integer(Val) andalso
+		      Val >= ?not_MinConsumerEvents andalso
 		      Val =< ?not_MaxConsumerEvents ->
 	    {ok, Req, LQS};
-	{Val, _} when integer(Val) ->
+	{Val, _} when is_integer(Val) ->
 	    {unsupported, 
 	     #'CosNotification_PropertyError'{
 	       code = 'BAD_VALUE', 

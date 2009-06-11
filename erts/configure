@@ -1337,7 +1337,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 
-if test "x$no_recursion" != "xyes"; then
+if test "x$no_recursion" != "xyes" -a "x$OVERRIDE_CONFIG_CACHE" = "x"; then
     # We do not want to use a common cache!
     cache_file=/dev/null
 fi
@@ -5460,6 +5460,16 @@ esac
 case $host_os in
 	darwin*)
 								INSTALL_DATA="$INSTALL_DATA -p";;
+	*)
+		;;
+esac
+
+
+case $build in
+	*tile*)
+		INSTALL_PROGRAM="$INSTALL_PROGRAM -m755"
+		INSTALL_SCRIPT="$INSTALL_SCRIPT -m755"
+		;;
 	*)
 		;;
 esac
@@ -15511,6 +15521,71 @@ fi
 
 
 if test "x$ac_compiler_gnu" = "xyes"; then
+echo "$as_me:$LINENO: checking if we should add -fno-tree-copyrename to CFLAGS for computed gotos to work properly" >&5
+echo $ECHO_N "checking if we should add -fno-tree-copyrename to CFLAGS for computed gotos to work properly... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+int
+main ()
+{
+
+		#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
+			;
+			#else
+			#error old and ok
+			#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  no_tree_copyrename=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+no_tree_copyrename=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+
+if test "x$no_tree_copyrename" = "xyes"; then
+	CFLAGS="$CFLAGS -fno-tree-copyrename"
+	echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+else
+	echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+fi
+
+
+
 echo "$as_me:$LINENO: checking for broken gcc-4.3.0 compiler" >&5
 echo $ECHO_N "checking for broken gcc-4.3.0 compiler... $ECHO_C" >&6
 if test "$cross_compiling" = yes; then

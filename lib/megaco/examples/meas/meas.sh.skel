@@ -26,13 +26,14 @@ MEGACO_HOME=$ERL_HOME/lib/erlang/lib/<megaco dir>
 MEAS_HOME=$MEGACO_HOME/examples/meas
 PATH=$ERL_HOME/bin:$PATH
 
-MEAS="-s megaco_codec_meas t"
+# MEAS_TIME_TEST="-s megaco_codec_meas start time_test"
+MEAS_DEFAULT="-s megaco_codec_meas t"
 STOP="-s init stop"
 
 ERL="erl \
      -noshell \
      -pa $MEAS_HOME \
-     $MEAS \
+     $MEAS_DEFAULT \
      $STOP"
 
 echo $ERL

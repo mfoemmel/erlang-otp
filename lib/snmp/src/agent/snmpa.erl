@@ -56,7 +56,7 @@
 	 send_notification/6,
 	 send_trap/3, send_trap/4,
 
-	 discovery/3, discovery/4, 
+	 discovery/2, discovery/3, discovery/4, discovery/5, 
 
  	 sys_up_time/0, system_start_time/0,
 
@@ -361,16 +361,41 @@ send_trap(Agent, Trap, Community, Varbinds) ->
 
 %%%-----------------------------------------------------------------
 
-discovery(TargetName, Notification, Varbinds) ->
+discovery(TargetName, Notification) ->
+    Varbinds = [],
+    discovery(TargetName, Notification, Varbinds).
+
+discovery(TargetName, Notification, Varbinds) when is_list(Varbinds) ->
     ContextName = "",
-    discovery(TargetName, Notification, ContextName, Varbinds).
+    discovery(TargetName, Notification, ContextName, Varbinds);
+discovery(TargetName, Notification, DiscoHandler) 
+  when is_atom(DiscoHandler) ->
+    Varbinds = [],
+    discovery(TargetName, Notification, Varbinds, DiscoHandler).
 
 discovery(TargetName, Notification, ContextName, Varbinds) 
+  when is_list(Varbinds) ->
+    DiscoHandler = snmpa_discovery_handler_default, 
+    discovery(TargetName, Notification, ContextName, Varbinds, 
+	      DiscoHandler);
+discovery(TargetName, Notification, Varbinds, DiscoHandler) 
+  when is_function(DiscoHandler) ->
+    ContextName = "",
+    discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler).
+
+discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler) 
   when (is_list(TargetName) andalso (length(TargetName) > 0) andalso 
 	is_atom(Notification) andalso 
 	is_list(ContextName) andalso 
-	is_list(Varbinds)) ->
-    snmpa_agent:discovery(TargetName, Notification, ContextName, Varbinds).
+	is_list(Varbinds) andalso 
+	is_atom(DiscoHandler)) ->
+    case (catch snmpa_discovery_handler:verify(DiscoHandler)) of
+	ok ->
+	    snmpa_agent:discovery(TargetName, Notification, ContextName, Varbinds,
+				  DiscoHandler);
+	Error ->
+	    Error
+    end.
 
 
 %%%-----------------------------------------------------------------

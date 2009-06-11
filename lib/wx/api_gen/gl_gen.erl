@@ -283,6 +283,7 @@ add_param(Arg0=#arg{type=T0}, Opts, F=#func{name=Name,params=Args}) ->
     F#func{params=[Patched|Args]}.
 
 patch_param(Method,P = #arg{name=ArgName},AllOpts) ->    
+    %%io:format("~p ~n", [Method]),
     case lookup(Method,AllOpts,undefined) of
 	undefined -> P;
 	What -> 
@@ -391,7 +392,7 @@ parse_type2([N="GLclampf"|R],T,Opts) ->
 parse_type2([N="GLclampd"|R],T,Opts) -> 
     parse_type2(R,T#type{name=N, size=8,base=float},Opts);
 parse_type2([N="GLhandleARB"|R],T,Opts) -> %% unsigned int normally (in glext.h) but 
-    parse_type2(R,T#type{name=N, size=4,base=int},Opts); %% is void * on Mac!! FIXME
+    parse_type2(R,T#type{name=N, size=8,base=int},Opts); %% is void * on Mac!! FIXME
 parse_type2(["GLchar" ++ _ARB|R],T,Opts) -> 
     parse_type2(R,T#type{name="GLchar",size=1,base=string},Opts);
 parse_type2(["GLintptr" ++ _ARB|R],T,Opts) -> 
@@ -467,7 +468,7 @@ setup_extension(Name,Ext,Opts) ->
 		    put(Name, OrigF#func{ext={ext,Ext}}),
 		    skip;
 		_ -> 
-		    setup_vector_variant(Name,"",Opts)
+		    setup_vector_variant(Name,Ext,Opts)
 	    end
     end.
 
@@ -522,6 +523,15 @@ lookup(Name,[{Vector, VecPos}|R],Def) when is_list(Vector) ->
     case lists:prefix(Vector,Name) of
 	true -> 
 	    %%io:format("~s ~s => ~p ~n", [Vector,Name,VecPos]),
+%% 	    case Vector == Name of
+%% 		true -> 
+%% 		    VecPos;
+%% 		false -> %% Look for exactly the correct Name
+%% 		    case lookup(Name,R,Def) of
+%% 			Def -> VecPos;
+%% 			Other -> Other
+%% 		    end
+%% 	    end;
 	    VecPos;
 	false -> lookup(Name,R, Def)
     end;
@@ -586,13 +596,13 @@ is_equal_args([_A1=#arg{type=T1}|A1s],[_A2=#arg{type=T2}|A2s]) ->
     case is_equal_type(T1,T2) of
 	true -> is_equal_args(A1s,A2s);
 	false ->
-	    io:format("Diff~n ~p~n ~p ~n~n", [_A1,_A2]),
+	    %%io:format("Diff~n ~p~n ~p ~n~n", [_A1,_A2]),
 	    false
     end.
 
 is_equal_type(T,T) -> true;
 is_equal_type(#type{name="GLcharARB"},#type{name="GLchar"}) -> true;
-is_equal_type(#type{name="GLhandleARB"},#type{name="GLuint"}) -> true;
+%%is_equal_type(#type{name="GLhandleARB"},#type{name="GLuint"}) -> true;
 is_equal_type(#type{name="GLenum"},#type{name="GLuint"}) -> true;
 is_equal_type(#type{name="GLenum"},#type{name="GLint"}) -> true;
 is_equal_type(#type{base=idx_binary},#type{base=guard_int}) -> true;

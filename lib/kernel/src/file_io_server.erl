@@ -468,7 +468,7 @@ get_chars_notempty(Mod, Func, XtraArg, S, OutEnc,
 		   #state{handle=Handle,read_mode=ReadMode,buf = B}=State) ->
     case ?PRIM_FILE:read(Handle, read_size(ReadMode)) of
 	{ok,Bin} ->
-	    get_chars_apply(Mod, Func, XtraArg, S, OutEnc, State, list_to_binary([Bin,B]));
+	    get_chars_apply(Mod, Func, XtraArg, S, OutEnc, State, list_to_binary([B,Bin]));
 	eof ->
 	    case B of
 		<<>> ->
@@ -503,8 +503,10 @@ get_chars_apply(Mod, Func, XtraArg, S0, OutEnc,
 				  case unicode:characters_to_list(Data0,InEnc) of
 				      {Tag,Decoded,Rest} when Decoded =/= [], Tag =:= error; Decoded =/= [], Tag =:= incomplete ->
 					  {Decoded,erlang:iolist_to_binary(Rest)};
-				      {Tag, [], _} when Tag =:= error; Tag =:= incomplete -> 
+				      {error, [], _}  -> 
 					  exit(invalid_unicode);
+				      {incomplete, [], R}  -> 
+					  {[],R};
 				      List when is_list(List) ->
 					  {List,<<>>}
 				  end;
@@ -512,8 +514,10 @@ get_chars_apply(Mod, Func, XtraArg, S0, OutEnc,
 				  case unicode:characters_to_binary(Data0,InEnc,OutEnc) of
 				      {Tag2,Decoded2,Rest2} when Decoded2 =/= <<>>, Tag2 =:= error; Decoded2 =/= <<>>, Tag2 =:= incomplete ->
 					  {Decoded2,erlang:iolist_to_binary(Rest2)};
-				      {Tag2, <<>>, _} when Tag2 =:= error; Tag2 =:= incomplete ->
+				      {error, <<>>, _} ->
 					  exit(invalid_unicode);
+				      {incomplete, <<>>, R} ->
+					  {<<>>,R};
 				      Binary when is_binary(Binary) ->
 					  {Binary,<<>>}
 				  end;
@@ -524,11 +528,11 @@ get_chars_apply(Mod, Func, XtraArg, S0, OutEnc,
 	    {stop,Result,Buf} ->
 		{reply,Result,State#state{buf = (if
 						     is_binary(Buf) ->
-							 unicode:characters_to_binary(Buf,OutEnc,InEnc);
+							 list_to_binary([unicode:characters_to_binary(Buf,OutEnc,InEnc),NewBuff]);
 						     is_list(Buf) ->
-							 unicode:characters_to_binary(Buf,unicode,InEnc);
+							 list_to_binary([unicode:characters_to_binary(Buf,unicode,InEnc),NewBuff]);
 						     true ->
-							 <<>>
+							 NewBuff
 						end)}};
 	    {'EXIT',Reason} ->
 		{stop,Reason,{error,err_func(Mod, Func, XtraArg)},State};
@@ -708,13 +712,13 @@ cafu(<<_/utf32-little,Rest/binary>> = Whole, N, Count, ByteCount, SavePos, {utf3
 cafu(_Other,0,Count,ByteCount,_,_) -> % Non Unicode character, 
                                      % but found our point, OK this time
     {Count,ByteCount};
-cafu(Other,_N,Count,0,_SavePos,Enc) -> % Not enough, but valid chomped unicode
+cafu(Other,_N,Count,0,SavePos,Enc) -> % Not enough, but valid chomped unicode
                                        % at end.
     case cbv(Enc,Other) of
 	false ->
 	    exit(invalid_unicode);
 	_ ->
-	    {Count,none}
+	    {Count,SavePos}
     end;
 cafu(Other,_N,Count,ByteCount,none,Enc) -> % Return what we'we got this far
 					   % although not complete, 

@@ -34,13 +34,19 @@
 
 
 %% External exports
--export([start_link/0, stop/1, get_config/1]).
+-export([
+	 start_link/0, start_link/1, 
+	 stop/1, 
+	 get_config/1
+	]).
 
 %% gen_server callbacks
--export([init/1, 
+-export([
+	 init/1, 
 	 handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2,
-	 code_change/3]).
+	 code_change/3
+	]).
 
 -record(state, {conf}).
 
@@ -48,8 +54,12 @@
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
+
 start_link() -> 
-    case gen_server:start_link(megaco_flex_scanner_handler, [], []) of
+    start_link([]).
+
+start_link(Opts) ->
+    case gen_server:start_link(?MODULE, Opts, []) of
 	{ok, Pid} ->
 	    Conf = get_config(Pid),
 	    {ok, Pid, Conf};
@@ -75,13 +85,14 @@ get_config(Pid) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%----------------------------------------------------------------------
-init([]) ->
+init(_Opts) ->
     process_flag(trap_exit, true),
-    case (catch megaco_flex_scanner:start()) of
-	{ok, Port} ->
-	    {ok, #state{conf = {flex, Port}}};
+    case start_flex_scanners() of
+	{ok, PortOrPorts} ->
+	    {ok, #state{conf = {flex, PortOrPorts}}};
 	{error, Reason} ->
-	    {stop, {failed_starting_scanner, Reason}};
+	    %% {stop, {failed_starting_scanner, Reason, Opts}};
+	    {stop, {failed_starting_scanner, Reason, []}};
 	Else ->
 	    {stop, {failed_starting_scanner, Else}}
     end.
@@ -99,8 +110,8 @@ init([]) ->
 handle_call(get_config, _From, #state{conf = Conf} = S) ->
     {reply, Conf, S};
 
-handle_call(stop, _From, #state{conf = {flex, Port}} = S) ->
-    megaco_flex_scanner:stop(Port),
+handle_call(stop, _From, #state{conf = {flex, PortOrPorts}} = S) ->
+    megaco_flex_scanner:stop(PortOrPorts),
     Reason = normal, 
     Reply  = ok, 
     {stop, Reason, Reply, S};
@@ -122,16 +133,22 @@ handle_cast(Msg, S) ->
 		"~n~w", [Msg]),
     {noreply, S}.
 
+
 %%----------------------------------------------------------------------
 %% Func: handle_info/2
 %% Returns: {noreply, State}          |
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_info({'EXIT', Port, Error}, #state{conf = {flex, Port}} = S) ->
-    error_msg("Port [~p] exited:"
-	      "~n~w", [Port, Error]),
-    {stop, {port_exit, Port, Error}, S};
+handle_info({'EXIT', Port, Error}, #state{conf = {flex, PortOrPorts}} = S) ->
+    case megaco_flex_scanner:is_scanner_port(Port, PortOrPorts) of
+	true ->
+	    error_msg("Port [~p] exited:"
+		      "~n~w", [Port, Error]),
+	    {stop, {port_exit, Port, Error}, S};
+	false ->
+	    {noreply, S}
+    end;
 
 handle_info({'EXIT', Port, _Error}, S) when is_port(Port) ->
     %% This is propably the old flex scanner, 
@@ -148,6 +165,7 @@ handle_info(Info, S) ->
 		"~n~w", [Info]),
     {noreply, S}.
 
+
 %%----------------------------------------------------------------------
 %% Func: terminate/2
 %% Purpose: Shutdown the server
@@ -162,32 +180,44 @@ terminate(_Reason, _S) ->
 %% Purpose: Called to change the internal state
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change({down, _Vsn}, #state{conf = Conf} = State, downgrade_to_pre_3_9_3) ->
-    Port = update_flex_scanner(Conf),
-    {ok, State#state{conf = {flex, Port}}};
-
-code_change(_Vsn, #state{conf = Conf} = State, upgrade_from_pre_3_9_3) ->
-    Port = update_flex_scanner(Conf),
-    {ok, State#state{conf = {flex, Port}}};
+%% code_change({down, _Vsn}, #state{conf = Conf} = State, downgrade_to_pre_3_8) ->
+%%     Port = downgrade_flex_scanner(Conf),
+%%     {ok, State#state{conf = {flex, Port}}};
 
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
-update_flex_scanner({flex, Port}) ->
-    megaco_flex_scanner:stop(Port),
-    case megaco_flex_scanner:start() of
-	{ok, Port1} ->
-	    Port1;
-	Error ->
-	    exit(Error)
-    end;
-update_flex_scanner(Error) ->
-    exit({invalid_config, Error}).
+%% downgrade_flex_scanner({flex, Port}) when is_port(Port) ->
+%%     Port;
+%% downgrade_flex_scanner({flex, [Port]}) when is_port(Port) ->
+%%     Port;
+%% downgrade_flex_scanner({flex, Ports}) when is_list(Ports) ->
+%%     megaco_flex_scanner:stop(Ports), 
+%%     case megaco_flex_scanner:start() of
+%% 	{ok, Port} ->
+%% 	    Port;
+%% 	Error ->
+%% 	    exit(Error)
+%%     end;
+%% downgrade_flex_scanner(BadConfig) ->
+%%     exit({invalid_config, BadConfig}).
 
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
+
+start_flex_scanners() ->
+    megaco_flex_scanner:start().
+
+				  
+%% get_env(Key, Opts, Default) ->
+%%     case lists:keysearch(Key, 1, Opts) of
+%% 	{value, {Key, Value}} ->
+%% 	    Value;
+%% 	false ->
+%% 	    Default
+%%     end.
 
 warning_msg(F, A) ->
     ?megaco_warning("Flex scanner handler: " ++ F, A).

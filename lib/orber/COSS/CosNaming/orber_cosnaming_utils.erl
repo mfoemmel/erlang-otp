@@ -229,7 +229,7 @@ address(address, [$/|T], Acc, Previous) ->
 %% Parsed one address.
 address(port, [$/|T], Acc, Previous) ->
     case catch list_to_integer(lists:reverse(Acc)) of
-	Port when integer(Port) ->
+	Port when is_integer(Port) ->
 	    {false, lists:reverse([Port|Previous]), T};
 	What ->
 	    orber:dbg("[~p] orber_cosnaming_utils:address(~p);~n"
@@ -238,7 +238,7 @@ address(port, [$/|T], Acc, Previous) ->
     end;
 address(port, [$,|T], Acc, Previous) ->
     case catch list_to_integer(lists:reverse(Acc)) of
-	Port when integer(Port) ->
+	Port when is_integer(Port) ->
 	    {true, lists:reverse([Port|Previous]), T};
 	What ->
 	    orber:dbg("[~p] orber_cosnaming_utils:address(~p);~n"
@@ -253,7 +253,7 @@ address(port, [], [], Previous) ->
     {false, lists:reverse([?DEF_PORT|Previous]), []};
 address(port, [], Acc, Previous) ->
     case catch list_to_integer(lists:reverse(Acc)) of
-	Port when integer(Port) ->
+	Port when is_integer(Port) ->
 	    {false, lists:reverse([Port|Previous]), []};
 	What ->
 	    orber:dbg("[~p] orber_cosnaming_utils:address(~p);~n"
@@ -402,7 +402,7 @@ http(Address) ->
 	    %% At his stage we know that address contains a Port number.
 	    {Port, Key} = split_to_slash(Rest, []),
 	    case catch list_to_integer(Port) of
-		PortInt when integer(PortInt) ->
+		PortInt when is_integer(PortInt) ->
 		    {http, Host, PortInt, Key};
 		_ ->
 		    orber:dbg("[~p] orber_cosnaming_utils:http(~p);~n"

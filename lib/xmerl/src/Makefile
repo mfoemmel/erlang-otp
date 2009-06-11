@@ -80,7 +80,16 @@ MODULES = $(EDOC_MODULES) \
 	xmerl_xpath_parse \
 	xmerl_xpath_pred \
 	xmerl_xpath_scan \
-	xmerl_xsd_type
+	xmerl_xsd_type \
+	xmerl_sax_parser \
+	xmerl_sax_parser_list \
+	xmerl_sax_parser_latin1 \
+	xmerl_sax_parser_utf8 \
+	xmerl_sax_parser_utf16be \
+	xmerl_sax_parser_utf16le \
+	xmerl_sax_simple_dom \
+	xmerl_sax_old_dom 
+
 
 
 HRL_FILES = ../include/xmerl.hrl ../include/xmerl_xlink.hrl ../include/xmerl_xpath.hrl ../include/xmerl_xsd.hrl
@@ -106,7 +115,9 @@ TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 # ----------------------------------------------------
 ERL_COMPILE_FLAGS += \
 		-I ../include \
-		+warn_unused_vars
+		+warn_unused_vars 
+
+#		+bin_opt_info 
 
 
 # ----------------------------------------------------
@@ -122,6 +133,11 @@ clean:
 	$(RM) $(TARGET_FILES)
 	$(RM) xmerl_xpath_parse.erl
 	$(RM) xmerl_b64Bin.erl
+	$(RM) xmerl_sax_parser_list.erl
+	$(RM) xmerl_sax_parser_latin1.erl
+	$(RM) xmerl_sax_parser_utf8.erl
+	$(RM) xmerl_sax_parser_utf16be.erl
+	$(RM) xmerl_sax_parser_utf16le.erl
 	$(RM) core *~
 
 info:
@@ -154,6 +170,20 @@ xmerl_xpath_parse.erl:	xmerl_xpath_parse.yrl
 xmerl_b64Bin.erl: xmerl_b64Bin.yrl
 	$(ERLC)  -o  $(ESRC) $<
 
+xmerl_sax_parser_list.erl: xmerl_sax_parser_list.erlsrc xmerl_sax_parser_base.erlsrc
+	cat xmerl_sax_parser_list.erlsrc xmerl_sax_parser_base.erlsrc >$@
+
+xmerl_sax_parser_latin1.erl: xmerl_sax_parser_latin1.erlsrc xmerl_sax_parser_base.erlsrc
+	cat xmerl_sax_parser_latin1.erlsrc xmerl_sax_parser_base.erlsrc >$@
+
+xmerl_sax_parser_utf8.erl: xmerl_sax_parser_utf8.erlsrc xmerl_sax_parser_base.erlsrc
+	cat xmerl_sax_parser_utf8.erlsrc xmerl_sax_parser_base.erlsrc >$@
+
+xmerl_sax_parser_utf16be.erl: xmerl_sax_parser_utf16be.erlsrc xmerl_sax_parser_base.erlsrc
+	cat xmerl_sax_parser_utf16be.erlsrc xmerl_sax_parser_base.erlsrc >$@
+
+xmerl_sax_parser_utf16le.erl: xmerl_sax_parser_utf16le.erlsrc xmerl_sax_parser_base.erlsrc
+	cat xmerl_sax_parser_utf16le.erlsrc xmerl_sax_parser_base.erlsrc >$@
 
 $(EBIN)/%.beam:	%.erl
 	$(ERLC)  $(ERL_COMPILE_FLAGS) -o $(EBIN) $<
@@ -188,6 +218,8 @@ release_spec: opt
 
 release_docs_spec:
 
+
+release_tests_spec:
 
 
 #------------------------------------------------------------

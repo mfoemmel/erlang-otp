@@ -23,6 +23,8 @@ XML_APPLICATION_FILES = \
 XML_REF3_FILES = \
 	megaco.xml \
 	megaco_codec_meas.xml \
+	megaco_codec_mstone1.xml \
+	megaco_codec_mstone2.xml \
 	megaco_codec_transform.xml \
 	megaco_edist_compress.xml \
 	megaco_encoder.xml \
@@ -68,7 +70,4 @@ GIF_FILES = \
 	MG_startup_call_flow.gif \
 	call_flow.gif \
 	call_flow_cont.gif \
-        message_size.gif \
-        encode_time.gif \
-        decode_time.gif \
-        total_time.gif
+        mstone1.gif

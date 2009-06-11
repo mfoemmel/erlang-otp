@@ -606,7 +606,6 @@ erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop)
     erts_set_fix_size(ERTS_ALC_T_REG_PROC,	sizeof(RegProc));
     erts_set_fix_size(ERTS_ALC_T_MONITOR_SH,	ERTS_MONITOR_SH_SIZE*sizeof(Uint));
     erts_set_fix_size(ERTS_ALC_T_NLINK_SH,	ERTS_LINK_SH_SIZE*sizeof(Uint));
-    erts_set_fix_size(ERTS_ALC_T_PROC_LIST,	sizeof(ProcessList));
     erts_set_fix_size(ERTS_ALC_T_FUN_ENTRY,	sizeof(ErlFunEntry));
 #ifdef ERTS_ALC_T_DRV_EV_D_STATE
     erts_set_fix_size(ERTS_ALC_T_DRV_EV_D_STATE,
@@ -1765,7 +1764,7 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 
 
 
-    if (want_tot_or_sys || want.processes) {
+    if (want_tot_or_sys || want.processes || want.processes_used) {
 	Uint tmp;
 
 	if (ERTS_MEM_NEED_ALL_ALCU)
@@ -1794,10 +1793,6 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	size.processes_used += efi.used;
 
 	erts_fix_info(ERTS_ALC_T_REG_PROC, &efi);
-	size.processes += efi.total;
-	size.processes_used += efi.used;
-
-	erts_fix_info(ERTS_ALC_T_PROC_LIST, &efi);
 	size.processes += efi.total;
 	size.processes_used += efi.used;
 

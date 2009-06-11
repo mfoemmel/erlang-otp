@@ -81,12 +81,12 @@
 -import(erl_types, [min/2, max/2, number_min/1, number_max/1,
 		    t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
 		    t_binary/0, t_bitstr/0, t_bitstr_base/1, t_bitstr_unit/1, 
-		    t_bool/0, t_cons/0, t_constant/0,
+		    t_boolean/0, t_cons/0, t_constant/0,
 		    t_float/0, t_from_term/1, t_from_range/2,
 		    t_fun/0, t_fun/1, t_fun/2, t_fun_args/1, t_fun_arity/1, 
 		    t_inf/2, t_inf_lists/2, t_integer/0,
 		    t_integer/1, t_is_atom/1, t_is_any/1,
-		    t_is_binary/1, t_is_bitstr/1, t_is_bitwidth/1, t_is_bool/1,
+		    t_is_binary/1, t_is_bitstr/1, t_is_bitwidth/1, t_is_boolean/1,
 		    t_is_fixnum/1, t_is_cons/1, t_is_constant/1,
 		    t_is_maybe_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_non_neg_integer/1, 
@@ -359,15 +359,8 @@ do_last_call(Last, InfoOut, State, Label) ->
       end
   end.
 
-call_always_fails(I, Info) ->
-  {Args, Type, Fun} = 
-  case I of      
-    #icode_call{} ->
-      {safe_lookup_list(hipe_icode:call_args(I), Info),
-       hipe_icode:call_type(I),
-       hipe_icode:call_fun(I)}
-  end,
-  case Fun of
+call_always_fails(#icode_call{} = I, Info) ->
+  case hipe_icode:call_fun(I) of
     %% These can actually be calls too.
     {erlang, halt, 0} -> false;
     {erlang, halt, 1} -> false;
@@ -379,15 +372,16 @@ call_always_fails(I, Info) ->
     {erlang, throw, 1} -> false;
     {erlang, hibernate, 3} -> false;
     Fun ->
-      case Type of
-	primop -> 
+      case hipe_icode:call_type(I) of
+	primop ->
+	  Args = safe_lookup_list(hipe_icode:call_args(I), Info),
 	  ReturnType = primop_type(Fun, Args),
 	  t_is_none(ReturnType);
 	_ -> false
       end
   end.
 
-do_enter(I,Info,State,LookupFun) ->
+do_enter(I, Info, State, LookupFun) ->
   %% io:format("Enter:~p~n",[I]),
   ArgTypes = lookup_list(hipe_icode:args(I), Info),
   RetTypes = 
@@ -902,7 +896,7 @@ test_type0(reference, T) ->
 test_type0(function, T) ->
   t_is_fun(T);
 test_type0(boolean, T) ->
-  t_is_bool(T);
+  t_is_boolean(T);
 test_type0(list, T) ->
   t_is_maybe_improper_list(T);
 test_type0(cons, T) ->
@@ -948,7 +942,7 @@ true_branch_info(cons) ->
 true_branch_info(nil) ->
   t_nil();
 true_branch_info(boolean) ->
-  t_bool();
+  t_boolean();
 true_branch_info(constant) ->
   t_constant();
 true_branch_info(T) ->
@@ -1591,8 +1585,7 @@ bit_opts({bs_put_integer, Size, Flags, ConstInfo} = I, [Src|_]) ->
   case t_is_fixnum(Src) of
     true -> 
       {unsafe_bs_put_integer, Size, Flags, ConstInfo};
-    false -> 
-      I
+    false -> I
   end;
 bit_opts({bs_start_match, Max} = I, [Src]) -> 
   case t_is_bitstr(Src) of

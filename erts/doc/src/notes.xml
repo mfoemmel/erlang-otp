@@ -29,6 +29,220 @@
   </header>
   <p>This document describes the changes made to the ERTS application.</p>
 
+<section><title>Erts 5.7.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Crash dumps should now cause less problems for the
+	    crashdump_viewer application. (For processes where arity
+	    was non-zero, the arguments are now longer printed - they
+	    used to be printed in a format that was not parseable.)</p>
+          <p>
+	    Own Id: OTP-7472 Aux Id: seq11019, 11292 </p>
+        </item>
+        <item>
+          <p>
+	    Processes could potentially get stuck on an offline
+	    scheduler.</p>
+          <p>
+	    Own Id: OTP-7990</p>
+        </item>
+        <item>
+          <p>
+	    <c>binary_to_atom/2</c> and
+	    <c>binary_to_existing_atom/2</c> could leak memory if
+	    they caused a <c>badarg</c> exception.</p>
+          <p>
+	    Own Id: OTP-7997</p>
+        </item>
+        <item>
+          <p>
+	    A process could under very rare circumstances erroneously
+	    be resumed.</p>
+          <p>
+	    Own Id: OTP-8000</p>
+        </item>
+        <item>
+          <p>
+	    Load balancing between schedulers could under rare
+	    circumstances cause an emulator crash.</p>
+          <p>
+	    Own Id: OTP-8008</p>
+        </item>
+        <item>
+          <p>
+	    <c>erlang:memory(processes_used)</c> always returned
+	    <c>0</c> instead of the correct value. (Thanks to Geoff
+	    Cant)</p>
+          <p>
+	    Own Id: OTP-8022</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Major improvements of the Erlang distribution for Erlang
+	    runtime systems with SMP support. Previously distribution
+	    port locks were heavily contended, and all encoding and
+	    decoding for a specific distribution channel had to be
+	    done in sequence. Lock contention due to the distribution
+	    is now negligible and both encoding and decoding of
+	    Erlang messages can be done in parallel.</p>
+          <p>
+	    The old atom cache protocol used by the Erlang
+	    distribution has been dropped since it effectively
+	    prevented all parallel encoding and decoding of messages
+	    passed over the same distribution channel.</p>
+          <p>
+	    A new atom cache protocol has been introduced which
+	    isolates atom cache accesses and makes parallel encoding
+	    and decoding of messages passed over the same
+	    distribution channel possible. The new atom cache
+	    protocol also use an atom cache size 8 times larger than
+	    before. The new atom cache protocol is documented in the
+	    ERTS users guide.</p>
+          <p>
+	    Erlang messages received via the distribution are now
+	    decoded by the receiving Erlang processes without holding
+	    any distribution channel specific locks. Erlang messages
+	    and signals sent over the distribution are as before
+	    encoded by the sending Erlang process, but now without
+	    holding any distribution channel specific locks during
+	    the encoding. That is, both encoding and decoding can be
+	    and are done in parallel regardless of distribution
+	    channel used.</p>
+          <p>
+	    The part that cannot be parallelized is the atom cache
+	    updates. Atom cache updates are therefore now scheduled
+	    on the distribution port. Since it is only one entity per
+	    distribution channel doing this work there is no lock
+	    contention due to the atom cache updates.</p>
+          <p>
+	    The new runtime system does not understand the old atom
+	    cache protocol. New and old runtime systems can however
+	    still communicate, but no atom cache will be used.</p>
+          <p>
+	    Own Id: OTP-7774</p>
+        </item>
+        <item>
+          <p>
+	    Fixed a bug that caused error logging from
+	    <c>driver_select</c> sometimes with additional symptoms
+	    such as failing IP communications or even an emulator
+	    crash.</p>
+          <p>
+	    Own Id: OTP-7898 Aux Id: seq11304 </p>
+        </item>
+        <item>
+          <p>
+	    Improved SMP concurrency for ETS tables. Several mutating
+	    operations can now be performed truly concurrent on
+	    different records of the same table. To support this, the
+	    table has to be created with option
+	    <c>write_concurrency</c>, as it is achieved at the
+	    expense of some execution and memory overhead.
+	    <c>ets:select</c> and <c>select_count</c> has also been
+	    improved for all tables to not aquire exclusive table
+	    lock during the iteration.</p>
+          <p>
+	    Own Id: OTP-7922</p>
+        </item>
+        <item>
+          <p>
+	    erl (that is erl.exe and dyn_erl) and erlexec has been
+	    made more dynamic so no hard coded paths needs to added
+	    at installation time to erl (that is erl.ini and erl).
+	    Reltool will make use of this in a future release.</p>
+          <p>
+	    Own Id: OTP-7952</p>
+        </item>
+        <item>
+          <p>
+	    Added functionality to get higher resolution timestamp
+	    from system. The erlang:now function returns a timestamp
+	    that's not always consistent with the actual operating
+	    system time (due to resilience against large time changes
+	    in the operating system). The function os:timestamp/0 is
+	    added to get a similar timestamp as the one being
+	    returned by erlang:now, but untouched by Erlangs time
+	    correcting and smoothing algorithms. The timestamp
+	    returned by os:timestamp is always consistent with the
+	    operating systems view of time, like the calendar
+	    functions for getting wall clock time, but with higher
+	    resolution. Example of usage can be found in the os
+	    manual page.</p>
+          <p>
+	    Own Id: OTP-7971</p>
+        </item>
+        <item>
+          <p>
+	    Two new options are added to open_port - spawn_executable
+	    which runs external executables in a controlled way, and
+	    spawn_driver which only opens port to loaded Erlang
+	    drivers. See the erlang manual page for details.</p>
+          <p>
+	    Own Id: OTP-7995</p>
+        </item>
+        <item>
+          <p>
+	    New functionality in ETS to transfer the ownership of a
+	    table. A table can either change owner be declaring an
+	    "heir", another process that will inherit the table if
+	    the owner terminates. A table can also change owner by
+	    calling a new function <c>ets:give_away</c>.</p>
+          <p>
+	    Own Id: OTP-8006</p>
+        </item>
+        <item>
+          <p>
+	    Updates to Tilera build environment.</p>
+          <p>
+	    Own Id: OTP-8009</p>
+        </item>
+        <item>
+          <p>
+	    A stack trace was unnecessarily saved during process
+	    termination.</p>
+          <p>
+	    Own Id: OTP-8014</p>
+        </item>
+        <item>
+          <p>
+	    User defined CPU topology and scheduler bind type can now
+	    be set from the command line when starting an emulator.
+	    For more information see the documentation of the
+	    <c>+sct</c>, and the <c>+sbt</c> emulator flags in the
+	    <c>erl(1)</c> documentation.</p>
+          <p>
+	    The CPU topologies returned from
+	    <c>erlang:system_info/1</c> and
+	    <c>erlang:system_flag/2</c> now always contain the
+	    <c>processor</c> level, also when not strictly necessary.</p>
+          <p>
+	    Own Id: OTP-8030</p>
+        </item>
+        <item>
+          <p>
+	    Various fixes in ETS: <c>ets:first</c> could return a
+	    deleted key in a fixated table. <c>ets:lookup</c> could
+	    return objects out of order if a deleted object was
+	    re-inserted into a fixed bag. <c>ets:delete_object</c>
+	    could fail to delete duplicate objects in a
+	    duplicate_bag.</p>
+          <p>
+	    Own Id: OTP-8040</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erts 5.7.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

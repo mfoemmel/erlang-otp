@@ -348,7 +348,7 @@ int ei_read_fill(int fd, char* buf, int len)
 
 /* write entire buffer on fd  or fail (setting errno)
  */
-int ei_write_fill_t(int fd, char *buf, int len, unsigned ms)
+int ei_write_fill_t(int fd, const char *buf, int len, unsigned ms)
 {
     int i,done=0;
     if (ms != 0U) {
@@ -370,7 +370,7 @@ int ei_write_fill_t(int fd, char *buf, int len, unsigned ms)
     return (len);
 }
 
-int ei_write_fill(int fd, char *buf, int len) 
+int ei_write_fill(int fd, const char *buf, int len) 
 {
     return ei_write_fill_t(fd, buf, len, 0);
 }

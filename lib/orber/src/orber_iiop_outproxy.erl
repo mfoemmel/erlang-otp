@@ -76,7 +76,7 @@ request(Pid, true, Timeout, Msg, RequestId) ->
             after 0 -> 
                     Reply
             end;
-	{'DOWN', MRef, _, Pid, _Reason} when pid(Pid) ->
+	{'DOWN', MRef, _, Pid, _Reason} when is_pid(Pid) ->
             receive
 		%% Clear EXIT message from queue
                 {'EXIT', _Pid, _What} -> 
@@ -491,7 +491,7 @@ Unable to decode Reply or LocateReply header",[?LINE, NewGIOP, Error], ?DEBUG_LE
             after 0 -> 
 		    corba:raise(E)
             end;
-	{'DOWN', MRef, _, Proxy, Reason} when pid(Proxy) ->
+	{'DOWN', MRef, _, Proxy, Reason} when is_pid(Proxy) ->
 	    orber:dbg("[~p] orber_iiop:collect_fragments(~p);~n"
 		      "Monitor generated a DOWN message.", 
 		      [?LINE, Reason], ?DEBUG_LEVEL),

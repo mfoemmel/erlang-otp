@@ -97,7 +97,7 @@ getBrowser1(Info) ->
 
 getBrowser(AgentString) ->
     LAgentString = http_util:to_lower(AgentString),
-    case regexp:first_match(LAgentString,"^[^ ]*") of
+    case inets_regexp:first_match(LAgentString,"^[^ ]*") of
 	{match,Start,Length} ->
 	    Browser = lists:sublist(LAgentString,Start,Length),
 	    case browserType(Browser) of
@@ -128,7 +128,7 @@ browserType(_Unknown) ->
 
 browserVersion([$/|VsnString]) ->
     case catch list_to_float(VsnString) of
-	Number when float(Number) ->
+	Number when is_float(Number) ->
 	    Number;
 	_Whatever ->
 	    case string:span(VsnString,"1234567890.") of
@@ -163,7 +163,7 @@ operativeSystem(OpString,[{RetVal,RegExps}|Rest]) ->
 controlOperativeSystem(_OpString,[]) ->
     false;
 controlOperativeSystem(OpString,[Regexp|Regexps]) ->
-    case regexp:match(OpString,Regexp) of
+    case inets_regexp:match(OpString,Regexp) of
 	{match,_,_} ->
 	    true;
 	nomatch ->
@@ -181,7 +181,7 @@ controlOperativeSystem(OpString,[Regexp|Regexps]) ->
 getMozilla(_AgentString,[],Default) ->
     Default;
 getMozilla(AgentString,[{Agent,AgentRegExp}|Rest],Default) ->
-    case regexp:match(AgentString,AgentRegExp) of
+    case inets_regexp:match(AgentString,AgentRegExp) of
 	{match,_,_} ->
 	    {Agent,getMozVersion(AgentString,AgentRegExp)};
 	nomatch ->
@@ -189,7 +189,7 @@ getMozilla(AgentString,[{Agent,AgentRegExp}|Rest],Default) ->
     end.
 
 getMozVersion(AgentString, AgentRegExp) ->
-    case regexp:match(AgentString,AgentRegExp++"[0-9\.\ \/]*") of
+    case inets_regexp:match(AgentString,AgentRegExp++"[0-9\.\ \/]*") of
 	{match,Start,Length} when length(AgentRegExp) < Length ->
 	    %% Ok we got the number split it out
 	    RealStart  = Start+length(AgentRegExp),

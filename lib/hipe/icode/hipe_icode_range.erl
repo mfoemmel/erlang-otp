@@ -120,8 +120,8 @@ do_analysis(Cfg, MFA) ->
     {analyse, {ArgsFun, CallFun, FinalFun}} ->
       analyse(Cfg, {MFA, ArgsFun, CallFun, FinalFun}),
       do_analysis(Cfg, MFA);
-    {done, {NewArgsFun, NewCallFun, NewFinalFun}} ->
-      {NewArgsFun, NewCallFun, NewFinalFun}
+    {done, {_NewArgsFun, _NewCallFun, _NewFinalFun} = T} ->
+      T
   end.
 
 -spec do_rewrite(cfg(), mfa(), args_fun(), call_fun(), final_fun()) -> cfg().

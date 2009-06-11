@@ -1,7 +1,7 @@
 -module(xmerl_b64Bin).
 -export([parse/1, parse_and_scan/1, format_error/1]).
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-20_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b01.2009-06-07_20/otp_src_R13B01/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -26,17 +26,17 @@
 
 -type(yecc_ret() :: {'error', _} | {'ok', _}).
 
--spec(parse/1 :: (_) -> yecc_ret()).
+-spec parse(Tokens :: list()) -> yecc_ret().
 parse(Tokens) ->
-    yeccpars0(Tokens, false).
+    yeccpars0(Tokens, {no_func, no_line}, 0, [], []).
 
 -spec(parse_and_scan/1 ::
       ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
             yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
-    yeccpars0([], {F, A});
+    yeccpars0([], {{F, A}, no_line}, 0, [], []);
 parse_and_scan({M, F, A}) ->
-    yeccpars0([], {{M, F}, A}).
+    yeccpars0([], {{{M, F}, A}, no_line}, 0, [], []).
 
 -spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
@@ -49,15 +49,15 @@ format_error(Message) ->
 
 % To be used in grammar files to throw an error message to the parser
 % toplevel. Doesn't have to be exported!
--compile({nowarn_unused_function,{return_error,2}}).
+-compile({nowarn_unused_function, return_error/2}).
 -spec(return_error/2 :: (integer(), any()) -> no_return()).
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.3").
+-define(CODE_VERSION, "1.4").
 
-yeccpars0(Tokens, MFA) ->
-    try yeccpars1(Tokens, MFA, 0, [], [])
+yeccpars0(Tokens, Tzr, State, States, Vstack) ->
+    try yeccpars1(Tokens, Tzr, State, States, Vstack)
     catch 
         error: Error ->
             Stacktrace = erlang:get_stacktrace(),
@@ -67,11 +67,12 @@ yeccpars0(Tokens, MFA) ->
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace)
+                                 Stacktrace)
             catch _:_ -> erlang:raise(error, Error, Stacktrace)
             end;
-        throw: {error, {_Line, ?MODULE, _M}} = Error -> 
-            Error % probably from return_error/2
+        %% Probably thrown from return_error/2:
+        throw: {error, {_Line, ?MODULE, _M}} = Error ->
+            Error
     end.
 
 yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
@@ -83,20 +84,24 @@ yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
             {missing_in_goto_table, Symbol, State}
     end.
 
-yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
-    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
-              Tokenizer);
-yeccpars1([], {F, A}, State, States, Vstack) ->
+yeccpars1([Token | Tokens], Tzr, State, States, Vstack) ->
+    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, Tzr);
+yeccpars1([], {{F, A},_Line}, State, States, Vstack) ->
     case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(Tokens, {F, A}, State, States, Vstack);
-        {eof, _Endline} ->
-            yeccpars1([], false, State, States, Vstack);
+        {ok, Tokens, Endline} ->
+	    yeccpars1(Tokens, {{F, A}, Endline}, State, States, Vstack);
+        {eof, Endline} ->
+            yeccpars1([], {no_func, Endline}, State, States, Vstack);
         {error, Descriptor, _Endline} ->
             {error, Descriptor}
     end;
-yeccpars1([], false, State, States, Vstack) ->
-    yeccpars2(State, '$end', States, Vstack, {'$end', 999999}, [], false).
+yeccpars1([], {no_func, no_line}, State, States, Vstack) ->
+    Line = 999999,
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Line), [],
+              {no_func, Line});
+yeccpars1([], {no_func, Endline}, State, States, Vstack) ->
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Endline), [],
+              {no_func, Endline}).
 
 %% yeccpars1/7 is called from generated code.
 %%
@@ -104,34 +109,59 @@ yeccpars1([], false, State, States, Vstack) ->
 %% yeccpars1/7 can be found by parsing the file without following
 %% include directives. yecc will otherwise assume that an old
 %% yeccpre.hrl is included (one which defines yeccpars1/5).
-yeccpars1(State1, State, States, Vstack, Stack1, [Token | Tokens], 
-          Tokenizer) ->
+yeccpars1(State1, State, States, Vstack, Token0, [Token | Tokens], Tzr) ->
     yeccpars2(State, element(1, Token), [State1 | States],
-              [Stack1 | Vstack], Token, Tokens, Tokenizer);
-yeccpars1(State1, State, States, Vstack, Stack1, [], {F, A}) ->
-    case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(State1, State, States, Vstack, Stack1, Tokens, {F, A});
-        {eof, _Endline} ->
-            yeccpars1(State1, State, States, Vstack, Stack1, [], false);
-        {error, Descriptor, _Endline} ->
-            {error, Descriptor}
-    end;
-yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
-    yeccpars2(State, '$end', [State1 | States], [Stack1 | Vstack],
-              {'$end', 999999}, [], false).
+              [Token0 | Vstack], Token, Tokens, Tzr);
+yeccpars1(State1, State, States, Vstack, Token0, [], {{_F,_A}, _Line}=Tzr) ->
+    yeccpars1([], Tzr, State, [State1 | States], [Token0 | Vstack]);
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, no_line}) ->
+    Line = yecctoken_end_location(Token0),
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line});
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, Line}) ->
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line}).
 
 % For internal use only.
+yecc_end({Line,_Column}) ->
+    {'$end', Line};
+yecc_end(Line) ->
+    {'$end', Line}.
+
+yecctoken_end_location(Token) ->
+    try
+        {text, Str} = erl_scan:token_info(Token, text),
+        {line, Line} = erl_scan:token_info(Token, line),
+        Parts = re:split(Str, "\n"),
+        Dline = length(Parts) - 1,
+        Yline = Line + Dline,
+        case erl_scan:token_info(Token, column) of
+            {column, Column} ->
+                Col = byte_size(lists:last(Parts)),
+                {Yline, Col + if Dline =:= 0 -> Column; true -> 1 end};
+            undefined ->
+                Yline
+        end
+    catch _:_ ->
+        yecctoken_location(Token)
+    end.
+
 yeccerror(Token) ->
-    Text = case catch erl_scan:token_info(Token, text) of
-               {text, Txt} -> Txt;
-               _ -> yecctoken2string(Token)
-           end,
-    Location = case catch erl_scan:token_info(Token, location) of
-                   {location, Loc} -> Loc;
-                   _ -> element(2, Token)
-               end,
+    Text = yecctoken_to_string(Token),
+    Location = yecctoken_location(Token),
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
+
+yecctoken_to_string(Token) ->
+    case catch erl_scan:token_info(Token, text) of
+        {text, Txt} -> Txt;
+        _ -> yecctoken2string(Token)
+    end.
+
+yecctoken_location(Token) ->
+    case catch erl_scan:token_info(Token, location) of
+        {location, Loc} -> Loc;
+        _ -> element(2, Token)
+    end.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
@@ -139,13 +169,13 @@ yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:write(A);
+yecctoken2string({_Cat, _, Val}) -> io_lib:write(Val);
 yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format("~w", [Other]);
+    io_lib:write(Other);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -153,7 +183,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./xmerl_b64Bin.erl", 156).
+-file("./xmerl_b64Bin.erl", 186).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -318,14 +348,14 @@ yeccgoto_base64Binary2(0=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccgoto_base64Binary2(16=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_17(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
--compile({inline,{yeccpars2_0_,1}}).
+-compile({inline,yeccpars2_0_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_0_(__Stack0) ->
  [begin
    '$undefined'
   end | __Stack0].
 
--compile({inline,{yeccpars2_1_,1}}).
+-compile({inline,yeccpars2_1_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_1_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -333,7 +363,7 @@ yeccpars2_1_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_4_,1}}).
+-compile({inline,yeccpars2_4_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_4_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -341,7 +371,7 @@ yeccpars2_4_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_5_,1}}).
+-compile({inline,yeccpars2_5_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_5_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -349,7 +379,7 @@ yeccpars2_5_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_6_,1}}).
+-compile({inline,yeccpars2_6_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_6_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -357,7 +387,7 @@ yeccpars2_6_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_8_,1}}).
+-compile({inline,yeccpars2_8_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_8_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -365,7 +395,7 @@ yeccpars2_8_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_10_,1}}).
+-compile({inline,yeccpars2_10_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_10_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -373,7 +403,7 @@ yeccpars2_10_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{'yeccpars2_13_=',1}}).
+-compile({inline,'yeccpars2_13_='/1}).
 -file("xmerl_b64Bin.yrl", 0).
 'yeccpars2_13_='(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -381,7 +411,7 @@ yeccpars2_10_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_13_,1}}).
+-compile({inline,yeccpars2_13_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_13_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -389,7 +419,7 @@ yeccpars2_13_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{'yeccpars2_14_=',1}}).
+-compile({inline,'yeccpars2_14_='/1}).
 -file("xmerl_b64Bin.yrl", 0).
 'yeccpars2_14_='(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -397,7 +427,7 @@ yeccpars2_13_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_14_,1}}).
+-compile({inline,yeccpars2_14_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_14_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -405,7 +435,7 @@ yeccpars2_14_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_15_,1}}).
+-compile({inline,yeccpars2_15_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_15_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -413,7 +443,7 @@ yeccpars2_15_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_16_,1}}).
+-compile({inline,yeccpars2_16_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_16_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -421,7 +451,7 @@ yeccpars2_16_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_17_,1}}).
+-compile({inline,yeccpars2_17_/1}).
 -file("xmerl_b64Bin.yrl", 0).
 yeccpars2_17_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,

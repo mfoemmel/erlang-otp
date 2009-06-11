@@ -167,9 +167,8 @@ handle_cast(Msg, State) ->
 handle_info({Proto, Socket, Data}, State = 
 	    #state{mfa = {Module, Function, Args},
 		   mod = #mod{socket_type = SockType, 
-			      socket = Socket} = ModData} 
-	    = State) when Proto == tcp; Proto == ssl; Proto == dummy ->
-  
+			      socket = Socket} = ModData} = State) 
+  when (Proto =:= tcp) orelse (Proto =:= ssl) orelse (Proto =:= dummy) ->
     case Module:Function([Data | Args]) of
         {ok, Result} ->
 	    NewState = cancel_request_timeout(State),
@@ -373,7 +372,7 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
 		    handle_response(State#state{headers = NewHeaders,
 						body = NewBody})
 	    end;
-	Encoding when list(Encoding) ->
+	Encoding when is_list(Encoding) ->
 	    httpd_response:send_status(ModData, 501, 
 				       "Unknown Transfer-Encoding"),
 	    Reason = io_lib:format("Unknown Transfer-Encoding: ~p~n", 
@@ -410,7 +409,7 @@ handle_expect(#state{headers = Headers, mod =
 	      MaxBodySize) ->
     Length = Headers#http_request_h.'content-length',
     case expect(Headers, ModData#mod.http_version, ConfigDB) of
-	continue when MaxBodySize > Length; MaxBodySize == nolimit ->
+	continue when (MaxBodySize > Length) orelse (MaxBodySize =:= nolimit) ->
 	    httpd_response:send_status(ModData, 100, ""),
 	    ok;
 	continue when MaxBodySize < Length ->
@@ -518,7 +517,7 @@ cancel_request_timeout(#state{timer = Timer} = State) ->
     end,
     State#state{timer = undefined}.
 
-decrease(N) when integer(N)->
+decrease(N) when is_integer(N) ->
     N-1;
 decrease(N) ->
     N.

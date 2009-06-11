@@ -23,6 +23,14 @@
  * Author: 	Rickard Green
  */
 
+#ifndef ERTS_PORT_TASK_H_BASIC_TYPES__
+#define ERTS_PORT_TASK_H_BASIC_TYPES__
+#include "erl_sys_driver.h"
+#include "erl_smp.h"
+typedef erts_smp_atomic_t ErtsPortTaskHandle;
+#endif
+
+#ifndef ERTS_PORT_TASK_ONLY_BASIC_TYPES__
 #ifndef ERL_PORT_TASK_H__
 #define ERL_PORT_TASK_H__
 
@@ -35,15 +43,13 @@
 #define ERTS_INCLUDE_SCHEDULER_INTERNALS
 #endif
 
-#include "erl_sys_driver.h"
-#include "erl_smp.h"
-
 typedef enum {
     ERTS_PORT_TASK_FREE,
     ERTS_PORT_TASK_INPUT,
     ERTS_PORT_TASK_OUTPUT,
     ERTS_PORT_TASK_EVENT,
-    ERTS_PORT_TASK_TIMEOUT
+    ERTS_PORT_TASK_TIMEOUT,
+    ERTS_PORT_TASK_DIST_CMD
 } ErtsPortTaskType;
 
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
@@ -51,7 +57,6 @@ typedef enum {
 extern erts_smp_atomic_t erts_port_task_outstanding_io_tasks;
 #endif
 
-typedef erts_smp_atomic_t ErtsPortTaskHandle;
 typedef struct ErtsPortTask_ ErtsPortTask;
 typedef struct ErtsPortTaskQueue_ ErtsPortTaskQueue;
 
@@ -127,4 +132,4 @@ ErtsMigrateResult erts_port_migrate(Port *,
 #endif
 #undef ERTS_INCLUDE_SCHEDULER_INTERNALS
 #endif /* ERL_PORT_TASK_H__ */
-
+#endif /* ERTS_PORT_TASK_ONLY_BASIC_TYPES__ */

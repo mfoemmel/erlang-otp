@@ -125,21 +125,21 @@ process_packet(Packet, TDomain, TAddress, State, NoteStore, Log) ->
 
 	#message{version = 'version-1', vsn_hdr = Community, data = Data} 
 	  when State#state.v1 =:= true ->
-	    ?vlog("~n   v1, community: ~s", [Community]),
+	    ?vlog("v1, community: ~s", [Community]),
 	    HS = ?empty_msg_size + length(Community),
 	    v1_v2c_proc('version-1', NoteStore, Community, TDomain, TAddress, 
 			Data, HS, Log, Packet);
 
 	#message{version = 'version-2', vsn_hdr = Community, data = Data}
 	  when State#state.v2c =:= true ->
-	    ?vlog("~n   v2c, community: ~s", [Community]),
+	    ?vlog("v2c, community: ~s", [Community]),
 	    HS = ?empty_msg_size + length(Community),
 	    v1_v2c_proc('version-2', NoteStore, Community, TDomain, TAddress, 
 			Data, HS, Log, Packet);
 
 	#message{version = 'version-3', vsn_hdr = V3Hdr, data = Data}
 	  when State#state.v3 =:= true ->
-	    ?vlog("~n   v3, msgID: ~p, msgFlags: ~p, msgSecModel: ~p",
+	    ?vlog("v3, msgID: ~p, msgFlags: ~p, msgSecModel: ~p",
 		  [V3Hdr#v3_hdr.msgID,
 		   V3Hdr#v3_hdr.msgFlags,
 		   V3Hdr#v3_hdr.msgSecurityModel]),
@@ -331,6 +331,39 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
 	length(ContextName) - length(ContextEngineID),
     ?vdebug("v3_proc -> PDU type: ~p", [PDU#pdu.type]),
     case PDU#pdu.type of
+	report when DiscoOrPlain =:= discovery ->
+	    %% Discovery step 1 response
+	    Key  = {agent, MsgID}, 
+	    Note = snmp_note_store:get_note(NoteStore, Key), 
+	    case Note of
+                #note{sec_engine_id = "",
+                      sec_model     = _MsgSecModel,
+                      sec_name      = "",
+                      sec_level     = _SecLevel,
+                      ctx_engine_id = _CtxEngineID,
+                      ctx_name      = _CtxName,
+                      disco         = true,
+                      req_id        = _ReqId} ->
+                    %% This is part of the discovery process initiated by us.
+                    %% Response to the discovery step 1 request
+                    ?vdebug("v3_proc -> discovery step 1 response", []),
+                    {ok, 'version-3', PDU, PduMMS, {discovery, SecEngineID}};
+                #note{sec_engine_id = SecEngineID,
+                      sec_model     = _MsgSecModel,
+                      sec_name      = SecName,
+                      sec_level     = SecLevel,
+                      ctx_engine_id = _CtxEngineID,
+                      ctx_name      = _CtxName,
+                      disco         = true,
+                      req_id        = _ReqId} ->
+                    %% This is part of the discovery process initiated by us.
+                    %% Response to the discovery step 2 request
+                    ?vdebug("v3_proc -> discovery step 2 response", []),
+                    {ok, 'version-3', PDU, PduMMS, discovery};
+		_ ->
+		    %% 7.2.11
+		    throw({discarded, report})
+	    end;
 	report ->
 	    %% 7.2.11
 	    throw({discarded, report});
@@ -826,41 +859,53 @@ generate_discovery_msg(NoteStore, Pdu, MsgData, To) ->
 generate_discovery_msg(NoteStore, Pdu, MsgData, Timeout, To) ->
     {SecData, ContextEngineID, ContextName}       = MsgData,
     {SecModel, SecName, SecLevelFlag, TargetName} = SecData,
-    ManagerEngineId = 
+    {ManagerEngineId, InitialUserName} = 
 	case get_target_engine_id(TargetName) of
 	    {ok, discovery} ->  
-		"";            % Discovery stage 1
+		{"", ""};             % Discovery stage 1
+	    {ok, {discovery, IUN}} ->  
+		{"", IUN};            % Discovery stage 1
 	    {ok, TargetEngineId} ->
-		TargetEngineId % Discovery stage 2
+		{TargetEngineId, ""}  % Discovery stage 2
 	end,
     generate_discovery_msg(NoteStore, Pdu, 
 			   ContextEngineID, ContextName, 
 			   SecModel, SecName, SecLevelFlag, 
-			   ManagerEngineId, Timeout, To).
+			   ManagerEngineId, 
+			   InitialUserName, 
+			   Timeout, To).
 
 generate_discovery_msg(NoteStore, Pdu, 
 		       ContextEngineID, ContextName, 
 		       SecModel, _SecName, _SecLevelFlag, 
-		       "" = ManagerEngineID, Timeout, To) ->
+		       "" = ManagerEngineID, 
+		       InitialUserName,
+		       Timeout, To) ->
     %% Discovery step 1 uses SecLevel = noAuthNoPriv
     SecName      = "", 
     SecLevelFlag = 0, % ?'SnmpSecurityLevel_noAuthNoPriv', 
     generate_discovery_msg2(NoteStore, Pdu, 
 			    ContextEngineID, ManagerEngineID, 
 			    SecModel, SecName, SecLevelFlag,
+			    InitialUserName, 
 			    ContextName, Timeout, To);
 generate_discovery_msg(NoteStore, Pdu, 
 		       ContextEngineID, ContextName, 
 		       SecModel, SecName, SecLevelFlag, 
-		       ManagerEngineID, Timeout, To) ->
+		       ManagerEngineID, 
+		       InitialUserName,
+		       Timeout, To) ->
+    %% SecLevelFlag = 1, % ?'SnmpSecurityLevel_authNoPriv', 
     generate_discovery_msg2(NoteStore, Pdu, 
 			    ContextEngineID, ManagerEngineID, 
 			    SecModel, SecName, SecLevelFlag,
+			    InitialUserName, 
 			    ContextName, Timeout, To).
 
 generate_discovery_msg2(NoteStore, Pdu, 
 			ContextEngineID, ManagerEngineID, 
 			SecModel, SecName, SecLevelFlag,
+			InitialUserName, 
 			ContextName, Timeout, To) ->
     %% rfc2272: 7.1.6
     ScopedPDU = #scopedPdu{contextEngineID = ContextEngineID,
@@ -877,6 +922,7 @@ generate_discovery_msg2(NoteStore, Pdu,
 					Pdu, ScopedPDUBytes, 
 					ContextEngineID, ManagerEngineID,
 					SecModel, SecName, SecLevelFlag,
+					InitialUserName, 
 					ContextName, Timeout)}
     end.
 
@@ -888,6 +934,7 @@ generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]},
 		       Pdu, ScopedPduBytes, 
 		       ContextEngineID, ManagerEngineID, 
 		       SecModel, SecName, SecLevelFlag, 
+		       InitialUserName, 
 		       ContextName, Timeout) ->
     %% 7.1.7
     ?vdebug("generate_discovery_msg -> 7.1.7 (~p)", [ManagerEngineID]),
@@ -908,7 +955,8 @@ generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]},
     case generate_sec_discovery_msg(Message, SecModule, 
 				    ContextEngineID, 
 				    ManagerEngineID, 
-				    SecName, SecLevelFlag) of
+				    SecName, SecLevelFlag,
+				    InitialUserName) of
 	{ok, Packet} ->
 	    %% 7.1.9c
 	    %% Store in cache for Timeout msec.
@@ -937,10 +985,12 @@ generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]},
 
 generate_sec_discovery_msg(Message, SecModule, 
 			   ContextEngineID, ManagerEngineID, 
-			   SecName, SecLevelFlag) ->
+			   SecName, SecLevelFlag, 
+			   InitialUserName) ->
     case (catch SecModule:generate_discovery_msg(Message, ContextEngineID, 
 						 ManagerEngineID, 
-						 SecName, SecLevelFlag)) of
+						 SecName, SecLevelFlag,
+						 InitialUserName)) of
 	{'EXIT', Reason} ->
 	    config_err("~p (message: ~p)", [Reason, Message]),
 	    {discarded, Reason};

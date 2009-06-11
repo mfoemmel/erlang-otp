@@ -159,21 +159,21 @@ check_imported_funcs({File, {Line, F, A}}, Inc, TypeMap) ->
       NewMap = typer_map:insert(Obj, IncMap),
       Inc#inc{map = NewMap};
     Val -> %% File is already in. Check.
-      case lists:keysearch(FA, 1, Val) of
-	false -> 
-	  %% Function is not in. Good. Add.
+      case lists:keyfind(FA, 1, Val) of
+	false ->
+	  %% Function is not in; add it
 	  Obj = {File, Val ++ [{FA, {Line, Type}}]},
 	  NewMap = typer_map:insert(Obj, IncMap),
 	  Inc#inc{map = NewMap};
-	{_, Type} -> 
+	Type ->
 	  %% Function is in and with same type
 	  Inc;
-	{_, _} ->
+	_ ->
 	  %% Function is in but with diff type
 	  inc_warning(FA, File),
 	  Elem = lists:keydelete(FA, 1, Val),
 	  NewMap = case Elem of
-		     [] -> 
+		     [] ->
 		       typer_map:remove(File, IncMap);
 		     _  ->
 		       typer_map:insert({File, Elem}, IncMap)

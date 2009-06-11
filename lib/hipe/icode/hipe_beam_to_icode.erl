@@ -785,7 +785,7 @@ trans_fun([{test,bs_match_string,{f,Lbl},[Ms,BitSize,Bin]}|
   ByteSize = BitSize div 8,
   ExtraBits = BitSize rem 8,
   WordSize = hipe_rtl_arch:word_size(),
-  if ExtraBits == 0 ->
+  if ExtraBits =:= 0 ->
       trans_op_call({hipe_bs_primop,{bs_match_string,Bin,ByteSize}}, Lbl, 
 		    [MsVar], [MsVar], Env, Instructions);
       BitSize =< ((WordSize * 8) - 5) -> 

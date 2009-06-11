@@ -296,7 +296,15 @@
       </item>
       <item>
         <p><c><![CDATA[[{flex, port()}]]]></c> - Use the flex scanner when 
-          decoding.</p>
+          decoding (not optimized for SMP). See 
+          <seealso marker="megaco_run#initial_config">initial configuration</seealso> 
+          for more info.</p>
+      </item>
+      <item>
+        <p><c><![CDATA[[{flex, ports()}]]]></c> - Use the flex scanner when 
+          decoding (optimized for SMP). See 
+          <seealso marker="megaco_run#initial_config">initial configuration</seealso> 
+          for more info.</p>
       </item>
     </list>
     <p>The Flex scanner is a Megaco scanner written as a linked in driver 
@@ -308,15 +316,19 @@
         <p>To make this happen the megaco stack has to be configured: </p>
         <list type="bulleted">
           <item>
-            <p>Add the <c><![CDATA[{scanner, flex}]]></c> directive to an 
-              Erlang system config file for the megaco app. This will 
-              make the Megaco stack initiate the default 
-              <c><![CDATA[megaco_receive_handle]]></c> with the encoding_config set 
-              to the <c><![CDATA[[{flex, port()}]]]></c>. </p>
+            <p>Add the <c><![CDATA[{scanner, flex}]]></c> (or similar) directive to an 
+              Erlang system config file for the megaco app (see 
+              <seealso marker="megaco_run#initial_config">initial configuration</seealso> 
+              chapter for details). </p>
           </item>
           <item>
-            <p>When retrieving the <c><![CDATA[megaco_receive_handle]]></c>, 
-              retain the encoding_config.</p>
+            <p>Retrieve the encoding-config using the
+              <seealso marker="megaco#system_info">system_info</seealso> 
+              function (with <c>Item = text_config</c>). </p>
+          </item>
+          <item>
+            <p>Update the receive handle with the encoding-config 
+              (the <c>encoding_config</c> field). </p>
           </item>
         </list>
         <p>The benefit of this is that Megaco handles the starting, holding
@@ -335,15 +347,16 @@
           </item>
           <item>
             <p>Let this process start the flex scanner by calling the 
-              <c><![CDATA[megaco_flex_scanner:start()]]></c> function.</p>
+              <c><![CDATA[megaco_flex_scanner:start/0,1]]></c> function.</p>
           </item>
           <item>
-            <p>Retrieve the <c><![CDATA[port()]]></c> and when initiating
-              the <c><![CDATA[megaco_receive_handle]]></c>, set the encoding_config to 
-              [{flex, port()}].</p>
+            <p>Retrieve the encoding-config and when initiating
+              the <c><![CDATA[megaco_receive_handle]]></c>, set the 
+              field <c>encoding_config</c> accordingly.</p>
           </item>
           <item>
-            <p>Pass the <c><![CDATA[receive_handle]]></c> to the transport module.</p>
+            <p>Pass the <c><![CDATA[megaco_receive_handle]]></c> to the 
+              transport module.</p>
           </item>
         </list>
       </item>

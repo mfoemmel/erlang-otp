@@ -148,10 +148,7 @@ hipe_bifs_bitarray_sub(Array, BitNr) ->
   WordNr = BitNr bsr ?LOG2_BITS_PER_WORD,
   WordMask = 1 bsl (BitNr band (?BITS_PER_WORD - 1)),
   Word = hipe_bifs:bytearray_sub(Array, WordNr),
-  case Word band WordMask of
-    0 -> false;
-    _ -> true
-  end.
+  Word band WordMask =/= 0.
 
 -define(HIPE_BIFS_BITARRAY(ArrayBits, Val), hipe_bifs_bitarray(ArrayBits, Val)).
 -define(HIPE_BIFS_BITARRAY_UPDATE(Array, BitNr, Val), hipe_bifs_bitarray_update(Array, BitNr, Val)).

@@ -279,15 +279,15 @@ enc_used_contexts(Env, [H|T], Ctxs) ->
 
 %% ## NEW IIOP 1.2 ##
 enc_target_address(#giop_env{objkey = TargetAddr} = Env, Mess, Len) 
-  when record(TargetAddr, 'GIOP_TargetAddress') ->
+  when is_record(TargetAddr, 'GIOP_TargetAddress') ->
     enc_type(?TARGETADDRESS, Env, TargetAddr, Mess, Len);
 enc_target_address(#giop_env{objkey = IORInfo} = Env, Mess, Len) 
-  when record(IORInfo, 'GIOP_IORAddressingInfo') ->
+  when is_record(IORInfo, 'GIOP_IORAddressingInfo') ->
     enc_type(?TARGETADDRESS, Env, #'GIOP_TargetAddress'{label = ?GIOP_ReferenceAddr, 
 							value = IORInfo}, 
 	     Mess, Len);
 enc_target_address(#giop_env{objkey = TP} = Env, Mess, Len) 
-  when record(TP, 'IOP_TaggedProfile') ->
+  when is_record(TP, 'IOP_TaggedProfile') ->
     enc_type(?TARGETADDRESS, Env, #'GIOP_TargetAddress'{label = ?GIOP_ProfileAddr, 
 							value = TP}, 
 	     Mess, Len);
@@ -403,7 +403,7 @@ validate_reply_body(Env, {'EXCEPTION', Exception}) ->
 					result = NewExc, parameters = []}, [], 0))};
 validate_reply_body(#giop_env{tc = {_RetType, _InParameters, []}} = Env, Reply) ->
     enc_reply_body(Env#giop_env{result = Reply}, [], 0);
-validate_reply_body(Env, Reply) when tuple(Reply) ->
+validate_reply_body(Env, Reply) when is_tuple(Reply) ->
     [Result|Parameters] = tuple_to_list(Reply),
     enc_reply_body(Env#giop_env{result = Result, parameters = Parameters}, [], 0);
 validate_reply_body(Env, Reply) ->
@@ -597,7 +597,7 @@ enc_type('tk_wchar', _Env, Value, Bytes, Len) ->
     {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
 enc_type('tk_octet', _Env, Value, Bytes, Len) ->
     {cdrlib:enc_octet(Value, Bytes), Len + 1};
-enc_type('tk_any', Env, Any, Bytes, Len) when record(Any, any) ->
+enc_type('tk_any', Env, Any, Bytes, Len) when is_record(Any, any) ->
     {Rest, Len1} = enc_type('tk_TypeCode', Env, Any#any.typecode, Bytes, Len),
     enc_type(Any#any.typecode, Env, Any#any.value, Rest, Len1);
 enc_type('tk_TypeCode', Env, Value, Bytes, Len) ->
@@ -655,7 +655,8 @@ enc_type(Type, _, Value, _, _) ->
 %% added first to to be able to create "even" octets.
 enc_fixed(Env, Digits, Scale, 
 	  #fixed{digits = Digits, scale = Scale, value = Value}, Bytes, Len) 
-  when integer(Value), integer(Digits), integer(Scale), Digits < 32, Digits >= Scale ->
+  when is_integer(Value) andalso is_integer(Digits) andalso is_integer(Scale)
+       andalso Digits < 32 andalso Digits >= Scale ->
     %% This isn't very efficient and we should improve it before supporting it
     %% officially.
     Odd = ?ODD(Digits),
@@ -706,7 +707,7 @@ enc_fixed_2(_Env, Digits, Scale, Value, _Bytes, _Len, Sign) ->
 %% This is a special case used when encoding encapsualted data, i.e., contained
 %% in an octet-sequence.
 enc_sequence(_Env, Sequence, MaxLength, 'tk_octet', Bytes, Len)
-  when binary(Sequence) ->
+  when is_binary(Sequence) ->
     {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
     Size = size(Sequence),
     if

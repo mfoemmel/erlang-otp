@@ -58,7 +58,7 @@
 %%------------------------------------------------------------
 
 
-except_gen(G, N, X, L) when record(X, except) ->
+except_gen(G, N, X, L) when is_record(X, except) ->
     N2 = [ic_forms:get_id2(X) | N],
     if
 	L == c ->
@@ -68,11 +68,11 @@ except_gen(G, N, X, L) when record(X, except) ->
     end,
     struct_gen_list(G, N2, ic_forms:get_body(X), L).
 
-struct_gen(G, N, X, L) when record(X, struct) ->
+struct_gen(G, N, X, L) when is_record(X, struct) ->
     N2 = [ic_forms:get_id2(X) | N],
     struct_gen_list(G, N2, ic_forms:get_body(X), L),
     emit_struct(G, N, X, L);
-struct_gen(G, N, X, L) when record(X, union) ->
+struct_gen(G, N, X, L) when is_record(X, union) ->
     N2 = [ic_forms:get_id2(X) | N],
     if
 	L == c ->
@@ -84,19 +84,19 @@ struct_gen(G, N, X, L) when record(X, union) ->
 	    struct_gen_list(G, N2, ic_forms:get_body(X), L)
     end,
     emit_union(G, N, X, L);
-struct_gen(G, N, X, L) when record(X, member) ->
+struct_gen(G, N, X, L) when is_record(X, member) ->
     struct_gen(G, N, ic_forms:get_type(X), L);
-struct_gen(G, N, X, L) when record(X, typedef) ->
+struct_gen(G, N, X, L) when is_record(X, typedef) ->
     struct_gen(G, N, ic_forms:get_body(X), L),
     emit_typedef(G, N, X, L);
-struct_gen(G, N, X, L) when record(X, type_dcl) ->
+struct_gen(G, N, X, L) when is_record(X, type_dcl) ->
     struct_gen_list(G, N, ic_forms:get_type(X), L);
-struct_gen(G, N, X, L) when record(X, case_dcl) ->
+struct_gen(G, N, X, L) when is_record(X, case_dcl) ->
     struct_gen(G, N, ic_forms:get_type(X), L);
-struct_gen(G, N, X, L) when record(X, sequence) ->
+struct_gen(G, N, X, L) when is_record(X, sequence) ->
     struct_gen(G, N, ic_forms:get_type(X), L),
     X;
-struct_gen(G, N, X, L) when record(X, enum) -> 
+struct_gen(G, N, X, L) when is_record(X, enum) -> 
     icenum:enum_gen(G, N, X, L);
 struct_gen(_G, _N, _X, _L) -> 
     ok.
@@ -109,7 +109,7 @@ struct_gen_list(G, N, Xs, L) ->
 	      if
 		  L == c ->
 		      if
-			  record(R,sequence) ->
+			  is_record(R,sequence) ->
 			      emit_sequence_head_def(G,N,X,R,L);
 			  true ->
 			      ok
@@ -171,7 +171,7 @@ emit_c_struct(G, N, X, local) ->
 			  lists:map(
 			    fun(XXX) ->
 				    if 
-					record(XXX, array) ->
+					is_record(XXX, array) ->
 					    Type = ic_forms:get_type(XX),
 					    Name = element(3,element(2,XXX)),
 					    {_, _, StructTK, _} =
@@ -262,7 +262,7 @@ mk_array_name([Dim|Dims]) ->
     "[" ++ Dim ++ "]" ++ mk_array_name(Dims).
 
 
-emit_struct_member(Fd, G, N, X, Name,{Type,Array}) when record(Array, array)->
+emit_struct_member(Fd, G, N, X, Name,{Type,Array}) when is_record(Array, array)->
     {_, _, StructTK, _} = 
 	ic_symtab:get_full_scoped_name(
 	  G, 
@@ -272,7 +272,7 @@ emit_struct_member(Fd, G, N, X, Name,{Type,Array}) when record(Array, array)->
     Dim = extract_dim(ArrayTK),
     emit(Fd, "   ~s ~s;\n",
 	 [ic_cbe:mk_c_type(G, N, Type),mk_array_name(Name,Dim)]);
-emit_struct_member(Fd, _G, N, _X, Name, Union) when record(Union, union)->
+emit_struct_member(Fd, _G, N, _X, Name, Union) when is_record(Union, union)->
     emit(Fd, "   ~s ~s;\n",
 	 [ic_util:to_undersc([ic_forms:get_id2(Union) | N]),Name]);
 emit_struct_member(Fd, _G, _N, _X, Name, {string, _}) ->
@@ -293,7 +293,7 @@ emit_struct_member(Fd, G, N, _X, Name, {enum, Type}) ->
 emit_struct_member(Fd, _G, _N, _X, Name, "ETERM*") ->
     emit(Fd, "   ETERM* ~s;\n",
 	 [Name]);
-emit_struct_member(Fd, _G, _N, _X, Name, Type) when list(Type) ->  
+emit_struct_member(Fd, _G, _N, _X, Name, Type) when is_list(Type) ->  
     emit(Fd, "   ~s ~s;\n",
 	 [Type, Name]);
 emit_struct_member(Fd, G, N, _X, Name, Type) ->
@@ -356,7 +356,7 @@ emit_typedef(G, N, X, erlang) ->
 emit_typedef(G, N, X, c) ->
     B = ic_forms:get_body(X),
     if
-	record(B, sequence) ->
+	is_record(B, sequence) ->
 	    emit_sequence_head_def(G, N, X, B, c);
 	true ->
 	    lists:foreach(fun(D) ->
@@ -365,7 +365,7 @@ emit_typedef(G, N, X, c) ->
 			  ic_forms:get_idlist(X))
     end.
 
-emit_typedef(G, N, D, Type, c) when record(D, array) ->
+emit_typedef(G, N, D, Type, c) when is_record(D, array) ->
     emit_array(G, N, D, Type);
 emit_typedef(G, N, D, Type, c)  ->
     Name = ic_util:to_undersc([ic_forms:get_id2(D) | N]),
@@ -1905,9 +1905,9 @@ emit_arr_methods(G,N,X,Name,Fd) ->
 	    emit(Fd, "name() -> ~p.\n\n",[Name])
     end. 
 
-get_seq_max(T) when record(T, sequence), T#sequence.length == 0 ->
+get_seq_max(T) when is_record(T, sequence) andalso T#sequence.length == 0 ->
     infinity;
-get_seq_max(T) when record(T, sequence), tuple(T#sequence.length) ->
+get_seq_max(T) when is_record(T, sequence) andalso is_tuple(T#sequence.length) ->
     list_to_integer(element(3, T#sequence.length)).
 
 

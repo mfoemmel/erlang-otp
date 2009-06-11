@@ -126,12 +126,20 @@ init_tc1(Mod,Func,[Config0],DoInit) when is_list(Config0) ->
     case add_defaults(Mod,Func,TestCaseInfo,DoInit) of
 	Error = {suite0_failed,_} ->
 	    ct_logs:init_tc(),
+	    FuncSpec = group_or_func(Func,Config0),
+	    ct_event:notify(#event{name=tc_start,
+				   node=node(),
+				   data={Mod,FuncSpec}}),
 	    ct_util:set_testdata({curr_tc,{Mod,Error}}),
 	    {error,Error};
 	{SuiteInfo,MergeResult} ->
 	    case MergeResult of
 		{error,Reason} when DoInit == false ->
 		    ct_logs:init_tc(),
+		    FuncSpec = group_or_func(Func,Config0),
+		    ct_event:notify(#event{name=tc_start,
+					   node=node(),
+					   data={Mod,FuncSpec}}),
 		    {skip,Reason};
 		_ ->
 		    init_tc2(Mod,Func,SuiteInfo,MergeResult,Config,DoInit)
@@ -179,6 +187,10 @@ init_tc2(Mod,Func,SuiteInfo,MergeResult,Config,DoInit) ->
     end,
     
     ct_logs:init_tc(),
+    FuncSpec = group_or_func(Func,Config),
+    ct_event:notify(#event{name=tc_start,
+			   node=node(),
+			   data={Mod,FuncSpec}}),
     
     case configure(MergedInfo1,MergedInfo1,SuiteInfo,{Func,DoInit},Config) of
 	{suite0_failed,Reason} ->
@@ -379,7 +391,12 @@ try_set_default(Name,Key,Info,Where) ->
 %%% when a test case is finished.
 end_tc(?MODULE,error_in_suite,_) ->		% bad start!
     ok;
-end_tc(Mod,Func,[Args]) ->
+end_tc(Mod,Func,{TCPid,Result,[Args]}) when is_pid(TCPid) ->
+    end_tc(Mod,Func,TCPid,Result,Args);
+end_tc(Mod,Func,{Result,[Args]}) ->
+    end_tc(Mod,Func,self(),Result,Args).
+
+end_tc(Mod,Func,TCPid,Result,Args) ->
     case lists:keysearch(watchdog,1,Args) of
 	{value,{watchdog,Dog}} -> test_server:timetrap_cancel(Dog);
 	false -> ok
@@ -397,14 +414,39 @@ end_tc(Mod,Func,[Args]) ->
 
     ct_util:delete_testdata(comment),
     ct_util:delete_suite_data(last_saved_config),
-    case lists:keysearch(save_config,1,Args) of
-	{value,{save_config,SaveConfig}} ->
-	    ct_util:save_suite_data(last_saved_config,{Mod,Func},SaveConfig);
-	false ->
-	    ok
-    end,
+    FuncSpec =
+	case group_or_func(Func,Args) of
+	    {_,GroupName,_Props} = Group ->			       
+		case lists:keysearch(save_config,1,Args) of
+		    {value,{save_config,SaveConfig}} ->
+			ct_util:save_suite_data(last_saved_config,
+						{Mod,{group,GroupName}},SaveConfig),
+			Group;
+		    false ->
+			Group
+		end;
+	    _ ->
+		case lists:keysearch(save_config,1,Args) of
+		    {value,{save_config,SaveConfig}} ->
+			ct_util:save_suite_data(last_saved_config,
+						{Mod,Func},SaveConfig),
+			Func;
+		    false ->
+			Func
+		end
+	end,
     ct_util:reset_silent_connections(),
-    case ct_logs:end_tc() of
+
+    %% send sync notification so that event handlers may print
+    %% in the log file before it gets closed
+    ct_event:sync_notify(#event{name=tc_done,
+				node=node(),
+				data={Mod,FuncSpec,
+				      case Result of
+					  {skip,S} -> {skipped,S};
+					  _-> Result
+				      end}}),
+    case ct_logs:end_tc(TCPid) of
 	{error,Reason} ->
 	    exit({error,{logger,Reason}});
 	_ ->
@@ -525,6 +567,8 @@ mark_as_failed(Seq,Mod,Func,[Func|TCs]) ->
 mark_as_failed(Seq,Mod,Func,[_TC|TCs]) ->
     mark_as_failed1(Seq,Mod,Func,TCs);
 mark_as_failed(_,_,_,[]) ->
+    ok;
+mark_as_failed(_,_,_,undefined) ->
     ok.
 %% mark rest of cases in seq to be skipped
 mark_as_failed1(Seq,Mod,Func,[TC|TCs]) ->
@@ -532,6 +576,14 @@ mark_as_failed1(Seq,Mod,Func,[TC|TCs]) ->
     mark_as_failed1(Seq,Mod,Func,TCs);
 mark_as_failed1(_,_,_,[]) ->
     ok.
+
+group_or_func(Func, Config) when Func == init_per_group; 
+				 Func == end_per_group ->
+    GrProps = proplists:get_value(tc_group_properties,Config),
+    GrName = proplists:get_value(name,GrProps),
+    {Func,GrName,proplists:delete(name,GrProps)};
+group_or_func(Func, _Config) ->
+    Func.
 
 %%%-----------------------------------------------------------------
 %%% @spec get_suite(Mod, Func) -> Tests
@@ -860,14 +912,9 @@ report(What,Data) ->
 		      end, Imps)
 	    end;
 	tests_done ->
-	    Time = calendar:local_time(),
-	    ct_event:notify(#event{name=test_done,
-				   node=node(),
-				   data=Time});
+	    ok;
 	tc_start ->
-	    ct_event:notify(#event{name=tc_start,
-				   node=node(),
-				   data=Data});	% {Suite,Case}
+	    ok;
 	tc_done ->
 	    {_Suite,Case,Result} = Data,
 	    case {Case,Result} of
@@ -875,21 +922,22 @@ report(What,Data) ->
 		    ok;
 		{end_per_suite,_} ->
 		    ok;
+		{init_per_group,_} ->
+		    ok;
+		{end_per_group,_} ->
+		    ok;
 		{_,ok} ->
 		    add_to_stats(ok);
 		{_,{FailOrSkip,_Reason}} ->
 		    add_to_stats(FailOrSkip)
-	    end,
-	    ct_event:notify(#event{name=tc_done,
-				   node=node(),
-				   data=Data});
+	    end;
 	tc_user_skip ->	    
 	    %% test case specified as skipped in testspec
 	    %% Data = {Suite,Case,Comment}
 	    add_to_stats(skipped),
-	    ct_event:notify(#event{name=tc_user_skip,
-				   node=node(),
-				   data=Data});
+	    ct_event:sync_notify(#event{name=tc_user_skip,
+					node=node(),
+					data=Data});
 	tc_auto_skip ->	    
 	    %% test case skipped because of error in init_per_suite
 	    %% Data = {Suite,Case,Comment}
@@ -899,27 +947,33 @@ report(What,Data) ->
 		_ ->
 		    add_to_stats(skipped)
 	    end,
-	    ct_event:notify(#event{name=tc_auto_skip,
-				   node=node(),
-				   data=Data});
+	    %% this test case does not have a log, so printouts
+	    %% from event handlers should end up in the main log
+	    ct_event:sync_notify(#event{name=tc_auto_skip,
+					node=node(),
+					data=Data});
 	_ ->
 	    ok
     end,
     catch vts:report(What,Data).
 
 add_to_stats(Result) ->
-    {Ok,Failed,Skipped} = ct_util:get_testdata(stats),
-    Stats =
-	case Result of
-	    ok ->
-		{Ok+1,Failed,Skipped};
-	    failed ->
-		{Ok,Failed+1,Skipped};
-	    skipped ->
-		{Ok,Failed,Skipped+1}
-	end,
-    ct_event:notify(#event{name=test_stats,node=node(),data=Stats}),
-    ct_util:set_testdata({stats,Stats}).
+    Update = fun({Ok,Failed,Skipped}) ->
+		     Stats =
+			 case Result of
+			     ok ->
+				 {Ok+1,Failed,Skipped};
+			     failed ->
+				 {Ok,Failed+1,Skipped};
+			     skipped ->
+				 {Ok,Failed,Skipped+1}
+			 end,
+		     ct_event:sync_notify(#event{name=test_stats,
+						 node=node(),
+						 data=Stats}),
+		     Stats
+	     end,
+    ct_util:update_testdata(stats, Update).
 
 %%%-----------------------------------------------------------------
 %%% @spec warn(What) -> true | false

@@ -937,8 +937,8 @@ phi_args(P) -> [Var || {_, Var} <- phi_arglist(P)].
 
 -spec phi_arg(#icode_phi{}, icode_lbl()) -> #icode_variable{}.
 phi_arg(P, Pred) ->
-  case lists:keysearch(Pred, 1, phi_arglist(P)) of
-    {value, {_, Var}} -> Var;
+  case lists:keyfind(Pred, 1, phi_arglist(P)) of
+    {_, Var} -> Var;
     false -> exit({'No such predecessor to phi', {Pred, P}})
   end.
 
@@ -1641,11 +1641,7 @@ is_branch(Instr) ->
     #icode_fail{} -> true;
     #icode_call{} -> 
       case call_fail_label(Instr) of
-	[] -> 
-	  case call_continuation(Instr) of
-	    [] -> false;
-	    _ -> true
-	  end;
+	[] -> call_continuation(Instr) =/= [];
 	_ -> true
       end;
     #icode_enter{} -> true;

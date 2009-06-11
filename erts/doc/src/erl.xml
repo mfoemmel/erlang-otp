@@ -605,6 +605,174 @@
           SMP support enabled (see the <seealso marker="#smp">-smp</seealso>
           flag).</p>
       </item>
+      <tag><c><![CDATA[+sFlag Value]]></c></tag>
+      <item>
+        <p>Scheduling specific flags.</p>
+        <taglist>
+          <tag>+sbt BindType</tag>
+          <item>
+	    <marker id="+sbt"></marker>
+            <p>Set scheduler bind type. Currently valid <c>BindType</c>s:
+	    </p>
+	    <taglist>
+	      <tag><c>u</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, unbound)</seealso>.
+	      </p></item>
+	      <tag><c>ns</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, no_spread)</seealso>.
+	      </p></item>
+	      <tag><c>ts</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, thread_spread)</seealso>.
+	      </p></item>
+	      <tag><c>ps</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, processor_spread)</seealso>.
+	      </p></item>
+	      <tag><c>nnts</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, no_node_thread_spread)</seealso>.
+	      </p></item>
+	      <tag><c>nnps</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, no_node_processor_spread)</seealso>.
+	      </p></item>
+	      <tag><c>tnnps</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, thread_no_node_processor_spread)</seealso>.
+	      </p></item>
+	      <tag><c>db</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, default_bind)</seealso>.
+	      </p></item>
+	    </taglist>
+	    <p>Binding of schedulers are currently only supported on newer
+	       Linux and Solaris systems.</p>
+	    <p>If no CPU topology is available when the <c>+sbt</c> flag
+	       is processed and <c>BindType</c> is any other type than
+	       <c>u</c>, the runtime system will fail to start. CPU
+	       topology can be defined using the
+	       <seealso marker="#+sct">+sct</seealso> flag. Note
+	       that the <c>+sct</c> flag may have to be passed before the
+	       <c>+sbt</c> flag on the command line (in case no CPU topology
+	       has been automatically detected).</p>
+	    <p>For more information, see
+	    <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, SchedulerBindType)</seealso>.
+	    </p>
+          </item>
+          <tag><c>+sct CpuTopology</c></tag>
+          <item>
+	    <marker id="+sct"></marker>
+            <list type="bulleted">
+              <item><c><![CDATA[<Id> = integer(); when 0 =< <Id> =< 65535]]></c></item>
+              <item><c><![CDATA[<IdRange> = <Id>-<Id>]]></c></item>
+              <item><c><![CDATA[<IdOrIdRange> = <Id> | <IdRange>]]></c></item>
+              <item><c><![CDATA[<IdList> = <IdOrIdRange>,<IdOrIdRange> | <IdOrIdRange>]]></c></item>
+              <item><c><![CDATA[<LogicalIds> = L<IdList>]]></c></item>
+              <item><c><![CDATA[<ThreadIds> = T<IdList> | t<IdList>]]></c></item>
+              <item><c><![CDATA[<CoreIds> = C<IdList> | c<IdList>]]></c></item>
+              <item><c><![CDATA[<ProcessorIds> = P<IdList> | p<IdList>]]></c></item>
+              <item><c><![CDATA[<NodeIds> = N<IdList> | n<IdList>]]></c></item>
+              <item><c><![CDATA[<IdDefs> =  <LogicalIds><ThreadIds><CoreIds><ProcessorIds><NodeIds>]]></c></item>
+              <item><c><![CDATA[CpuTopology = <IdDefs>:<IdDefs> | <IdDefs>]]></c></item>
+            </list>
+            <p>Upper-case letters signify real identifiers and lower-case
+	       letters signify fake identifiers only used for description
+	       of the topology. Identifiers passed as real identifiers may
+	       be used by the runtime system when trying to access specific
+	       hardware and if they are not correct the behavior is
+	       undefined. Faked logical CPU identifiers are not accepted
+	       since there is no point in defining the CPU topology without
+	       real logical CPU identifiers. Thread, core, processor, and
+	       node identifiers may be left out. If left out, thread id
+	       defaults to <c>t0</c>, core id defaults to <c>c0</c>,
+	       processor id defaults to <c>p0</c>, and node id will
+	       be left undefined. Either all processors or no processors
+	       should have node identifiers defined.
+	     </p>
+	     <p>Both increasing and decreasing <c><![CDATA[<IdRange>]]></c>s
+	        are allowed.</p>
+	     <p>NUMA node identifiers are system wide. That is, each NUMA
+	        node on the system have to have a unique identifier. Processor
+		identifiers are also system wide. Core identifiers are
+		processor wide. Thread identifiers are core wide.</p>
+	     <p>The order of the identifier types imply the hierarchy of the
+	        CPU topology. Currently, the only valid order is: logical,
+		thread, core, processor, node. That is, thread is part of a
+		core which is part of a processor which is part of a NUMA
+		node. This will, however, change in the future, since multiple
+		NUMA nodes can be part of a processor, but this is not
+		supported yet.
+	     </p>
+	     <p>If a list of identifiers is used in an
+	        <c><![CDATA[<IdDefs>]]></c>:</p>
+             <list type="bulleted">
+	       <item><c><![CDATA[<LogicalIds>]]></c> have to be a list
+	             of identifiers.</item>
+	       <item>At least one other identifier type apart from
+		     <c><![CDATA[<LogicalIds>]]></c> also have to have a
+		     list of identifiers.</item>
+	       <item>All lists of identifiers have to produce the
+	             same amount of identifiers.</item>
+             </list>
+	     <p>A simple example. A single quad core processor may be
+	        described this way:</p>
+<pre>
+% <input>erl +sct L0-3c0-3</input>
+1> <input>erlang:system_info(cpu_topology).</input>
+[{processor,[{core,{logical,0}},
+             {core,{logical,1}},
+             {core,{logical,2}},
+             {core,{logical,3}}]}]
+</pre>
+	     <p>A little more complicated example. Two quad core
+	        processors. Each processor in its own NUMA node.
+		The ordering of logical processors is a little weird.
+		This in order to give a better example of identifier
+		lists:</p>
+<pre>
+% <input>erl +sct L0-1,3-2c0-3p0N0:L7,4,6-5c0-3p1N1</input>
+1> <input>erlang:system_info(cpu_topology).</input>
+[{node,[{processor,[{core,{logical,0}},
+                    {core,{logical,1}},
+                    {core,{logical,3}},
+                    {core,{logical,2}}]}]},
+ {node,[{processor,[{core,{logical,7}},
+                    {core,{logical,4}},
+                    {core,{logical,6}},
+                    {core,{logical,5}}]}]}]
+</pre>
+	     <p>As long as real identifiers are correct it is okay
+	        to pass a CPU topology that is not a correct
+		description of the CPU topology. When used with
+		care this can actually be very useful. This in
+		order to trick the emulator to bind its schedulers
+		as you want. For example, if you want to run multiple
+		Erlang runtime systems on the same machine, you
+		want to reduce the amount of schedulers used and
+		manipulate the CPU topology so that they bind to
+		different logical CPUs. An example, with two Erlang
+		runtime systems on a quad core machine:</p>
+<pre>
+% <input>erl +sct L0-3c0-3 +sbt db +S3:2 -detached -noinput -noshell -sname one</input>
+% <input>erl +sct L3-0c0-3 +sbt db +S3:2 -detached -noinput -noshell -sname two</input>
+</pre>
+	     <p>In this example each runtime system have two
+	        schedulers each online, and all schedulers online
+		will run on different cores. If we change to one
+		scheduler online on one runtime system, and three
+		schedulers online on the other, all schedulers
+		online will still run on different cores.</p>
+	     <p>Note that a faked CPU topology that does not reflect
+	        how the real CPU topology looks like is likely to
+		decrease the performance of the runtime system.</p>
+	    <p>For more information, see
+	    <seealso marker="erlang#system_flag_cpu_topology">erlang:system_flag(cpu_topology, CpuTopology)</seealso>.</p>
+          </item>
+        </taglist>
+      </item>
       <tag><c><![CDATA[+T Level]]></c></tag>
       <item>
         <marker id="+T"></marker>

@@ -40,7 +40,7 @@
 %%-----------------------------------------------------------------
 %% Func: gen/3
 %%-----------------------------------------------------------------
-gen(G, N, X) when record(X, enum) ->
+gen(G, N, X) when is_record(X, enum) ->
     %%?PRINTDEBUG2("enum: ~p", [X]),
     EnumName = ic_forms:get_java_id(X),
     N2 = ["_" ++ EnumName |N],  

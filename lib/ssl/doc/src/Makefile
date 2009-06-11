@@ -42,7 +42,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/ssl-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 XML_APPLICATION_FILES = refman.xml
-XML_REF3_FILES = ssl.xml ssl_pkix.xml new_ssl.xml
+XML_REF3_FILES = ssl.xml new_ssl.xml
 XML_REF6_FILES = ssl_app.xml
 
 XML_PART_FILES = release_notes.xml usersguide.xml

@@ -27,9 +27,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../../vsn.mk
 
-VSN     = $(INETS_VSN)
-APP_VSN = "inets-$(VSN)"
-
+VSN = $(INETS_VSN)
 
 # ----------------------------------------------------
 # Release directory specification
@@ -41,10 +39,11 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = \
+	inets_service \
 	inets \
 	inets_app \
 	inets_sup \
-	inets_service
+	inets_regexp
 
 HRL_FILES = inets_internal.hrl
 

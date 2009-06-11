@@ -721,7 +721,7 @@ scan_prolog2(Str, S0 = #xmerl_scanner{user_state=_US},Pos) ->
     %% Here we consider the DTD provided by doctype_DTD option,
     S1 =
 	case S0 of
-	    #xmerl_scanner{validation=dtd,doctype_DTD=DTD} when list(DTD) ->
+	    #xmerl_scanner{validation=dtd,doctype_DTD=DTD} when is_list(DTD) ->
 		S=fetch_DTD(undefined,S0),
 		check_decl(S),
 		S;
@@ -1185,7 +1185,7 @@ scan_doctype3("%" ++ T, S0, DTD) ->
 	    S3 = fetch_DTD(Name, S2),
 	    check_decl(S3),
 	    scan_doctype3(T2, S3, DTD);
-	ExpRef when list(ExpRef) -> % Space added, see Section 4.4.8
+	ExpRef when is_list(ExpRef) -> % Space added, see Section 4.4.8
 	    {_,T3,S3} = strip(ExpRef++T2,S2),
 	    scan_doctype3(T3,S3,DTD)
     end;
@@ -1203,7 +1203,7 @@ scan_doctype3(T, S, DTD) ->
 
 
 
-fetch_DTD(undefined, S=#xmerl_scanner{doctype_DTD=URI}) when list(URI)->
+fetch_DTD(undefined, S=#xmerl_scanner{doctype_DTD=URI}) when is_list(URI)->
     %% allow to specify DTD name when it isn't available in xml stream
     fetch_DTD({system,URI},S#xmerl_scanner{doctype_DTD=option_provided});
 fetch_DTD(undefined, S) ->
@@ -1213,7 +1213,7 @@ fetch_DTD(undefined, S) ->
 fetch_DTD(DTDSpec, S)-> 
     case fetch_and_parse(DTDSpec,S,[{text_decl,true},
 				    {environment,{external,subset}}]) of
-	NewS when record(NewS,xmerl_scanner) ->
+	NewS when is_record(NewS,xmerl_scanner) ->
 	    NewS;
 	{_Res,_Tail,_Sx} -> % Continue with old scanner data, result in Rules
 	    S
@@ -1326,7 +1326,7 @@ check_notations(Tab,S) ->
     case ets:match(Tab,{{notation,'$1'},undeclared}) of
 	[[]] -> ok;
 	[] ->  ok;
-	[L] when list(L) ->
+	[L] when is_list(L) ->
 	    ?fatal({error_missing_declaration_in_DTD,hd(L)},S);
 	Err ->
 	    ?fatal({error_missing_declaration_in_DTD,Err},S)
@@ -1383,7 +1383,7 @@ check_entities(Tab,S=#xmerl_scanner{validation=dtd}) ->
     case ets:match(Tab,{{entity,'$1'},undeclared}) of
 	[[]] -> ok;
 	[] ->  ok;
-	[L] when list(L) ->
+	[L] when is_list(L) ->
 	    ?fatal({error_missing_declaration_in_DTD,hd(L)},S);
 	Err ->
 	    ?fatal({error_missing_declaration_in_DTD,Err},S)
@@ -1401,7 +1401,7 @@ check_referenced_ids(Tab,S) ->
     case ets:match(Tab,{{id,'$1'},undeclared}) of
 	[[]] -> ok;
 	[] ->  ok;
-	[L] when list(L) ->
+	[L] when is_list(L) ->
 	    ?fatal({error_missing_declaration_in_DTD,hd(L)},S);
 	Err ->
 	    ?fatal({error_missing_declaration_in_DTD,Err},S)
@@ -1439,7 +1439,7 @@ scan_decl_sep(T,S) ->
     {PERefName, T1, S1} = scan_pe_reference(T, S),
     {ExpandedRef,S2} =
 	case expand_pe_reference(PERefName,S1,as_PE) of
-	    Tuple when tuple(Tuple) ->
+	    Tuple when is_tuple(Tuple) ->
 		%% {system,URI} or {public,URI}
 		{ExpRef,_Sx}=fetch_not_parse(Tuple,S1),
 		{ExpRef,S1};
@@ -2231,7 +2231,7 @@ scan_att_value("%"++T,S0=#xmerl_scanner{rules_read_fun=Read,
     {Name,T1,S1} = scan_pe_reference(T,S),
     {ExpandedRef,S2} = 
 	case expand_pe_reference(Name,S1,in_literal) of
-	    Tuple when tuple(Tuple) ->
+	    Tuple when is_tuple(Tuple) ->
 		%% {system,URI} or {public,URI}
 		%% Included in literal, just get external file.
 		{ExpRef,Sx}=fetch_not_parse(Tuple,S1),
@@ -2342,7 +2342,7 @@ check_att_default_val(Name,'ID',S=#xmerl_scanner{rules_write_fun=Write,
 	    ok
     end,
     SName = if
-		list(Name) -> list_to_atom(Name);
+		is_list(Name) -> list_to_atom(Name);
 		true -> Name
 	    end,
     case Read(id,SName,S) of
@@ -2678,7 +2678,7 @@ expand_pe_reference(Name, #xmerl_scanner{rules_read_fun = Read} = S,WS) ->
 	    ?fatal({unknown_parameter_entity, Name}, S); % WFC or VC failure
 	Err={error,_Reason} ->
 	    ?fatal(Err,S);
-	Tuple when tuple(Tuple) ->
+	Tuple when is_tuple(Tuple) ->
 	    Tuple;
 	Result ->
 	    if
@@ -3175,7 +3175,7 @@ vc_ID_Attribute_Default({_,'ID',_,Def,_},S) ->
     ?fatal({error,{validity_constraint_error_ID_Attribute_Default,Def}},S).
 
 vc_Enumeration({_Name,{_,NameList},DefaultVal,_,_},S) 
-  when list(DefaultVal) ->    
+  when is_list(DefaultVal) ->    
     case lists:member(list_to_atom(DefaultVal),NameList) of
 	true ->
 	    ok;
@@ -3185,7 +3185,7 @@ vc_Enumeration({_Name,{_,NameList},DefaultVal,_,_},S)
 vc_Enumeration({_Name,{_,_NameList},_DefaultVal,_,_},_S) ->
     ok.
 
-vc_Entity_Name({_Name,'ENTITY',DefaultVal,_,_},S) when list(DefaultVal) ->
+vc_Entity_Name({_Name,'ENTITY',DefaultVal,_,_},S) when is_list(DefaultVal) ->
     Read = S#xmerl_scanner.rules_read_fun,
     case Read(entity,list_to_atom(DefaultVal),S) of
 	{_,external,{_,{ndata,_}}} ->
@@ -3194,7 +3194,7 @@ vc_Entity_Name({_Name,'ENTITY',DefaultVal,_,_},S) when list(DefaultVal) ->
     end;
 vc_Entity_Name({_Name,'ENTITY',_,_,_},_S) ->
     ok;
-vc_Entity_Name({_,'ENTITIES',DefaultVal,_,_},S) when list(DefaultVal) ->
+vc_Entity_Name({_,'ENTITIES',DefaultVal,_,_},S) when is_list(DefaultVal) ->
     Read = S#xmerl_scanner.rules_read_fun,
     NameListFun = fun([],Acc,_St,_Fun) ->
 		       lists:reverse(Acc);
@@ -3447,7 +3447,7 @@ scan_entity_value("%" ++ T, S0, Delim, Acc, PEName,Namespace,PENesting) ->
 		case expand_pe_reference(PERefName, S1, in_literal) of
 		    %% actually should pe ref be expanded as_PE but
 		    %% handle whitespace explicitly in this case.
-		    Tuple when tuple(Tuple) ->
+		    Tuple when is_tuple(Tuple) ->
 			%% {system,URI} or {public,URI}
 			%% Included in literal.
 			{ExpRef,Sx}=fetch_not_parse(Tuple,S1),

@@ -542,8 +542,8 @@ make_fun_primop({Name, Arity}, Free, #fun_info{id = Id, hash = Hash},
 %% Getting attached fun-info, if present; otherwise making it up.
 
 fun_info(E, Env, S) ->
-    case lists:keysearch(id, 1, cerl:get_ann(E)) of
-	{value,{id,{Id,H,Name}}} ->
+    case lists:keyfind(id, 1, cerl:get_ann(E)) of
+	{id, {Id, H, Name}} ->
 	    % io:fwrite("Got fun-info: ~w: {~w,~w}.\n",[Name,Id,H]),
 	    {#fun_info{name = Name, id = Id, hash = H}, S};
 	_ ->

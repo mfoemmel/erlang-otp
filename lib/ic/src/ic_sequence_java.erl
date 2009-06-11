@@ -41,7 +41,7 @@
 %%-----------------------------------------------------------------
 %% Func: gen/4
 %%-----------------------------------------------------------------
-gen(G, N, X, SequenceName) when record(X, sequence) ->
+gen(G, N, X, SequenceName) when is_record(X, sequence) ->
     emit_holder_class(G, N, X, SequenceName),
     emit_helper_class(G, N, X, SequenceName);
 gen(_G, _N, _X, _SequenceName) -> 

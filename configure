@@ -810,7 +810,10 @@ Optional Features:
   --enable-kernel-poll    enable kernel poll support
   --enable-hipe           enable hipe support
   --disable-hipe          disable hipe support
+  --enable-megaco-flex-scanner-lineno enable megaco flex scanner lineno
   --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno
+  --enable-megaco-reentrant-flex-scanner enable reentrans megaco flex scanner
+  --disable-megaco-reentrant-flex-scanner disable reentrans megaco flex scanner
   --enable-dynamic-ssl-lib        force using dynamic openssl libraries
   --disable-dynamic-ssl-lib       disable using dynamic openssl libraries
   --disable-erlang-mandir do not install Erlang man pages in a private directory
@@ -1276,7 +1279,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 default_cache_file=./config.cache
 
-if test "x$no_recursion" != "xyes"; then
+if test "x$no_recursion" != "xyes" -a "x$OVERRIDE_CONFIG_CACHE" = "x"; then
     # The no_recursion variable is not documented, but the only
     # action we take on it is disabling caching which is safe!
     if test "x$cache_file" != "x$default_cache_file"; then
@@ -2603,6 +2606,12 @@ fi;
 # Check whether --enable-megaco_flex_scanner_lineno or --disable-megaco_flex_scanner_lineno was given.
 if test "${enable_megaco_flex_scanner_lineno+set}" = set; then
   enableval="$enable_megaco_flex_scanner_lineno"
+
+fi;
+
+# Check whether --enable-megaco_reentrant_flex_scanner or --disable-megaco_reentrant_flex_scanner was given.
+if test "${enable_megaco_reentrant_flex_scanner+set}" = set; then
+  enableval="$enable_megaco_reentrant_flex_scanner"
 
 fi;
 

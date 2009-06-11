@@ -7,7 +7,7 @@
 %% 		`asn1rt_check'
 %% 		`asn1rt_driver_handler'
 %% 
-%% Created by Igor 2009-04-20, 20:53:23.
+%% Created by Igor 2009-06-07, 21:14:49.
 %% 
 
 -module('DSS').
@@ -30,16 +30,19 @@
 %%<<<             {options,
 %%<<<              [ber_bin_v2, report_errors,
 %%<<<               {cwd,
-%%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/ssh/src"},
+%%<<<                "/net/isildur/ldisk/daily_build/otp_prebuild_r"
+%%<<<                "13b01.2009-06-07_20/otp_src_R13B01/lib/ssh/sr"
+%%<<<                "c"},
 %%<<<               {outdir,
-%%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/ssh/src"},
+%%<<<                "/net/isildur/ldisk/daily_build/otp_prebuild_r"
+%%<<<                "13b01.2009-06-07_20/otp_src_R13B01/lib/ssh/sr"
+%%<<<                "c"},
 %%<<<               inline, noobj, optimize, compact_bit_string, der,
 %%<<<               {i, "."},
 %%<<<               {i,
-%%<<<                "/net/shelob/ldisk/daily_build/otp_prebuild_r1"
-%%<<<                "3b.2009-04-20_20/otp_src_R13B/lib/ssh/src"}]}]).
+%%<<<                "/net/isildur/ldisk/daily_build/otp_prebuild_r"
+%%<<<                "13b01.2009-06-07_20/otp_src_R13B01/lib/ssh/sr"
+%%<<<                "c"}]}]).
 
 encoding_rule() -> ber_bin_v2.
 
@@ -307,26 +310,21 @@ dec_DSAPrivateKey(Tlv, TagIn) ->
 % the complete tag-word of built-in types
 
                                                               % can be CONSTRUCTED
+ % can be CONSTRUCTED
 
-                                                              % can be CONSTRUCTED
+                                                               %can be constructed
+ %can be constructed
+
+                                                               %can be constructed
+ %can be constructed
 
                                                                %can be constructed
 
                                                                %can be constructed
+ %can be constructed
 
                                                                %can be constructed
-
-                                                               %can be constructed
-
-                                                               %can be constructed
-
-                                                               %can be constructed
-
-                                                               %can be constructed
-
-                                                               %can be constructed
-
-                                                               %can be constructed
+ %can be constructed
 
                                                                %can be constructed
 
@@ -633,9 +631,6 @@ range_check_integer(Int, Range) ->
 %%
 %% only for base 2 and 10 decoding sofar!!
 %%============================================================================
-
-%%    exit({error,{asn1, {unimplemented,real}}}).
-%%  decode_real2(Buffer, Form, size(Buffer)).
 
 % decode_real2(Buffer, Form, Len) ->
 %     <<First, Buffer2/binary>> = Buffer,

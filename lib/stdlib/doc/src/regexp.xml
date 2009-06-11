@@ -381,6 +381,14 @@
       <item>
         <p>the octal value ddd </p>
       </item>
+      <tag><c>\\xhh</c></tag>
+      <item>
+        <p>The hexadecimal value <c>hh</c>.</p>
+      </item>
+      <tag><c>\\x{h...}</c></tag>
+      <item>
+        <p>The hexadecimal value <c>h...</c>.</p>
+      </item>
       <tag><c>\\c</c></tag>
       <item>
         <p>any other character literally, for example <c>\\\\</c> for backslash,

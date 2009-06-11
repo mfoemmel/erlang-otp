@@ -251,8 +251,8 @@ fill_del(N, Sch, IxBlk, DAG) ->
 		Sch
 	end,
   NewSch.
-%    fill_del(N - 1, NewSch, IxBlk, DAG).
-	    
+  %% fill_del(N - 1, NewSch, IxBlk, DAG).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : fill_call_delay
 %% Argument    : Cand  - index in schedule of delay-candidate
@@ -436,23 +436,21 @@ get_instr(Sch, IxBlk, N) ->
      {{cycle, _C}, {node, Index}} = hipe_vectors:get(Sch, N-1),
      {_, Instr} = hipe_vectors:get(IxBlk, Index-1),
      Instr.
-    
 
 separate_block(Sch,IxBlk) ->
-    sep_comments( [ {C,lookup_instr(IxBlk,N)} 
-		   || {{cycle,C},{node,N}} <- Sch ] ).
+    sep_comments([{C,lookup_instr(IxBlk,N)} || {{cycle,C},{node,N}} <- Sch]).
 
 sep_comments([]) -> [];
 sep_comments([{C,I}|Xs]) ->
-    [hipe_sparc:comment_create({cycle,C}), I | sep_comments(Xs,C) ].
+    [hipe_sparc:comment_create({cycle,C}), I | sep_comments(Xs,C)].
 
-sep_comments([],_) -> [];
-sep_comments([{C1,I}|Xs],C0) ->
+sep_comments([], _) -> [];
+sep_comments([{C1,I}|Xs], C0) ->
     if
 	C1 > C0 ->
 	    [hipe_sparc:comment_create({cycle,C1}),I|sep_comments(Xs,C1)];
 	true ->
-	    [I|sep_comments(Xs,C0)]
+	    [I|sep_comments(Xs, C0)]
     end.
 
 finalize_block(Sch, IxBlk) ->
@@ -767,7 +765,6 @@ indexed_bb([X|Xs],N) ->
 	    [{N,X}|indexed_bb(Xs,N+1)]
     end.
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : dep_arc
 %% Argument    : N   - Current node 
@@ -783,9 +780,9 @@ indexed_bb([X|Xs],N) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 dep_arc(N, Lat, M, {Dag,Preds}) -> 
     OldDeps = hipe_vectors:get(Dag, N-1),
-%    io:format("{OldDeps} = {~p}~n",[OldDeps]),
+    %% io:format("{OldDeps} = {~p}~n",[OldDeps]),
     {NewDeps, Status} = add_arc(Lat, M, OldDeps),
-%    io:format("{NewDeps, Status} = {~p, ~p}~n",[NewDeps, Status]),
+    %% io:format("{NewDeps, Status} = {~p, ~p}~n",[NewDeps, Status]),
     NewDag  = hipe_vectors:set(Dag, N-1, NewDeps),
     NewPreds = case Status of
 		   added -> % just increase preds if new arc was added
@@ -795,7 +792,6 @@ dep_arc(N, Lat, M, {Dag,Preds}) ->
 		       Preds
 	       end,
     {NewDag, NewPreds}.
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : add_arc
@@ -815,7 +811,6 @@ add_arc(Lat1,To1, [{Lat2, To2} | Arcs]) when To1 < To2 ->
 add_arc(Lat1 ,To1, [{Lat2, To2} | Arcs]) ->
     {Arcs1, Status} = add_arc(Lat1, To1, Arcs),
     {[{Lat2, To2} | Arcs1], Status}.
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -884,7 +879,6 @@ dd_type(Instr) ->
 	#pseudo_unspill{} -> pseudo
     end.
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : add_write_deps
 %% Argument    : Defs   - registers that node N defines.
@@ -911,7 +905,7 @@ add_write_dep(X,N,Ty,DepTab,DAG) ->
     {NxtWriter,NxtReaders} = lookup(X,DepTab),
     NewDepTab = writer(X,N,Ty,DepTab),
     NewDAG = write_deps(N,Ty,NxtWriter,NxtReaders,DAG),
-    { NewDepTab, NewDAG }.
+    {NewDepTab, NewDAG}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : write_deps
@@ -941,7 +935,6 @@ write_deps(Instr,Ty,NxtWriter,NxtReaders,DAG) ->
 	   end,
     raw_deps(Instr,Ty,NxtReaders,DAG1).
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : raw_deps
 %% Argument    : Instr   - current instr
@@ -957,7 +950,6 @@ raw_deps(Instr,Ty,[{Rd,RdTy}|Xs],DAG) ->
     raw_deps(Instr,Ty,Xs,
 	     dep_arc(Instr,hipe_target_machine:raw_latency(Ty,RdTy),
 		     Rd,DAG)).
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : add_read_deps
@@ -975,7 +967,6 @@ add_read_deps([U|Us],N,Ty,DepTab,DAG) ->
     {NewDepTab,NewDAG} = add_read_dep(U,N,Ty,DepTab,DAG),
     add_read_deps(Us,N,Ty,NewDepTab,NewDAG).
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : add_read_dep
 %% Argument    : X      - Used register
@@ -992,7 +983,7 @@ add_read_dep(X,N,Ty,DepTab,DAG) ->
     {NxtWriter,_NxtReaders} = lookup(X,DepTab),
     NewDepTab = reader(X,N,Ty,DepTab),
     NewDAG = read_deps(N,Ty,NxtWriter,DAG),
-    { NewDepTab, NewDAG }.
+    {NewDepTab, NewDAG}.
 
 % If NxtWriter is 'none', then this var is not written subsequently
 % Add WAR from Instr to NxtWriter (if it exists)
@@ -1016,6 +1007,7 @@ read_deps(_Instr,_Ty,{_Instr,_},DAG) ->
 read_deps(Instr,Ty,{NxtWr,NxtWrTy},DAG) ->
     dep_arc(Instr,hipe_target_machine:war_latency(Ty,NxtWrTy),NxtWr,
 	    DAG).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : empty_deptab
 %% Description : Creates an empty dependence table (hash-table)
@@ -1031,12 +1023,12 @@ empty_deptab() ->
 %% Description : Returns next writer and a list of following readers on 
 %%               register X.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-lookup(X,DepTab) ->
-    case gb_trees:lookup(X,DepTab) of
+lookup(X, DepTab) ->
+    case gb_trees:lookup(X, DepTab) of
 	none ->
-	    {none,[]};
-	{value,{W,Rs}} ->
-	    {W,Rs}
+	    {none, []};
+	{value, {W, Rs} = Val} ->
+	    Val
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1048,8 +1040,8 @@ lookup(X,DepTab) ->
 %% Returns     : DepTab - new dependence table
 %% Description : Sets N tobe next writer on X
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-writer(X,N,Ty,DepTab) ->
-    gb_trees:enter(X,{{N,Ty},[]},DepTab).
+writer(X, N, Ty, DepTab) ->
+    gb_trees:enter(X, {{N, Ty}, []}, DepTab).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : reader
@@ -1135,7 +1127,7 @@ md_raw_deps([M|Ms],N,DAG) ->
 %% Description : Returns an empty memorydependence state, eg. 4 lists 
 %%               representing {StackStores, HeapStores, StackLoads, HeapLoads}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-empty_md_state() -> { [], [], [], [] }.
+empty_md_state() -> {[], [], [], []}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : md_type
@@ -1207,14 +1199,14 @@ md_type(I) ->
 %%                   and State is the new state
 %% Description : Adds dependencies for overlapping stores.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-st_overlap(N, {sp,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp }) ->
+st_overlap(N, {sp,Off}, {St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
     {DepSt,IndepSt_Sp} = st_sp_dep(St_Sp,Off),
     {DepLd,IndepLd_Sp} = ld_sp_dep(Ld_Sp,Off),
-    { DepSt, DepLd, { [{N,Off}|IndepSt_Sp], St_Hp, IndepLd_Sp, Ld_Hp }};
-st_overlap(N, {hp,Dst,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp }) ->
-    {DepSt,_IndepSt_Hp} = st_hp_dep(St_Hp, { Dst,Off }),
-    {DepLd,IndepLd_Hp} = ld_hp_dep(Ld_Hp, { Dst,Off }),
-    { DepSt, DepLd, { St_Sp, [{N,Dst,Off}|St_Hp], Ld_Sp, IndepLd_Hp }}.
+    {DepSt, DepLd, {[{N,Off}|IndepSt_Sp], St_Hp, IndepLd_Sp, Ld_Hp}};
+st_overlap(N, {hp,Dst,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
+    {DepSt,_IndepSt_Hp} = st_hp_dep(St_Hp, {Dst, Off}),
+    {DepLd,IndepLd_Hp} = ld_hp_dep(Ld_Hp, {Dst, Off}),
+    {DepSt, DepLd, {St_Sp, [{N,Dst,Off}|St_Hp], Ld_Sp, IndepLd_Hp}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : ld_overlap
@@ -1226,40 +1218,40 @@ st_overlap(N, {hp,Dst,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp }) ->
 %% Returns     : { DepStrs, State } 
 %% Description : Adds dependencies for overlapping laods
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-ld_overlap(N, {sp,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp }) ->
+ld_overlap(N, {sp,Off}, {St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
     DepSt =  sp_dep_only(St_Sp,Off),
-    { DepSt, { St_Sp, St_Hp, [{N,Off}|Ld_Sp], Ld_Hp }};
-ld_overlap(N, {hp,Src,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp }) ->
+    {DepSt, {St_Sp, St_Hp, [{N,Off}|Ld_Sp], Ld_Hp}};
+ld_overlap(N, {hp,Src,Off}, {St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
     DepSt = hp_dep_only(St_Hp, Src, Off),
-    { DepSt, { St_Sp, St_Hp, Ld_Sp, [{N,Src,Off}|Ld_Hp] }}.
+    {DepSt, {St_Sp, St_Hp, Ld_Sp, [{N,Src,Off}|Ld_Hp]}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : st_sp_dep
 %% Description : Adds dependencies that are depending on a stack store
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-st_sp_dep(Stores,Off) ->
-    sp_dep(Stores,Off,[],[]).
+st_sp_dep(Stores, Off) ->
+    sp_dep(Stores, Off, [], []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : ld_sp_dep
 %% Description : Adds dependencies that are depending on a stack load
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-ld_sp_dep(Loads,Off) ->
-    sp_dep(Loads,Off,[],[]).
+ld_sp_dep(Loads, Off) ->
+    sp_dep(Loads, Off, [], []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : st_hp_dep
 %% Description : Adds dependencies that are depending on a heap store
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-st_hp_dep(Stores, { Reg,Off }) ->
-    hp_dep(Stores, { Reg,Off },[],[]).
+st_hp_dep(Stores, {Reg, Off}) ->
+    hp_dep(Stores, {Reg, Off}, [], []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : ld_hp_dep
 %% Description : Adds dependencies that are depending on a heap load
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-ld_hp_dep(Loads, { Reg,Off }) ->
-    hp_dep(Loads, { Reg,Off},[],[]).
+ld_hp_dep(Loads, {Reg, Off}) ->
+    hp_dep(Loads, {Reg, Off}, [], []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : sp_dep
@@ -1277,18 +1269,18 @@ sp_dep([X|Xs],Off,Dep,Indep) ->
 %% Description : Returns {Dependent, Independent} which are lists of nodes
 %%               that depends or not on a heap load/store
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-hp_dep([], {_Reg,_Off},Dep,Indep) -> {Dep,Indep};
-hp_dep([{N,Reg,Off1}|Xs], {Reg,Off},Dep,Indep) when Off1 =/= Off ->
-    hp_dep(Xs,{Reg,Off},Dep,[{ N,Reg,Off1 }|Indep]);
-hp_dep([{N,_,_}|Xs], {Reg,Off},Dep,Indep) ->
-    hp_dep(Xs,{Reg,Off},[N|Dep],Indep).
+hp_dep([], {_Reg,_Off}, Dep, Indep) -> {Dep,Indep};
+hp_dep([{N,Reg,Off1}|Xs], {Reg,Off}, Dep, Indep) when Off1 =/= Off ->
+    hp_dep(Xs, {Reg,Off}, Dep, [{N,Reg,Off1}|Indep]);
+hp_dep([{N,_,_}|Xs], {Reg,Off}, Dep, Indep) ->
+    hp_dep(Xs, {Reg,Off}, [N|Dep], Indep).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : sp_dep_only
 %% Description : Returns a list of nodes that are depending on a stack store
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-sp_dep_only(Stores,Off) ->
-    [ N || {N,Off0} <- Stores, Off =:= Off0 ].
+sp_dep_only(Stores, Off) ->
+    [N || {N,Off0} <- Stores, Off =:= Off0].
 
 %% Dependences from heap stores to heap loads.
 %% *** UNFINISHED ***
@@ -1336,14 +1328,13 @@ cd(IxBB,DAG) ->
 %% Returns     : DAG - new dependence graph
 %% Description : Adds conditional dependencies  to the graph.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-cd([],DAG,_PrevBr,_PrevUnsafe, _PrevOthers) ->
+cd([], DAG, _PrevBr, _PrevUnsafe, _PrevOthers) ->
     DAG;
-cd([{N,I}|Xs],DAG,PrevBr,PrevUnsafe,PrevOthers) ->
+cd([{N,I}|Xs], DAG, PrevBr, PrevUnsafe, PrevOthers) ->
     case cd_type(I) of
 	{branch,Ty} ->
 	    DAG1   = cd_branch_to_other_deps(N, PrevOthers, DAG),
-	    NewDAG = cd_branch_deps(PrevBr,PrevUnsafe,
-				    N,Ty,DAG1),
+	    NewDAG = cd_branch_deps(PrevBr, PrevUnsafe, N, Ty, DAG1),
 	    cd(Xs,NewDAG,{N,Ty},[],[]);
 	{unsafe,Ty} ->
 	    NewDAG = cd_unsafe_deps(PrevBr,N,Ty,DAG),
@@ -1437,11 +1428,10 @@ deps_to_unsafe([{M,UTy}|Us],N,Ty,DAG) ->
 %% Function    : cd_unsafe_deps
 %% Description : Adds dependencies between branches and unsafe's
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-cd_unsafe_deps(none,_,_,DAG) ->
+cd_unsafe_deps(none, _, _, DAG) ->
     DAG;
-cd_unsafe_deps({Br,BrTy},N,Ty,DAG) ->
-    dep_arc(Br,hipe_target_machine:br_to_unsafe_latency(BrTy,Ty),
-	    N,DAG).
+cd_unsafe_deps({Br,BrTy}, N, Ty, DAG) ->
+    dep_arc(Br, hipe_target_machine:br_to_unsafe_latency(BrTy, Ty), N, DAG).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : def_use

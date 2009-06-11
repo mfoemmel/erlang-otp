@@ -17,24 +17,22 @@
 %% %CopyrightEnd%
 %%
 
-%%% @doc Common Test specific layer on top of the OTPs snmp
+%%% @doc Common Test user interface module for the OTP snmp application
 %%%
-%%% Application to make snmp configuration easier for the test case
-%%% writer. Many test cases can use default values for everything and
-%%% then no snmp-configuration files needs to be supplied at all. When
-%%% it is necessary to change some configuration it can be done for
-%%% the subset of snmp-configuration files that are relevant, and
-%%% still all this can be put in to the common-test configuration file
-%%% or for the more specialized configuration parameters a "simple
-%%% snmp-configuration file" can be placed in the test suites data
-%%% directory. ct_snmp will also perform a type check on all supplied
-%%% configuration. In the manager case the common_test application
-%%% also will keep track of some manager information so that the
-%%% test case write does not have to keep track of as much input
-%%% parameters as if using the OTPs snmp manager directly.
-%%%   
+%%% The purpose of this module is to make snmp configuration easier for 
+%%% the test case writer. Many test cases can use default values for common
+%%% operations and then no snmp configuration files need to be supplied. When
+%%% it is necessary to change particular configuration parameters, a subset
+%%% of the relevant snmp configuration files may be passed to <code>ct_snmp</code>
+%%% by means of Common Test configuration files.
+%%% For more specialized configuration parameters, it is possible to place a 
+%%% "simple snmp configuration file" in the test suite data directory. 
+%%% To simplify the test suite, Common Test keeps track
+%%% of some of the snmp manager information. This way the test suite doesn't
+%%% have to handle as many input parameters as it would if it had to interface the
+%%% OTP snmp manager directly.
 %%% 
-%%% <p> The following parameters are configurable </p>
+%%% <p> The following snmp manager and agent parameters are configurable: </p>
 %%%
 %%% <pre>
 %%% {snmp,
@@ -82,12 +80,13 @@
 %%%       ]}.
 %%% </pre>
 %%%
-%%% <p>The <code>ConfName</code> parameter in the functions 
-%%%    should be the name you allocated in your test suite using
-%%%  <code>require</code> statement. Example:</p>
-%%% <pre> suite() -> [{require, ConfName,{snmp,[users, managed_agents]}}].</pre>
+%%% <p>The <code>MgrAgentConfName</code> parameter in the functions 
+%%% should be a name you allocate in your test suite using a
+%%% <code>require</code> statement. 
+%%% Example (where <code>MgrAgentConfName = snmp_mgr_agent</code>):</p>
+%%% <pre> suite() -> [{require, snmp_mgr_agent, snmp}].</pre>
 %%% <p>or</p>
-%%% <pre>  ct:require(ConfName,{snmp,[users, managed_agents]}).</pre>
+%%% <pre>  ct:require(snmp_mgr_agent, snmp).</pre>
 %%%
 %%% <p> Note that Usm users are needed for snmp v3 configuration and are
 %%% not to be confused with users.</p>
@@ -97,9 +96,27 @@
 %%% the snmp application. </p> 
 %%% <p> Note: It is recommended to use the .hrl-files created by the 
 %%% Erlang/OTP mib-compiler to define the oids.  
-%%% Ex for the getting the erlang node name from the erlNodeTable 
-%%% in the OTP-MIB </p> 
+%%% Example for the getting the erlang node name from the erlNodeTable 
+%%% in the OTP-MIB:</p> 
 %%% <pre>Oid = ?erlNodeEntry ++ [?erlNodeName, 1] </pre>
+%%%
+%%% <p>It is also possible to set values for snmp application configuration 
+%%% parameters, such as <code>config</code>, <code>server</code>, 
+%%% <code>net_if</code>, etc (see the "Configuring the application" chapter in
+%%% the OTP snmp User's Guide for a list of valid parameters and types). This is 
+%%% done by defining a configuration data variable on the following form:</p>
+%%% <pre>
+%%% {snmp_app, [{manager, [snmp_app_manager_params()]},
+%%%             {agent, [snmp_app_agent_params()]}]}.</pre>
+%%% 
+%%% <p>A name for the data needs to be allocated in the suite using 
+%%% <code>require</code> (see example above), and this name passed as 
+%%% the <code>SnmpAppConfName</code> argument to <code>start/3</code>.
+%%% <code>ct_snmp</code> specifies default values for some snmp application
+%%% configuration parameters (such as <code>{verbosity,trace}</code> for the
+%%% <code>config</code> parameter). This set of defaults will be
+%%% merged with the parameters specified by the user, and user values
+%%% override <code>ct_snmp</code> defaults.</p>
 
 -module(ct_snmp).
 
@@ -129,6 +146,8 @@
 %%% @type var_and_val() = {oid(), value_type(), value()}
 %%% @type sec_type() = none | minimum | semi
 %%% @type rel_path() = string() 
+%%% @type snmp_app_manager_params() = term()
+%%% @type snmp_app_agent_params() = term()
 
 
 -include("snmp_types.hrl").
@@ -136,7 +155,7 @@
 -include("ct.hrl").
 
 %%% API
--export([start/2, stop/1, get_values/3, get_next_values/3, set_values/4, 
+-export([start/2, start/3, stop/1, get_values/3, get_next_values/3, set_values/4, 
 	 set_info/1, register_users/2, register_agents/2, register_usm_users/2,
 	 unregister_users/1, unregister_agents/1, update_usm_users/2, 
 	 load_mibs/1]).
@@ -160,45 +179,54 @@
 %%%  API
 %%%=========================================================================
 
-%%% @spec start(Config, ConfName) -> ok
+%%%-----------------------------------------------------------------
+%%% @spec start(Config, MgrAgentConfName) -> ok
+%%% @equiv start(Config, MgrAgentConfName, undefined)
+start(Config, MgrAgentConfName) ->
+    start(Config, MgrAgentConfName, undefined).
+
+%%% @spec start(Config, MgrAgentConfName, SnmpAppConfName) -> ok
 %%%      Config = [{Key, Value}] 
 %%%      Key = atom()
 %%%      Value = term()
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
+%%%      SnmpConfName = atom()
 %%%
-%%% @doc Starts an snmp manager and/or agent. In the manager case also
-%%% registrations of users and agents as specified by the
-%%% configuration &lt;ConfName&gt; will be performed. When using snmp
+%%% @doc Starts an snmp manager and/or agent. In the manager case,
+%%% registrations of users and agents as specified by the configuration 
+%%% <code>MgrAgentConfName</code> will be performed. When using snmp
 %%% v3 also so called usm users will be registered. Note that users,
-%%% usm_users and managed agents may also be registerd at a later time
+%%% usm_users and managed agents may also be registered at a later time
 %%% using ct_snmp:register_users/2, ct_snmp:register_agents/2, and
 %%% ct_snmp:register_usm_users/2. The agent started will be
-%%% called snmp_master_agent. Use ct_snmp:load_mibs to load mibs into the
-%%% agent.
-start(Config, ConfName) ->
-    
-    StartManager= ct:get_config({ConfName, start_manager}, true),
-    StartAgent = ct:get_config({ConfName, start_agent}, false),
+%%% called <code>snmp_master_agent</code>. Use ct_snmp:load_mibs/1 to load 
+%%% mibs into the agent. With <code>SnmpAppConfName</code> it's possible 
+%%% to configure the snmp application with parameters such as <code>config</code>,
+%%% <code>mibs</code>, <code>net_if</code>, etc. The values will be merged
+%%% with (and possibly override) default values set by <code>ct_snmp</code>.
+start(Config, MgrAgentConfName, SnmpAppConfName) ->
+    StartManager= ct:get_config({MgrAgentConfName, start_manager}, true),
+    StartAgent = ct:get_config({MgrAgentConfName, start_agent}, false),
    
-    SysName = ct:get_config({ConfName, agent_sysname}, "ct_test"),
+    SysName = ct:get_config({MgrAgentConfName, agent_sysname}, "ct_test"),
     {ok, HostName} = inet:gethostname(),
     {ok, Addr} = inet:getaddr(HostName, inet),
     IP = tuple_to_list(Addr),
-    AgentManagerIP = ct:get_config({ConfName, agent_manager_ip},
-				   IP),
+    AgentManagerIP = ct:get_config({MgrAgentConfName, agent_manager_ip}, IP),
     
     prepare_snmp_env(),
-    setup_agent(StartAgent, ConfName, Config, SysName, AgentManagerIP, IP),
-    setup_manager(StartManager, ConfName, Config, AgentManagerIP),
+    setup_agent(StartAgent, MgrAgentConfName, SnmpAppConfName, 
+		Config, SysName, AgentManagerIP, IP),
+    setup_manager(StartManager, MgrAgentConfName, SnmpAppConfName, 
+		  Config, AgentManagerIP),
     application:start(snmp),
 
-    manager_register(StartManager, ConfName).
+    manager_register(StartManager, MgrAgentConfName).
  
 %%% @spec stop(Config) -> ok
 %%%      Config = [{Key, Value}]
 %%%      Key = atom()
 %%%      Value = term()
-%%%      ConfName = atom()
 %%%
 %%% @doc Stops the snmp manager and/or agent removes all files created.
 stop(Config) ->
@@ -213,49 +241,49 @@ stop(Config) ->
     catch del_dir(DbDir).
     
     
-%%% @spec get_values(Agent, Oids, ConfName) -> SnmpReply
+%%% @spec get_values(Agent, Oids, MgrAgentConfName) -> SnmpReply
 %%%
 %%%	 Agent = agent_name()
 %%%      Oids = oids()
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      SnmpReply = snmpreply()  
 %%%
 %%% @doc Issues a synchronous snmp get request. 
-get_values(Agent, Oids, ConfName) ->
+get_values(Agent, Oids, MgrAgentConfName) ->
     [Uid, AgentIp, AgentUdpPort | _] = 
-	agent_conf(Agent, ConfName),
+	agent_conf(Agent, MgrAgentConfName),
     {ok, SnmpReply, _} =
 	snmpm:g(Uid, AgentIp, AgentUdpPort, Oids),
     SnmpReply.
 
-%%% @spec get_next_values(Agent, Oids, ConfName) -> SnmpReply 
+%%% @spec get_next_values(Agent, Oids, MgrAgentConfName) -> SnmpReply 
 %%%
 %%%	 Agent = agent_name()
 %%%      Oids = oids()
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      SnmpReply = snmpreply()  
 %%%
 %%% @doc Issues a synchronous snmp get next request. 
-get_next_values(Agent, Oids, ConfName) ->
+get_next_values(Agent, Oids, MgrAgentConfName) ->
     [Uid, AgentIp, AgentUdpPort | _] = 
-	agent_conf(Agent, ConfName),
+	agent_conf(Agent, MgrAgentConfName),
     {ok, SnmpReply, _} =
 	snmpm:gn(Uid, AgentIp, AgentUdpPort, Oids),
     SnmpReply.
 
-%%% @spec set_values(Agent, VarsAndVals, ConfName, Config) -> SnmpReply
+%%% @spec set_values(Agent, VarsAndVals, MgrAgentConfName, Config) -> SnmpReply
 %%%
 %%%	 Agent = agent_name()
 %%%      Oids = oids()
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      Config = [{Key, Value}] 
 %%%      SnmpReply = snmpreply()  
 %%%
 %%% @doc Issues a synchronous snmp set request. 
-set_values(Agent, VarsAndVals, ConfName, Config) ->
+set_values(Agent, VarsAndVals, MgrAgentConfName, Config) ->
     PrivDir = ?config(priv_dir, Config),
     [Uid, AgentIp, AgentUdpPort | _] = 
-	agent_conf(Agent, ConfName),
+	agent_conf(Agent, MgrAgentConfName),
     Oids = lists:map(fun({Oid, _, _}) -> Oid end, VarsAndVals),
     {ok, SnmpGetReply, _} =
 	snmpm:g(Uid, AgentIp, AgentUdpPort, Oids),
@@ -293,96 +321,96 @@ set_info(Config) ->
 	    []
     end.
 
-%%% @spec register_users(ConfName, Users) -> ok | {error, Reason}
+%%% @spec register_users(MgrAgentConfName, Users) -> ok | {error, Reason}
 %%%
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      Users =  [user()]
 %%%      Reason = term()    
 %%%
 %%% @doc Register the manager entity (=user) responsible for specific agent(s).
 %%% Corresponds to making an entry in users.conf
-register_users(ConfName, Users) ->
-    {snmp, SnmpVals} = ct:get_config(ConfName),
+register_users(MgrAgentConfName, Users) ->
+    {snmp, SnmpVals} = ct:get_config(MgrAgentConfName),
     NewSnmpVals = lists:keyreplace(users, 1, SnmpVals, {users, Users}),
-    ct_util:update_config(ConfName, {snmp, NewSnmpVals}),
+    ct_util:update_config(MgrAgentConfName, {snmp, NewSnmpVals}),
     setup_users(Users).
 
-%%% @spec register_agents(ConfName, ManagedAgents) -> ok | {error, Reason}
+%%% @spec register_agents(MgrAgentConfName, ManagedAgents) -> ok | {error, Reason}
 %%%
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      ManagedAgents = [agent()]
 %%%      Reason = term()    
 %%%
 %%% @doc Explicitly instruct the manager to handle this agent.
 %%% Corresponds to making an entry in agents.conf 
-register_agents(ConfName, ManagedAgents) ->
-    {snmp, SnmpVals} = ct:get_config(ConfName),
+register_agents(MgrAgentConfName, ManagedAgents) ->
+    {snmp, SnmpVals} = ct:get_config(MgrAgentConfName),
     NewSnmpVals = lists:keyreplace(managed_agents, 1, SnmpVals,
 				   {managed_agents, ManagedAgents}),
-    ct_util:update_config(ConfName, {snmp, NewSnmpVals}),
+    ct_util:update_config(MgrAgentConfName, {snmp, NewSnmpVals}),
     setup_managed_agents(ManagedAgents).
 
-%%% @spec register_usm_users(ConfName, UsmUsers) ->  ok | {error, Reason}
+%%% @spec register_usm_users(MgrAgentConfName, UsmUsers) ->  ok | {error, Reason}
 %%%
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      UsmUsers = [usm_user()]
 %%%      Reason = term()    
 %%%
 %%% @doc Explicitly instruct the manager to handle this USM user.
 %%% Corresponds to making an entry in usm.conf 
-register_usm_users(ConfName, UsmUsers) ->
-    {snmp, SnmpVals} = ct:get_config(ConfName),
+register_usm_users(MgrAgentConfName, UsmUsers) ->
+    {snmp, SnmpVals} = ct:get_config(MgrAgentConfName),
     NewSnmpVals = lists:keyreplace(users, 1, SnmpVals, {usm_users, UsmUsers}),
-    ct_util:update_config(ConfName, {snmp, NewSnmpVals}),
-    EngineID = ct:get_config({ConfName, engine_id}, ?ENGINE_ID),
+    ct_util:update_config(MgrAgentConfName, {snmp, NewSnmpVals}),
+    EngineID = ct:get_config({MgrAgentConfName, engine_id}, ?ENGINE_ID),
     setup_usm_users(UsmUsers, EngineID).
 
-%%% @spec unregister_users(ConfName) ->  ok | {error, Reason}
+%%% @spec unregister_users(MgrAgentConfName) ->  ok | {error, Reason}
 %%%
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      Reason = term()
 %%%
 %%% @doc Removes information added when calling register_users/2. 
-unregister_users(ConfName) ->
+unregister_users(MgrAgentConfName) ->
     Users = lists:map(fun({UserName, _}) -> UserName end,
-		      ct:get_config({ConfName, users})),
-    {snmp, SnmpVals} = ct:get_config(ConfName),
+		      ct:get_config({MgrAgentConfName, users})),
+    {snmp, SnmpVals} = ct:get_config(MgrAgentConfName),
     NewSnmpVals = lists:keyreplace(users, 1, SnmpVals, {users, []}),
-    ct_util:update_config(ConfName, {snmp, NewSnmpVals}),
+    ct_util:update_config(MgrAgentConfName, {snmp, NewSnmpVals}),
     takedown_users(Users).
 
-%%% @spec unregister_agents(ConfName) ->  ok | {error, Reason}
+%%% @spec unregister_agents(MgrAgentConfName) ->  ok | {error, Reason}
 %%%
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      Reason = term()
 %%%
 %%% @doc  Removes information added when calling register_agents/2. 
-unregister_agents(ConfName) ->    
+unregister_agents(MgrAgentConfName) ->    
     ManagedAgents = lists:map(fun({_, [Uid, AgentIP, AgentPort, _]}) -> 
 				      {Uid, AgentIP, AgentPort} 
 			      end,
-			      ct:get_config({ConfName, managed_agents})),
-    {snmp, SnmpVals} = ct:get_config(ConfName),
+			      ct:get_config({MgrAgentConfName, managed_agents})),
+    {snmp, SnmpVals} = ct:get_config(MgrAgentConfName),
     NewSnmpVals = lists:keyreplace(managed_agents, 1, SnmpVals, 
 				   {managed_agents, []}),
-    ct_util:update_config(ConfName, {snmp, NewSnmpVals}),
+    ct_util:update_config(MgrAgentConfName, {snmp, NewSnmpVals}),
     takedown_managed_agents(ManagedAgents).
 
 
-%%% @spec update_usm_users(ConfName, UsmUsers) -> ok | {error, Reason}
+%%% @spec update_usm_users(MgrAgentConfName, UsmUsers) -> ok | {error, Reason}
 %%%
-%%%      ConfName = atom()
+%%%      MgrAgentConfName = atom()
 %%%      UsmUsers = usm_users()
 %%%      Reason = term()
 %%%
 %%% @doc  Alters information added when calling register_usm_users/2. 
-update_usm_users(ConfName, UsmUsers) ->    
+update_usm_users(MgrAgentConfName, UsmUsers) ->    
    
-    {snmp, SnmpVals} = ct:get_config(ConfName),
+    {snmp, SnmpVals} = ct:get_config(MgrAgentConfName),
     NewSnmpVals = lists:keyreplace(usm_users, 1, SnmpVals, 
 				   {usm_users, UsmUsers}),
-    ct_util:update_config(ConfName, {snmp, NewSnmpVals}),
-    EngineID = ct:get_config({ConfName, engine_id}, ?ENGINE_ID),
+    ct_util:update_config(MgrAgentConfName, {snmp, NewSnmpVals}),
+    EngineID = ct:get_config({MgrAgentConfName, engine_id}, ?ENGINE_ID),
     do_update_usm_users(UsmUsers, EngineID). 
 
 %%% @spec load_mibs(Mibs) -> ok | {error, Reason}
@@ -409,14 +437,13 @@ prepare_snmp_env() ->
     %% agent.
     application:unset_env(snmp, agent).
 %%%---------------------------------------------------------------------------
-setup_manager(false, _, _, _) ->
+setup_manager(false, _, _, _, _) ->
     ok;
-setup_manager(true, ConfName, Config, IP) ->
-    
+setup_manager(true, MgrConfName, SnmpConfName, Config, IP) ->    
     PrivDir = ?config(priv_dir, Config),
-    MaxMsgSize = ct:get_config({ConfName, max_msg_size}, ?MAX_MSG_SIZE),
-    Port = ct:get_config({ConfName, mgr_port}, ?MGR_PORT),
-    EngineID = ct:get_config({ConfName, engine_id}, ?ENGINE_ID),
+    MaxMsgSize = ct:get_config({MgrConfName,max_msg_size}, ?MAX_MSG_SIZE),
+    Port = ct:get_config({MgrConfName,mgr_port}, ?MGR_PORT),
+    EngineID = ct:get_config({MgrConfName,engine_id}, ?ENGINE_ID),
     MgrDir =  filename:join(PrivDir,"mgr"),
     %%% Users, Agents and Usms are in test suites register after the
     %%% snmp application is started.
@@ -427,28 +454,30 @@ setup_manager(true, ConfName, Config, IP) ->
    
     snmp_config:write_manager_snmp_files(MgrDir, IP, Port, MaxMsgSize, 
 					 EngineID, Users, Agents, Usms),
-    application:set_env(snmp, manager, [{config, [{dir, MgrDir},
-						  {db_dir, MgrDir},
-						  {verbosity, trace}]},
-					{server, [{verbosity, trace}]},
-					{net_if, [{verbosity, trace}]},
-					{versions, [v1, v2, v3]}]).
+    SnmpEnv = merge_snmp_conf([{config, [{dir, MgrDir},{db_dir, MgrDir},
+					 {verbosity, trace}]},
+			       {server, [{verbosity, trace}]},
+			       {net_if, [{verbosity, trace}]},
+			       {versions, [v1, v2, v3]}],
+			      ct:get_config({SnmpConfName,manager})),
+    application:set_env(snmp, manager, SnmpEnv).
 %%%---------------------------------------------------------------------------
-setup_agent(false,_, _, _, _, _) ->
+setup_agent(false,_, _, _, _, _, _) ->
     ok;
-setup_agent(true, ConfName, Config, SysName, ManagerIP, AgentIP) ->
+setup_agent(true, AgentConfName, SnmpConfName, 
+	    Config, SysName, ManagerIP, AgentIP) ->
     application:start(mnesia),
     PrivDir = ?config(priv_dir, Config),
-    Vsns = ct:get_config({ConfName, agent_vsns}, ?CONF_FILE_VER),
-    TrapUdp = ct:get_config({ConfName, agent_trap_udp}, ?TRAP_UDP),
-    AgentUdp = ct:get_config({ConfName, agent_udp}, ?AGENT_UDP),
-    NotifType = ct:get_config({ConfName, agent_notify_type},
+    Vsns = ct:get_config({AgentConfName, agent_vsns}, ?CONF_FILE_VER),
+    TrapUdp = ct:get_config({AgentConfName, agent_trap_udp}, ?TRAP_UDP),
+    AgentUdp = ct:get_config({AgentConfName, agent_udp}, ?AGENT_UDP),
+    NotifType = ct:get_config({AgentConfName, agent_notify_type},
 			      ?AGENT_NOTIFY_TYPE),
-    SecType = ct:get_config({ConfName, agent_sec_type}, ?AGENT_SEC_TYPE),
-    Passwd  = ct:get_config({ConfName, agent_passwd}, ?AGENT_PASSWD),
-    AgentEngineID = ct:get_config({ConfName, agent_engine_id}, 
+    SecType = ct:get_config({AgentConfName, agent_sec_type}, ?AGENT_SEC_TYPE),
+    Passwd  = ct:get_config({AgentConfName, agent_passwd}, ?AGENT_PASSWD),
+    AgentEngineID = ct:get_config({AgentConfName, agent_engine_id}, 
 				  ?AGENT_ENGINE_ID),
-    AgentMaxMsgSize = ct:get_config({ConfName, agent_max_msg_size},
+    AgentMaxMsgSize = ct:get_config({AgentConfName, agent_max_msg_size},
 				    ?MAX_MSG_SIZE),
     
     ConfDir = filename:join(PrivDir, "conf"),
@@ -461,22 +490,48 @@ setup_agent(true, ConfName, Config, SysName, ManagerIP, AgentIP) ->
 				       SecType, Passwd, AgentEngineID, 
 				       AgentMaxMsgSize),
 
-    override_default_configuration(Config, ConfName),
-   
-    application:set_env(snmp, agent, [{db_dir, DbDir},
-				      {config, [{dir, ConfDir},
-						{verbosity, trace}]},
-				      {agent_type, master},
-				      {agent_verbosity, trace},
-				      {net_if, [{verbosity, trace}]}]).
+    override_default_configuration(Config, AgentConfName),
+    
+    SnmpEnv = merge_snmp_conf([{db_dir, DbDir},
+			       {config, [{dir, ConfDir},
+					 {verbosity, trace}]},
+			       {agent_type, master},
+			       {agent_verbosity, trace},
+			       {net_if, [{verbosity, trace}]}],
+			      ct:get_config({SnmpConfName,agent})),
+    application:set_env(snmp, agent, SnmpEnv).
+%%%---------------------------------------------------------------------------
+merge_snmp_conf(Defaults, undefined) ->
+    Defaults;
+merge_snmp_conf([Def={Key,DefList=[P|_]}|DefParams], UserParams) when is_tuple(P) ->
+    case lists:keysearch(Key, 1, UserParams) of
+	false ->
+	    [Def | merge_snmp_conf(DefParams, UserParams)];
+	{value,{Key,UserList}} ->
+	    DefList1 = [{SubKey,Val} || {SubKey,Val} <- DefList, 
+					lists:keysearch(SubKey, 1, UserList) == false],
+	    [{Key,DefList1++UserList} | merge_snmp_conf(DefParams, 
+							lists:keydelete(Key, 1, UserParams))]
+    end;
+merge_snmp_conf([Def={Key,_}|DefParams], UserParams) ->
+    case lists:keysearch(Key, 1, UserParams) of
+	false ->
+	    [Def | merge_snmp_conf(DefParams, UserParams)];
+	{value,_} ->
+	    merge_snmp_conf(DefParams, UserParams)
+    end;
+merge_snmp_conf([], UserParams) ->
+    UserParams.
+			      
+
 %%%---------------------------------------------------------------------------
 manager_register(false, _) ->
     ok;
-manager_register(true, ConfName) ->
-    Agents = ct:get_config({ConfName, managed_agents}, []),
-    Users = ct:get_config({ConfName, users}, []),
-    UsmUsers = ct:get_config({ConfName, usm_users}, []),
-    EngineID = ct:get_config({ConfName, engine_id}, ?ENGINE_ID),
+manager_register(true, MgrAgentConfName) ->
+    Agents = ct:get_config({MgrAgentConfName, managed_agents}, []),
+    Users = ct:get_config({MgrAgentConfName, users}, []),
+    UsmUsers = ct:get_config({MgrAgentConfName, usm_users}, []),
+    EngineID = ct:get_config({MgrAgentConfName, engine_id}, ?ENGINE_ID),
 
     setup_usm_users(UsmUsers, EngineID),
     setup_users(Users),
@@ -561,8 +616,8 @@ del_dir(Dir) ->
     file:del_dir(Dir),
     ok.
 %%%---------------------------------------------------------------------------
-agent_conf(Agent, ConfName) ->
-    Agents = ct:get_config({ConfName, managed_agents}),
+agent_conf(Agent, MgrAgentConfName) ->
+    Agents = ct:get_config({MgrAgentConfName, managed_agents}),
     case lists:keysearch(Agent, 1, Agents) of
 	{value, {Agent, AgentConf}} ->
 	    AgentConf;
@@ -570,25 +625,25 @@ agent_conf(Agent, ConfName) ->
 	    exit({error, {unknown_agent, Agent, Agents}})
     end.
 %%%---------------------------------------------------------------------------
-override_default_configuration(Config, ConfName) ->
+override_default_configuration(Config, MgrAgentConfName) ->
     override_contexts(Config,
-		      ct:get_config({ConfName, agent_contexts}, undefined)),
+		      ct:get_config({MgrAgentConfName, agent_contexts}, undefined)),
     override_community(Config,
-		       ct:get_config({ConfName, agent_community}, undefined)),
+		       ct:get_config({MgrAgentConfName, agent_community}, undefined)),
     override_sysinfo(Config,
-		     ct:get_config({ConfName, agent_sysinfo}, undefined)),
+		     ct:get_config({MgrAgentConfName, agent_sysinfo}, undefined)),
     override_vacm(Config,
-		  ct:get_config({ConfName, agent_vacm}, undefined)),
+		  ct:get_config({MgrAgentConfName, agent_vacm}, undefined)),
     override_usm(Config,
-		 ct:get_config({ConfName, agent_usm}, undefined)),
+		 ct:get_config({MgrAgentConfName, agent_usm}, undefined)),
     override_notify(Config,
-		    ct:get_config({ConfName, agent_notify_def}, undefined)),
+		    ct:get_config({MgrAgentConfName, agent_notify_def}, undefined)),
     override_target_address(Config,
-			    ct:get_config({ConfName, 
+			    ct:get_config({MgrAgentConfName, 
 					   agent_target_address_def}, 
 					  undefined)),
     override_target_params(Config, 
-			   ct:get_config({ConfName, agent_target_param_def},
+			   ct:get_config({MgrAgentConfName, agent_target_param_def},
 					 undefined)).
 
 %%%---------------------------------------------------------------------------

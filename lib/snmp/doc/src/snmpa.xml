@@ -984,8 +984,12 @@ snmp_agent:register_subagent(SA1,[1,2,3], SA2).
     </func>
 
     <func>
-      <name>discovery(TargetName, Notification, Varbinds) -> ok | {error, Reason}</name>
-      <name>discovery(TargetName, Notification, ContextName, Varbinds) -> ok | {error, Reason}</name>
+      <name>discovery(TargetName, Notification) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, Varbinds) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, DiscoHandler) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, ContextName, Varbinds) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, Varbinds, DiscoHandler) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
       <fsummary>Initiate the discovery process with a manager</fsummary>
       <type>
         <v>TargetName = string()</v>
@@ -993,6 +997,9 @@ snmp_agent:register_subagent(SA1,[1,2,3], SA2).
         <v>ContextName = string() (defaults to "")</v>
         <v>Varbinds = varbinds()</v>
         <v>varbinds() = [varbind()]</v>
+        <v>DiscoHandler = snmpa_discovery_handler()</v>
+        <v>snmpa_discovery_handler() = Module implementing the snmpa_discovery_handler behaviour</v>
+        <v>ManagerEngineID = string()</v>
         <v>varbind() = {Variable, Value} | {Column, RowIndex, Value} | {OID, Value}</v>
         <v>Variable = atom()</v>
         <v>Column = atom()</v>
@@ -1007,6 +1014,26 @@ snmp_agent:register_subagent(SA1,[1,2,3], SA2).
 
         <p>This function is synchronous, which means that it will return when
           the discovery process has been completed or failed. </p>
+
+        <p>The <c>DiscoHandler</c> module is used during the discovery 
+          process. See 
+          <seealso marker="snmpa_discovery_handler">discovery handler</seealso>
+          for more info. </p>
+
+        <p>In case the 
+          <seealso marker="snmpa_discovery_handler#stage1_finish">stage1_finish</seealso> 
+          function returns <c>ignore</c> then the <c>discovery</c> will
+          return <c>{ok, ManagerEngineID}</c> for a successfull discovery.
+          eitherwise <c>ok</c> is returned. </p>
+
+        <note><p>If we are not at security-level <c>noAuthNoPriv</c>,
+          this could be complicated, since the agent will then continue 
+          with stage 2, before which the usm-related updates must be 
+          done. </p></note>
+
+        <note><p>The default discovery handler will require 
+          additional actions by the caller and the discovery will not work
+          if the security-level is higher then <c>noAuthNoPriv</c>. </p></note>
 
           <marker id="convert_config"></marker>
       </desc>

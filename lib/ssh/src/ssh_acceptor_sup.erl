@@ -40,8 +40,17 @@ start_link(Servers) ->
     supervisor:start_link(?MODULE, [Servers]).
 
 start_child(AccSup, ServerOpts) ->
-    Spec =  child_spec(ServerOpts),    
-    supervisor:start_child(AccSup, Spec).
+    Spec = child_spec(ServerOpts),    
+    case supervisor:start_child(AccSup, Spec) of
+	{error, already_present} ->
+	    Address = proplists:get_value(address, ServerOpts),
+	    Port = proplists:get_value(port, ServerOpts),
+	    Name = id(Address, Port),
+	    supervisor:delete_child(?MODULE, Name),
+	    supervisor:start_child(AccSup, Spec);
+	Reply ->
+	    Reply
+    end.
 
 stop_child(Address, Port) ->
     Name = id(Address, Port),

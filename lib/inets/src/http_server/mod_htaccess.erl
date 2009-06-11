@@ -325,7 +325,7 @@ memberNetwork(Networks,UserNetwork,IfTrue,IfFalse)->
 %ipadresses or subnet addresses.
 memberNetwork(Networks,UserNetwork)->
     case lists:filter(fun(Net)->
-			      case regexp:match(UserNetwork,
+			      case inets_regexp:match(UserNetwork,
 						formatRegexp(Net)) of
 				  {match,1,_}->
 				      true;
@@ -534,9 +534,9 @@ getUsers(AccessData,UserOrGroup)->
 %----------------------------------------------------------------------
 getUsers({stream,File},FileData,UserOrGroup)->
     case io:get_line(File,[]) of
-        eof when UserOrGroup==user_file->
+        eof when UserOrGroup =:= user_file ->
 	    {user_data,FileData};
-	eof when UserOrGroup ==group_file->
+	eof when UserOrGroup =:= group_file ->
 	   {group_data,FileData};
         Line ->
 	    getUsers({stream,File},
@@ -558,14 +558,14 @@ formatUser([$#|_UserDataComment],FileData,_UserOrgroup)->
 %----------------------------------------------------------------------
 formatUser(UserData,FileData,UserOrGroup)->
     case string:tokens(UserData," \r\n")of
-	[User| _Whitespace] when UserOrGroup==user_file->
+	[User| _Whitespace] when UserOrGroup =:= user_file ->
 	    case string:tokens(User,":") of
 		[Name,PassWord]->
 		    [{user,Name,PassWord}|FileData];
 		_Error->
 		    FileData
 	    end;
-	GroupData when UserOrGroup==group_file ->
+	GroupData when UserOrGroup =:= group_file ->
 	    parseGroupData(GroupData,FileData);
 	_Error ->
 	    FileData
@@ -636,7 +636,7 @@ getHtAccessFileNames(Info)->
 %HtAccessFileNames=["accessfileName1",..."AccessFileName2"]
 %----------------------------------------------------------------------
 getData(Path,Info,HtAccessFileNames)->	    
-    case regexp:split(Path,"/") of
+    case inets_regexp:split(Path,"/") of
 	{error,Error}->
 	    {error,Error};
 	{ok,SplittedPath}->
@@ -710,16 +710,16 @@ insertContext(AccessData,[{deny,From}|Values])->
 
 insertContext(AccessData,[{require,{GrpOrUsr,Members}}|Values])->    
     case ets:lookup(AccessData,require) of
-	[]when GrpOrUsr==users->
+	[] when GrpOrUsr =:= users ->
 	    ets:insert(AccessData,{require,{{users,Members},{groups,[]}}});
 
-	[{require,{{users,Users},{groups,Groups}}}]when GrpOrUsr==users ->
+	[{require,{{users,Users},{groups,Groups}}}] when GrpOrUsr =:= users ->
 	    ets:insert(AccessData,{require,{{users,Users++Members},
 					   {groups,Groups}}});
-	[]when GrpOrUsr==groups->
+	[] when GrpOrUsr =:= groups ->
 	    ets:insert(AccessData,{require,{{users,[]},{groups,Members}}});
 
-	[{require,{{users,Users},{groups,Groups}}}]when GrpOrUsr==groups ->
+	[{require,{{users,Users},{groups,Groups}}}] when GrpOrUsr =:= groups ->
 	    ets:insert(AccessData,{require,{{users,Users},
 					   {groups,Groups++Members}}})    
     end,
@@ -826,8 +826,8 @@ insertData(AccessData,FileData)->
 	    lists:foreach(fun(Elem)->
 				  ets:insert(AccessData,Elem)
 			  end,FileData);
-	[{allow_over_ride,Directives}]when list(Directives)->
-	    lists:foreach(fun({Key,Value})->
+	[{allow_over_ride,Directives}] when is_list(Directives)->
+	    lists:foreach(fun({Key,Value}) ->
 				  case lists:member(Key,Directives) of
 				      true->
 					  ok;
@@ -940,11 +940,11 @@ getAuthorizationType(AuthType)->
 %Returns a list of the specified methods to limit or the atom all
 %----------------------------------------------------------------------
 getLimits(Limits)->
-    case regexp:split(Limits,">")of
+    case inets_regexp:split(Limits,">")of
 	{ok,[_NoEndOnLimit]}->
 	    error;
 	{ok, [Methods | _Crap]}->
-	    case regexp:split(Methods," ")of
+	    case inets_regexp:split(Methods," ") of
 		{ok,[]}->
 		    all;
 		{ok,SplittedMethods}->
@@ -978,7 +978,7 @@ getOrder(Order)->
 %----------------------------------------------------------------------
 getAllowDenyData(AllowDeny)->
     case string:tokens(AllowDeny," \n\r") of
-	[_From|AllowDenyData] when length(AllowDenyData)>=1->
+	[_From|AllowDenyData] when length(AllowDenyData)>=1 ->
 	    case lists:nth(1,AllowDenyData) of
 		"all" ->
 		    all;

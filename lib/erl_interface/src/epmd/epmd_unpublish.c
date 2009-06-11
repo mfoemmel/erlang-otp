@@ -54,8 +54,8 @@
 /* stop the specified node */
 int ei_unpublish_tmo(const char *alive, unsigned ms)
 {
-    unsigned char buf[EPMDBUF];
-    char *s = buf;
+    char buf[EPMDBUF];
+    char *s = (char*)buf;
     int len = 1 + strlen(alive);
     int fd, res;
 

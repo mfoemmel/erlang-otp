@@ -28,7 +28,7 @@
 
 -module(ct_logs).
 
--export([init/1,close/1,init_tc/0,end_tc/0]).
+-export([init/1,close/1,init_tc/0,end_tc/1]).
 -export([get_log_dir/0,log/3,start_log/1,cont_log/2,end_log/0]).
 -export([set_stylesheet/2,clear_stylesheet/1]).
 -export([add_external_logs/1,add_link/3]).
@@ -186,19 +186,19 @@ cast(Msg) ->
 %%%
 %%% <p>This function is called by ct_framework:init_tc/3</p>
 init_tc() ->
-    cast({init_tc,self(),group_leader()}),
+    call({init_tc,self(),group_leader()}),
     ok.
 
 %%%-----------------------------------------------------------------
-%%% @spec end_tc() -> ok | {error,Reason}
+%%% @spec end_tc(TCPid) -> ok | {error,Reason}
 %%%
 %%% @doc Test case clean up (tool-internal use only).
 %%%
 %%% <p>This function is called by ct_framework:end_tc/3</p>
-end_tc() ->
+end_tc(TCPid) ->
     %% use call here so that the TC process will wait and receive
     %% possible exit signals from ct_logs before end_tc returns ok 
-    call({end_tc,self()}).
+    call({end_tc,TCPid}).
 
 %%%-----------------------------------------------------------------
 %%% @spec log(Heading,Format,Args) -> ok
@@ -212,9 +212,10 @@ end_tc() ->
 %%% activity it is. <code>Format</code> and <code>Args</code> is the
 %%% data to log (as in <code>io:format(Format,Args)</code>).</p>
 log(Heading,Format,Args) ->
-    cast({log,self(),[{int_header(),[log_timestamp(now()),Heading]},
-		      {Format,Args},
-		      {int_footer(),[]}]}),
+    cast({log,self(),group_leader(),
+	  [{int_header(),[log_timestamp(now()),Heading]},
+	   {Format,Args},
+	   {int_footer(),[]}]}),
     ok.
 
 %%%-----------------------------------------------------------------
@@ -233,7 +234,8 @@ log(Heading,Format,Args) ->
 %%% @see cont_log/2
 %%% @see end_log/0
 start_log(Heading) ->
-    cast({log,self(),[{int_header(),[log_timestamp(now()),Heading]}]}),
+    cast({log,self(),group_leader(),
+	  [{int_header(),[log_timestamp(now()),Heading]}]}),
     ok.
 
 %%%-----------------------------------------------------------------
@@ -247,7 +249,7 @@ cont_log([],[]) ->
     ok;
 cont_log(Format,Args) ->
     maybe_log_timestamp(),
-    cast({log,self(),[{Format,Args}]}),
+    cast({log,self(),group_leader(),[{Format,Args}]}),
     ok.
 
 %%%-----------------------------------------------------------------
@@ -258,7 +260,7 @@ cont_log(Format,Args) ->
 %%% @see start_log/1
 %%% @see cont_log/2
 end_log() ->
-    cast({log,self(),[{int_footer(), []}]}),
+    cast({log,self(),group_leader(),[{int_footer(), []}]}),
     ok.
     
 
@@ -304,9 +306,9 @@ add_link(Heading,File,Type) ->
 %%% stuff directly from a testcase (i.e. not from within the CT
 %%% framework).</p>
 tc_log(Category,Format,Args) ->
-    cast({log,self(),[{div_header(Category),[]},
-		      {Format,Args},
-		      {div_footer(),[]}]}),
+    cast({log,self(),group_leader(),[{div_header(Category),[]},
+				     {Format,Args},
+				     {div_footer(),[]}]}),
     ok.
 
 %%%-----------------------------------------------------------------
@@ -348,9 +350,9 @@ print_heading(Category) ->
 %%% log and on the console.</p>
 tc_pal(Category,Format,Args) ->
     tc_print(Category,Format,Args),
-    cast({log,self(),[{div_header(Category),[]},
-		      {Format,Args},
-		      {div_footer(),[]}]}),
+    cast({log,self(),group_leader(),[{div_header(Category),[]},
+				     {Format,Args},
+				     {div_footer(),[]}]}),
     ok.
 
 
@@ -374,7 +376,8 @@ maybe_log_timestamp() ->
 	{MS,S,_} ->
 	    ok;
 	_ ->
-	    cast({log,self(),[{"<i>~s</i>",[log_timestamp({MS,S,US})]}]})
+	    cast({log,self(),group_leader(),
+		  [{"<i>~s</i>",[log_timestamp({MS,S,US})]}]})
     end.
 
 log_timestamp(Now) ->
@@ -428,7 +431,8 @@ logger(Parent,Mode) ->
     CtLogFd = open_ctlog(),
     io:format(CtLogFd,int_header()++int_footer(),
 	      [log_timestamp(now()),"Common Test Logger started"]),
-    Parent ! {started,self(),{Time,Dir}},
+    Parent ! {started,self(),{Time,filename:absname("")}},
+    set_evmgr_gl(CtLogFd),
     logger_loop(#logger_state{parent=Parent,
 			      log_dir=Dir,
 			      start_time=Time,
@@ -438,42 +442,53 @@ logger(Parent,Mode) ->
 
 logger_loop(State) ->
     receive
-	{log,TCPid,List} ->
-	    case get_groupleader(TCPid,State) of
-		{tc_log,GL} ->
+	{log,Pid,GL,List} ->
+	    case get_groupleader(Pid,GL,State) of
+		{tc_log,TCGLs} ->
 		    case erlang:is_process_alive(GL) of
 			true ->
+			    %% we have to build one io-list of all strings
+			    %% before printing, or other io printouts (made in
+			    %% parallel) may get printed between this header 
+			    %% and footer 
 			    Fun = 
-				fun({Str,Args}) ->
-					case catch io:format(GL,Str,Args) of
+				fun({Str,Args},IoList) ->
+					case catch io_lib:format(Str,Args) of
 					    {'EXIT',_Reason} ->
 						Fd = State#logger_state.ct_log_fd,
 						io:format(Fd, 
 							  "Logging fails! Str: ~p, Args: ~p~n",
 							  [Str,Args]),
 						%% stop the testcase, we need to see the fault
-						exit(TCPid,logging_failed),
+						exit(Pid,logging_failed),
 						ok;
-					    _ ->
-						ok
+					    IoStr when IoList == [] ->
+						[IoStr];
+					    IoStr ->
+						[IoList,"\n",IoStr]
 					end
 				end,
-			    lists:foreach(Fun, List);
+			    io:format(GL,"~s",[lists:foldl(Fun,[],List)]),
+			    logger_loop(State#logger_state{tc_groupleaders=TCGLs});
 			false ->
-			    %% Group leader is dead, so I write this in
-			    %% the CtLog
+			    %% Group leader is dead, so write to the CtLog instead
 			    Fd = State#logger_state.ct_log_fd,
 			    [begin io:format(Fd,Str,Args),io:nl(Fd) end || 
-				{Str,Args} <- List]
+				{Str,Args} <- List],
+			    logger_loop(State)			    
 		    end;
 		{ct_log,Fd} ->
-		    [begin io:format(Fd,Str,Args),io:nl(Fd) end || {Str,Args} <- List]
-	    end,		    
-	    logger_loop(State);
-	{init_tc,TCPid,GL} ->
+		    [begin io:format(Fd,Str,Args),io:nl(Fd) end || {Str,Args} <- List],
+		    logger_loop(State)			    
+	    end;
+	{{init_tc,TCPid,GL},From} ->
 	    print_style(GL, State#logger_state.stylesheet),
-	    logger_loop(State#logger_state{tc_groupleaders=add_tc_gl(TCPid,GL,State)});
+	    set_evmgr_gl(GL),
+	    TCGLs = add_tc_gl(TCPid,GL,State),
+	    return(From,ok),
+	    logger_loop(State#logger_state{tc_groupleaders=TCGLs});
 	{{end_tc,TCPid},From} ->
+	    set_evmgr_gl(State#logger_state.ct_log_fd),
 	    return(From,ok),
 	    logger_loop(State#logger_state{tc_groupleaders=rm_tc_gl(TCPid,State)});
 	{get_log_dir,From} ->
@@ -501,22 +516,57 @@ logger_loop(State) ->
 	    ok
     end.
 
-get_groupleader(TCPid,State) ->
-    case proplists:get_value(TCPid,State#logger_state.tc_groupleaders) of
+%% #logger_state.tc_groupleaders == [{Pid,{Type,GLPid}},...]
+%% Type = tc | io
+%%
+%% Pid can either be a test case process (tc), an IO process (io)
+%% spawned by a test case process, or a common test process (never
+%% registered by an init_tc msg). An IO process gets registered the
+%% first time it sends data and will be stored in the list until the
+%% last TC process associated with the same group leader gets 
+%% unregistered.
+
+get_groupleader(Pid,GL,State) ->
+    TCGLs = State#logger_state.tc_groupleaders,
+    case proplists:get_value(Pid,TCGLs) of
 	undefined ->
-	    {ct_log,State#logger_state.ct_log_fd};
-	GL ->
-	    {tc_log,GL}
+	    %% this could be a process spawned by the test case process,
+	    %% if so they have the same registered group leader
+	    case lists:keysearch({tc,GL},2,TCGLs) of
+		{value,_} ->
+		    {tc_log,[{Pid,{io,GL}}|TCGLs]};
+		false ->
+		    {ct_log,State#logger_state.ct_log_fd}
+	    end;
+	{_,GL} ->
+	    {tc_log,TCGLs}
     end.
 
 add_tc_gl(TCPid,GL,State) ->
     TCGLs = State#logger_state.tc_groupleaders,
-    [{TCPid,GL} | lists:keydelete(TCPid, 1, TCGLs)].
+    [{TCPid,{tc,GL}} | lists:keydelete(TCPid,1,TCGLs)].
 
 rm_tc_gl(TCPid,State) ->
     TCGLs = State#logger_state.tc_groupleaders,
-    lists:keydelete(TCPid, 1, TCGLs).    
-    
+    {tc,GL} = proplists:get_value(TCPid,TCGLs),
+    TCGLs1 = lists:keydelete(TCPid,1,TCGLs),
+    case lists:keysearch({tc,GL},2,TCGLs1) of
+	{value,_} ->
+	    %% test cases using GL remain, keep associated IO processes
+	    TCGLs1;
+	false ->
+	    %% last test case using GL, delete all associated IO processes
+	    lists:filter(fun({_,{io,GLPid}}) when GL == GLPid -> false;
+			    (_) -> true
+			 end, TCGLs1)
+    end.
+
+set_evmgr_gl(GL) ->
+    case whereis(?CT_EVMGR_REF) of
+	undefined -> ok;
+	EvMgrPid -> group_leader(GL,EvMgrPid)
+    end.
+
 open_ctlog() ->
     {ok,Fd} = file:open(?ct_log_name,[write]),
     io:format(Fd,header("Common Test Framework"),[]),
@@ -1367,7 +1417,7 @@ simulate() ->
 
 simulate_logger_loop() ->
     receive 
-    	{log,_,List} ->
+    	{log,_,_,List} ->
 	    S = [[io_lib:format(Str,Args),io_lib:nl()] || {Str,Args} <- List],
 	    io:format("~s",[S]),
 	    simulate_logger_loop();

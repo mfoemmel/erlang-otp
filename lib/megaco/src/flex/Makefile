@@ -26,6 +26,12 @@ include modules.mk
 conf: 
 	cd ../..; $(MAKE) conf
 
+dconf: 
+	$(MAKE) FLEX_SCANNER_REENTRANT=disable conf
+
+econf: 
+	$(MAKE) FLEX_SCANNER_REENTRANT=enable conf
+
 setup:
 	(cd ../../priv/lib && \
 		rm -f $(STD_DRV).so $(MT_DRV).so && \

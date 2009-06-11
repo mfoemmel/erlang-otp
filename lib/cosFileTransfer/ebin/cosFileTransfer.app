@@ -1,6 +1,6 @@
 {application, cosFileTransfer,
  [{description, "The Erlang CosFileTransfer application"},
-  {vsn, "1.1.7"},
+  {vsn, "1.1.8"},
   {modules,
        [
         'cosFileTransferApp',

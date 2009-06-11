@@ -73,7 +73,7 @@ ei_recv_internal (int fd,
 
   /* got tick - respond and return */
   if (!len) {
-    unsigned char tock[] = {0,0,0,0};
+    char tock[] = {0,0,0,0};
     ei_write_fill_t(fd, tock, sizeof(tock), ms); /* Failure no problem */
     *msglenp = 0;
     return 0;			/* maybe flag ERL_EAGAIN [sverkerw] */

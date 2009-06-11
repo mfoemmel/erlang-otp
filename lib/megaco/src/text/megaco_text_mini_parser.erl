@@ -9,7 +9,7 @@
 -include("megaco_text_mini_parser.hrl").
 
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-20_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b01.2009-06-07_20/otp_src_R13B01/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -34,17 +34,17 @@
 
 -type(yecc_ret() :: {'error', _} | {'ok', _}).
 
--spec(parse/1 :: (_) -> yecc_ret()).
+-spec parse(Tokens :: list()) -> yecc_ret().
 parse(Tokens) ->
-    yeccpars0(Tokens, false).
+    yeccpars0(Tokens, {no_func, no_line}, 0, [], []).
 
 -spec(parse_and_scan/1 ::
       ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
             yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
-    yeccpars0([], {F, A});
+    yeccpars0([], {{F, A}, no_line}, 0, [], []);
 parse_and_scan({M, F, A}) ->
-    yeccpars0([], {{M, F}, A}).
+    yeccpars0([], {{{M, F}, A}, no_line}, 0, [], []).
 
 -spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
@@ -57,15 +57,15 @@ format_error(Message) ->
 
 % To be used in grammar files to throw an error message to the parser
 % toplevel. Doesn't have to be exported!
--compile({nowarn_unused_function,{return_error,2}}).
+-compile({nowarn_unused_function, return_error/2}).
 -spec(return_error/2 :: (integer(), any()) -> no_return()).
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.3").
+-define(CODE_VERSION, "1.4").
 
-yeccpars0(Tokens, MFA) ->
-    try yeccpars1(Tokens, MFA, 0, [], [])
+yeccpars0(Tokens, Tzr, State, States, Vstack) ->
+    try yeccpars1(Tokens, Tzr, State, States, Vstack)
     catch 
         error: Error ->
             Stacktrace = erlang:get_stacktrace(),
@@ -75,11 +75,12 @@ yeccpars0(Tokens, MFA) ->
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace)
+                                 Stacktrace)
             catch _:_ -> erlang:raise(error, Error, Stacktrace)
             end;
-        throw: {error, {_Line, ?MODULE, _M}} = Error -> 
-            Error % probably from return_error/2
+        %% Probably thrown from return_error/2:
+        throw: {error, {_Line, ?MODULE, _M}} = Error ->
+            Error
     end.
 
 yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
@@ -91,20 +92,24 @@ yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
             {missing_in_goto_table, Symbol, State}
     end.
 
-yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
-    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
-              Tokenizer);
-yeccpars1([], {F, A}, State, States, Vstack) ->
+yeccpars1([Token | Tokens], Tzr, State, States, Vstack) ->
+    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, Tzr);
+yeccpars1([], {{F, A},_Line}, State, States, Vstack) ->
     case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(Tokens, {F, A}, State, States, Vstack);
-        {eof, _Endline} ->
-            yeccpars1([], false, State, States, Vstack);
+        {ok, Tokens, Endline} ->
+	    yeccpars1(Tokens, {{F, A}, Endline}, State, States, Vstack);
+        {eof, Endline} ->
+            yeccpars1([], {no_func, Endline}, State, States, Vstack);
         {error, Descriptor, _Endline} ->
             {error, Descriptor}
     end;
-yeccpars1([], false, State, States, Vstack) ->
-    yeccpars2(State, '$end', States, Vstack, {'$end', 999999}, [], false).
+yeccpars1([], {no_func, no_line}, State, States, Vstack) ->
+    Line = 999999,
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Line), [],
+              {no_func, Line});
+yeccpars1([], {no_func, Endline}, State, States, Vstack) ->
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Endline), [],
+              {no_func, Endline}).
 
 %% yeccpars1/7 is called from generated code.
 %%
@@ -112,34 +117,59 @@ yeccpars1([], false, State, States, Vstack) ->
 %% yeccpars1/7 can be found by parsing the file without following
 %% include directives. yecc will otherwise assume that an old
 %% yeccpre.hrl is included (one which defines yeccpars1/5).
-yeccpars1(State1, State, States, Vstack, Stack1, [Token | Tokens], 
-          Tokenizer) ->
+yeccpars1(State1, State, States, Vstack, Token0, [Token | Tokens], Tzr) ->
     yeccpars2(State, element(1, Token), [State1 | States],
-              [Stack1 | Vstack], Token, Tokens, Tokenizer);
-yeccpars1(State1, State, States, Vstack, Stack1, [], {F, A}) ->
-    case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(State1, State, States, Vstack, Stack1, Tokens, {F, A});
-        {eof, _Endline} ->
-            yeccpars1(State1, State, States, Vstack, Stack1, [], false);
-        {error, Descriptor, _Endline} ->
-            {error, Descriptor}
-    end;
-yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
-    yeccpars2(State, '$end', [State1 | States], [Stack1 | Vstack],
-              {'$end', 999999}, [], false).
+              [Token0 | Vstack], Token, Tokens, Tzr);
+yeccpars1(State1, State, States, Vstack, Token0, [], {{_F,_A}, _Line}=Tzr) ->
+    yeccpars1([], Tzr, State, [State1 | States], [Token0 | Vstack]);
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, no_line}) ->
+    Line = yecctoken_end_location(Token0),
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line});
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, Line}) ->
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line}).
 
 % For internal use only.
+yecc_end({Line,_Column}) ->
+    {'$end', Line};
+yecc_end(Line) ->
+    {'$end', Line}.
+
+yecctoken_end_location(Token) ->
+    try
+        {text, Str} = erl_scan:token_info(Token, text),
+        {line, Line} = erl_scan:token_info(Token, line),
+        Parts = re:split(Str, "\n"),
+        Dline = length(Parts) - 1,
+        Yline = Line + Dline,
+        case erl_scan:token_info(Token, column) of
+            {column, Column} ->
+                Col = byte_size(lists:last(Parts)),
+                {Yline, Col + if Dline =:= 0 -> Column; true -> 1 end};
+            undefined ->
+                Yline
+        end
+    catch _:_ ->
+        yecctoken_location(Token)
+    end.
+
 yeccerror(Token) ->
-    Text = case catch erl_scan:token_info(Token, text) of
-               {text, Txt} -> Txt;
-               _ -> yecctoken2string(Token)
-           end,
-    Location = case catch erl_scan:token_info(Token, location) of
-                   {location, Loc} -> Loc;
-                   _ -> element(2, Token)
-               end,
+    Text = yecctoken_to_string(Token),
+    Location = yecctoken_location(Token),
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
+
+yecctoken_to_string(Token) ->
+    case catch erl_scan:token_info(Token, text) of
+        {text, Txt} -> Txt;
+        _ -> yecctoken2string(Token)
+    end.
+
+yecctoken_location(Token) ->
+    case catch erl_scan:token_info(Token, location) of
+        {location, Loc} -> Loc;
+        _ -> element(2, Token)
+    end.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
@@ -147,13 +177,13 @@ yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:write(A);
+yecctoken2string({_Cat, _, Val}) -> io_lib:write(Val);
 yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format("~w", [Other]);
+    io_lib:write(Other);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -161,7 +191,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./megaco_text_mini_parser.erl", 164).
+-file("./megaco_text_mini_parser.erl", 194).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -1490,21 +1520,21 @@ yeccgoto_safeToken2(100=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccgoto_safeToken2(107=_S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_7(_S, Cat, Ss, Stack, T, Ts, Tzr).
 
--compile({inline,{yeccpars2_0_,1}}).
+-compile({inline,yeccpars2_0_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_0_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_1_,1}}).
+-compile({inline,yeccpars2_1_/1}).
 -file("megaco_text_mini_parser.yrl", 238).
 yeccpars2_1_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_3_,1}}).
+-compile({inline,yeccpars2_3_/1}).
 -file("megaco_text_mini_parser.yrl", 232).
 yeccpars2_3_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1512,7 +1542,7 @@ yeccpars2_3_(__Stack0) ->
    sep
   end | __Stack].
 
--compile({inline,{yeccpars2_7_,1}}).
+-compile({inline,yeccpars2_7_/1}).
 -file("megaco_text_mini_parser.yrl", 269).
 yeccpars2_7_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1520,14 +1550,14 @@ yeccpars2_7_(__Stack0) ->
    make_safe_token ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_84_,1}}).
+-compile({inline,yeccpars2_84_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_84_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_85_,1}}).
+-compile({inline,yeccpars2_85_/1}).
 -file("megaco_text_mini_parser.yrl", 237).
 yeccpars2_85_(__Stack0) ->
  [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -1535,14 +1565,14 @@ yeccpars2_85_(__Stack0) ->
    ensure_auth_header ( __3 , __5 , __7 )
   end | __Stack].
 
--compile({inline,{yeccpars2_86_,1}}).
+-compile({inline,yeccpars2_86_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_86_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_88_,1}}).
+-compile({inline,yeccpars2_88_/1}).
 -file("megaco_text_mini_parser.yrl", 230).
 yeccpars2_88_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -1550,7 +1580,7 @@ yeccpars2_88_(__Stack0) ->
    # 'MegacoMessage' { authHeader = __2 , mess = __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_90_,1}}).
+-compile({inline,yeccpars2_90_/1}).
 -file("megaco_text_mini_parser.yrl", 240).
 yeccpars2_90_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -1558,28 +1588,28 @@ yeccpars2_90_(__Stack0) ->
    ensure_message ( __1 , __2 )
   end | __Stack].
 
--compile({inline,{yeccpars2_94_,1}}).
+-compile({inline,yeccpars2_94_/1}).
 -file("megaco_text_mini_parser.yrl", 259).
 yeccpars2_94_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_95_,1}}).
+-compile({inline,yeccpars2_95_/1}).
 -file("megaco_text_mini_parser.yrl", 259).
 yeccpars2_95_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_97_,1}}).
+-compile({inline,yeccpars2_97_/1}).
 -file("megaco_text_mini_parser.yrl", 259).
 yeccpars2_97_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_98_,1}}).
+-compile({inline,yeccpars2_98_/1}).
 -file("megaco_text_mini_parser.yrl", 260).
 yeccpars2_98_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -1587,7 +1617,7 @@ yeccpars2_98_(__Stack0) ->
    [ colon | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_99_,1}}).
+-compile({inline,yeccpars2_99_/1}).
 -file("megaco_text_mini_parser.yrl", 257).
 yeccpars2_99_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -1595,7 +1625,7 @@ yeccpars2_99_(__Stack0) ->
    ensure_domainAddress ( __2 , asn1_NOVALUE )
   end | __Stack].
 
--compile({inline,{yeccpars2_101_,1}}).
+-compile({inline,yeccpars2_101_/1}).
 -file("megaco_text_mini_parser.yrl", 263).
 yeccpars2_101_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1603,14 +1633,14 @@ yeccpars2_101_(__Stack0) ->
    ensure_uint16 ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_102_,1}}).
+-compile({inline,yeccpars2_102_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_102_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_103_,1}}).
+-compile({inline,yeccpars2_103_/1}).
 -file("megaco_text_mini_parser.yrl", 255).
 yeccpars2_103_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -1618,7 +1648,7 @@ yeccpars2_103_(__Stack0) ->
    ensure_domainAddress ( __2 , __5 )
   end | __Stack].
 
--compile({inline,{yeccpars2_104_,1}}).
+-compile({inline,yeccpars2_104_/1}).
 -file("megaco_text_mini_parser.yrl", 261).
 yeccpars2_104_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -1626,7 +1656,7 @@ yeccpars2_104_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_106_,1}}).
+-compile({inline,yeccpars2_106_/1}).
 -file("megaco_text_mini_parser.yrl", 250).
 yeccpars2_106_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -1634,14 +1664,14 @@ yeccpars2_106_(__Stack0) ->
    ensure_domainName ( __2 , asn1_NOVALUE )
   end | __Stack].
 
--compile({inline,{yeccpars2_108_,1}}).
+-compile({inline,yeccpars2_108_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_108_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_109_,1}}).
+-compile({inline,yeccpars2_109_/1}).
 -file("megaco_text_mini_parser.yrl", 248).
 yeccpars2_109_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -1649,7 +1679,7 @@ yeccpars2_109_(__Stack0) ->
    ensure_domainName ( __2 , __5 )
   end | __Stack].
 
--compile({inline,{yeccpars2_110_,1}}).
+-compile({inline,yeccpars2_110_/1}).
 -file("megaco_text_mini_parser.yrl", 267).
 yeccpars2_110_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1657,7 +1687,7 @@ yeccpars2_110_(__Stack0) ->
    ensure_pathName ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_111_,1}}).
+-compile({inline,yeccpars2_111_/1}).
 -file("megaco_text_mini_parser.yrl", 252).
 yeccpars2_111_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1665,21 +1695,21 @@ yeccpars2_111_(__Stack0) ->
    { deviceName , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_112_,1}}).
+-compile({inline,yeccpars2_112_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_112_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_113_,1}}).
+-compile({inline,yeccpars2_113_/1}).
 -file("megaco_text_mini_parser.yrl", 233).
 yeccpars2_113_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_114_,1}}).
+-compile({inline,yeccpars2_114_/1}).
 -file("megaco_text_mini_parser.yrl", 265).
 yeccpars2_114_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1687,7 +1717,7 @@ yeccpars2_114_(__Stack0) ->
    ensure_mtpAddress ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_115_,1}}).
+-compile({inline,yeccpars2_115_/1}).
 -file("megaco_text_mini_parser.yrl", 245).
 yeccpars2_115_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -1695,7 +1725,7 @@ yeccpars2_115_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_116_,1}}).
+-compile({inline,yeccpars2_116_/1}).
 -file("megaco_text_mini_parser.yrl", 244).
 yeccpars2_116_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,

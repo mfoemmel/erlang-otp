@@ -958,9 +958,9 @@ Eterm erts_debug_dump_monitors_1(Process *p, Eterm pid)
 	if (is_atom(pid) && is_node_name_atom(pid) &&
 	    (dep = erts_find_dist_entry(pid)) != NULL) {
 	    erts_printf("Dumping dist monitors-------------------\n");
-	    erts_smp_dist_entry_lock(dep);
+	    erts_smp_de_links_lock(dep);
 	    erts_dump_monitors(dep->monitors,0);
-	    erts_smp_dist_entry_unlock(dep);
+	    erts_smp_de_links_unlock(dep);
 	    erts_printf("Monitors dumped-------------------------\n");
 	    erts_deref_dist_entry(dep);
 	    BIF_RET(am_true);
@@ -998,9 +998,9 @@ Eterm erts_debug_dump_links_1(Process *p, Eterm pid)
 	    if (is_atom(pid) && is_node_name_atom(pid) &&
 		(dep = erts_find_dist_entry(pid)) != NULL) {
 		erts_printf("Dumping dist links----------------------\n");
-		erts_smp_dist_entry_lock(dep);
+		erts_smp_de_links_lock(dep);
 		erts_dump_links(dep->nlinks,0);
-		erts_smp_dist_entry_unlock(dep);
+		erts_smp_de_links_unlock(dep);
 		erts_printf("Links dumped----------------------------\n");
 		erts_deref_dist_entry(dep);
 		BIF_RET(am_true);

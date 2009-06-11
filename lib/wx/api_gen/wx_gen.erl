@@ -384,12 +384,12 @@ select_member(Several, #class{name=Class,file=Orig}, Defs0, Opts) ->
 		InBase = "class" ++ Class ++ "Base" =:= FN,
 		"wx" ++ ClassName = Class,
 		InGeneric = "classwxGeneric" ++ ClassName =:= FN,
-		IsHelper = case regexp:first_match(FN, "Helper$") of
-			       {match,_,_} -> true;
+		IsHelper = case re:run(FN, "Helper$") of
+			       {match,_} -> true;
 			       _ -> false
 			   end,
-		ImplBase = case regexp:first_match(FN, "Base$") of
-			       {match,_,_} -> true;
+		ImplBase = case re:run(FN, "Base$") of
+			       {match,_} -> true;
 			       _ -> 
 				   %% Hack for base-base class
 				   FN =:= "classwxItemContainer"

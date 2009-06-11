@@ -167,12 +167,10 @@ certify(#certificate{asn1_certificates = ASN1Certs}, CertDbRef,
     [PeerCert | _] = ASN1Certs,
     VerifyBool =  verify_bool(Verify),
   
-    try 
-	ssl_certificate:trusted_cert_and_path(ASN1Certs, 
-					      CertDbRef, VerifyBool) of
+    try
+	%% Allow missing root_cert and check that with VerifyFun
+	ssl_certificate:trusted_cert_and_path(ASN1Certs, CertDbRef, false) of
 	{TrustedErlCert, CertPath, VerifyErrors} ->
-	    %% Note VerifyErrors will always be the empty list
-	    %% if VerifyBool = true or we will end up in catch branch
 	    Result = public_key:pkix_path_validation(TrustedErlCert, 
 						     CertPath, 
 						     [{max_path_length, 

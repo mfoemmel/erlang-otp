@@ -398,11 +398,11 @@ ifelse(Cond, A, B) ->
 	_ -> B
     end.	    
 
-bin_to_list(B) when binary(B) ->
+bin_to_list(B) when is_binary(B) ->
     binary_to_list(B);
-bin_to_list(L) when list(L) ->
+bin_to_list(L) when is_list(L) ->
     lists:flatten([bin_to_list(A) || A <- L]);
-bin_to_list(I) when integer(I) ->
+bin_to_list(I) when is_integer(I) ->
     I.
 
 start_shell(ConnectionManager, State) ->

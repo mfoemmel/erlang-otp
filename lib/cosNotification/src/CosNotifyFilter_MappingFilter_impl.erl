@@ -268,9 +268,9 @@ destroy(_OE_THIS, State) ->
 %% Returns  : boolean(), #any{} (out-type) |
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
-match(_OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
+match(_OE_THIS, State, Event) when is_record(Event,'any') andalso ?is_EmptyFilter(State) ->
     {reply, {false, ?get_DefAny(State)}, State};
-match(_OE_THIS, State, Event) when record(Event,'any') ->
+match(_OE_THIS, State, Event) when is_record(Event,'any') ->
     match_any_event(State, Event, ?get_ConstraintAllData(State));
 match(_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -283,10 +283,10 @@ match(_,_,_) ->
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
 match_structured(_OE_THIS, State, Event) when 
-  record(Event,'CosNotification_StructuredEvent'), ?is_EmptyFilter(State) ->
+  is_record(Event,'CosNotification_StructuredEvent') andalso ?is_EmptyFilter(State) ->
     {reply, {false, ?get_DefAny(State)}, State};
 match_structured(_OE_THIS, State, Event) when 
-  record(Event,'CosNotification_StructuredEvent') ->
+  is_record(Event,'CosNotification_StructuredEvent') ->
     match_str_event(State, Event, ?get_ConstraintAllData(State));
 match_structured(_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -333,7 +333,7 @@ lookup_constraints(IDs, State) ->
 lookup_constraints([], _State, Accum) ->
     Accum;
 lookup_constraints([H|T], State, Accum) 
-  when record(H, 'CosNotifyFilter_MappingConstraintInfo') ->
+  when is_record(H, 'CosNotifyFilter_MappingConstraintInfo') ->
     case ?get_Constraint(State, H#'CosNotifyFilter_MappingConstraintInfo'.constraint_id) of
 	error ->
 	    corba:raise(#'CosNotifyFilter_ConstraintNotFound'
@@ -343,7 +343,7 @@ lookup_constraints([H|T], State, Accum)
 	    %% the correct type, i.e., ConstraintInfoSeq
 	    lookup_constraints(T, State, Accum)
     end;
-lookup_constraints([H|T], State, Accum) when integer(H) ->
+lookup_constraints([H|T], State, Accum) when is_integer(H) ->
     case ?get_Constraint(State,H) of
 	error ->
 	    corba:raise(#'CosNotifyFilter_ConstraintNotFound'{id=H});
@@ -359,7 +359,7 @@ lookup_constraints(_, _, _) ->
 delete_constraints([], State) ->
     State;
 delete_constraints([H|T], State) 
-  when record(H, 'CosNotifyFilter_MappingConstraintInfo') ->
+  when is_record(H, 'CosNotifyFilter_MappingConstraintInfo') ->
     case catch ?del_Constraint(State,
 			       H#'CosNotifyFilter_MappingConstraintInfo'.constraint_id) of
 	{ok, NewState} ->

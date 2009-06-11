@@ -104,7 +104,6 @@ loop(State, #analysis{analysis_pid = AnalPid} = Analysis, ExtCalls) ->
 %%--------------------------------------------------------------------
 
 analysis_start(Parent, Analysis) ->
-  put(dialyzer_race_analysis, Analysis#analysis.race_detection),
   CServer = dialyzer_codeserver:new(),
   Plt = Analysis#analysis.plt,
   State = #analysis_state{codeserver = CServer,
@@ -125,8 +124,15 @@ analysis_start(Parent, Analysis) ->
   %% Remove all old versions of the files being analyzed
   AllNodes = dialyzer_callgraph:all_nodes(Callgraph),
   Plt1 = dialyzer_plt:delete_list(Plt, AllNodes),
-  State3 = analyze_callgraph(Callgraph, State2#analysis_state{plt=Plt1}),
   Exports = dialyzer_codeserver:all_exports(NewCServer),
+  NewCallgraph =
+    case Analysis#analysis.race_detection of
+      true ->
+        Callgraph#dialyzer_callgraph{race_detection = true,
+          exports = sets:to_list(Exports)};
+      false -> Callgraph
+    end,
+  State3 = analyze_callgraph(NewCallgraph, State2#analysis_state{plt=Plt1}),
   NonExports = sets:subtract(sets:from_list(AllNodes), Exports),
   NonExportsList = sets:to_list(NonExports),
   Plt3 = dialyzer_plt:delete_list(State3#analysis_state.plt, NonExportsList),
@@ -342,52 +348,8 @@ label_core(Core, CServer) ->
 store_code_and_build_callgraph(Mod, Core, Callgraph, CServer, NoWarn) ->
   CoreTree = cerl:from_records(Core),
   NewCallgraph = dialyzer_callgraph:scan_core_tree(CoreTree, Callgraph),
-  NewCallgraph2 = 
-    case get(dialyzer_race_analysis) of
-      true -> 
-        NewCallgraph1 = concat_module_local_calls(Callgraph, NewCallgraph),
-        concat_inter_module_calls(Callgraph, NewCallgraph1);
-      _ -> NewCallgraph
-    end,
   CServer2 = dialyzer_codeserver:insert([{Mod, CoreTree}], CServer),
-  {ok, NewCallgraph2, NoWarn, CServer2}.
-
-concat_module_local_calls(#dialyzer_callgraph{module_local_calls=Calls},
-                          NewCallgraph = #dialyzer_callgraph{module_local_calls=NewCalls}) ->
-  NormCalls = normalize_module_local_calls(Calls ++ NewCalls),
-  NewCallgraph#dialyzer_callgraph{module_local_calls = NormCalls}.
-
-concat_inter_module_calls(#dialyzer_callgraph{inter_module_calls = Calls},
-                          NewCallgraph = #dialyzer_callgraph{inter_module_calls = NewCalls}) ->
-  NormCalls = normalize_inter_module_calls(Calls ++ NewCalls),
-  NewCallgraph#dialyzer_callgraph{inter_module_calls = NormCalls}.
-
-normalize_module_local_calls(Calls) ->
-  case Calls of
-    [] -> [];
-    _Other ->
-      [norm_module_local_call(C) || C <- Calls]
-  end.
-
-norm_module_local_call(C) ->
-  case C of
-    {TupleA, TupleB} ->
-      {TupleA, empty, TupleB, empty, empty, empty, empty, false};
-    {_TupleA, _IntA, _TupleB, _IntB, _ArgsB, _CodeA, _CodeB, _Bool} -> C
-  end.
-
-normalize_inter_module_calls(Calls) ->
-  case Calls of
-    [] -> [];
-    _Other ->
-      [norm_inter_module_call(C) || C <- Calls]
-  end.
-
-norm_inter_module_call(C) ->
-  case C of
-    {TupleA, TupleB} -> {TupleA, TupleB, empty, [], [], false, false};
-    {_TupleA, _TupleB, _ArgsB, _ListA, _ListB, _BoolA, _BoolB} -> C
-  end.
+  {ok, NewCallgraph, NoWarn, CServer2}.
 
 %%--------------------------------------------------------------------
 %% Utilities

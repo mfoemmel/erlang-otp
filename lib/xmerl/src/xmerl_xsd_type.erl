@@ -202,7 +202,7 @@ check_simpleType(Unknown,Value,_S) ->
 check_decimal(Value) ->
     case string:tokens(Value,".") of
 	L when length(L) == 1; length(L) == 2 ->
-	    [list_to_integer(X)||X <- L],
+	    _ = [list_to_integer(X)||X <- L],
 	    {ok,Value};
 	_ ->
 	    {error,{value_not_decimal,Value}}

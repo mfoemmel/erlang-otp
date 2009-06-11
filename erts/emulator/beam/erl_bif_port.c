@@ -27,6 +27,7 @@
 
 #include <ctype.h>
 
+#define ERTS_WANT_EXTERNAL_TAGS
 #include "sys.h"
 #include "erl_vm.h"
 #include "erl_sys_driver.h"
@@ -46,6 +47,10 @@
 
 static int open_port(Process* p, Eterm name, Eterm settings, int *err_nump);
 static byte* convert_environment(Process* p, Eterm env);
+static char **convert_args(Eterm);
+static void free_args(char **);
+
+char *erts_default_arg0 = "default";
 
 BIF_RETTYPE open_port_2(BIF_ALIST_2)
 {
@@ -278,15 +283,12 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     if (erts_system_profile_flags.runnable_ports && !erts_port_is_scheduled(p)) {
     	profile_runnable_port(p, am_active);
     }
-    size = encode_size_struct(BIF_ARG_3, TERM_TO_BINARY_DFLAGS);
+    size = erts_encode_ext_size(BIF_ARG_3);
     if (size > sizeof(port_input))
 	bytes = erts_alloc(ERTS_ALC_T_PORT_CALL_BUF, size);
 
     endp = bytes;
-    if (erts_to_external_format(NULL, BIF_ARG_3, &endp, NULL, NULL) || !endp) {
-	erl_exit(1, "%s, line %d: bad term: %x\n",
-		 __FILE__, __LINE__, BIF_ARG_3);
-    }
+    erts_encode_ext(BIF_ARG_3, &endp);
 
     real_size = endp - bytes;
     if (real_size > size) {
@@ -336,15 +338,15 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 	/* Error or a binary without magic/ with wrong magic */
 	goto error;
     }
-    result_size = erts_decoded_size(port_resp, ret, 0);
+    result_size = erts_decode_ext_size(port_resp, ret, 0);
     if (result_size < 0) {
 	goto error;
     }
     hp = HAlloc(BIF_P, result_size);
     hp_end = hp + result_size;
     endp = port_resp;
-    if ((res = erts_from_external_format(NULL, &hp, &endp, &MSO(BIF_P)))
-	== THE_NON_VALUE) {
+    res = erts_decode_ext(&hp, &MSO(BIF_P), &endp);
+    if (res == THE_NON_VALUE) {
 	goto error;
     }
     HRelease(BIF_P, hp_end, hp);
@@ -552,6 +554,7 @@ BIF_RETTYPE port_get_data_1(BIF_ALIST_1)
  * -3 if argument parsing failed or we are out of ports (*err_nump should contain
  * either BADARG or SYSTEM_LIMIT).
  */
+
 static int
 open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 {
@@ -578,6 +581,8 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
     opts.wd = NULL;
     opts.envir = NULL;
     opts.exit_status = 0;
+    opts.spawn_type = ERTS_SPAWN_ANY; 
+    opts.argv = NULL;
     binary_io = 0;
     soft_eof = 0;
     linebuf = 0;
@@ -625,6 +630,45 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 			goto badarg;
 		    }
 		    opts.envir = (char *) bytes;
+		} else if (option == am_args) {
+		    char **av;
+		    char **oav = opts.argv;
+		    if ((av = convert_args(*tp)) == NULL) {
+			goto badarg;
+		    }
+		    opts.argv = av;
+		    if (oav) {
+			opts.argv[0] = oav[0];
+			oav[0] = erts_default_arg0;
+			free_args(oav);
+		    }
+
+		} else if (option == am_arg0) {
+		    char *a0;
+		    int n;
+		    if (is_nil(*tp)) {
+			n = 0;
+		    } else if( (n = is_string(*tp)) == 0) {
+			goto badarg;
+		    }
+		    a0 = (char *) erts_alloc(ERTS_ALC_T_TMP, 
+					    (n + 1) * sizeof(byte));
+		    if (intlist_to_buf(*tp, a0, n) != n) {
+			erl_exit(1, "%s:%d: Internal error\n",
+				 __FILE__, __LINE__);
+		    }
+		    a0[n] = '\0';		    
+		    if (opts.argv == NULL) {
+			opts.argv = erts_alloc(ERTS_ALC_T_TMP, 
+					       2 * sizeof(char **));
+			opts.argv[0] = a0;
+			opts.argv[1] = NULL;
+		    } else {
+			if (opts.argv[0] != erts_default_arg0) {
+			    erts_free(ERTS_ALC_T_TMP, opts.argv[0]);
+			}
+			opts.argv[0] = a0;
+		    }
 		} else if (option == am_cd) {
 		    Eterm iolist;
 		    Eterm heap[4];
@@ -715,8 +759,8 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	if (arity == make_arityval(0)) {
 	    goto badarg;
 	}
-
-	if (*tp == am_spawn) {	/* A process port */
+    
+	if (*tp == am_spawn || *tp == am_spawn_driver) {	/* A process port */
 	    if (arity != make_arityval(2)) {
 		goto badarg;
 	    }
@@ -736,6 +780,35 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	    } else {
 		goto badarg;
 	    }
+	    if (*tp == am_spawn_driver) {
+		opts.spawn_type = ERTS_SPAWN_DRIVER;
+	    }
+	    driver = &spawn_driver;
+	} else if (*tp == am_spawn_executable) {	/* A program */
+	    /*
+	     * {spawn_executable,Progname}
+	     */
+	    
+	    if (arity != make_arityval(2)) {
+		goto badarg;
+	    }
+	    name = tp[1];
+	    if (is_atom(name)) {
+		name_buf = (char *) erts_alloc(ERTS_ALC_T_TMP,
+					       atom_tab(atom_val(name))->len+1);
+		sys_memcpy((void *) name_buf,
+			   (void *) atom_tab(atom_val(name))->name, 
+			   atom_tab(atom_val(name))->len);
+		name_buf[atom_tab(atom_val(name))->len] = '\0';
+	    } else if ((i = is_string(name))) {
+		name_buf = (char *) erts_alloc(ERTS_ALC_T_TMP, i + 1);
+		if (intlist_to_buf(name, name_buf, i) != i)
+		    erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
+		name_buf[i] = '\0';
+	    } else {
+		goto badarg;
+	    }
+	    opts.spawn_type = ERTS_SPAWN_EXECUTABLE;
 	    driver = &spawn_driver;
 	} else if (*tp == am_fd) { /* An fd port */
 	    int n;
@@ -767,14 +840,23 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	}
     }
 
+    if ((driver != &spawn_driver && opts.argv != NULL) ||
+	(driver == &spawn_driver && 
+	 opts.spawn_type != ERTS_SPAWN_EXECUTABLE && 
+	 opts.argv != NULL)) {
+	/* Argument vector only if explicit spawn_executable */
+	goto badarg;
+    }
+	
+
     if (driver != &spawn_driver && opts.exit_status) {
 	goto badarg;
     }
-
+    
     if (IS_TRACED_FL(p, F_TRACE_SCHED_PROCS)) {
         trace_virtual_sched(p, am_out);
     }
-
+    
 
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
 
@@ -807,18 +889,73 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	erts_port_status_bor_set(&erts_port[port_num],
 				 ERTS_PORT_SFLG_LINEBUF_IO);
     }
-
+ 
  do_return:
     if (name_buf)
 	erts_free(ERTS_ALC_T_TMP, (void *) name_buf);
+    if (opts.argv) {
+	free_args(opts.argv);
+    }
     return port_num;
-
+    
  badarg:
     *err_nump = BADARG;
     OPEN_PORT_ERROR(-3);
     goto do_return;
 #undef OPEN_PORT_ERROR
 }
+
+static char **convert_args(Eterm l)
+{
+    char **pp;
+    char *b;
+    int n;
+    int i = 0;
+    Eterm str;
+    /* We require at least one element in list (argv[0]) */
+    if (is_not_list(l) && is_not_nil(l)) {
+	return NULL;
+    }
+    n = list_length(l);
+    pp = erts_alloc(ERTS_ALC_T_TMP, (n + 2) * sizeof(char **));
+    pp[i++] = erts_default_arg0;
+    while (is_list(l)) {
+	str = CAR(list_val(l));
+
+	if (is_nil(str)) {
+	    n = 0;
+	} else if( (n = is_string(str)) == 0) {
+	    /* Not a string... */
+	    int j;
+	    for (j = 1; j < i; ++j)
+		erts_free(ERTS_ALC_T_TMP, pp[j]);
+	    erts_free(ERTS_ALC_T_TMP, pp);
+	    return NULL;
+	}
+	b = (char *) erts_alloc(ERTS_ALC_T_TMP, (n + 1) * sizeof(byte));
+	pp[i++] = (char *) b;
+	if (intlist_to_buf(str, b, n) != n)
+	    erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
+	b[n] = '\0';
+	l = CDR(list_val(l));
+    }
+    pp[i] = NULL;
+    return pp;
+}
+
+static void free_args(char **av)
+{
+    int i;
+    if (av == NULL)
+	return;
+    for (i = 0; av[i] != NULL; ++i) {
+	if (av[i] != erts_default_arg0) {
+	    erts_free(ERTS_ALC_T_TMP, av[i]);
+	}
+    }
+    erts_free(ERTS_ALC_T_TMP, av);
+}
+    
 
 static byte* convert_environment(Process* p, Eterm env)
 {

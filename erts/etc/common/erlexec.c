@@ -39,6 +39,7 @@
 
 #define NO 0
 #define YES 1
+#define DEFAULT_PROGNAME "erl"
 
 #ifdef __WIN32__
 #define INI_FILENAME "erl.ini"
@@ -54,6 +55,8 @@
 #define DIRSEP "/"
 #define NULL_DEVICE "/dev/null"
 #define BINARY_EXT ""
+#define EMULATOR_EXECUTABLE "beam"
+
 #endif
 #define QUOTE(s) s
 
@@ -113,6 +116,12 @@ static char *plusM_other_switches[] = {
     NULL
 };
 
+/* +s arguments with values */
+static char *pluss_val_switches[] = {
+    "bt",
+    "ct",
+    NULL
+};
 
 /*
  * Define sleep(seconds) in terms of Sleep() on Windows.
@@ -775,7 +784,6 @@ int main(int argc, char **argv)
 		  case 'i':
 		  case 'P':
 		  case 'S':
-		  case 's':
 		  case 'T':
 		  case 'R':
 		  case 'W':
@@ -839,6 +847,21 @@ int main(int argc, char **argv)
 			  goto the_default;
 		      break;
 		  }
+		  case 's':
+		      if (!is_one_of_strings(&argv[i][2],
+					     pluss_val_switches))
+			  goto the_default;
+		      else {
+			  if (i+1 >= argc
+			      || argv[i+1][0] == '-'
+			      || argv[i+1][0] == '+')
+			      usage(argv[i]);
+			  argv[i][0] = '-';
+			  add_Eargs(argv[i]);
+			  add_Eargs(argv[i+1]);
+			  i++;
+		      }
+		      break;
 		  default:
 		  the_default:
 		    argv[i][0] = '-'; /* Change +option to -option. */
@@ -1328,6 +1351,7 @@ static char *do_lookup_in_section(InitSection *inis, char *name,
 
 static void get_parameters(int argc, char** argv)
 {
+    char *p;
     char buffer[MAX_PATH];
     char *ini_filename;
     HANDLE module = GetModuleHandle(NULL); /* This might look strange, but we want the erl.ini 
@@ -1347,23 +1371,48 @@ static void get_parameters(int argc, char** argv)
     ini_filename = replace_filename(buffer,INI_FILENAME);
 
     if ((inif = load_init_file(ini_filename)) == NULL) {
-	error("Could not load init file %s",ini_filename);
+	/* Assume that the path is absolute and that
+	   it does not contain any symbolic link */
+	
+	char buffer[MAX_PATH];
+	
+	/* Determine bindir */
+	if (GetEnvironmentVariable("ERLEXEC_DIR", buffer, MAX_PATH) == 0) {
+	    strcpy(buffer, ini_filename);
+	    for (p = buffer+strlen(buffer)-1; p >= buffer && *p != '\\'; --p)
+		;
+	    *p ='\0';
+	}
+	bindir = path_massage(buffer);
+
+	/* Determine rootdir */
+	for (p = buffer+strlen(buffer)-1; p >= buffer && *p != '\\'; --p)
+	    ;
+	p--;
+	for (;p >= buffer && *p != '\\'; --p)
+	    ;
+	*p ='\0';
+	rootdir = path_massage(buffer);
+
+	/* Hardcoded progname */
+	progname = strsave(DEFAULT_PROGNAME);
+    } else {
+	if ((inis = lookup_init_section(inif,INI_SECTION)) == NULL) {
+	    error("Could not find section %s in init file %s",
+		  INI_SECTION, ini_filename);
+	}
+
+	bindir = do_lookup_in_section(inis, "Bindir", INI_SECTION, ini_filename,1);
+	rootdir = do_lookup_in_section(inis, "Rootdir", INI_SECTION, 
+				       ini_filename,1);
+	progname = do_lookup_in_section(inis, "Progname", INI_SECTION, 
+					ini_filename,0);
+	free_init_file(inif);
     }
 
-    if ((inis = lookup_init_section(inif,INI_SECTION)) == NULL) {
-	error("Could not find section %s in init file %s",
-	      INI_SECTION, ini_filename);
-    }
-
-    progname = do_lookup_in_section(inis, "Progname", INI_SECTION, 
-				    ini_filename,0);
-    bindir = do_lookup_in_section(inis, "Bindir", INI_SECTION, ini_filename,1);
-    rootdir = do_lookup_in_section(inis, "Rootdir", INI_SECTION, 
-				   ini_filename,1);
     emu = EMULATOR_EXECUTABLE;
     start_emulator_program = strsave(argv[0]);
 
-    free_init_file(inif);
     free(ini_filename);
 }
 
@@ -1398,11 +1447,46 @@ static void
 get_parameters(int argc, char** argv)
 {
     progname = get_env("PROGNAME");
-    bindir = get_env("BINDIR");
-    rootdir = get_env("ROOTDIR");
+    if (!progname) {
+	progname = strsave(DEFAULT_PROGNAME);
+    }	
+
     emu = get_env("EMU");
-    if (!progname || !bindir || !rootdir || !emu ) {
-	error("BINDIR, ROOTDIR, EMU and PROGNAME  must be set");
+    if (!emu) {
+	emu = strsave(EMULATOR_EXECUTABLE);
+    }	
+
+    bindir = get_env("BINDIR");
+    if (!bindir) {
+	/* Determine bindir from absolute path to executable */
+	char *p;
+	char buffer[PATH_MAX];
+	strcpy(buffer, argv[0]);
+	
+	for (p = buffer+strlen(buffer)-1 ; p >= buffer && *p != '/'; --p)
+	    ;
+	*p ='\0';
+	bindir = strsave(buffer);
+    }
+
+    rootdir = get_env("ROOTDIR");
+    if (!rootdir) {
+	/* Determine rootdir from absolute path to bindir */
+	char *p;
+	char buffer[PATH_MAX];
+	strcpy(buffer, bindir);
+	
+	for (p = buffer+strlen(buffer)-1; p >= buffer && *p != '/'; --p)
+	    ;
+	p--;
+	for (; p >= buffer && *p != '/'; --p)
+	    ;
+	*p ='\0';
+	rootdir = strsave(buffer);
+    }
+
+    if (!progname || !emu || !rootdir || !bindir) {
+	error("PROGNAME, EMU, ROOTDIR and BINDIR  must be set");
     }
 }
 

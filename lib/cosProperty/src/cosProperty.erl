@@ -339,7 +339,7 @@ create_link(Module, Env, ArgList) ->
 start_PropertiesIterator(Args) ->
     Name = create_name(propertiesIterator),
     case supervisor:start_child(?SUPERVISOR_NAME, ?SUP_PROP_SPEC(Name, Args)) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	_Other->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
@@ -355,7 +355,7 @@ start_PropertiesIterator(Args) ->
 start_PropertyNamesIterator(Args) ->
     Name = create_name(propertiesIterator),
     case supervisor:start_child(?SUPERVISOR_NAME, ?SUP_NAMES_SPEC(Name, Args)) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	_Other->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})

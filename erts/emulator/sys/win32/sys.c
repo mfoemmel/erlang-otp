@@ -68,9 +68,11 @@ static int get_overlapped_result(struct async_io* aio,
 				 LPDWORD pBytesRead, BOOL wait);
 static FUNCTION(BOOL, CreateChildProcess, (char *, HANDLE, HANDLE,
 					   HANDLE, LPHANDLE, BOOL,
-					   LPVOID, LPTSTR));
+					   LPVOID, LPTSTR, unsigned, 
+					   char **, int *));
 static int create_pipe(LPHANDLE, LPHANDLE, BOOL);
-static int ApplicationType(const char* originalName, char fullPath[MAX_PATH]);
+static int ApplicationType(const char* originalName, char fullPath[MAX_PATH],
+			   BOOL search_in_path, int *error_return);
 
 HANDLE erts_service_event;
 
@@ -361,6 +363,8 @@ int* pBuild;			/* Pointer to build number. */
 #define DF_OVR_READY	1	/* Overlapped result is ready. */
 #define DF_EXIT_THREAD	2	/* The thread should exit. */
 #define DF_XLAT_CR	4	/* The thread should translate CRs. */
+#define DF_DROP_IF_INVH 8       /* Drop packages instead of crash if
+				   invalid handle (stderr) */
 
 #define OV_BUFFER_PTR(dp) ((LPVOID) ((dp)->ov.Internal))
 #define OV_NUM_TO_READ(dp) ((dp)->ov.InternalHigh)
@@ -404,6 +408,7 @@ typedef struct async_io {
  * Input thread for fd_driver (if fd_driver is running).
  */
 static AsyncIo* fd_driver_input = NULL;
+static BOOL (WINAPI *fpSetHandleInformation)(HANDLE,DWORD,DWORD);
 
 /*
  * This data is used by the spawn and vanilla drivers.
@@ -441,6 +446,7 @@ static ErlDrvData spawn_start(ErlDrvPort, char*, SysDriverOpts*);
 static ErlDrvData fd_start(ErlDrvPort, char*, SysDriverOpts*);
 static ErlDrvData vanilla_start(ErlDrvPort, char*, SysDriverOpts*);
 static int spawn_init(void);
+static int fd_init(void);
 static void fd_stop(ErlDrvData);
 static void stop(ErlDrvData);
 static void output(ErlDrvData, char*, int);
@@ -487,7 +493,7 @@ extern void poll_debug_write_done(ErtsSysFdType fd, int bytes);
 extern int null_func(void);
 
 struct erl_drv_entry fd_driver_entry = {
-    null_func,
+    fd_init,
     fd_start,
     fd_stop,
     output,
@@ -992,6 +998,19 @@ get_overlapped_result(aio, pBytesRead, wait)
 }
   
 static int
+fd_init(void)
+{
+    char kernel_dll_name[] = "kernel32";
+    HMODULE module;
+    module = GetModuleHandle(kernel_dll_name);
+    fpSetHandleInformation = (module != NULL) ? 
+	(BOOL (WINAPI *)(HANDLE,DWORD,DWORD)) 
+	GetProcAddress(module,"SetHandleInformation") : 
+	NULL;
+
+    return 0;
+}
+static int
 spawn_init()
 {
     int i;
@@ -1019,6 +1038,7 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     int neededSelects = 0;
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
     char* envir = opts->envir;
+    int errno_return = -1;
     
     if (opts->read_write & DO_READ)
 	neededSelects++;
@@ -1045,6 +1065,7 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     if (opts->read_write & DO_WRITE) {
 	if (!create_pipe(&hChildStdin, &hToChild, TRUE)) {
 	    CloseHandle(hFromChild);
+	    hFromChild = INVALID_HANDLE_VALUE;
 	    CloseHandle(hChildStdout);
 	    goto error;
 	}
@@ -1068,7 +1089,9 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 				  FILE_ATTRIBUTE_NORMAL, NULL);
 	close_child_stderr = 1;
     }
-
+    if (fpSetHandleInformation != NULL) {
+	(*fpSetHandleInformation)(hChildStderr, HANDLE_FLAG_INHERIT, 1);
+    }
     /*
      * Spawn the port program.
      */
@@ -1082,7 +1105,10 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 			    &dp->port_pid,
 			    opts->hide_window,
 			    (LPVOID) envir,
-			    (LPTSTR) opts->wd);
+			    (LPTSTR) opts->wd,
+			    opts->spawn_type,
+			    opts->argv, 
+			    &errno_return);
     CloseHandle(hChildStdin);
     CloseHandle(hChildStdout);
     if (close_child_stderr && hChildStderr != INVALID_HANDLE_VALUE &&
@@ -1095,6 +1121,9 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 
     if (!ok) {
 	dp->port_pid = INVALID_HANDLE_VALUE;
+	if (errno_return >= 0) {
+	    retval = ERL_DRV_ERROR_ERRNO;
+	} 
     } else {
 	if (!use_named_pipes) {
 	    if ((opts->read_write & DO_READ) &&
@@ -1119,7 +1148,7 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 				 opts->exit_status);
     }
     
-    if (retval != ERL_DRV_ERROR_GENERAL)
+    if (retval != ERL_DRV_ERROR_GENERAL && retval != ERL_DRV_ERROR_ERRNO)
 	return retval;
     
  error:
@@ -1128,7 +1157,10 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     if (hToChild != INVALID_HANDLE_VALUE)
 	CloseHandle(hToChild);
     release_driver_data(dp);
-    return ERL_DRV_ERROR_GENERAL;
+    if (retval == ERL_DRV_ERROR_ERRNO) {
+	errno = errno_return;
+    }
+    return retval;
 }
 
 static int
@@ -1186,6 +1218,39 @@ int parse_command(char* cmd){
     return i;
 }
 
+BOOL need_quotes(char *str)
+{
+    int in_quote = 0;
+    int backslashed = 0;
+    int naked_space = 0;
+    while (*str != '\0') {
+	switch (*str) {
+	case '\\' :
+	    backslashed = !backslashed;
+	    break;
+	case '"':
+	    if (backslashed) {
+		backslashed=0;
+	    } else {
+		in_quote = !in_quote;
+	    }
+	    break;
+	case ' ':
+	    backslashed = 0;
+	    if (!(backslashed || in_quote)) {
+		naked_space++;
+	    }
+	    break;
+	default:
+	    backslashed = 0;
+	}
+	++str;
+    }
+    return (naked_space > 0);
+}
+	    
+	    
+
 /*
  *----------------------------------------------------------------------
  *
@@ -1214,17 +1279,23 @@ int parse_command(char* cmd){
  */
 
 static BOOL
-CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
-    char *origcmd;		/* Command line for child process (including
-				 * name of executable).
-				 */
-    HANDLE hStdin;		/* The standard input handle for child. */
-    HANDLE hStdout;		/* The standard output handle for child. */
-    HANDLE hStderr;		/* The standard error handle for child. */
-    LPHANDLE phPid;		/* Pointer to variable to received PID. */
-    BOOL hide;			/* Hide the window unconditionally. */
-    LPVOID env;			/* Environment for the child */
-    LPTSTR wd;			/* Working dir for the child */
+CreateChildProcess
+(
+ char *origcmd,  /* Command line for child process (including
+		  * name of executable). Or whole executable if st is
+		  * ERTS_SPAWN_EXECUTABLE
+		  */
+ HANDLE hStdin,  /* The standard input handle for child. */
+ HANDLE hStdout, /* The standard output handle for child. */ 
+ HANDLE hStderr, /* The standard error handle for child. */
+ LPHANDLE phPid, /* Pointer to variable to received PID. */
+ BOOL hide,      /* Hide the window unconditionally. */
+ LPVOID env,     /* Environment for the child */
+ LPTSTR wd,      /* Working dir for the child */
+ unsigned st,    /* Flags for spawn, tells us how to interpret origcmd */
+ char **argv,     /* Argument vector if given. */
+ int *errno_return /* Place to put an errno in in case of failure */
+ )
 { 
     PROCESS_INFORMATION piProcInfo = {0};
     STARTUPINFO siStartInfo = {0};
@@ -1233,37 +1304,43 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
     /* Not to be changed for different types of executables */
     int staticCreateFlags = GetPriorityClass(GetCurrentProcess()); 
     int createFlags = DETACHED_PROCESS;
-    char newcmdline[2048];
+    char *newcmdline = NULL;
     char execPath[MAX_PATH];
     int cmdlength;
     char* thecommand;
+    LPTSTR appname = NULL;
     HANDLE hProcess = GetCurrentProcess();
     
+    *errno_return = -1;
+
     siStartInfo.cb = sizeof(STARTUPINFO); 
     siStartInfo.dwFlags = STARTF_USESTDHANDLES;
     siStartInfo.hStdInput = hStdin;
     siStartInfo.hStdOutput = hStdout;
     siStartInfo.hStdError = hStderr;
 
-    /*
-     * Parse out the program name from the command line (it can be quoted and
-     * contain spaces).
-     */
-    cmdlength = parse_command(origcmd);
-    thecommand = (char *) erts_alloc(ERTS_ALC_T_TMP, cmdlength+1);
-    strncpy(thecommand, origcmd, cmdlength);
-    thecommand[cmdlength] = '\0';
-    DEBUGF(("spawn command: %s\n", thecommand));
-    
-    applType = ApplicationType(thecommand, execPath);
-    DEBUGF(("ApplicationType returned for (%s) is %d\n", thecommand, applType));
-    erts_free(ERTS_ALC_T_TMP, (void *) thecommand);
-    if (applType == APPL_NONE) {
-	return FALSE;
-    }
-    newcmdline[0] = '\0'; 
 
-    if (int_os_version.dwPlatformId == VER_PLATFORM_WIN32_NT) {
+    if (st != ERTS_SPAWN_EXECUTABLE) {
+	/*
+	 * Parse out the program name from the command line (it can be quoted and
+	 * contain spaces).
+	 */
+	newcmdline = erts_alloc(ERTS_ALC_T_TMP, 2048);
+	cmdlength = parse_command(origcmd);
+	thecommand = (char *) erts_alloc(ERTS_ALC_T_TMP, cmdlength+1);
+	strncpy(thecommand, origcmd, cmdlength);
+	thecommand[cmdlength] = '\0';
+	DEBUGF(("spawn command: %s\n", thecommand));
+    
+	applType = ApplicationType(thecommand, execPath, TRUE, errno_return);
+	DEBUGF(("ApplicationType returned for (%s) is %d\n", thecommand, applType));
+	erts_free(ERTS_ALC_T_TMP, (void *) thecommand);
+	if (applType == APPL_NONE) {
+	    erts_free(ERTS_ALC_T_TMP,newcmdline);
+	    return FALSE;
+	}
+	newcmdline[0] = '\0'; 
+
 	if (applType == APPL_DOS) {
 	    /*
 	     * Under NT, 16-bit DOS applications will not run unless they
@@ -1271,7 +1348,7 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
 	     * a normal process inside of a hidden console application,
 	     * and then run that hidden console as a detached process.
 	     */
-	  
+	    
 	    siStartInfo.wShowWindow = SW_HIDE;
 	    siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
 	    createFlags = CREATE_NEW_CONSOLE;
@@ -1282,51 +1359,118 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
 	    siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
 	    createFlags = 0;
 	}
-    } else {
-	/* Windows 95 */
+
+	strcat(newcmdline, execPath);
+	strcat(newcmdline, origcmd+cmdlength);
+    } else { /* ERTS_SPAWN_EXECUTABLE */
+	int run_cmd = 0;
+	applType = ApplicationType(origcmd, execPath, FALSE, errno_return);
+	if (applType == APPL_NONE) {
+	    return FALSE;
+	} 
 	if (applType == APPL_DOS) {
-	    /*
-	     * Under Windows 95, 16-bit DOS applications do not work well 
-	     * with pipes:
-	     *
-	     * 1. EOF on a pipe between a detached 16-bit DOS application 
-	     * and another application is not seen at the other
-	     * end of the pipe, so the listening process blocks forever on 
-	     * reads.  This inablity to detect EOF happens when either a 
-	     * 16-bit app or the 32-bit app is the listener.  
-	     *
-	     * 2. If a 16-bit DOS application (detached or not) blocks when 
-	     * writing to a pipe, it will never wake up again, and it
-	     * eventually brings the whole system down around it.
-	     *
-	     * The 16-bit application is run as a normal process inside
-	     * of a hidden helper console app, and this helper may be run
-	     * as a detached process.  If any of the stdio handles is
-	     * a pipe, the helper application accumulates information 
-	     * into temp files and forwards it to or from the DOS 
-	     * application as appropriate.  This means that DOS apps 
-	     * must receive EOF from a stdin pipe before they will actually
-	     * begin, and must finish generating stdout or stderr before 
-	     * the data will be sent to the next stage of the pipe.
-	     */
-	  
-	    siStartInfo.wShowWindow = SW_HIDE;
-	    siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
-	    createFlags = CREATE_NEW_CONSOLE;
-	    strcat(newcmdline, "erl_stub16 ");
+		/*
+		 * See comment above
+		 */
+		
+		siStartInfo.wShowWindow = SW_HIDE;
+		siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
+		createFlags = CREATE_NEW_CONSOLE;
+		run_cmd = 1;
 	} else if (hide) {
-	    DEBUGF(("hiding window\n"));
-	    siStartInfo.wShowWindow = SW_HIDE;
-	    siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
-	    createFlags = 0;
+		DEBUGF(("hiding window\n"));
+		siStartInfo.wShowWindow = SW_HIDE;
+		siStartInfo.dwFlags |= STARTF_USESHOWWINDOW;
+		createFlags = 0;
 	}
+	if (run_cmd) {
+	    char cmdPath[MAX_PATH];
+	    int cmdType;
+	    cmdType = ApplicationType("cmd.exe", cmdPath, TRUE, errno_return);
+	    if (cmdType == APPL_NONE || cmdType == APPL_DOS) {
+		return FALSE;
+	    }
+	    appname = (char *) erts_alloc(ERTS_ALC_T_TMP, strlen(cmdPath)+1);
+	    strcpy(appname,cmdPath);
+	} else {
+	    appname = (char *) erts_alloc(ERTS_ALC_T_TMP, strlen(execPath)+1);
+	    strcpy(appname,execPath);
+	}
+	if (argv == NULL) {
+	    BOOL orig_need_q = need_quotes(execPath);
+	    char *ptr;
+	    int ocl = strlen(execPath);
+	    if (run_cmd) {
+		newcmdline = (char *) erts_alloc(ERTS_ALC_T_TMP, 
+						 ocl + ((orig_need_q) ? 3 : 1)
+						 + 11);
+		memcpy(newcmdline,"cmd.exe /c ",11);
+		ptr = newcmdline + 11;
+	    } else {
+		newcmdline = (char *) erts_alloc(ERTS_ALC_T_TMP, 
+						 ocl + ((orig_need_q) ? 3 : 1));
+		ptr = newcmdline;
+	    }
+	    if (orig_need_q) {
+		*ptr++ = '"';
+	    }
+	    memcpy(ptr,execPath,ocl);
+	    ptr += ocl;
+	    if (orig_need_q) {
+		*ptr++ = '"';
+	    }
+	    *ptr = '\0';
+	} else {
+	    int sum = 1; /* '\0' */
+	    char **ar = argv;
+	    char *n;
+	    char *save_arg0 = NULL;
+	    if (argv[0] == erts_default_arg0 || run_cmd) {
+		save_arg0 = argv[0];
+		argv[0] = execPath;
+	    }
+	    if (run_cmd) {
+		sum += 11; /* cmd.exe /c */
+	    }
+	    while (*ar != NULL) {
+		sum += strlen(*ar);
+		if (need_quotes(*ar)) {
+		    sum += 2; /* quotes */
+		}
+		sum++; /* space */
+		++ar;
+	    }
+	    ar = argv;
+	    newcmdline = erts_alloc(ERTS_ALC_T_TMP, sum);
+	    n = newcmdline;
+	    if (run_cmd) {
+		memcpy(n,"cmd.exe /c ",11);
+		n += 11;
+	    }
+	    while (*ar != NULL) {
+		int q = need_quotes(*ar);
+		sum = strlen(*ar);
+		if (q) {
+		    *n++ = '"';
+		}
+		memcpy(n,*ar,sum);
+		n += sum;
+		if (q) {
+		    *n++ = '"';
+		}
+		*n++ = ' ';
+		++ar;
+	    }
+	    ASSERT(n > newcmdline);
+	    *(n-1) = '\0';
+	    if (save_arg0 != NULL) {
+		argv[0] = save_arg0;
+	    }
+	}	    
+	    
     }
-
-    strcat(newcmdline, execPath);
-    strcat(newcmdline, origcmd+cmdlength);
-
     DEBUGF(("Creating child process: %s, createFlags = %d\n", newcmdline, createFlags));
-    ok = CreateProcess(NULL, 
+    ok = CreateProcess(appname, 
 		       newcmdline, 
 		       NULL, 
 		       NULL, 
@@ -1336,8 +1480,18 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
 		       wd, 
 		       &siStartInfo, 
 		       &piProcInfo);
+
+    if (newcmdline != NULL) {
+	    erts_free(ERTS_ALC_T_TMP,newcmdline);
+    }	
+    if (appname != NULL) {
+	    erts_free(ERTS_ALC_T_TMP,appname);
+    }	
     if (!ok) {
 	DEBUGF(("CreateProcess failed: %s\n", last_error()));
+	if (*errno_return < 0) {
+	    *errno_return = EACCES;
+	}
 	return FALSE;
     }
     CloseHandle(piProcInfo.hThread); /* Necessary to avoid resource leak. */
@@ -1348,12 +1502,12 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
     }
     
     /* 
-     * "When an application spawns a process repeatedly, a new thread 
+     * When an application spawns a process repeatedly, a new thread 
      * instance will be created for each process but the previous 
      * instances may not be cleaned up.  This results in a significant 
      * virtual memory loss each time the process is spawned.  If there 
      * is a WaitForInputIdle() call between CreateProcess() and
-     * CloseHandle(), the problem does not occur." PSS ID Number: Q124121
+     * CloseHandle(), the problem does not occur. PSS ID Number: Q124121
      */
     
     WaitForInputIdle(piProcInfo.hProcess, 5000);
@@ -1445,10 +1599,14 @@ static int create_pipe(HANDLE *phRead, HANDLE *phWrite, BOOL inheritRead)
 
 
 
-static int ApplicationType(originalName, fullPath)
-    const char *originalName;	/* Name of the application to find. */
-    char fullPath[MAX_PATH];	/* Filled with complete path to 
-				 * application. */
+static int ApplicationType
+(
+ const char *originalName, /* Name of the application to find. */ 
+ char fullPath[MAX_PATH],  /* Filled with complete path to 
+			    * application. */
+ BOOL search_in_path,      /* If we should search the system wide path */
+ int *error_return         /* A place to put an error code */
+ )
 {
     int applType, i;
     HANDLE hFile;
@@ -1470,15 +1628,16 @@ static int ApplicationType(originalName, fullPath)
      * searching (in other words, SearchPath will not find the program 
      * "a.b.exe" if the arguments specified "a.b" and ".exe").   
      * So, first look for the file as it is named.  Then manually append 
-     * the extensions, looking for a match.  
+     * the extensions, looking for a match.  (')
      */
 
     applType = APPL_NONE;
+    *error_return = ENOENT;
     for (i = 0; i < (int) (sizeof(extensions) / sizeof(extensions[0])); i++) {
 	lstrcpyn(fullPath, originalName, MAX_PATH - 5);
         lstrcat(fullPath, extensions[i]);
 	
-	SearchPath(NULL, fullPath, NULL, MAX_PATH, fullPath, &rest);
+	SearchPath((search_in_path) ? NULL : ".", fullPath, NULL, MAX_PATH, fullPath, &rest);
 
 	/*
 	 * Ignore matches on directories or data files, return if identified
@@ -1491,6 +1650,7 @@ static int ApplicationType(originalName, fullPath)
 
 	ext = strrchr(fullPath, '.');
 	if ((ext != NULL) && (strcmpi(ext, ".bat") == 0)) {
+	    *error_return = EACCES;
 	    applType = APPL_DOS;
 	    break;
 	}
@@ -1501,6 +1661,8 @@ static int ApplicationType(originalName, fullPath)
 	    continue;
 	}
 
+	*error_return = EACCES; /* If considered an error, 
+				    it's an access error */
 	header.e_magic = 0;
 	ReadFile(hFile, (void *) &header, sizeof(header), &read, NULL);
 	if (header.e_magic != IMAGE_DOS_SIGNATURE) {
@@ -1641,8 +1803,39 @@ threaded_writer(LPVOID param)
 	numToWrite = OV_NUM_TO_READ(aio);
 	aio->pendingError = 0;
 	ok = WriteFile(aio->fd, buf, numToWrite, &aio->bytesTransferred, NULL);
-	if (!ok)
+	if (!ok) {
 	    aio->pendingError = GetLastError();
+	    if (aio->pendingError == ERROR_INVALID_HANDLE && 
+		aio->flags & DF_DROP_IF_INVH) {
+		/* This is standard error and we'we got an 
+		   invalid standard error FD (non-inheritable) from parent. 
+		   Just drop the message and be happy. */
+		aio->pendingError = 0;
+		aio->bytesTransferred = numToWrite;
+	    } else if (aio->pendingError == ERROR_NOT_ENOUGH_MEMORY) {
+		/* This could be a console, which limits utput to 64kbytes, 
+		   which might translate to less on a unicode system. 
+		   Try 16k chunks and see if it works before giving up. */
+		int done = 0;
+		DWORD transferred;
+		aio->pendingError = 0;
+		aio->bytesTransferred = 0;
+		ok = 1;
+		while (ok && (numToWrite - done) > 0x4000) {
+		    ok = WriteFile(aio->fd, buf + done, 0x4000, &transferred, NULL);
+		    aio->bytesTransferred += transferred;
+		    done += 0x4000;
+		}
+		if (ok && (numToWrite - done) > 0) {
+		    ok = WriteFile(aio->fd, buf + done, (numToWrite - done), 
+				   &transferred, NULL);
+		    aio->bytesTransferred += transferred;
+		}
+		if (!ok) {
+		    aio->pendingError = GetLastError();
+		}  
+	    }
+	}
 	SetEvent(aio->ov.hEvent);
 	if (aio->pendingError != NO_ERROR || aio->bytesTransferred == 0)
 	    break;
@@ -1690,6 +1883,7 @@ static ErlDrvData
 fd_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
     DriverData* dp;
+    int is_std_error = (opts->ofd == 2);
     
     opts->ifd = (int) translate_fd(opts->ifd);
     opts->ofd = (int) translate_fd(opts->ofd);
@@ -1708,6 +1902,10 @@ fd_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
     
     fd_driver_input = &(dp->in);
     dp->in.flags = DF_XLAT_CR;
+    if (is_std_error) {
+	dp->out.flags |= DF_DROP_IF_INVH; /* Just drop messages if stderror
+					     is an invalid handle */
+    }
     return set_driver_data(dp, opts->ifd, opts->ofd, opts->read_write, 0);
 }
 
@@ -2235,6 +2433,7 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 	dp->out.ov.Offset += bytesWritten; /* For vanilla driver. */
 	return ; /* 0; */
     }
+
     (void) driver_select(dp->port_num, ready_event, ERL_DRV_WRITE, 0);
     _dosmaperr(error);
     driver_failure_posix(dp->port_num, errno);
@@ -2647,19 +2846,11 @@ check_supported_os_version(void)
 		     "(min required: winnt %d.%d)\n",
 		     major, minor);
     }
-#elif defined(_WIN32_WINDOWS)
-    {
-	DWORD major = (_WIN32_WINDOWS >> 8) & 0xff;
-	DWORD minor = _WIN32_WINDOWS & 0xff;
-
-	if (int_os_version.dwMajorVersion < major
-	    || (int_os_version.dwMajorVersion == major
-		&& int_os_version.dwMinorVersion < minor))
-	    erl_exit(-1,
-		     "Windows version not supported "
-		     "(min required: win %d.%d)\n",
-		     nt_major, nt_minor);
-    }
+#else
+    erl_exit(-1,
+	     "Windows version not supported "
+	     "(min required: win %d.%d)\n",
+	     nt_major, nt_minor);
 #endif
 }
 

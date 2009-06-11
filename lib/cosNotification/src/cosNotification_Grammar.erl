@@ -1,26 +1,24 @@
 -module(cosNotification_Grammar).
 -export([parse/1, parse_and_scan/1, format_error/1]).
--file("cosNotification_Grammar.yrl", 133).
+-file("cosNotification_Grammar.yrl", 131).
 %%--------------------------------------------------------------------
-%%<copyright>
-%% <year>1999-2007</year>
-%% <holder>Ericsson AB, All Rights Reserved</holder>
-%%</copyright>
-%%<legalnotice>
+%%
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 1999-2009. All Rights Reserved.
+%% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved online at http://www.erlang.org/.
-%%
+%% 
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%%
-%% The Initial Developer of the Original Code is Ericsson AB.
-%%</legalnotice>
-%%
+%% 
+%% %CopyrightEnd%
 %%
 %%----------------------------------------------------------------------
 %% File    : cosNotification_Grammar.erl
@@ -29,8 +27,8 @@
 
 -include("CosNotification_Definitions.hrl").
 
-create_unary('+', Val) when number(Val) -> Val;
-create_unary('-', Val) when number(Val) -> -Val;
+create_unary('+', Val) when is_number(Val) -> Val;
+create_unary('-', Val) when is_number(Val) -> -Val;
 create_unary(_, _) -> return_error(0, "syntax error").
 
 examin_comp({T, []}) ->
@@ -39,7 +37,7 @@ examin_comp(V) ->
 	V.
 
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-20_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b01.2009-06-07_20/otp_src_R13B01/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -64,17 +62,17 @@ examin_comp(V) ->
 
 -type(yecc_ret() :: {'error', _} | {'ok', _}).
 
--spec(parse/1 :: (_) -> yecc_ret()).
+-spec parse(Tokens :: list()) -> yecc_ret().
 parse(Tokens) ->
-    yeccpars0(Tokens, false).
+    yeccpars0(Tokens, {no_func, no_line}, 0, [], []).
 
 -spec(parse_and_scan/1 ::
       ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
             yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
-    yeccpars0([], {F, A});
+    yeccpars0([], {{F, A}, no_line}, 0, [], []);
 parse_and_scan({M, F, A}) ->
-    yeccpars0([], {{M, F}, A}).
+    yeccpars0([], {{{M, F}, A}, no_line}, 0, [], []).
 
 -spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
@@ -87,15 +85,15 @@ format_error(Message) ->
 
 % To be used in grammar files to throw an error message to the parser
 % toplevel. Doesn't have to be exported!
--compile({nowarn_unused_function,{return_error,2}}).
+-compile({nowarn_unused_function, return_error/2}).
 -spec(return_error/2 :: (integer(), any()) -> no_return()).
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.3").
+-define(CODE_VERSION, "1.4").
 
-yeccpars0(Tokens, MFA) ->
-    try yeccpars1(Tokens, MFA, 0, [], [])
+yeccpars0(Tokens, Tzr, State, States, Vstack) ->
+    try yeccpars1(Tokens, Tzr, State, States, Vstack)
     catch 
         error: Error ->
             Stacktrace = erlang:get_stacktrace(),
@@ -105,11 +103,12 @@ yeccpars0(Tokens, MFA) ->
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace)
+                                 Stacktrace)
             catch _:_ -> erlang:raise(error, Error, Stacktrace)
             end;
-        throw: {error, {_Line, ?MODULE, _M}} = Error -> 
-            Error % probably from return_error/2
+        %% Probably thrown from return_error/2:
+        throw: {error, {_Line, ?MODULE, _M}} = Error ->
+            Error
     end.
 
 yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
@@ -121,20 +120,24 @@ yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
             {missing_in_goto_table, Symbol, State}
     end.
 
-yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
-    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
-              Tokenizer);
-yeccpars1([], {F, A}, State, States, Vstack) ->
+yeccpars1([Token | Tokens], Tzr, State, States, Vstack) ->
+    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, Tzr);
+yeccpars1([], {{F, A},_Line}, State, States, Vstack) ->
     case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(Tokens, {F, A}, State, States, Vstack);
-        {eof, _Endline} ->
-            yeccpars1([], false, State, States, Vstack);
+        {ok, Tokens, Endline} ->
+	    yeccpars1(Tokens, {{F, A}, Endline}, State, States, Vstack);
+        {eof, Endline} ->
+            yeccpars1([], {no_func, Endline}, State, States, Vstack);
         {error, Descriptor, _Endline} ->
             {error, Descriptor}
     end;
-yeccpars1([], false, State, States, Vstack) ->
-    yeccpars2(State, '$end', States, Vstack, {'$end', 999999}, [], false).
+yeccpars1([], {no_func, no_line}, State, States, Vstack) ->
+    Line = 999999,
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Line), [],
+              {no_func, Line});
+yeccpars1([], {no_func, Endline}, State, States, Vstack) ->
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Endline), [],
+              {no_func, Endline}).
 
 %% yeccpars1/7 is called from generated code.
 %%
@@ -142,34 +145,59 @@ yeccpars1([], false, State, States, Vstack) ->
 %% yeccpars1/7 can be found by parsing the file without following
 %% include directives. yecc will otherwise assume that an old
 %% yeccpre.hrl is included (one which defines yeccpars1/5).
-yeccpars1(State1, State, States, Vstack, Stack1, [Token | Tokens], 
-          Tokenizer) ->
+yeccpars1(State1, State, States, Vstack, Token0, [Token | Tokens], Tzr) ->
     yeccpars2(State, element(1, Token), [State1 | States],
-              [Stack1 | Vstack], Token, Tokens, Tokenizer);
-yeccpars1(State1, State, States, Vstack, Stack1, [], {F, A}) ->
-    case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(State1, State, States, Vstack, Stack1, Tokens, {F, A});
-        {eof, _Endline} ->
-            yeccpars1(State1, State, States, Vstack, Stack1, [], false);
-        {error, Descriptor, _Endline} ->
-            {error, Descriptor}
-    end;
-yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
-    yeccpars2(State, '$end', [State1 | States], [Stack1 | Vstack],
-              {'$end', 999999}, [], false).
+              [Token0 | Vstack], Token, Tokens, Tzr);
+yeccpars1(State1, State, States, Vstack, Token0, [], {{_F,_A}, _Line}=Tzr) ->
+    yeccpars1([], Tzr, State, [State1 | States], [Token0 | Vstack]);
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, no_line}) ->
+    Line = yecctoken_end_location(Token0),
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line});
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, Line}) ->
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line}).
 
 % For internal use only.
+yecc_end({Line,_Column}) ->
+    {'$end', Line};
+yecc_end(Line) ->
+    {'$end', Line}.
+
+yecctoken_end_location(Token) ->
+    try
+        {text, Str} = erl_scan:token_info(Token, text),
+        {line, Line} = erl_scan:token_info(Token, line),
+        Parts = re:split(Str, "\n"),
+        Dline = length(Parts) - 1,
+        Yline = Line + Dline,
+        case erl_scan:token_info(Token, column) of
+            {column, Column} ->
+                Col = byte_size(lists:last(Parts)),
+                {Yline, Col + if Dline =:= 0 -> Column; true -> 1 end};
+            undefined ->
+                Yline
+        end
+    catch _:_ ->
+        yecctoken_location(Token)
+    end.
+
 yeccerror(Token) ->
-    Text = case catch erl_scan:token_info(Token, text) of
-               {text, Txt} -> Txt;
-               _ -> yecctoken2string(Token)
-           end,
-    Location = case catch erl_scan:token_info(Token, location) of
-                   {location, Loc} -> Loc;
-                   _ -> element(2, Token)
-               end,
+    Text = yecctoken_to_string(Token),
+    Location = yecctoken_location(Token),
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
+
+yecctoken_to_string(Token) ->
+    case catch erl_scan:token_info(Token, text) of
+        {text, Txt} -> Txt;
+        _ -> yecctoken2string(Token)
+    end.
+
+yecctoken_location(Token) ->
+    case catch erl_scan:token_info(Token, location) of
+        {location, Loc} -> Loc;
+        _ -> element(2, Token)
+    end.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
@@ -177,13 +205,13 @@ yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:write(A);
+yecctoken2string({_Cat, _, Val}) -> io_lib:write(Val);
 yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format("~w", [Other]);
+    io_lib:write(Other);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -191,7 +219,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./cosNotification_Grammar.erl", 194).
+-file("./cosNotification_Grammar.erl", 222).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -1107,418 +1135,418 @@ yeccpars2_91(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 'yeccgoto_\'<toplevel>\''(0, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_1(1, Cat, Ss, Stack, T, Ts, Tzr).
 
--compile({inline,{yeccpars2_0_,1}}).
--file("cosNotification_Grammar.yrl", 55).
+-compile({inline,yeccpars2_0_/1}).
+-file("cosNotification_Grammar.yrl", 53).
 yeccpars2_0_(__Stack0) ->
  [begin
    '$empty'
   end | __Stack0].
 
--compile({inline,{yeccpars2_13_,1}}).
--file("cosNotification_Grammar.yrl", 95).
+-compile({inline,yeccpars2_13_/1}).
+-file("cosNotification_Grammar.yrl", 93).
 yeccpars2_13_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    list_to_atom ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_16_,1}}).
--file("cosNotification_Grammar.yrl", 92).
+-compile({inline,yeccpars2_16_/1}).
+-file("cosNotification_Grammar.yrl", 90).
 yeccpars2_16_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    false
   end | __Stack].
 
--compile({inline,{yeccpars2_17_,1}}).
--file("cosNotification_Grammar.yrl", 91).
+-compile({inline,yeccpars2_17_/1}).
+-file("cosNotification_Grammar.yrl", 89).
 yeccpars2_17_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    true
   end | __Stack].
 
--compile({inline,{yeccpars2_20_,1}}).
--file("cosNotification_Grammar.yrl", 106).
+-compile({inline,yeccpars2_20_/1}).
+-file("cosNotification_Grammar.yrl", 104).
 yeccpars2_20_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_22_,1}}).
--file("cosNotification_Grammar.yrl", 121).
+-compile({inline,yeccpars2_22_/1}).
+-file("cosNotification_Grammar.yrl", 119).
 yeccpars2_22_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    element ( 2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_23_,1}}).
--file("cosNotification_Grammar.yrl", 89).
+-compile({inline,yeccpars2_23_/1}).
+-file("cosNotification_Grammar.yrl", 87).
 yeccpars2_23_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    element ( 2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_25_,1}}).
--file("cosNotification_Grammar.yrl", 88).
+-compile({inline,yeccpars2_25_/1}).
+-file("cosNotification_Grammar.yrl", 86).
 yeccpars2_25_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    element ( 2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_26_,1}}).
--file("cosNotification_Grammar.yrl", 90).
+-compile({inline,yeccpars2_26_/1}).
+-file("cosNotification_Grammar.yrl", 88).
 yeccpars2_26_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    element ( 2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_27_,1}}).
--file("cosNotification_Grammar.yrl", 85).
+-compile({inline,yeccpars2_27_/1}).
+-file("cosNotification_Grammar.yrl", 83).
 yeccpars2_27_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    { 'not' , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_28_,1}}).
--file("cosNotification_Grammar.yrl", 106).
+-compile({inline,yeccpars2_28_/1}).
+-file("cosNotification_Grammar.yrl", 104).
 yeccpars2_28_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_29_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_29_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_29_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_30_,1}}).
--file("cosNotification_Grammar.yrl", 98).
+-compile({inline,yeccpars2_30_/1}).
+-file("cosNotification_Grammar.yrl", 96).
 yeccpars2_30_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    examin_comp ( { exist_component , __3 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_35_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_35_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_35_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_36_,1}}).
--file("cosNotification_Grammar.yrl", 103).
+-compile({inline,yeccpars2_36_/1}).
+-file("cosNotification_Grammar.yrl", 101).
 yeccpars2_36_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ { arrindex , element ( 2 , __2 ) } | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_41_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_41_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_41_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_42_,1}}).
--file("cosNotification_Grammar.yrl", 109).
+-compile({inline,yeccpars2_42_/1}).
+-file("cosNotification_Grammar.yrl", 107).
 yeccpars2_42_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ { arrindex , element ( 2 , __2 ) } | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_43_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_43_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_43_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_44_,1}}).
--file("cosNotification_Grammar.yrl", 108).
+-compile({inline,yeccpars2_44_/1}).
+-file("cosNotification_Grammar.yrl", 106).
 yeccpars2_44_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_45_,1}}).
--file("cosNotification_Grammar.yrl", 127).
+-compile({inline,yeccpars2_45_/1}).
+-file("cosNotification_Grammar.yrl", 125).
 yeccpars2_45_(__Stack0) ->
  [begin
    default
   end | __Stack0].
 
--compile({inline,{yeccpars2_46_,1}}).
--file("cosNotification_Grammar.yrl", 117).
+-compile({inline,yeccpars2_46_/1}).
+-file("cosNotification_Grammar.yrl", 115).
 yeccpars2_46_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ '_d' ]
   end | __Stack].
 
--compile({inline,{yeccpars2_47_,1}}).
--file("cosNotification_Grammar.yrl", 116).
+-compile({inline,yeccpars2_47_/1}).
+-file("cosNotification_Grammar.yrl", 114).
 yeccpars2_47_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ '_length' ]
   end | __Stack].
 
--compile({inline,{yeccpars2_48_,1}}).
--file("cosNotification_Grammar.yrl", 119).
+-compile({inline,yeccpars2_48_/1}).
+-file("cosNotification_Grammar.yrl", 117).
 yeccpars2_48_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ '_repos_id' ]
   end | __Stack].
 
--compile({inline,{yeccpars2_49_,1}}).
--file("cosNotification_Grammar.yrl", 118).
+-compile({inline,yeccpars2_49_/1}).
+-file("cosNotification_Grammar.yrl", 116).
 yeccpars2_49_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    [ '_type_id' ]
   end | __Stack].
 
--compile({inline,{yeccpars2_50_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_50_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_50_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_51_,1}}).
--file("cosNotification_Grammar.yrl", 114).
+-compile({inline,yeccpars2_51_/1}).
+-file("cosNotification_Grammar.yrl", 112).
 yeccpars2_51_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    [ { dotint , element ( 2 , __1 ) } | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_54_,1}}).
--file("cosNotification_Grammar.yrl", 124).
+-compile({inline,yeccpars2_54_/1}).
+-file("cosNotification_Grammar.yrl", 122).
 yeccpars2_54_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { uint , element ( 2 , __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_55_,1}}).
--file("cosNotification_Grammar.yrl", 126).
+-compile({inline,yeccpars2_55_/1}).
+-file("cosNotification_Grammar.yrl", 124).
 yeccpars2_55_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
  [begin
    { ustr , element ( 2 , __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_56_,1}}).
--file("cosNotification_Grammar.yrl", 125).
+-compile({inline,yeccpars2_56_/1}).
+-file("cosNotification_Grammar.yrl", 123).
 yeccpars2_56_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    { uint , create_unary ( element ( 2 , __1 ) , element ( 2 , __2 ) ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_57_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_57_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_57_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_58_,1}}).
--file("cosNotification_Grammar.yrl", 115).
+-compile({inline,yeccpars2_58_/1}).
+-file("cosNotification_Grammar.yrl", 113).
 yeccpars2_58_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ __2 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_59_,1}}).
--file("cosNotification_Grammar.yrl", 113).
+-compile({inline,yeccpars2_59_/1}).
+-file("cosNotification_Grammar.yrl", 111).
 yeccpars2_59_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    [ { dotid , __1 } | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_61_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_61_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_61_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_62_,1}}).
--file("cosNotification_Grammar.yrl", 110).
+-compile({inline,yeccpars2_62_/1}).
+-file("cosNotification_Grammar.yrl", 108).
 yeccpars2_62_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ { associd , __2 } | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_63_,1}}).
--file("cosNotification_Grammar.yrl", 102).
+-compile({inline,yeccpars2_63_/1}).
+-file("cosNotification_Grammar.yrl", 100).
 yeccpars2_63_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_65_,1}}).
--file("cosNotification_Grammar.yrl", 111).
+-compile({inline,yeccpars2_65_/1}).
+-file("cosNotification_Grammar.yrl", 109).
 yeccpars2_65_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_66_,1}}).
--file("cosNotification_Grammar.yrl", 104).
+-compile({inline,yeccpars2_66_/1}).
+-file("cosNotification_Grammar.yrl", 102).
 yeccpars2_66_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
    [ { associd , __2 } | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_67_,1}}).
--file("cosNotification_Grammar.yrl", 105).
+-compile({inline,yeccpars2_67_/1}).
+-file("cosNotification_Grammar.yrl", 103).
 yeccpars2_67_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    [ { varid , __1 } | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_68_,1}}).
--file("cosNotification_Grammar.yrl", 96).
+-compile({inline,yeccpars2_68_/1}).
+-file("cosNotification_Grammar.yrl", 94).
 yeccpars2_68_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    examin_comp ( { component , __2 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_69_,1}}).
--file("cosNotification_Grammar.yrl", 106).
+-compile({inline,yeccpars2_69_/1}).
+-file("cosNotification_Grammar.yrl", 104).
 yeccpars2_69_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_70_,1}}).
--file("cosNotification_Grammar.yrl", 97).
+-compile({inline,yeccpars2_70_/1}).
+-file("cosNotification_Grammar.yrl", 95).
 yeccpars2_70_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    examin_comp ( { default_component , __3 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_71_,1}}).
--file("cosNotification_Grammar.yrl", 122).
+-compile({inline,yeccpars2_71_/1}).
+-file("cosNotification_Grammar.yrl", 120).
 yeccpars2_71_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    element ( 2 , __2 )
   end | __Stack].
 
--compile({inline,{yeccpars2_72_,1}}).
--file("cosNotification_Grammar.yrl", 94).
+-compile({inline,yeccpars2_72_/1}).
+-file("cosNotification_Grammar.yrl", 92).
 yeccpars2_72_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    create_unary ( element ( 2 , __1 ) , element ( 2 , __2 ) )
   end | __Stack].
 
--compile({inline,{yeccpars2_73_,1}}).
--file("cosNotification_Grammar.yrl", 93).
+-compile({inline,yeccpars2_73_/1}).
+-file("cosNotification_Grammar.yrl", 91).
 yeccpars2_73_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
  [begin
    create_unary ( element ( 2 , __1 ) , element ( 2 , __2 ) )
   end | __Stack].
 
--compile({inline,{yeccpars2_75_,1}}).
--file("cosNotification_Grammar.yrl", 87).
+-compile({inline,yeccpars2_75_/1}).
+-file("cosNotification_Grammar.yrl", 85).
 yeccpars2_75_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_77_,1}}).
--file("cosNotification_Grammar.yrl", 62).
+-compile({inline,yeccpars2_77_/1}).
+-file("cosNotification_Grammar.yrl", 60).
 yeccpars2_77_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { 'or' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_79_,1}}).
--file("cosNotification_Grammar.yrl", 65).
+-compile({inline,yeccpars2_79_/1}).
+-file("cosNotification_Grammar.yrl", 63).
 yeccpars2_79_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { 'and' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_82_,1}}).
--file("cosNotification_Grammar.yrl", 76).
+-compile({inline,yeccpars2_82_/1}).
+-file("cosNotification_Grammar.yrl", 74).
 yeccpars2_82_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { '~' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_83_,1}}).
--file("cosNotification_Grammar.yrl", 79).
+-compile({inline,yeccpars2_83_/1}).
+-file("cosNotification_Grammar.yrl", 77).
 yeccpars2_83_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { element ( 2 , __2 ) , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_85_,1}}).
--file("cosNotification_Grammar.yrl", 82).
+-compile({inline,yeccpars2_85_/1}).
+-file("cosNotification_Grammar.yrl", 80).
 yeccpars2_85_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { element ( 2 , __2 ) , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_87_,1}}).
--file("cosNotification_Grammar.yrl", 68).
+-compile({inline,yeccpars2_87_/1}).
+-file("cosNotification_Grammar.yrl", 66).
 yeccpars2_87_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { element ( 2 , __2 ) , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_89_,1}}).
--file("cosNotification_Grammar.yrl", 72).
+-compile({inline,yeccpars2_89_/1}).
+-file("cosNotification_Grammar.yrl", 70).
 yeccpars2_89_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
  [begin
    { in , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_90_,1}}).
--file("cosNotification_Grammar.yrl", 106).
+-compile({inline,yeccpars2_90_/1}).
+-file("cosNotification_Grammar.yrl", 104).
 yeccpars2_90_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_91_,1}}).
--file("cosNotification_Grammar.yrl", 73).
+-compile({inline,yeccpars2_91_/1}).
+-file("cosNotification_Grammar.yrl", 71).
 yeccpars2_91_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
  [begin
@@ -1526,4 +1554,4 @@ yeccpars2_91_(__Stack0) ->
   end | __Stack].
 
 
--file("cosNotification_Grammar.yrl", 171).
+-file("cosNotification_Grammar.yrl", 167).

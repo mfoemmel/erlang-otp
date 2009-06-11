@@ -40,7 +40,7 @@
 %%-----------------------------------------------------------------
 %% Func: gen/3
 %%-----------------------------------------------------------------
-gen(G, N, X) when record(X, const) ->
+gen(G, N, X) when is_record(X, const) ->
     ConstantName = ic_forms:get_java_id(X),
     case inInterface(G, N) of
 	true ->

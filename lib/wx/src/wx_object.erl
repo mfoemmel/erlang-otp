@@ -462,7 +462,7 @@ terminate(Reason, Name, Msg, Mod, State, Debug) ->
 		shutdown ->
 		    exit(shutdown);
 		wx_deleted ->
-		    exit(wx_deleted);
+		    exit(normal);
 		_ ->
 		    error_info(Reason, Name, Msg, State, Debug),
 		    exit(Reason)

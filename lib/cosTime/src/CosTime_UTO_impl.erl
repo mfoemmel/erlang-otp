@@ -131,12 +131,12 @@ absolute_time(_OE_THIS, State) ->
     case catch 'CosTime_UTO':'_get_time'(
 		 'CosTime_TimeService':universal_time(?get_TimeObj(State)))+
 	?get_Time(State) of
-	UniTime when integer(UniTime), UniTime =< ?max_TimeT ->
+	UniTime when is_integer(UniTime) andalso UniTime =< ?max_TimeT ->
 	    Utc=?get_Utc(State),
 	    {reply, 'CosTime_UTO':oe_create([Utc#'TimeBase_UtcT'{time=UniTime},
 					     ?get_TimeObj(State)], 
 					    [{pseudo,true}|?CREATE_OPTS]), State};
-	UniTime when integer(UniTime) ->
+	UniTime when is_integer(UniTime) ->
 	    %% Oopss, overflow!
 	    corba:raise(#'DATA_CONVERSION'{completion_status=?COMPLETED_NO});
 	_ ->
@@ -154,7 +154,7 @@ compare_time(_OE_THIS, State, 'IntervalC', Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
     case catch {'CosTime_UTO':'_get_time'(Uto),  
 		'CosTime_UTO':'_get_inaccuracy'(Uto)} of
-	{Time,Inaccuracy} when integer(Time), integer(Inaccuracy) ->
+	{Time,Inaccuracy} when is_integer(Time) andalso is_integer(Inaccuracy) ->
 	    OwnInacc = ?get_Inaccuracy(State),
 	    if 
 		?get_Time(State)+OwnInacc < Time-Inaccuracy ->
@@ -175,7 +175,7 @@ compare_time(_OE_THIS, State, 'IntervalC', Uto) ->
 compare_time(_OE_THIS, State, 'MidC', Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
     case catch 'CosTime_UTO':'_get_time'(Uto) of
-	Time when integer(Time) ->
+	Time when is_integer(Time) ->
 	    if 
 		?get_Time(State) < Time ->
 		    {reply, 'TCLessThan', State};
@@ -199,7 +199,7 @@ compare_time(_OE_THIS, _State, _, _) ->
 time_to_interval(_OE_THIS, State, Uto) ->
     ?time_TypeCheck(Uto, 'CosTime_UTO'),
     case catch 'CosTime_UTO':'_get_time'(Uto) of
-	Time when integer(Time) ->
+	Time when is_integer(Time) ->
 	    OwnTime = ?get_Time(State),
 	    if 
 		Time > OwnTime ->

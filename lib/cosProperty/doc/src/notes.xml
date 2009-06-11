@@ -31,6 +31,21 @@
   </header>
 
   <section>
+    <title>cosProperty 1.1.9</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Obsolete guards, e.g. record vs is_record, has been changed
+             to avoid compiler warnings.</p>
+          <p>Own id: OTP-7987</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
     <title>cosProperty 1.1.8</title>
     <section>
       <title>Improvements and New Features</title>

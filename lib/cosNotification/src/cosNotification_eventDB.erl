@@ -167,7 +167,7 @@ status(DBRef, eventCounter) ->
     ets:info(?get_OrderRef(DBRef), size);
 status(DBRef, {batchLimit, Limit}) ->
     case ets:info(?get_OrderRef(DBRef), size) of
-	Current when integer(Current), Current >= Limit ->
+	Current when is_integer(Current) andalso Current >= Limit ->
 	    ?debug_print("BATCH LIMIT (~p) REACHED, CONTAINS: ~p~n", [Limit, Current]),
 	    true;
 	_Other ->
@@ -177,11 +177,11 @@ status(DBRef, {batchLimit, Limit}) ->
     end;
 status(DBRef, {batchLimit, Limit, TemporaryMax}) ->
     case ets:info(?get_OrderRef(DBRef), size) of
-	Current when integer(Current), Current >= TemporaryMax ->
+	Current when is_integer(Current) andalso Current >= TemporaryMax ->
 	    ?debug_print("MAX LIMIT (~p) REACHED, CONTAINS: ~p~n", 
 			 [TemporaryMax, Current]),
 	    true;
-	Current when integer(Current), Current >= Limit ->
+	Current when is_integer(Current) andalso Current >= Limit ->
 	    ?debug_print("BATCH LIMIT (~p) REACHED, CONTAINS: ~p~n", [Limit, Current]),
 	    true;
 	_Other ->
@@ -317,7 +317,7 @@ extract_start_time(#'CosNotification_StructuredEvent'
 		 {header = #'CosNotification_EventHeader'
 		  {variable_header = VH}}, _, TRef) ->
     ST = case extract_value(VH, ?not_StartTime, undefined) of
-	     UTC when record(UTC, 'TimeBase_UtcT') ->
+	     UTC when is_record(UTC, 'TimeBase_UtcT') ->
 		 UTC;
 	     _ ->
 		 false
@@ -373,7 +373,7 @@ extract_deadline(_, _, _, TRef, DOverride, Now) ->
 
 convert_time(0, _, _) ->
     false;
-convert_time(UTC, TRef, {M,S,U}) when record(UTC, 'TimeBase_UtcT') ->
+convert_time(UTC, TRef, {M,S,U}) when is_record(UTC, 'TimeBase_UtcT') ->
     case catch get_time_diff(UTC, TRef) of
 	{'EXCEPTION', _} ->
 	    false;
@@ -385,7 +385,7 @@ convert_time(UTC, TRef, {M,S,U}) when record(UTC, 'TimeBase_UtcT') ->
 	    MegaSecs  = round(Secs/1000000),
 	    {-M-MegaSecs, -S-Secs+MegaSecs, -U-MicroSecs+Secs}
     end;
-convert_time(DL, _, {M,S,U}) when integer(DL) ->
+convert_time(DL, _, {M,S,U}) when is_integer(DL) ->
     MicroSecs = round(DL/10),
     Secs      = round(MicroSecs/1000000),
     MegaSecs  = round(Secs/1000000),
@@ -402,14 +402,14 @@ get_time_diff(UTC, TRef) ->
 	'CosTime_TIO':'_get_time_interval'(TIO),
     UB-LB.
 
-check_deadline(DL) when tuple(DL) ->
+check_deadline(DL) when is_tuple(DL) ->
     {M,S,U}  = now(),
     DL >= {-M,-S,-U};
 check_deadline(_DL) ->
     %% This case will cover if no timeout is set.
     false.
 
-check_start_time(ST) when tuple(ST) ->
+check_start_time(ST) when is_tuple(ST) ->
     {M,S,U}  = now(),
     ST >= {-M,-S,-U};
 check_start_time(_ST) ->
@@ -701,7 +701,7 @@ write_event(_, {{_Prio, TS, DL}, DL, ST, PO, Event}, _DBRef, NewDBRef, _Key, _, 
 %%            since it may require intra-ORB communication. 
 %%            Use only when doing an update.
 %%------------------------------------------------------------
-update_priority(DBRef, PrioFilter, Event, OldPrio) when atom(OldPrio) ->
+update_priority(DBRef, PrioFilter, Event, OldPrio) when is_atom(OldPrio) ->
     get_prio_mapping_value(DBRef, PrioFilter, Event);
 update_priority(_DBRef, _PrioFilter, _Event, OldPrio) ->
     OldPrio.
@@ -722,7 +722,7 @@ update_deadline(DBRef, _LifeFilter, _Event, _TS, _OldDeadL) when
   ?is_StopTNotSupported(DBRef) ->
     %% We do not need to extract the Deadline since it will not be used.
     false;
-update_deadline(DBRef, LifeFilter, Event, TS, OldDeadL) when atom(OldDeadL) ->
+update_deadline(DBRef, LifeFilter, Event, TS, OldDeadL) when is_atom(OldDeadL) ->
     %% We need the Deadline and it have not been extracetd before.
     DOverride = get_life_mapping_value(DBRef, LifeFilter, Event),
     %% We must find out when the event was delivered; setting a deadline using
@@ -743,7 +743,7 @@ update_deadline(_DBRef, _LifeFilter, _Event, _TS, OldDeadL) ->
 %%            parsing the events for starttime again.
 %%            Use only when doing an update.
 %%------------------------------------------------------------
-update_starttime(DBRef, Event, OldStartT) when atom(OldStartT) ->
+update_starttime(DBRef, Event, OldStartT) when is_atom(OldStartT) ->
     %% Probably not previously extracted; try to get it.
     extract_start_time(Event, ?get_StartTsupport(DBRef), ?get_TimeRef(DBRef));
 update_starttime(_DBRef, _Event, OldStartT) ->
@@ -1156,20 +1156,20 @@ get_prio_mapping_value(DBRef, _, _) when ?get_DiscardP(DBRef) =/= ?not_PriorityO
     false;
 get_prio_mapping_value(_, undefined, _) ->
     undefined;
-get_prio_mapping_value(_, MFilter, Event) when record(Event, 'any') ->
+get_prio_mapping_value(_, MFilter, Event) when is_record(Event, 'any') ->
     case catch 'CosNotifyFilter_MappingFilter':match(MFilter, Event) of
-	{false, DefVal} when record(DefVal, 'any') ->
+	{false, DefVal} when is_record(DefVal, 'any') ->
 	    any:get_value(DefVal);
-	{true, Matched} when record(Matched, 'any') ->
+	{true, Matched} when is_record(Matched, 'any') ->
 	    any:get_value(Matched);
 	_ ->
 	    undefined
     end;
 get_prio_mapping_value(_, MFilter, Event) ->
     case catch 'CosNotifyFilter_MappingFilter':match_structured(MFilter, Event) of
-	{false, DefVal} when record(DefVal, 'any') ->
+	{false, DefVal} when is_record(DefVal, 'any') ->
 	    any:get_value(DefVal);
-	{true, Matched} when record(Matched, 'any') ->
+	{true, Matched} when is_record(Matched, 'any') ->
 	    any:get_value(Matched);
 	_ ->
 	    undefined
@@ -1187,20 +1187,20 @@ get_life_mapping_value(DBRef, _, _) when ?get_DiscardP(DBRef) =/= ?not_DeadlineO
     false;
 get_life_mapping_value(_, undefined, _) ->
     undefined;
-get_life_mapping_value(_, MFilter, Event) when record(Event, 'any') ->
+get_life_mapping_value(_, MFilter, Event) when is_record(Event, 'any') ->
     case catch 'CosNotifyFilter_MappingFilter':match(MFilter, Event) of
-	{false, DefVal} when record(DefVal, 'any') ->
+	{false, DefVal} when is_record(DefVal, 'any') ->
 	    any:get_value(DefVal);
-	{true, Matched} when record(Matched, 'any') ->
+	{true, Matched} when is_record(Matched, 'any') ->
 	    any:get_value(Matched);
 	_ ->
 	    undefined
     end;
 get_life_mapping_value(_, MFilter, Event) ->
     case catch 'CosNotifyFilter_MappingFilter':match_structured(MFilter, Event) of
-	{false, DefVal} when record(DefVal, 'any') ->
+	{false, DefVal} when is_record(DefVal, 'any') ->
 	    any:get_value(DefVal);
-	{true, Matched} when record(Matched, 'any') ->
+	{true, Matched} when is_record(Matched, 'any') ->
 	    any:get_value(Matched);
 	_ ->
 	    undefined
@@ -1219,9 +1219,9 @@ validate_event(true, Events, Filters, _, 'MATCH') ->
     filter_events(Events, Filters, false);
 validate_event(true, Events, _Filters, _, _) ->
     {Events, []};
-validate_event({_Which, _WC}, Event, Filters, _, 'MATCH') when record(Event, any) ->
+validate_event({_Which, _WC}, Event, Filters, _, 'MATCH') when is_record(Event, any) ->
     filter_events(Event, Filters, false);
-validate_event({_Which, _WC}, Event, _Filters, _, _) when record(Event, any) ->
+validate_event({_Which, _WC}, Event, _Filters, _, _) when is_record(Event, any) ->
     {Event, []};
 validate_event({Which, WC}, Events, Filters, DBRef, 'MATCH')  ->
     Passed=validate_event2(DBRef, Events, Which, WC, []),
@@ -1323,7 +1323,7 @@ filter_events(Any, Filters, _AccPassed, _AccFailed, _Reversed) ->
 
 call_filters([], _) ->
     false;
-call_filters([{_,H}|T], Event) when record(Event, any) ->
+call_filters([{_,H}|T], Event) when is_record(Event, any) ->
     case catch 'CosNotifyFilter_Filter':match(H, Event) of
 	true ->
 	    true;

@@ -35,6 +35,8 @@
 	 init_per_testcase/2, fin_per_testcase/2,
 
 	 all/1,
+	 flex_init/1, flex_fin/1, 
+
 	 plain/1,
 	 port_exit/1,
 	 garbage_in/1
@@ -60,11 +62,30 @@ fin_per_testcase(Case, Config) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 all(suite) ->
-    [
-     plain,
-     port_exit,
-     garbage_in
-    ].
+    Cases = 
+	[
+	 plain,
+	 port_exit,
+	 garbage_in
+	],
+    {req, [], {conf, flex_init, Cases, flex_fin}}.
+
+flex_init(suite) ->
+    [];
+flex_init(doc) ->
+    [];
+flex_init(Config) when is_list(Config) ->
+    case megaco_flex_scanner:is_enabled() of
+	true ->
+	    Config;
+	false ->
+	    ?SKIP(flex_scanner_not_enabled)
+    end.
+
+flex_fin(suite) -> [];
+flex_fin(doc) -> [];
+flex_fin(Config) when is_list(Config) ->
+    Config.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -98,7 +119,17 @@ port_exit(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
 
     p("start the flex handler"),
-    {ok, Pid, {flex, Port}} = flex_scanner_handler_start(), 
+    {ok, Pid, {flex, PortOrPorts}} = flex_scanner_handler_start(), 
+    Port = case PortOrPorts of
+	       P when is_port(P) ->
+		   P;
+	       Ports when is_tuple(Ports) ->
+		   %% It does not matter which of the ports we choose
+		   element(1, PortOrPorts);
+	       Ports when is_list(Ports) ->
+		   %% It does not matter which of the ports we choose
+		   hd(Ports)
+	   end,
 
     p("simulate crash"),
     exit(Port, simulated_crash), 
@@ -159,6 +190,9 @@ flex_scanner_handler_start() ->
 	    p("failed loading driver"),
 	    ?SKIP(could_not_load_driver);
 	{error, {failed_starting_scanner, {load_driver, _}}} ->
+	    p("failed loading driver"),
+	    ?SKIP(could_not_load_driver);
+	{error, {failed_starting_scanner, {load_driver, _}, _}} ->
 	    p("failed loading driver"),
 	    ?SKIP(could_not_load_driver);
 	Else ->

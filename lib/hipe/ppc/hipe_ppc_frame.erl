@@ -357,10 +357,9 @@ mk_context(Liveness, Formals, Temps, ClobbersLR) ->
   {Map, MinOff} = mk_temp_map(Formals, ClobbersLR, Temps),
   FrameSize = (-MinOff),
   RefMaxStack = hipe_bifs:ref(FrameSize),
-  Context = #context{liveness=Liveness,
-		     framesize=FrameSize, arity=length(Formals),
-		     map=Map, clobbers_lr=ClobbersLR, ref_maxstack=RefMaxStack},
-  Context.
+  #context{liveness=Liveness,
+	   framesize=FrameSize, arity=length(Formals),
+	   map=Map, clobbers_lr=ClobbersLR, ref_maxstack=RefMaxStack}.
 
 context_need_stack(#context{ref_maxstack=RM}, N) ->
   M = hipe_bifs:ref_get(RM),
@@ -589,8 +588,7 @@ clobbers_lr([]) -> false.
 all_temps(Code, Formals) ->
   S0 = find_temps(Code, tset_empty()),
   S1 = tset_del_list(S0, Formals),
-  S2 = tset_filter(S1, fun(T) -> temp_is_pseudo(T) end),
-  S2.
+  tset_filter(S1, fun(T) -> temp_is_pseudo(T) end).
 
 find_temps([I|Insns], S0) ->
   S1 = tset_add_list(S0, hipe_ppc_defuse:insn_def_all(I)),

@@ -77,7 +77,7 @@ types() ->
      {"GLclampd",  "64/native-float"},    % double precision float in [0,1] 
      {"GLsizeiptr","64/native-unsigned"}, % 64 bits int, convert on c-side
      {"GLintptr",  "64/native-unsigned"}, % 64 bits int, convert on c-side
-     {"GLhandleARB","32/native-unsigned"} % Handle 32bits
+     {"GLhandleARB","64/native-unsigned"} % Handle 32bits aargh 64bits on mac64
     ].
 
 gl_api(Fs) ->

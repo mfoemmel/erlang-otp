@@ -18,7 +18,7 @@
 %%
 {application, observer,
    [{description, "OBSERVER version 1"},
-    {vsn, "0.9.8"},
+    {vsn, "0.9.8.1"},
     {modules, [crashdump_viewer,
 	       crashdump_viewer_html,
 	       etop,

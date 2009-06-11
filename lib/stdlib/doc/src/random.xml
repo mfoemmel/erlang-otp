@@ -45,6 +45,9 @@
       in the process dictionary) or be an explicit argument and return value.
       In this implementation, the state (the type <c>ran()</c>) consists of a
       tuple of three integers.</p>
+    <p>It should be noted that this random number generator is not cryptographically 
+      strong. If a strong cryptographic random number generator is needed for
+      example <c>crypto:rand_bytes/1</c> could be used instead.</p>
   </description>
   <funcs>
     <func>
@@ -55,11 +58,11 @@
           in the process dictionary, and returns the old state.</p>
       </desc>
     </func>
-    <func>
-      <name>seed(A1, A2, A3) -> ran()</name>
+   <func>
+      <name>seed(A1, A2, A3) -> undefined | ran()</name>
       <fsummary>Seeds random number generator</fsummary>
       <type>
-        <v>A1 = A2 = A3 = int()</v>
+        <v>A1 = A2 = A3 = integer()</v>
       </type>
       <desc>
         <p>Seeds random number generation with integer values in the process
@@ -70,6 +73,18 @@
 \011  {A1,A2,A3} = now(),
 \011  random:seed(A1, A2, A3),
 \011  ...</code>
+      </desc>
+    </func>
+    <func>
+      <name>seed({A1, A2, A3}) -> undefined | ran()</name>
+      <fsummary>Seeds random number generator</fsummary>
+      <type>
+        <v>A1 = A2 = A3 = integer()</v>
+      </type>
+      <desc>
+        <p>
+	<c>seed({A1, A2, A3})</c> is equivalent to <c>seed(A1, A2, A3)</c>.
+	</p>
       </desc>
     </func>
     <func>
@@ -88,10 +103,10 @@
       </desc>
     </func>
     <func>
-      <name>uniform(N) -> int()</name>
+      <name>uniform(N) -> integer()</name>
       <fsummary>Return a random integer</fsummary>
       <type>
-        <v>N = int()</v>
+        <v>N = integer()</v>
       </type>
       <desc>
         <p>Given an integer <c>N >= 1</c>, <c>uniform/1</c> returns a
@@ -111,10 +126,10 @@
       </desc>
     </func>
     <func>
-      <name>uniform_s(N, State0) -> {int(), State1}</name>
+      <name>uniform_s(N, State0) -> {integer(), State1}</name>
       <fsummary>Return a random integer</fsummary>
       <type>
-        <v>N = int()</v>
+        <v>N = integer()</v>
         <v>State0 = State1 = ran()</v>
       </type>
       <desc>

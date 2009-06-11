@@ -16,9 +16,7 @@
 %% 
 %% %CopyrightEnd%
 %%
-
 %%
-
 %%----------------------------------------------------------------------
 %% Purpose: Handles multiplexing to ssh channels and global connection
 %% requests e.i. the SSH Connection Protocol (RFC 4254), that provides
@@ -255,7 +253,7 @@ handle_call({ssh_msg, Pid, Msg}, From,
     gen_server:reply(From, ok), 
 
     ConnectionMsg = decode_ssh_msg(Msg),
-    case catch ssh_connection:handle_msg(ConnectionMsg, Connection0, Pid, Role) of
+    try ssh_connection:handle_msg(ConnectionMsg, Connection0, Pid, Role) of
 	{{replies, Replies}, Connection} ->
 	    lists:foreach(fun send_msg/1, Replies),
 	    {noreply, State#state{connection_state = Connection}};
@@ -270,11 +268,17 @@ handle_call({ssh_msg, Pid, Msg}, From,
 	    lists:foreach(fun send_msg/1, Replies),
 	    SSHOpts = proplists:get_value(ssh_opts, Opts),
 	    disconnect_fun(Reason, SSHOpts),
-	    {stop, normal, State#state{connection_state = Connection}};
-	{'EXIT', _Reason} = Exit ->
-	    Report = io_lib:format("Connection message caused exit~n~p~n~p~n",
+	    {stop, normal, State#state{connection_state = Connection}}
+	catch
+	exit:{noproc, Reason} ->
+	    Report = io_lib:format("Connection probably terminated:~n~p~n~p~n",
+				   [ConnectionMsg, Reason]),
+	    error_logger:info_report(Report),
+            {noreply, State};
+	exit:Exit ->
+	    Report = io_lib:format("Connection message returned:~n~p~n~p~n",
 				   [ConnectionMsg, Exit]),
-	    error_logger:error_report(Report),
+	    error_logger:info_report(Report),
 	    {noreply, State}
     end;
 
@@ -537,9 +541,10 @@ terminate(Reason, #state{connection_state =
 			 opts = Opts}) ->
     SSHOpts = proplists:get_value(ssh_opts, Opts),
     disconnect_fun(Reason, SSHOpts),
-    lists:foreach(fun({_, From}) -> 
-			  gen_server:reply(From, {error, connection_closed})
-		  end, Requests).
+    (catch lists:foreach(fun({_, From}) -> 
+				 gen_server:reply(From, {error, connection_closed})
+			 end, Requests)),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}

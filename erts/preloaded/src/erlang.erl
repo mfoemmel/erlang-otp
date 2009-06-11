@@ -556,27 +556,15 @@ set_cpu_topology(CpuTopology) ->
     catch _ : _ -> erlang:error(badarg, [CpuTopology])
     end.
 
-cput_prev_lvl_val(none) -> -1;
-cput_prev_lvl_val(Lvl) -> cput_lvl_val(Lvl).
-
-cput_lvl_val(node) -> 0;
-cput_lvl_val(processor) -> 1;
-cput_lvl_val(core) -> 2;
-cput_lvl_val(thread) -> 3.
-
 cput_parse(undefined) ->
     undefined;
-cput_parse(CpuTopology) ->
-    cput_parse(CpuTopology, none).
-
-cput_parse([], _) ->
+cput_parse([]) ->
     [];
-cput_parse({logical, CpuId}, _PrevLvl) ->
+cput_parse({logical, CpuId}) ->
     true = is_integer(CpuId),
     CpuId;
-cput_parse([LvlEntry | _] = LvlList, PrevLvl) ->
+cput_parse([LvlEntry | _] = LvlList) ->
     Lvl = element(1, LvlEntry),
-    true = cput_lvl_val(Lvl) > cput_prev_lvl_val(PrevLvl),
     list_to_tuple([Lvl | cput_parse_lvl(Lvl, LvlList)]).
 
 cput_parse_lvl(_Lvl, []) ->
@@ -585,7 +573,7 @@ cput_parse_lvl(Lvl, [{Lvl, SubLvlList} | Rest]) ->
     cput_parse_lvl(Lvl, [{Lvl, [], SubLvlList} | Rest]);
 cput_parse_lvl(Lvl, [{Lvl, Info, SubLvlList} | Rest]) ->
     [] = Info, %% Currently only [] is a valid info list
-    [cput_parse(SubLvlList, Lvl) | cput_parse_lvl(Lvl, Rest)].
+    [cput_parse(SubLvlList) | cput_parse_lvl(Lvl, Rest)].
 
 
 %% erlang:format_cpu_topology/1 is for internal use only!

@@ -257,7 +257,7 @@ format_error({char_class,What}) ->
 %% match(String, RegExp) -> {match,Start,Length} | nomatch | {error,E}.
 %%  Find the longest match of RegExp in String.
 
-match(S, RegExp) when list(RegExp) ->
+match(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> match(S, RE);
 	{error,E} -> {error,E}
@@ -323,7 +323,7 @@ match_comp(_RE, _S, _P, Mst, Mlen) -> {Mst,Mlen}.
 %% first_match(String, RegExp) -> {match,Start,Length} | nomatch | {error,E}.
 %%  Find the first match of RegExp in String.
 
-first_match(S, RegExp) when list(RegExp) ->
+first_match(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> first_match(S, RE);
 	{error,E} -> {error,E}
@@ -357,7 +357,7 @@ first_match_comp(_RE, [], _St) -> nomatch.
 %% matches(String, RegExp) -> {match,[{Start,Length}]} | {error,E}.
 %%  Return the all the non-overlapping matches of RegExp in String.
 
-matches(S, RegExp) when list(RegExp) ->
+matches(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> matches(S, RE);
 	{error,E} -> {error,E}
@@ -391,7 +391,7 @@ matches_comp([], _RE, _P) -> [].
 %%  the string Replace in String. Accept pre-parsed regular
 %%  expressions.
 
-sub(String, RegExp, Rep) when list(RegExp) ->
+sub(String, RegExp, Rep) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> sub(String, RE, Rep);
 	{error,E} -> {error,E}
@@ -445,7 +445,7 @@ sub_repl([], _M, Rest) -> Rest.
 %%  Substitute every match of the regular expression RegExp with the
 %%  string New in String. Accept pre-parsed regular expressions.
 
-gsub(String, RegExp, Rep) when list(RegExp) ->
+gsub(String, RegExp, Rep) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> gsub(String, RE, Rep);
 	{error,E} -> {error,E}
@@ -515,7 +515,7 @@ split(String, " ") ->				%This is really special
 	[[]|Ss] -> {ok,Ss};
 	Ss -> {ok,Ss}
     end;
-split(String, RegExp) when list(RegExp) ->
+split(String, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,{regexp,RE}} -> {ok,split_apply_re(String, RE, false)};
 	{error,E} -> {error,E}
@@ -556,7 +556,7 @@ split_apply_comp([C|Cs]=S, P0, RE, T, Sub) ->
 %%      {match,Start,Length,SubExprs} | nomatch | {error,E}.
 %%  Find the longest match of RegExp in String.
 
-sub_match(S, RegExp) when list(RegExp) ->
+sub_match(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> sub_match(S, RE);
 	{error,E} -> {error,E}
@@ -897,7 +897,7 @@ re_apply({comp_class,Cc}, More, [C|S], P, Subs) ->
 	true -> nomatch;
 	false -> re_apply_more(More, S, P+1, Subs)
     end;
-re_apply(C, More, [C|S], P, Subs) when integer(C) ->
+re_apply(C, More, [C|S], P, Subs) when is_integer(C) ->
     re_apply_more(More, S, P+1, Subs);
 re_apply(_RE, _More, _S, _P, _Subs) ->
     %% io:format("~p : ~p\n", [_RE,_S]),
@@ -1115,7 +1115,7 @@ build_nfa(bos, N, S, NFA) ->
 build_nfa(eos, N, S, NFA) ->
     {[#nfa_state{no=S,edges=[{[eos],N}]}|NFA],N+1,N};
 %%{[#nfa_state{no=S,edges=[{[eos],N}]}|NFA],N+1,N};
-build_nfa(C, N, S, NFA) when integer(C) ->
+build_nfa(C, N, S, NFA) when is_integer(C) ->
     {[#nfa_state{no=S,edges=[{[{C,C}],N}]}|NFA],N+1,N}.
 
 nfa_char_class(Cc) ->
@@ -1187,7 +1187,7 @@ build_dfa(Set, Us, N, Ts, Ms, NFA) ->
     %% List of all transition sets.
     Crs0 = [Cr || S <- Set,
 		  {Crs,_St} <- (element(S, NFA))#nfa_state.edges,
-		  list(Crs),
+		 is_list(Crs),
 		  Cr <- Crs ],
     Crs1 = lists:usort(Crs0),			%Must remove duplicates!
     %% Build list of disjoint test ranges.
@@ -1261,7 +1261,7 @@ eclosure([], _NFA, Ec) -> Ec.
 move(Sts, Cr, NFA) ->
     [ St || N <- Sts,
 	    {Crs,St} <- (element(N, NFA))#nfa_state.edges,
-	    list(Crs),
+	   is_list(Crs),
 %% 	    begin
 %% 		io:fwrite("move1: ~p\n", [{Sts,Cr,Crs,in_crs(Cr,Crs)}]),
 %% 		true

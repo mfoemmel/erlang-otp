@@ -47,7 +47,7 @@ prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) when is_list(I
     %% Client side
     IsNativeAscii = is_native_ascii(Initial),
     case catch handle_options(Access, Filename, Mode, SuggestedOptions, IsNativeAscii) of
-	{ok, IsNetworkAscii, AcceptedOptions} when Access =:= read, binary(Filename) ->
+	{ok, IsNetworkAscii, AcceptedOptions} when Access =:= read, is_binary(Filename) ->
 	    State = #read_state{options  	 = AcceptedOptions,
 				blksize  	 = lookup_blksize(AcceptedOptions),
 				bin      	 = Filename,
@@ -150,10 +150,10 @@ write(Bin, State) ->
 %%-------------------------------------------------------------------
 
 abort(_Code, _Text, #read_state{bin = Bin} = State) 
-  when record(State, read_state), binary(Bin) ->
+  when is_record(State, read_state), is_binary(Bin) ->
     ok;
 abort(_Code, _Text, #write_state{list = List} = State)
-  when record(State, write_state), list(List) ->
+  when is_record(State, write_state), is_list(List) ->
     ok;
 abort(Code, Text, State) ->
     %% Handle upgrade from old releases. Please, remove this clause in next release.
@@ -180,7 +180,7 @@ do_handle_options(Access, Bin, [{Key, Val} | T]) ->
     case Key of
 	"tsize" ->
 	    case Access of
-		read when Val =:= "0", binary(Bin) ->
+		read when Val =:= "0", is_binary(Bin) ->
 		    Tsize = integer_to_list(size(Bin)),
 		    [{Key, Tsize} | do_handle_options(Access, Bin, T)];
 		_ ->

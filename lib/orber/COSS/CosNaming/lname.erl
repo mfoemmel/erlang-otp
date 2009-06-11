@@ -52,11 +52,11 @@ insert_component(_, I, _) when I < 1->
     corba:raise(#'LName_NoComponent'{});
 insert_component([], I, _) when I > 1->
     corba:raise(#'LName_NoComponent'{});
-insert_component(Name, 1, Component) when record(Component,
-						 'CosNaming_NameComponent') ->
+insert_component(Name, 1, Component) when is_record(Component,
+						    'CosNaming_NameComponent') ->
     [Component |Name];
-insert_component([H|T], I, Component) when record(Component,
-						  'CosNaming_NameComponent') ->
+insert_component([H|T], I, Component) when is_record(Component,
+						     'CosNaming_NameComponent') ->
     [H |insert_component(T, I-1, Component)];
 insert_component(_, _, Component) -> 
     orber:dbg("[~p] ~p:insert_component(~p); Not a NameComponent.~n", 
@@ -111,7 +111,7 @@ new([]) ->
     [];
 new([{Id, Kind} | List]) ->
     [lname_component:new(Id, Kind) | new(List)];
-new([Id |List]) when list(Id) ->
+new([Id |List]) when is_list(Id) ->
     [lname_component:new(Id) | new(List)].
 
 %%-----------------------------------------------------------------

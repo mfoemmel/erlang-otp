@@ -41,6 +41,8 @@
   <include file="megaco_user"></include>
   <include file="megaco_flex_scanner"></include>
   <include file="megaco_codec_meas"></include>
+  <include file="megaco_codec_mstone1"></include>
+  <include file="megaco_codec_mstone2"></include>
   <include file="megaco_codec_transform"></include>
 </application>
 

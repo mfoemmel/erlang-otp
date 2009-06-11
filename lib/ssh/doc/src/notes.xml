@@ -29,6 +29,36 @@
     <file>notes.xml</file>
   </header>
 
+ <section><title>Ssh 1.1.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            The operation ssh_sftp:stop_channel/1 returned an 
+            exception if the connection already had been closed.</p>
+          <p>
+            Own Id: OTP-7996 Aux Id: seq11281</p>
+        </item>
+        <item>
+          <p>
+            SSH did not handle if supervisor:start_child/2 returned 
+            {error, already_present}.</p>
+          <p>
+            Own Id: OTP-8034 Aux Id: seq11307</p>
+        </item>
+        <item>
+          <p>
+            SSH no longer cause supervisor reports when a connection is 
+            terminated in a controlled manner.</p>
+          <p>
+            Own Id: OTP-8035 Aux Id: seq11308</p>
+        </item>
+      </list>
+    </section>
+
+ </section>
+
  <section><title>Ssh 1.1.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

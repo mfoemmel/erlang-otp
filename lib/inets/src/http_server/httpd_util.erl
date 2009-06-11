@@ -210,10 +210,10 @@ message(500,_,ConfigDB) ->
 
 message(501,{Method, RequestURI, HTTPVersion}, _ConfigDB) ->
     if
-	atom(Method) ->
+	is_atom(Method) ->
 	    atom_to_list(Method)++
 		" to "++RequestURI++" ("++HTTPVersion++") not supported.";
-	list(Method) ->
+	is_list(Method) ->
 	    Method++
 		" to "++RequestURI++" ("++HTTPVersion++") not supported."
     end;
@@ -384,17 +384,17 @@ decode_hex([First|Rest]) ->
 decode_hex([]) ->
     [].
 
-hex2dec(X) when X>=$0,X=<$9 -> X-$0;
-hex2dec(X) when X>=$A,X=<$F -> X-$A+10;
-hex2dec(X) when X>=$a,X=<$f -> X-$a+10.
+hex2dec(X) when (X>=$0) andalso (X=<$9) -> X-$0;
+hex2dec(X) when (X>=$A) andalso (X=<$F) -> X-$A+10;
+hex2dec(X) when (X>=$a) andalso (X=<$f) -> X-$a+10.
 
 %% flatlength
 flatlength(List) ->
     flatlength(List, 0).
 
-flatlength([H|T],L) when list(H) ->
+flatlength([H|T],L) when is_list(H) ->
     flatlength(H,flatlength(T,L));
-flatlength([H|T],L) when binary(H) ->
+flatlength([H|T],L) when is_binary(H) ->
     flatlength(T,L+size(H));
 flatlength([_H|T],L) ->
     flatlength(T,L+1);
@@ -404,7 +404,7 @@ flatlength([],L) ->
 %% split_path
 
 split_path(Path) ->
-    case regexp:match(Path,"[\?].*\$") of
+    case inets_regexp:match(Path,"[\?].*\$") of
 	%% A QUERY_STRING exists!
 	{match,Start,Length} ->
 	    {httpd_util:decode_hex(string:substr(Path,1,Start-1)),
@@ -419,7 +419,7 @@ split_path([],SoFar) ->
 split_path([$/|Rest],SoFar) ->
     Path=httpd_util:decode_hex(lists:reverse(SoFar)),
     case file:read_file_info(Path) of
-	{ok,FileInfo} when FileInfo#file_info.type == regular ->
+	{ok,FileInfo} when FileInfo#file_info.type =:= regular ->
 	    {Path,[$/|Rest]};
 	{ok, _FileInfo} ->
 	    split_path(Rest,[$/|SoFar]);
@@ -452,7 +452,7 @@ pathinfo_querystring([C|Rest], SoFar) ->
 split_script_path([$?|QueryString], SoFar) ->
     Path = httpd_util:decode_hex(lists:reverse(SoFar)),
     case file:read_file_info(Path) of
-	{ok,FileInfo} when FileInfo#file_info.type == regular ->
+	{ok,FileInfo} when FileInfo#file_info.type =:= regular ->
 	    {Path, [$?|QueryString]};
 	{ok, _FileInfo} ->
 	    not_a_script;
@@ -462,7 +462,7 @@ split_script_path([$?|QueryString], SoFar) ->
 split_script_path([], SoFar) ->
     Path = httpd_util:decode_hex(lists:reverse(SoFar)),
     case file:read_file_info(Path) of
-	{ok,FileInfo} when FileInfo#file_info.type == regular ->
+	{ok,FileInfo} when FileInfo#file_info.type =:= regular ->
 	    {Path, []};
 	{ok, _FileInfo} ->
 	    not_a_script;
@@ -472,7 +472,7 @@ split_script_path([], SoFar) ->
 split_script_path([$/|Rest], SoFar) ->
     Path = httpd_util:decode_hex(lists:reverse(SoFar)),
     case file:read_file_info(Path) of
-	{ok, FileInfo} when FileInfo#file_info.type == regular ->
+	{ok, FileInfo} when FileInfo#file_info.type =:= regular ->
 	    {Path, [$/|Rest]};
 	{ok, _FileInfo} ->
 	    split_script_path(Rest, [$/|SoFar]);
@@ -507,7 +507,7 @@ remove_ws(Rest) ->
 %% split
 
 split(String,RegExp,Limit) ->
-    case regexp:parse(RegExp) of
+    case inets_regexp:parse(RegExp) of
 	{error,Reason} ->
 	    {error,Reason};
 	{ok,_} ->
@@ -518,7 +518,7 @@ do_split(String, _RegExp, 1) ->
     [String];
 
 do_split(String,RegExp,Limit) ->
-    case regexp:first_match(String,RegExp) of 
+    case inets_regexp:first_match(String,RegExp) of 
 	{match,Start,Length} ->
 	    [string:substr(String,1,Start-1)|
 	     do_split(lists:nthtail(Start+Length-1,String),RegExp,Limit-1)];
@@ -567,18 +567,18 @@ make_name1(String) ->
     list_to_atom(lists:flatten(String)).
 
 make_name2({A,B,C,D}) ->
-    io_lib:format("~w_~w_~w_~w",[A,B,C,D]);
+    io_lib:format("~w_~w_~w_~w", [A,B,C,D]);
 
 make_name2({A, B, C, D, E, F, G, H}) ->
-    io_lib:format("~w_~w_~w_~w_~w_~w_~w_~w",[integer_to_hexlist(A),
-					     integer_to_hexlist(B),
-					     integer_to_hexlist(C),
-					     integer_to_hexlist(D),
-					     integer_to_hexlist(E),
-					     integer_to_hexlist(F),
-					     integer_to_hexlist(G),
-					     integer_to_hexlist(H)
-					    ]);
+    io_lib:format("~s_~s_~s_~s_~s_~s_~s_~s", [integer_to_hexlist(A),
+					      integer_to_hexlist(B),
+					      integer_to_hexlist(C),
+					      integer_to_hexlist(D),
+					      integer_to_hexlist(E),
+					      integer_to_hexlist(F),
+					      integer_to_hexlist(G),
+					      integer_to_hexlist(H)
+					     ]);
 make_name2(Addr) ->
     search_and_replace(Addr,$.,$_).
 
@@ -610,7 +610,7 @@ encode_hex(Num)->
 integer_to_hexlist(Num) when is_integer(Num) ->
     http_util:integer_to_hexlist(Num).
 	    	      
-create_etag(FileInfo)->
+create_etag(FileInfo) ->
     create_etag(FileInfo#file_info.mtime,FileInfo#file_info.size).
 
 create_etag({{Year,Month,Day},{Hour,Min,Sec}},Size)->
@@ -673,7 +673,8 @@ file_validate(ConfFile, File) ->
 	    throw({ConfFile, File})
     end.
 
-mime_type_validate({Value1, Value2}) when is_list(Value1), is_list(Value2) ->
+mime_type_validate({Value1, Value2}) 
+  when is_list(Value1) andalso is_list(Value2) ->
     ok;
 mime_type_validate({_, _} = Value) ->
     throw({mime_type, Value});
@@ -696,11 +697,11 @@ valid_debug([]) ->
     ok;
 valid_debug(disable) ->
     ok;
-valid_debug(L) when list(L) ->
+valid_debug(L) when is_list(L) ->
     valid_debug2(L);
 valid_debug(D) ->
     throw({error,{bad_debug_option,D}}).
-valid_debug2([{all_functions,L}|Rest]) when list(L) ->
+valid_debug2([{all_functions,L}|Rest]) when is_list(L) ->
     try modules_validate(L) of
 	ok ->
 	    valid_debug2(Rest)
@@ -708,10 +709,10 @@ valid_debug2([{all_functions,L}|Rest]) when list(L) ->
 	throw:Error ->
 	    throw({error, Error})
     end;
-valid_debug2([{exported_functions,L}|Rest]) when list(L) ->
+valid_debug2([{exported_functions,L}|Rest]) when is_list(L) ->
     modules_validate(L),
     valid_debug2(Rest);
-valid_debug2([{disable,L}|Rest]) when list(L) ->
+valid_debug2([{disable,L}|Rest]) when is_list(L) ->
     modules_validate(L),
     valid_debug2(Rest);
 valid_debug2([H|_T]) ->
@@ -740,7 +741,8 @@ do_enable_debug(disable) ->
     dbg:stop();
 do_enable_debug([]) ->
     ok;
-do_enable_debug([{Level,Modules}|Rest]) when atom(Level),list(Modules) ->
+do_enable_debug([{Level,Modules}|Rest]) 
+  when is_atom(Level) andalso is_list(Modules) ->
     case Level of
 	all_functions ->
 	    io:format("Tracing on all functions set on modules: ~p~n",

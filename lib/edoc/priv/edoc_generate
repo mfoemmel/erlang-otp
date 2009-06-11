@@ -20,8 +20,8 @@
 
 #EDOC_DIR=/clearcase/otp/internal_tools/edoc
 EDOC_DIR=/home/otp/sgml/edoc-0.7.6.3
-SYNTAX_TOOLS_DIR=/home/otp/sgml/syntax_tools-1.6
-XMERL_DIR=/home/otp/sgml/xmerl-1.1.12
+SYNTAX_TOOLS_DIR=/home/otp/sgml/syntax_tools-1.6.2
+XMERL_DIR=/home/otp/sgml/xmerl-1.2
 
 FILE=
 APP=

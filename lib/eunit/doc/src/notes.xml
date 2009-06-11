@@ -31,6 +31,36 @@
   </header>
   <p>This document describes the changes made to the EUnit application.</p>
 
+<section><title>Eunit 2.1.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Miscellanous updates.</p>
+          <p>
+	    Own Id: OTP-8038</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Eunit 2.1.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    eunit was broken in R13B.</p>
+          <p>
+	    Own Id: OTP-8018</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Eunit 2.1</title>
 
     <section><title>Improvements and New Features</title>

@@ -85,11 +85,11 @@ remove_ext(File) ->
 %%  X = current form to consider. 
 %%------------------------------------------------------------
 
-gen(G, N, [X| Xs]) when record(X, preproc) ->
+gen(G, N, [X| Xs]) when is_record(X, preproc) ->
     G1 = change_file_stack(G, N, X), 
     gen(G1, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, module) ->
+gen(G, N, [X| Xs]) when is_record(X, module) ->
     CD = ic_code:codeDirective(G, X), 
     G2 = ic_file:filename_push(G, N, X, CD), 
     N2 = [ic_forms:get_id2(X)| N], 
@@ -98,7 +98,7 @@ gen(G, N, [X| Xs]) when record(X, module) ->
     G3 = ic_file:filename_pop(G2, CD), 
     gen(G3, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, interface) ->
+gen(G, N, [X| Xs]) when is_record(X, interface) ->
 
     G2 = ic_file:filename_push(G, N, X, c), 
     N2 = [ic_forms:get_id2(X)| N], 
@@ -126,11 +126,11 @@ gen(G, N, [X| Xs]) when record(X, interface) ->
 
     gen(G3, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, const) ->
+gen(G, N, [X| Xs]) when is_record(X, const) ->
     emit_constant(G, N, X), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, op) ->
+gen(G, N, [X| Xs]) when is_record(X, op) ->
     {OpName, ArgNames, RetParTypes} = ic_cbe:extract_info(G, N, X), 
     %% XXX Note: N is the list of scoped ids of the *interface*.
     gen_operation(G, N, X, OpName, ArgNames, RetParTypes), 
@@ -138,26 +138,26 @@ gen(G, N, [X| Xs]) when record(X, op) ->
     gen_decoder(G, N, X, OpName, ArgNames, RetParTypes), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, attr) ->
+gen(G, N, [X| Xs]) when is_record(X, attr) ->
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, except) ->
+gen(G, N, [X| Xs]) when is_record(X, except) ->
     icstruct:except_gen(G, N, X, c), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, enum) ->
+gen(G, N, [X| Xs]) when is_record(X, enum) ->
     icenum:enum_gen(G, N, X, c), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, typedef) ->
+gen(G, N, [X| Xs]) when is_record(X, typedef) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, struct) ->
+gen(G, N, [X| Xs]) when is_record(X, struct) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, union) ->
+gen(G, N, [X| Xs]) when is_record(X, union) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
@@ -195,7 +195,7 @@ change_file_stack(G, _N, _X) ->
 %% Generate headers in stubfiles and header files 
 %%------------------------------------------------------------
 
-gen_headers(G, N, X) when record(X, interface) ->
+gen_headers(G, N, X) when is_record(X, interface) ->
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    %% Set the temporary variable counter
@@ -266,7 +266,7 @@ gen_headers(G, N, X) when record(X, interface) ->
     end;
 
 %% Some items have extra includes
-gen_headers(G, N, X) when record(X, module) ->
+gen_headers(G, N, X) when is_record(X, module) ->
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
@@ -430,7 +430,7 @@ emit_constant(G, N, ConstRecord) ->
 
 	    emit(Fd, "/* Constant: ~s */\n", [CName]), 
 
-	    if record(ConstRecord#const.type, wstring) -> 
+	    if is_record(ConstRecord#const.type, wstring) -> 
 		    %% If wstring, add 'L' 
 		    emit(Fd, "#define ~s L~p\n", 
 			 [CName, ConstRecord#const.val]);
@@ -914,7 +914,7 @@ emit_one_decoding(G, N, Fd, T, A, N1, Acc) ->
 %%------------------------------------------------------------
 emit_operation_prototypes(G, Fd, N, Xs) ->
     lists:foreach(
-      fun(X) when record(X, op) ->
+      fun(X) when is_record(X, op) ->
 	      {ScopedName, ArgNames, RetParTypes} = 
 		  ic_cbe:extract_info(G, N, X), 
 	      {R, ParTypes, _} = RetParTypes, 
@@ -936,7 +936,7 @@ emit_operation_prototypes(G, Fd, N, Xs) ->
 %%------------------------------------------------------------
 emit_encoder_prototypes(G, Fd, N, Xs) ->
     lists:foreach(
-      fun(X) when record(X, op) ->
+      fun(X) when is_record(X, op) ->
 	      {ScopedName, ArgNames, RetParTypes} = 
 		  ic_cbe:extract_info(G, N, X), 
 	      {_R, ParTypes, _} = RetParTypes, 
@@ -956,7 +956,7 @@ emit_encoder_prototypes(G, Fd, N, Xs) ->
 %%------------------------------------------------------------
 emit_decoder_prototypes(G, Fd, N, Xs) ->
     lists:foreach(
-      fun(X) when record(X, op) ->
+      fun(X) when is_record(X, op) ->
 	      case ic_forms:is_oneway(X) of
 		  true ->
 		      true;
@@ -1016,9 +1016,9 @@ mk_par_type_list(G, N, X, InOrOut, TypesOrArgs, Types, Args) ->
 		  case ic_cbe:is_variable_size(G, N, Type) of
 		      true ->
 			  if 
-			      record(Type, string) ->		"";
+			      is_record(Type, string) ->		"";
 			      Ctype == "CORBA_char *" -> 	"";
-			      record(Type, wstring) ->		"";
+			      is_record(Type, wstring) ->		"";
 			      Ctype == "CORBA_wchar *" ->	"";
 			      true ->
 				  case IsArray of
@@ -1114,11 +1114,11 @@ mk_ret_type(G, N, Type) ->
     Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 	      true ->
 		  if 
-		      record(Type, string) ->
+		      is_record(Type, string) ->
 			  "";
 		      Ctype == "CORBA_char *" ->
 			  "";
-		      record(Type, wstring) ->  
+		      is_record(Type, wstring) ->  
 			  "";
 		      Ctype == "CORBA_wchar *" ->  
 			  "";
@@ -1174,10 +1174,10 @@ get_user_proto(G, Default) ->
 %%------------------------------------------------------------
 get_c_timeout(G, Default) ->
     case ic_options:get_opt(G, c_timeout) of
-	Tmo when integer(Tmo) ->
+	Tmo when is_integer(Tmo) ->
 	    TmoStr = integer_to_list(Tmo),
 	    {TmoStr, TmoStr};
-	{SendTmo, RecvTmo}  when integer(SendTmo), integer(RecvTmo) ->
+	{SendTmo, RecvTmo}  when is_integer(SendTmo) andalso is_integer(RecvTmo) ->
 	    {integer_to_list(SendTmo), integer_to_list(RecvTmo)};
 	false ->
 	    Default

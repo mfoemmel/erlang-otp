@@ -101,5 +101,5 @@ int print_erlang_binary(erlang_binary *binary) {
 	fprintf(stdout,"\n"); 
     } else
 	fprintf(stdout,"NULL\n"); 
-
+    return 0;
 }

@@ -98,14 +98,14 @@ ethr_native_atomic_and_retold(ethr_native_atomic_t *var, long mask)
 {
     /* Implement a barrier suitable for a mutex unlock. */
     __insn_mf();
-    return atomic_exchange_and_and(&var->counter, mask);
+    return atomic_and_val(&var->counter, mask);
 }
 
 static ETHR_INLINE long
 ethr_native_atomic_or_retold(ethr_native_atomic_t *var, long mask)
 {
     __insn_mf();
-    return atomic_exchange_and_or(&var->counter, mask);
+    return atomic_or_val(&var->counter, mask);
 }
 
 static ETHR_INLINE long

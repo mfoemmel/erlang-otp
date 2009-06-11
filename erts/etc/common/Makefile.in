@@ -211,7 +211,8 @@ ERLSRV_OBJECTS=
 MC_OUTPUTS=
 INET_GETHOST = $(BINDIR)/inet_gethost@EXEEXT@
 INSTALL_EMBEDDED_PROGS += $(BINDIR)/typer@EXEEXT@ $(BINDIR)/dialyzer@EXEEXT@ \
- $(BINDIR)/erlc@EXEEXT@ $(BINDIR)/escript@EXEEXT@ $(BINDIR)/run_erl $(BINDIR)/to_erl
+ $(BINDIR)/erlc@EXEEXT@ $(BINDIR)/escript@EXEEXT@ \
+ $(BINDIR)/run_erl $(BINDIR)/to_erl $(BINDIR)/dyn_erl
 INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
 INSTALL_TOP = Install
 INSTALL_TOP_BIN = 
@@ -270,6 +271,7 @@ endif
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/reclaim.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/run_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/to_erl.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/dyn_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/safe_string.o	
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/typer.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/vxcall.o
@@ -306,6 +308,12 @@ $(BINDIR)/to_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/to_erl.o
 
 $(OBJDIR)/to_erl.o: ../unix/to_erl.c
 	$(CC) $(CFLAGS) -o $@ -c ../unix/to_erl.c
+
+$(BINDIR)/dyn_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/dyn_erl.o
+	$(LD) $(LDFLAGS) -o $@  $(OBJDIR)/safe_string.o $(OBJDIR)/dyn_erl.o
+
+$(OBJDIR)/dyn_erl.o: ../unix/dyn_erl.c
+	$(CC) $(CFLAGS) -o $@ -c ../unix/dyn_erl.c
 
 $(OBJDIR)/safe_string.o: ../unix/safe_string.c
 	$(CC) $(CFLAGS) -o $@ -c ../unix/safe_string.c

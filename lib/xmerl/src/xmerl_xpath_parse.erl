@@ -12,7 +12,7 @@ value({Token, _Line}) ->
 value({_Token, _Line, Value}) ->
 	Value.
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-20_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b01.2009-06-07_20/otp_src_R13B01/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -37,17 +37,17 @@ value({_Token, _Line, Value}) ->
 
 -type(yecc_ret() :: {'error', _} | {'ok', _}).
 
--spec(parse/1 :: (_) -> yecc_ret()).
+-spec parse(Tokens :: list()) -> yecc_ret().
 parse(Tokens) ->
-    yeccpars0(Tokens, false).
+    yeccpars0(Tokens, {no_func, no_line}, 0, [], []).
 
 -spec(parse_and_scan/1 ::
       ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
             yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
-    yeccpars0([], {F, A});
+    yeccpars0([], {{F, A}, no_line}, 0, [], []);
 parse_and_scan({M, F, A}) ->
-    yeccpars0([], {{M, F}, A}).
+    yeccpars0([], {{{M, F}, A}, no_line}, 0, [], []).
 
 -spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
@@ -60,15 +60,15 @@ format_error(Message) ->
 
 % To be used in grammar files to throw an error message to the parser
 % toplevel. Doesn't have to be exported!
--compile({nowarn_unused_function,{return_error,2}}).
+-compile({nowarn_unused_function, return_error/2}).
 -spec(return_error/2 :: (integer(), any()) -> no_return()).
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.3").
+-define(CODE_VERSION, "1.4").
 
-yeccpars0(Tokens, MFA) ->
-    try yeccpars1(Tokens, MFA, 0, [], [])
+yeccpars0(Tokens, Tzr, State, States, Vstack) ->
+    try yeccpars1(Tokens, Tzr, State, States, Vstack)
     catch 
         error: Error ->
             Stacktrace = erlang:get_stacktrace(),
@@ -78,11 +78,12 @@ yeccpars0(Tokens, MFA) ->
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace)
+                                 Stacktrace)
             catch _:_ -> erlang:raise(error, Error, Stacktrace)
             end;
-        throw: {error, {_Line, ?MODULE, _M}} = Error -> 
-            Error % probably from return_error/2
+        %% Probably thrown from return_error/2:
+        throw: {error, {_Line, ?MODULE, _M}} = Error ->
+            Error
     end.
 
 yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
@@ -94,20 +95,24 @@ yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
             {missing_in_goto_table, Symbol, State}
     end.
 
-yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
-    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
-              Tokenizer);
-yeccpars1([], {F, A}, State, States, Vstack) ->
+yeccpars1([Token | Tokens], Tzr, State, States, Vstack) ->
+    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, Tzr);
+yeccpars1([], {{F, A},_Line}, State, States, Vstack) ->
     case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(Tokens, {F, A}, State, States, Vstack);
-        {eof, _Endline} ->
-            yeccpars1([], false, State, States, Vstack);
+        {ok, Tokens, Endline} ->
+	    yeccpars1(Tokens, {{F, A}, Endline}, State, States, Vstack);
+        {eof, Endline} ->
+            yeccpars1([], {no_func, Endline}, State, States, Vstack);
         {error, Descriptor, _Endline} ->
             {error, Descriptor}
     end;
-yeccpars1([], false, State, States, Vstack) ->
-    yeccpars2(State, '$end', States, Vstack, {'$end', 999999}, [], false).
+yeccpars1([], {no_func, no_line}, State, States, Vstack) ->
+    Line = 999999,
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Line), [],
+              {no_func, Line});
+yeccpars1([], {no_func, Endline}, State, States, Vstack) ->
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Endline), [],
+              {no_func, Endline}).
 
 %% yeccpars1/7 is called from generated code.
 %%
@@ -115,34 +120,59 @@ yeccpars1([], false, State, States, Vstack) ->
 %% yeccpars1/7 can be found by parsing the file without following
 %% include directives. yecc will otherwise assume that an old
 %% yeccpre.hrl is included (one which defines yeccpars1/5).
-yeccpars1(State1, State, States, Vstack, Stack1, [Token | Tokens], 
-          Tokenizer) ->
+yeccpars1(State1, State, States, Vstack, Token0, [Token | Tokens], Tzr) ->
     yeccpars2(State, element(1, Token), [State1 | States],
-              [Stack1 | Vstack], Token, Tokens, Tokenizer);
-yeccpars1(State1, State, States, Vstack, Stack1, [], {F, A}) ->
-    case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(State1, State, States, Vstack, Stack1, Tokens, {F, A});
-        {eof, _Endline} ->
-            yeccpars1(State1, State, States, Vstack, Stack1, [], false);
-        {error, Descriptor, _Endline} ->
-            {error, Descriptor}
-    end;
-yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
-    yeccpars2(State, '$end', [State1 | States], [Stack1 | Vstack],
-              {'$end', 999999}, [], false).
+              [Token0 | Vstack], Token, Tokens, Tzr);
+yeccpars1(State1, State, States, Vstack, Token0, [], {{_F,_A}, _Line}=Tzr) ->
+    yeccpars1([], Tzr, State, [State1 | States], [Token0 | Vstack]);
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, no_line}) ->
+    Line = yecctoken_end_location(Token0),
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line});
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, Line}) ->
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line}).
 
 % For internal use only.
+yecc_end({Line,_Column}) ->
+    {'$end', Line};
+yecc_end(Line) ->
+    {'$end', Line}.
+
+yecctoken_end_location(Token) ->
+    try
+        {text, Str} = erl_scan:token_info(Token, text),
+        {line, Line} = erl_scan:token_info(Token, line),
+        Parts = re:split(Str, "\n"),
+        Dline = length(Parts) - 1,
+        Yline = Line + Dline,
+        case erl_scan:token_info(Token, column) of
+            {column, Column} ->
+                Col = byte_size(lists:last(Parts)),
+                {Yline, Col + if Dline =:= 0 -> Column; true -> 1 end};
+            undefined ->
+                Yline
+        end
+    catch _:_ ->
+        yecctoken_location(Token)
+    end.
+
 yeccerror(Token) ->
-    Text = case catch erl_scan:token_info(Token, text) of
-               {text, Txt} -> Txt;
-               _ -> yecctoken2string(Token)
-           end,
-    Location = case catch erl_scan:token_info(Token, location) of
-                   {location, Loc} -> Loc;
-                   _ -> element(2, Token)
-               end,
+    Text = yecctoken_to_string(Token),
+    Location = yecctoken_location(Token),
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
+
+yecctoken_to_string(Token) ->
+    case catch erl_scan:token_info(Token, text) of
+        {text, Txt} -> Txt;
+        _ -> yecctoken2string(Token)
+    end.
+
+yecctoken_location(Token) ->
+    case catch erl_scan:token_info(Token, location) of
+        {location, Loc} -> Loc;
+        _ -> element(2, Token)
+    end.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
@@ -150,13 +180,13 @@ yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:write(A);
+yecctoken2string({_Cat, _, Val}) -> io_lib:write(Val);
 yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format("~w", [Other]);
+    io_lib:write(Other);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -164,7 +194,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./xmerl_xpath_parse.erl", 167).
+-file("./xmerl_xpath_parse.erl", 197).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -1877,7 +1907,7 @@ yeccpars2_109(_S, Cat, Ss, Stack, T, Ts, Tzr) ->
 'yeccgoto_\'UnionExpr\''(106, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_1(1, Cat, Ss, Stack, T, Ts, Tzr).
 
--compile({inline,{yeccpars2_4_,1}}).
+-compile({inline,yeccpars2_4_/1}).
 -file("xmerl_xpath_parse.yrl", 96).
 yeccpars2_4_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1885,7 +1915,7 @@ yeccpars2_4_(__Stack0) ->
    { path , rel , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_9_,1}}).
+-compile({inline,yeccpars2_9_/1}).
 -file("xmerl_xpath_parse.yrl", 122).
 yeccpars2_9_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1893,7 +1923,7 @@ yeccpars2_9_(__Stack0) ->
    { step , { child , __1 , [ ] } }
   end | __Stack].
 
--compile({inline,{yeccpars2_19_,1}}).
+-compile({inline,yeccpars2_19_/1}).
 -file("xmerl_xpath_parse.yrl", 97).
 yeccpars2_19_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1901,7 +1931,7 @@ yeccpars2_19_(__Stack0) ->
    { path , abs , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_20_,1}}).
+-compile({inline,yeccpars2_20_/1}).
 -file("xmerl_xpath_parse.yrl", 124).
 yeccpars2_20_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1909,7 +1939,7 @@ yeccpars2_20_(__Stack0) ->
    { abbrev_step , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_27_,1}}).
+-compile({inline,yeccpars2_27_/1}).
 -file("xmerl_xpath_parse.yrl", 101).
 yeccpars2_27_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1917,7 +1947,7 @@ yeccpars2_27_(__Stack0) ->
    '/'
   end | __Stack].
 
--compile({inline,{yeccpars2_32_,1}}).
+-compile({inline,yeccpars2_32_/1}).
 -file("xmerl_xpath_parse.yrl", 175).
 yeccpars2_32_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1925,7 +1955,7 @@ yeccpars2_32_(__Stack0) ->
    { literal , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_33_,1}}).
+-compile({inline,yeccpars2_33_/1}).
 -file("xmerl_xpath_parse.yrl", 293).
 yeccpars2_33_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1933,7 +1963,7 @@ yeccpars2_33_(__Stack0) ->
    { name , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_35_,1}}).
+-compile({inline,yeccpars2_35_/1}).
 -file("xmerl_xpath_parse.yrl", 176).
 yeccpars2_35_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1941,7 +1971,7 @@ yeccpars2_35_(__Stack0) ->
    { number , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_36_,1}}).
+-compile({inline,yeccpars2_36_/1}).
 -file("xmerl_xpath_parse.yrl", 292).
 yeccpars2_36_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1949,7 +1979,7 @@ yeccpars2_36_(__Stack0) ->
    { prefix_test , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_38_,1}}).
+-compile({inline,yeccpars2_38_/1}).
 -file("xmerl_xpath_parse.yrl", 173).
 yeccpars2_38_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1957,7 +1987,7 @@ yeccpars2_38_(__Stack0) ->
    { variable_reference , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_39_,1}}).
+-compile({inline,yeccpars2_39_/1}).
 -file("xmerl_xpath_parse.yrl", 291).
 yeccpars2_39_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1965,7 +1995,7 @@ yeccpars2_39_(__Stack0) ->
    { wildcard , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_42_,1}}).
+-compile({inline,yeccpars2_42_/1}).
 -file("xmerl_xpath_parse.yrl", 144).
 yeccpars2_42_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -1973,7 +2003,7 @@ yeccpars2_42_(__Stack0) ->
    { processing_instruction , value ( __3 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_44_,1}}).
+-compile({inline,yeccpars2_44_/1}).
 -file("xmerl_xpath_parse.yrl", 142).
 yeccpars2_44_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -1981,7 +2011,7 @@ yeccpars2_44_(__Stack0) ->
    { node_type , value ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_47_,1}}).
+-compile({inline,yeccpars2_47_/1}).
 -file("xmerl_xpath_parse.yrl", 189).
 yeccpars2_47_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1989,7 +2019,7 @@ yeccpars2_47_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_48_,1}}).
+-compile({inline,yeccpars2_48_/1}).
 -file("xmerl_xpath_parse.yrl", 185).
 yeccpars2_48_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -1997,7 +2027,7 @@ yeccpars2_48_(__Stack0) ->
    lists : reverse ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_50_,1}}).
+-compile({inline,yeccpars2_50_/1}).
 -file("xmerl_xpath_parse.yrl", 181).
 yeccpars2_50_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2005,7 +2035,7 @@ yeccpars2_50_(__Stack0) ->
    { function_call , value ( __1 ) , [ ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_51_,1}}).
+-compile({inline,yeccpars2_51_/1}).
 -file("xmerl_xpath_parse.yrl", 183).
 yeccpars2_51_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -2013,7 +2043,7 @@ yeccpars2_51_(__Stack0) ->
    { function_call , value ( __1 ) , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_53_,1}}).
+-compile({inline,yeccpars2_53_/1}).
 -file("xmerl_xpath_parse.yrl", 188).
 yeccpars2_53_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2021,7 +2051,7 @@ yeccpars2_53_(__Stack0) ->
    [ __3 | __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_55_,1}}).
+-compile({inline,yeccpars2_55_/1}).
 -file("xmerl_xpath_parse.yrl", 114).
 yeccpars2_55_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2029,7 +2059,7 @@ yeccpars2_55_(__Stack0) ->
    { step , { value ( __1 ) , __3 , [ ] } }
   end | __Stack].
 
--compile({inline,{yeccpars2_56_,1}}).
+-compile({inline,yeccpars2_56_/1}).
 -file("xmerl_xpath_parse.yrl", 132).
 yeccpars2_56_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -2037,7 +2067,7 @@ yeccpars2_56_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_57_,1}}).
+-compile({inline,yeccpars2_57_/1}).
 -file("xmerl_xpath_parse.yrl", 127).
 yeccpars2_57_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -2045,7 +2075,7 @@ yeccpars2_57_(__Stack0) ->
    lists : reverse ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_58_,1}}).
+-compile({inline,yeccpars2_58_/1}).
 -file("xmerl_xpath_parse.yrl", 112).
 yeccpars2_58_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -2053,7 +2083,7 @@ yeccpars2_58_(__Stack0) ->
    { step , { value ( __1 ) , __3 , __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_62_,1}}).
+-compile({inline,yeccpars2_62_/1}).
 -file("xmerl_xpath_parse.yrl", 148).
 yeccpars2_62_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2061,7 +2091,7 @@ yeccpars2_62_(__Stack0) ->
    { pred , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_63_,1}}).
+-compile({inline,yeccpars2_63_/1}).
 -file("xmerl_xpath_parse.yrl", 131).
 yeccpars2_63_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2069,7 +2099,7 @@ yeccpars2_63_(__Stack0) ->
    [ __2 | __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_64_,1}}).
+-compile({inline,yeccpars2_64_/1}).
 -file("xmerl_xpath_parse.yrl", 118).
 yeccpars2_64_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2077,7 +2107,7 @@ yeccpars2_64_(__Stack0) ->
    { step , { attribute , __2 , [ ] } }
   end | __Stack].
 
--compile({inline,{yeccpars2_65_,1}}).
+-compile({inline,yeccpars2_65_/1}).
 -file("xmerl_xpath_parse.yrl", 116).
 yeccpars2_65_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2085,7 +2115,7 @@ yeccpars2_65_(__Stack0) ->
    { step , { value ( __1 ) , __2 , __3 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_66_,1}}).
+-compile({inline,yeccpars2_66_/1}).
 -file("xmerl_xpath_parse.yrl", 155).
 yeccpars2_66_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2093,7 +2123,7 @@ yeccpars2_66_(__Stack0) ->
    { '//' , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_69_,1}}).
+-compile({inline,yeccpars2_69_/1}).
 -file("xmerl_xpath_parse.yrl", 159).
 yeccpars2_69_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2101,7 +2131,7 @@ yeccpars2_69_(__Stack0) ->
    { __1 , '//' , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_70_,1}}).
+-compile({inline,yeccpars2_70_/1}).
 -file("xmerl_xpath_parse.yrl", 107).
 yeccpars2_70_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2109,7 +2139,7 @@ yeccpars2_70_(__Stack0) ->
    { refine , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_71_,1}}).
+-compile({inline,yeccpars2_71_/1}).
 -file("xmerl_xpath_parse.yrl", 100).
 yeccpars2_71_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2117,7 +2147,7 @@ yeccpars2_71_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_72_,1}}).
+-compile({inline,yeccpars2_72_/1}).
 -file("xmerl_xpath_parse.yrl", 262).
 yeccpars2_72_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2125,7 +2155,7 @@ yeccpars2_72_(__Stack0) ->
    { negative , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_74_,1}}).
+-compile({inline,yeccpars2_74_/1}).
 -file("xmerl_xpath_parse.yrl", 174).
 yeccpars2_74_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2133,7 +2163,7 @@ yeccpars2_74_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_77_,1}}).
+-compile({inline,yeccpars2_77_/1}).
 -file("xmerl_xpath_parse.yrl", 247).
 yeccpars2_77_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2141,7 +2171,7 @@ yeccpars2_77_(__Stack0) ->
    { arith , '-' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_79_,1}}).
+-compile({inline,yeccpars2_79_/1}).
 -file("xmerl_xpath_parse.yrl", 287).
 yeccpars2_79_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -2149,7 +2179,7 @@ yeccpars2_79_(__Stack0) ->
    '*'
   end | __Stack].
 
--compile({inline,{yeccpars2_82_,1}}).
+-compile({inline,yeccpars2_82_/1}).
 -file("xmerl_xpath_parse.yrl", 257).
 yeccpars2_82_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2157,7 +2187,7 @@ yeccpars2_82_(__Stack0) ->
    { arith , mod , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_83_,1}}).
+-compile({inline,yeccpars2_83_/1}).
 -file("xmerl_xpath_parse.yrl", 255).
 yeccpars2_83_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2165,7 +2195,7 @@ yeccpars2_83_(__Stack0) ->
    { arith , 'div' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_84_,1}}).
+-compile({inline,yeccpars2_84_/1}).
 -file("xmerl_xpath_parse.yrl", 253).
 yeccpars2_84_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2173,7 +2203,7 @@ yeccpars2_84_(__Stack0) ->
    { arith , __2 , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_85_,1}}).
+-compile({inline,yeccpars2_85_/1}).
 -file("xmerl_xpath_parse.yrl", 245).
 yeccpars2_85_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2181,7 +2211,7 @@ yeccpars2_85_(__Stack0) ->
    { arith , '+' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_87_,1}}).
+-compile({inline,yeccpars2_87_/1}).
 -file("xmerl_xpath_parse.yrl", 221).
 yeccpars2_87_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2189,7 +2219,7 @@ yeccpars2_87_(__Stack0) ->
    { bool , 'and' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_90_,1}}).
+-compile({inline,yeccpars2_90_/1}).
 -file("xmerl_xpath_parse.yrl", 226).
 yeccpars2_90_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2197,7 +2227,7 @@ yeccpars2_90_(__Stack0) ->
    { comp , '=' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_95_,1}}).
+-compile({inline,yeccpars2_95_/1}).
 -file("xmerl_xpath_parse.yrl", 239).
 yeccpars2_95_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2205,7 +2235,7 @@ yeccpars2_95_(__Stack0) ->
    { comp , '>=' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_96_,1}}).
+-compile({inline,yeccpars2_96_/1}).
 -file("xmerl_xpath_parse.yrl", 235).
 yeccpars2_96_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2213,7 +2243,7 @@ yeccpars2_96_(__Stack0) ->
    { comp , '>' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_97_,1}}).
+-compile({inline,yeccpars2_97_/1}).
 -file("xmerl_xpath_parse.yrl", 237).
 yeccpars2_97_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2221,7 +2251,7 @@ yeccpars2_97_(__Stack0) ->
    { comp , '<=' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_98_,1}}).
+-compile({inline,yeccpars2_98_/1}).
 -file("xmerl_xpath_parse.yrl", 233).
 yeccpars2_98_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2229,7 +2259,7 @@ yeccpars2_98_(__Stack0) ->
    { comp , '<' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_99_,1}}).
+-compile({inline,yeccpars2_99_/1}).
 -file("xmerl_xpath_parse.yrl", 228).
 yeccpars2_99_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2237,7 +2267,7 @@ yeccpars2_99_(__Stack0) ->
    { comp , '!=' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_100_,1}}).
+-compile({inline,yeccpars2_100_/1}).
 -file("xmerl_xpath_parse.yrl", 209).
 yeccpars2_100_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2245,7 +2275,7 @@ yeccpars2_100_(__Stack0) ->
    { path , filter , { __1 , __2 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_103_,1}}).
+-compile({inline,yeccpars2_103_/1}).
 -file("xmerl_xpath_parse.yrl", 205).
 yeccpars2_103_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2253,7 +2283,7 @@ yeccpars2_103_(__Stack0) ->
    { __1 , '//' , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_104_,1}}).
+-compile({inline,yeccpars2_104_/1}).
 -file("xmerl_xpath_parse.yrl", 204).
 yeccpars2_104_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2261,7 +2291,7 @@ yeccpars2_104_(__Stack0) ->
    { refine , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_105_,1}}).
+-compile({inline,yeccpars2_105_/1}).
 -file("xmerl_xpath_parse.yrl", 120).
 yeccpars2_105_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -2269,7 +2299,7 @@ yeccpars2_105_(__Stack0) ->
    { step , { child , __1 , __2 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_107_,1}}).
+-compile({inline,yeccpars2_107_/1}).
 -file("xmerl_xpath_parse.yrl", 215).
 yeccpars2_107_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -2277,7 +2307,7 @@ yeccpars2_107_(__Stack0) ->
    { bool , 'or' , __1 , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_109_,1}}).
+-compile({inline,yeccpars2_109_/1}).
 -file("xmerl_xpath_parse.yrl", 198).
 yeccpars2_109_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,

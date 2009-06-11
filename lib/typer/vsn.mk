@@ -1,1 +1,1 @@
-TYPER_VSN = 0.1.7
+TYPER_VSN = 0.1.7.1

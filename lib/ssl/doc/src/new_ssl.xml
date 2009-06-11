@@ -13,7 +13,7 @@
   Version 1.1, (the "License"); you may not use this file except in
   compliance with the License. You should have received a copy of the
   Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
+  retrieved aniline's at http://www.erlang.org/.
 
   Software distributed under the License is distributed on an "AS IS"
   basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
@@ -47,7 +47,7 @@
     <p>This manual page describes functions that are defined
       in the ssl module and represents the new ssl implementation
       that coexists with the old one, as the new implementation
-      is not yet compleat enough to replace the old one.</p>
+      is not yet complete enough to replace the old one.</p>
        
     <p>The new implementation can be
       accessed by providing the option {ssl_imp, new} to the
@@ -198,14 +198,13 @@
       the server will fail if the client does not have a certificate
       to send, e.i sends a empty certificate, if set to false it will
       only fail if the client sends a invalid certificate (an empty
-      certificate is concidered valid).
+      certificate is considered valid).
       </item>
       
       <tag>{verify_fun, fun(ErrorList) -> boolean()}</tag>
-       <item>Used by the ssl client when the verify options
-       is <c>verify_none</c> to determine if 
-       x509-certificate path validations errors are acceptable or
-       if the connection should fail. Defaults to:
+      <item>Used by the ssl client to determine if 
+	x509-certificate path validations errors are acceptable or
+	if the connection should fail. Defaults to:
        
 <code>
 fun(ErrorList) ->
@@ -221,13 +220,13 @@ fun(ErrorList) ->
 	end
 end
 </code>
-       E.i by default if the only error found was that the CA-certificate
-       holder was unknow this will be accepted.
+       I.e. by default if the only error found was that the CA-certificate
+       holder was unknown this will be accepted.
 
        Possible errors in the error list are: 
        {bad_cert, cert_expired}, {bad_cert, invalid_issuer},
        {bad_cert, invalid_signature}, {bad_cert, name_not_permitted},
-       {bad_cert,unknown_ca},
+       {bad_cert, unknown_ca},
        {bad_cert, cert_expired}, {bad_cert, invalid_issuer},
        {bad_cert, invalid_signature}, {bad_cert, name_not_permitted},
        {bad_cert, cert_revoked} (not implemented yet),
@@ -248,12 +247,12 @@ end
       <tag>{certfile, path()}</tag>
       <item>Path to a file containing the
           user's certificate. Optional for clients but note
-      that some servers requiers that the client can certify
+      that some servers requires that the client can certify
       itself. </item>
       <tag>{keyfile, path()}</tag>
       <item>Path to file containing user's
       private PEM encoded key. As PEM-files may contain several
-      enteris this option defaults to the same file as given by
+      entries this option defaults to the same file as given by
       certfile option.</item>
       <tag>{password, string()}</tag>
       <item>String containing the user's password.
@@ -267,7 +266,7 @@ end
       
       <tag>{ciphers, ciphers()}</tag>
       <item>The function <c>ciphers_suites/0</c> can
-	be used to find all availabe ciphers.
+	be used to find all available ciphers.
       </item>
 
       <tag>{ssl_imp, ssl_imp()}</tag>

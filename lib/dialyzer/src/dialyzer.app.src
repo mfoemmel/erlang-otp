@@ -33,6 +33,7 @@
 	     dialyzer_gui,
 	     dialyzer_options,
 	     dialyzer_plt,
+	     dialyzer_races,
 	     dialyzer_succ_typings,
 	     dialyzer_typesig,
 	     dialyzer_utils]},

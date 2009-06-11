@@ -43,6 +43,7 @@
 	  options = #options{}
 	 }).
 
+
 %%====================================================================
 %% Internal Application API
 %%====================================================================
@@ -306,33 +307,17 @@ handle_cast({request_canceled, RequestId}, State) ->
     end;
 handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
     NewOptions = 
-	#options{proxy = 
-		 proplists:get_value(proxy, Options,
-				       OldOptions#options.proxy),
-		 pipeline_timeout = 
-		 proplists:get_value(pipeline_timeout, Options, 
-				       OldOptions#options.pipeline_timeout),
-		 max_pipeline_length =
-		 proplists:get_value(max_pipeline_length, Options, 
-				     OldOptions#options.max_pipeline_length),
-		 max_keep_alive_length = 
-		 proplists:get_value(max_keep_alive_length, 
-				     Options, 
-				     OldOptions#options.max_keep_alive_length),
-		 
-		 keep_alive_timeout = 
-		 proplists:get_value(keep_alive_timeout, 
-				     Options, 
-				     OldOptions#options.keep_alive_timeout),
-		 max_sessions = 
-		 proplists:get_value(max_sessions, Options, 
-				     OldOptions#options.max_sessions),
-		 cookies = proplists:get_value(cookies, Options, 
-						 OldOptions#options.cookies),
-		 ipv6 = proplists:get_value(ipv6, Options, 
-					     OldOptions#options.ipv6),
-		 verbose = proplists:get_value(verbose, Options, 
-						OldOptions#options.verbose)
+	#options{proxy                 = get_proxy(Options, OldOptions),
+		 pipeline_timeout      = get_pipeline_timeout(Options, OldOptions), 
+		 max_pipeline_length   = get_max_pipeline_length(Options, OldOptions), 
+		 max_keep_alive_length = get_max_keep_alive_length(Options, OldOptions), 
+		 keep_alive_timeout    = get_keep_alive_timeout(Options, OldOptions), 
+		 max_sessions          = get_max_sessions(Options, OldOptions), 
+		 cookies               = get_cookies(Options, OldOptions), 
+		 ipfamily              = get_ipfamily(Options, OldOptions), 
+		 ip                    = get_ip(Options, OldOptions),
+		 port                  = get_port(Options, OldOptions),
+		 verbose               = get_verbose(Options, OldOptions)
 		}, 
     case {OldOptions#options.verbose, NewOptions#options.verbose} of
 	{Same, Same} ->
@@ -347,7 +332,6 @@ handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
 	    dbg:tracer(),
 	    handle_verbose(Level)
     end,
-
     {noreply, State#state{options = NewOptions}};
 
 handle_cast({store_cookies, _}, 
@@ -364,6 +348,8 @@ handle_cast(Msg, State) ->
     error_logger:error_report(Report),
     {noreply, State}.
 
+
+	    
 %%--------------------------------------------------------------------
 %% Function: handle_info(Info, State) -> {noreply, State} |
 %%          {noreply, State, Timeout} |
@@ -419,6 +405,7 @@ handle_request(#request{settings =
 	       State) ->
     %% Act as an HTTP/0.9 client that does not know anything
     %% about persistent connections
+
     NewRequest = handle_cookies(generate_request_id(Request), State),
     NewHeaders = 
 	(NewRequest#request.headers)#http_request_h{connection
@@ -431,6 +418,7 @@ handle_request(#request{settings =
 	       State) ->
     %% Act as an HTTP/1.0 client that does not 
     %% use persistent connections
+
     NewRequest = handle_cookies(generate_request_id(Request), State),
     NewHeaders = 
 	(NewRequest#request.headers)#http_request_h{connection
@@ -439,6 +427,7 @@ handle_request(#request{settings =
     {reply, {ok, NewRequest#request.id}, State};
 
 handle_request(Request, State = #state{options = Options}) ->
+
     NewRequest = handle_cookies(generate_request_id(Request), State),
     SessionType = session_type(Options),
     case select_session(Request#request.method, 
@@ -522,7 +511,6 @@ start_handler(Request, State) ->
 		httpc_handler:start_link(Request, State#state.options,
 					 State#state.profile_name)
 	end,
-    
     ets:insert(State#state.handler_db, {Request#request.id, 
 					Pid, Request#request.from}),
     erlang:monitor(process, Pid).
@@ -573,6 +561,54 @@ call(ProfileName, Msg, Timeout) ->
 cast(ProfileName, Msg) ->
    gen_server:cast(ProfileName, Msg).
 
+
+
+get_proxy(Opts, #options{proxy = Default}) ->
+    proplists:get_value(proxy, Opts, Default).
+
+get_pipeline_timeout(Opts, #options{pipeline_timeout = Default}) ->
+    proplists:get_value(pipeline_timeout, Opts, Default).
+
+get_max_pipeline_length(Opts, #options{max_pipeline_length = Default}) ->
+    proplists:get_value(max_pipeline_length, Opts, Default).
+
+get_max_keep_alive_length(Opts, #options{max_keep_alive_length = Default}) ->
+    proplists:get_value(max_keep_alive_length, Opts, Default).
+
+get_keep_alive_timeout(Opts, #options{keep_alive_timeout = Default}) ->
+    proplists:get_value(keep_alive_timeout, Opts, Default).
+
+get_max_sessions(Opts, #options{max_sessions = Default}) ->
+    proplists:get_value(max_sessions, Opts, Default).
+
+get_cookies(Opts, #options{cookies = Default}) ->
+    proplists:get_value(cookies, Opts, Default).
+
+get_ipfamily(Opts, #options{ipfamily = IpFamily}) ->
+    case lists:keysearch(ipfamily, 1, Opts) of
+	false -> 
+	    case proplists:get_value(ipv6, Opts) of
+		enabled ->
+		    inet6fb4;
+		disabled ->
+		    inet;
+		_ ->
+		    IpFamily
+	    end;
+	{value, {_, Value}} ->
+	    Value
+    end.
+
+get_ip(Opts, #options{ip = Default}) ->
+    proplists:get_value(ip, Opts, Default).
+
+get_port(Opts, #options{port = Default}) ->
+    proplists:get_value(port, Opts, Default).
+
+get_verbose(Opts, #options{verbose = Default}) ->
+    proplists:get_value(verbose, Opts, Default).
+
+
 handle_verbose(debug) ->
     dbg:p(self(), [call]),
     dbg:tp(?MODULE, [{'_', [], [{return_trace}]}]);
@@ -581,4 +617,15 @@ handle_verbose(trace) ->
     dbg:tpl(?MODULE, [{'_', [], [{return_trace}]}]);
 handle_verbose(_) ->
     ok.  
+
+%% d(F) ->
+%%    d(F, []).
+
+%% d(F, A) -> 
+%%     d(get(dbg), F, A).
+
+%% d(true, F, A) ->
+%%     io:format(user, "~w:~w:" ++ F ++ "~n", [self(), ?MODULE | A]);
+%% d(_, _, _) ->
+%%     ok.
 

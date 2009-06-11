@@ -79,14 +79,15 @@ create_http_header_elements(ScriptType, Headers) ->
 create_http_header_elements(_, [], Acc) ->
     Acc;
 create_http_header_elements(ScriptType, [{Name, [Value | _] = Values } | 
-					     Headers], Acc) when list(Value) ->
+					     Headers], Acc) 
+  when is_list(Value) ->
     NewName = lists:map(fun(X) -> if X == $- -> $_; true -> X end end, Name),
     Element = http_env_element(ScriptType, NewName, multi_value(Values)),
     create_http_header_elements(ScriptType, Headers, [Element | Acc]);
 
 create_http_header_elements(ScriptType, [{Name, Value} | Headers], Acc) 
-  when list(Value) ->
-    {ok, NewName, _} = regexp:gsub(Name,"-","_"),
+  when is_list(Value) ->
+    {ok, NewName, _} = inets_regexp:gsub(Name,"-","_"),
     Element = http_env_element(ScriptType, NewName, Value),
     create_http_header_elements(ScriptType, Headers, [Element | Acc]).
 

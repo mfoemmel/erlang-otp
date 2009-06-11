@@ -1,21 +1,20 @@
-#<copyright>
-# <year>2004-2007</year>
-# <holder>Ericsson AB, All Rights Reserved</holder>
-#</copyright>
-#<legalnotice>
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2004-2009. All Rights Reserved.
+# 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
 # retrieved online at http://www.erlang.org/.
-#
+# 
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
-#
-# The Initial Developer of the Original Code is Ericsson AB.
-#</legalnotice>
+# 
+# %CopyrightEnd%
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
@@ -56,7 +55,8 @@ XML_APPLICATION_FILES = ref_man.xml
 XMERL_XML_FILES = $(XMERL_MODULES:=.xml)
 
 XML_REF_MAN = ref_man.xml
-XML_REF3_FILES = $(XMERL_XML_FILES)
+XML_REF3_FILES = $(XMERL_XML_FILES) \
+	xmerl_sax_parser.xml
 
 XML_PART_FILES =  \
 	part.xml \
@@ -67,6 +67,8 @@ XML_REF6_FILES =
 XML_CHAPTER_FILES =  \
 	xmerl_ug.xml \
 	notes.xml
+
+# 	xmerl_sax_ug.xml \
 
 HTML_EXAMPLE_FILES =  \
 	xmerl_examples.html \
@@ -210,6 +212,7 @@ endif
 release_spec:
 
 
+release_tests_spec:
 
 # ----------------------------------------------------
 # Include dependency

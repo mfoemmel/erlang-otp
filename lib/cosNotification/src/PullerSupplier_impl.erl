@@ -545,7 +545,7 @@ add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,What) ->
     orber:dbg("[~p] PullerSupplier:remove_filter(~p); Not an integer", 
@@ -558,7 +558,7 @@ remove_filter(_,_,_,What) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,What) ->
     orber:dbg("[~p] PullerSupplier:get_filter(~p); Not an integer", 

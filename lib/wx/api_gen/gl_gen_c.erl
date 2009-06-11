@@ -404,13 +404,13 @@ build_ret_types(Type,Ps) ->
     lists:foldl(Calc, [], Ps).
 
 build_ret(Name,_Q,#type{name=_T,base=int,single=true,by_val=true}) ->    
-    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) ~s;~n", [Name]);
+    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) ~s;~n", [Name]);
 build_ret(Name,_Q,#type{name=_T,base=bool,single=true,by_val=true}) ->
-    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) ~s;~n", [Name]);
+    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) ~s;~n", [Name]);
 build_ret(Name,_Q,#type{name=_T,base=int,single=true,by_val=false}) ->    
-    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) *~s;~n", [Name]);
+    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) *~s;~n", [Name]);
 build_ret(Name,_Q,#type{name=_T,base=bool,single=true,by_val=false}) ->
-    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) *~s;~n", [Name]);
+    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) *~s;~n", [Name]);
 build_ret(Name,_Q,#type{name=_T,size=4,base=float,single=true,by_val=false}) ->
     w(" GLdouble ~sConv = (double) *~s; \n",[Name,Name]),
     w(" rt[AP++] = ERL_DRV_FLOAT; rt[AP++] = (ErlDrvTermData) &~sConv;~n", [Name]);
@@ -432,7 +432,7 @@ build_ret(Name,_Q,#type{name=_T,size=FSz,base=float,single={tuple,Sz}}) ->
 build_ret(Name,_Q,#type{name=T,base=_,single={tuple,Sz}}) ->
     Temp = Name ++ "Tmp",
     w(" ~s *~s = ~s;\n", [T,Temp,Name]),
-    [w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) *~s++;~n", [Temp]) 
+    [w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) *~s++;~n", [Temp]) 
      || _ <- lists:seq(1,Sz)],
     w(" rt[AP++] = ERL_DRV_TUPLE; rt[AP++] = ~p;~n",[Sz]);
 build_ret(Name,_Q,#type{name="GLubyte",single={list,null}}) ->
@@ -443,7 +443,7 @@ build_ret(Name,_Q,#type{base=string,single={list,_,Sz}}) ->
       " rt[AP++] = *~s;\n", [Name, Sz]);
 build_ret(Name,_Q,#type{name=_T,base=B,single={list,_,Sz}}) when B =/= float ->
     w(" for(int i=0; i < *~s; i++) {\n", [Sz]),
-    w("    rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) ~s[i];}~n", [Name]),    
+    w("    rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) ~s[i];}~n", [Name]),    
     w(" rt[AP++] = ERL_DRV_NIL;", []),
     w(" rt[AP++] = ERL_DRV_LIST; rt[AP++] = (*~s)+1;~n",[Sz]);
 build_ret(Name,_Q,#type{name=_T,size=FSz,base=float,single={list,Sz}}) ->
@@ -462,7 +462,7 @@ build_ret(Name,_Q,#type{name=_T,size=FSz,base=float,single={list,Sz}}) ->
 build_ret(Name,_Q,#type{name=T,base=_,single={list,Sz}}) ->
     Temp = Name ++ "Tmp",
     w(" ~s *~s = ~s;\n", [T,Temp,Name]),
-    [w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (int) *~s++;~n", [Temp]) 
+    [w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) *~s++;~n", [Temp]) 
      || _ <- lists:seq(1,Sz)],
     w(" rt[AP++] = ERL_DRV_NIL;", []),
     w(" rt[AP++] = ERL_DRV_LIST; rt[AP++] = ~p+1;~n",[Sz]);

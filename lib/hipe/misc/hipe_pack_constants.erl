@@ -90,19 +90,18 @@ pack_labels([Label|Labels],MFA,ConstTab,AccSize,OldAlign,ConstNo, Acc, Refs) ->
       %% If the constant term is already in the constant map we want
       %% to use the same constant number so that, in the end, the
       %% constant term is not duplicated.
-      case lists:keysearch(RawData, 7, Acc) of
+      case lists:keyfind(RawData, 7, Acc) of
 	false ->
 	  NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=ConstNo,
 			       start=0, type=Type, raw_data=RawData},
 	  pack_labels(Labels, MFA, ConstTab, AccSize, OldAlign, ConstNo+1,
 		      [NewInfo|Acc], Refs);
-	{value, #pcm_entry{const_num=OtherConstNo,
-			   type=Type, raw_data=RawData}} ->
+	#pcm_entry{const_num=OtherConstNo, type=Type, raw_data=RawData} ->
 	  NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=OtherConstNo,
 			       start=0, type=Type, raw_data=RawData},
 	  pack_labels(Labels, MFA, ConstTab, AccSize, OldAlign, ConstNo,
 		      [NewInfo|Acc], Refs);
-	{value, _} ->
+	_ ->
 	  NewInfo = #pcm_entry{mfa=MFA, label=Label, const_num=ConstNo,
 			       start=0, type=Type, raw_data=RawData},
 	  pack_labels(Labels, MFA, ConstTab, AccSize, OldAlign, ConstNo+1,

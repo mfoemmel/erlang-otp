@@ -94,7 +94,7 @@ get_interface(Obj) ->
     end.
 	    
 
-is_nil(Object) when record(Object, 'IOP_IOR') ->
+is_nil(Object) when is_record(Object, 'IOP_IOR') ->
     iop_ior:check_nil(Object);
 is_nil({I,T,K,P,O,F}) ->
     iop_ior:check_nil({I,T,K,P,O,F});
@@ -110,7 +110,7 @@ is_a(?ORBER_NIL_OBJREF, _, _Ctx) ->
     false;
 is_a(#'IOP_IOR'{type_id = Logical_type_id}, Logical_type_id, _Ctx) ->
     true;
-is_a(Obj, Logical_type_id, Ctx) when list(Ctx) ->
+is_a(Obj, Logical_type_id, Ctx) when is_list(Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'external', Key} ->
 	    orber_iiop:request(Key, '_is_a', [Logical_type_id], 
@@ -155,11 +155,11 @@ not_existent(Obj, Ctx) ->
     existent_helper(Obj, '_not_existent', Ctx).
 
 
-existent_helper(Obj, Op, Ctx) when list(Ctx) ->
+existent_helper(Obj, Op, Ctx) when is_list(Ctx) ->
     case catch iop_ior:get_key(Obj) of
 	{'internal', Key, _, _, _} ->
 	    case catch orber_objectkeys:get_pid(Key) of
-		{'EXCEPTION', E} when record(E,'OBJECT_NOT_EXIST') ->
+		{'EXCEPTION', E} when is_record(E,'OBJECT_NOT_EXIST') ->
 		    true;
 		{'EXCEPTION', X} ->
 		    corba:raise(X);

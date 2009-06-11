@@ -113,7 +113,7 @@ js() ->
 		{orber_debug_level, 10}, 
 		{flags, (?ORB_ENV_LOCAL_TYPECHECKING bor get_flags())}]).
 
-js(Port) when integer(Port) ->
+js(Port) when is_integer(Port) ->
     application:load(orber),
     jump_start([{iiop_port, Port},
 		{interceptors, {native, [orber_iiop_tracer_silent]}},
@@ -125,10 +125,10 @@ jump_start() ->
     jump_start([{iiop_port, iiop_port()}]).
 
 
-jump_start(Port) when integer(Port) ->
+jump_start(Port) when is_integer(Port) ->
     application:load(orber),
     jump_start([{iiop_port, Port}]);
-jump_start(Options) when list(Options) ->
+jump_start(Options) when is_list(Options) ->
     application:load(orber),
     mnesia:start(),
     Port = case lists:keysearch(iiop_port, 1, Options) of
@@ -175,8 +175,9 @@ multi_jump_start(Nodes, Port) ->
 multi_jump_start(Nodes, Port, Options) ->
     multi_js_helper(Nodes, Port, Options).
 
-multi_js_helper(Nodes, Port, InitOptions) when list(Nodes), integer(Port), 
-					       list(InitOptions) ->
+multi_js_helper(Nodes, Port, InitOptions) when is_list(Nodes) andalso 
+					       is_integer(Port) andalso
+					       is_list(InitOptions) ->
     %% We MUST delete the option iiop_port.
     Options = lists:keydelete(iiop_port, 1, InitOptions),
     case node() of
@@ -276,7 +277,7 @@ start(Type) when Type == permanent; Type == temporary ->
 start_lightweight() ->
     application:start(orber).
 
-start_lightweight(Nodes) when list(Nodes) ->
+start_lightweight(Nodes) when is_list(Nodes) ->
     configure(lightweight, Nodes),
     application:set_env(orber, lightweight, Nodes),
     application:start(orber);
@@ -306,7 +307,7 @@ iiop_out_ports() ->
 
 orber_nodes() ->
     case catch mnesia:table_info(orber_objkeys,ram_copies) of
-	Nodes when list(Nodes) ->
+	Nodes when is_list(Nodes) ->
 	    Nodes;
 	_ ->
 	    [node()]
@@ -382,14 +383,14 @@ iiop_connections(out) ->
 close_connection(ObjRef) ->
     close_connection(ObjRef, 0).
 
-close_connection(ObjRef, Interface) when record(ObjRef, 'IOP_IOR') ->
+close_connection(ObjRef, Interface) when is_record(ObjRef, 'IOP_IOR') ->
     case iop_ior:get_peerdata(ObjRef) of
 	[] ->
 	    ok;
 	PeerData ->
 	    orber_iiop_pm:close_connection(PeerData, Interface)
     end;
-close_connection(PeerData, Interface) when list(PeerData) ->
+close_connection(PeerData, Interface) when is_list(PeerData) ->
     orber_iiop_pm:close_connection(PeerData, Interface);
 close_connection(What, Interface) ->
     orber:dbg("[~p] orber:close_connection(~p, ~p);~n"
@@ -653,13 +654,13 @@ add_listen_interface(IP, normal) ->
 add_listen_interface(IP, ssl) ->
     orber_iiop_net:add(IP, ssl, [{iiop_ssl_port, orber_env:iiop_ssl_port()}]).
 
-add_listen_interface(IP, normal, Port) when integer(Port), Port > 0 ->
+add_listen_interface(IP, normal, Port) when is_integer(Port) andalso Port > 0 ->
     orber_iiop_net:add(IP, normal, [{iiop_port, Port}]);
-add_listen_interface(IP, ssl, Port) when integer(Port), Port > 0 ->
+add_listen_interface(IP, ssl, Port) when is_integer(Port) andalso Port > 0 ->
     orber_iiop_net:add(IP, ssl, [{iiop_ssl_port, Port}]);
-add_listen_interface(IP, Type, Options) when list(Options) ->
+add_listen_interface(IP, Type, Options) when is_list(Options) ->
     orber_iiop_net:add(IP, Type, Options);
-add_listen_interface(IP, Type, Port) when integer(Port) ->
+add_listen_interface(IP, Type, Port) when is_integer(Port) ->
     orber:dbg("[~p] orber:add_listen_interface(~p, ~p, ~p);~n"
 	      "The port number must be greater than 0.", 
 	      [?LINE, IP, Type, Port], ?DEBUG_LEVEL),
@@ -754,7 +755,7 @@ install(Nodes) ->
 
 install([], Options) ->
     install([node()], Options);
-install(Nodes, Options) when list(Nodes), list(Options)->
+install(Nodes, Options) when is_list(Nodes) andalso is_list(Options)->
     case orber_tb:is_running() of
 	false ->
 	    application:load(orber),
@@ -829,7 +830,7 @@ check_options([{initialreferences_storage_type, Type}|T], Options)
   when Type == disc_copies; Type == ram_copies ->
     check_options(T, Options#options{initialreferences_storage_type = Type}); 
 check_options([{install_timeout, Timeout}|T], Options) 
-  when Timeout == infinity; integer(Timeout) ->
+  when Timeout == infinity orelse is_integer(Timeout) ->
     check_options(T, Options#options{install_timeout = Timeout});
 check_options([{local_content, Bool}|T], Options) 
   when Bool == true; Bool == false ->
@@ -838,7 +839,7 @@ check_options([{type, Type}|T], Options)
   when Type == temporary; Type == permanent ->
     check_options(T, Options#options{type = Type});
 check_options([{load_order, LoadOrder}|T], Options) 
-  when integer(LoadOrder) ->
+  when is_integer(LoadOrder) ->
     check_options(T, Options#options{load_order = LoadOrder});
 check_options([H|_], _) ->
     ?EFORMAT("Option unknown or incorrect value: ~w", [H]).
@@ -906,9 +907,9 @@ delete_orber_tables([Tab1|Rest]) ->
 %%-----------------------------------------------------------------
 %% Add and remove node interface functions
 %%-----------------------------------------------------------------
-add_node(Node, StorageType) when atom(Node), atom(StorageType) ->
+add_node(Node, StorageType) when is_atom(Node) andalso is_atom(StorageType) ->
     add_node(Node, [{ifr_storage_type, StorageType}]);
-add_node(Node, OptionList) when atom(Node), list(OptionList) ->
+add_node(Node, OptionList) when is_atom(Node) andalso is_list(OptionList) ->
     case rpc:call(Node, mnesia, system_info, [is_running]) of
 	{badrpc, Reason} ->
 	    ?EFORMAT("Node ~p do not respond. add_node/2 failed: ~p", 
@@ -991,7 +992,7 @@ copy_orber_tables([THead|TTail], Node, Options) ->
 		     [mnesia:error_description(Reason), [THead|TTail]])
     end.
 
-remove_node(Node) when atom(Node) ->
+remove_node(Node) when is_atom(Node) ->
     case rpc:call(Node, mnesia, system_info, [is_running]) of
 	yes ->
 	    case rpc:call(Node, orber, is_running, []) of
@@ -1099,7 +1100,7 @@ dbg(Format, Data, RequestedLevel) ->
     case orber_env:get_debug_level() of
 	0 ->
 	    ok;
-	Level when integer(Level), Level >= RequestedLevel ->
+	Level when is_integer(Level) andalso Level >= RequestedLevel ->
 	    if
 		RequestedLevel > 4 ->
 		    %% Use catch if incorrect format used somewhere.

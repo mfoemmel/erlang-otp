@@ -105,7 +105,6 @@ make_this_flags(RequestType, OtherNode) ->
 	%% The parenthesis below makes the compiler generate better code.
 	(?DFLAG_EXPORT_PTR_TAG bor
 	 ?DFLAG_EXTENDED_PIDS_PORTS bor
-	 ?DFLAG_ATOM_CACHE bor
 	 ?DFLAG_EXTENDED_REFERENCES bor
 	 ?DFLAG_DIST_MONITOR bor
 	 ?DFLAG_FUN_TAGS bor
@@ -114,7 +113,9 @@ make_this_flags(RequestType, OtherNode) ->
 	 ?DFLAG_NEW_FUN_TAGS bor
 	 ?DFLAG_BIT_BINARIES bor
 	 ?DFLAG_NEW_FLOATS bor
-	 ?DFLAG_UNICODE_IO).
+	 ?DFLAG_UNICODE_IO bor
+	 ?DFLAG_DIST_HDR_ATOM_CACHE bor
+	 ?DFLAG_SMALL_ATOM_TAGS).
 
 handshake_other_started(#hs_data{request_type=ReqType}=HSData0) ->
     {PreOtherFlags,Node,Version} = recv_name(HSData0),

@@ -85,7 +85,7 @@ reconfigure(Options) ->
 reconfigure(Options, Ref) ->
     case do_select([{#connection{ref = Ref, pid = '$1', _='_'}, 
 		     [], ['$1']}]) of
-	[Pid] when pid(Pid) ->
+	[Pid] when is_pid(Pid) ->
 	    Pid !  {reconfigure, Options},
 	    ok;
 	_ ->
@@ -246,7 +246,7 @@ filter_options([H|T], Acc) ->
 handle_call({remove, Ref}, _From, State) ->
     case do_select([{#listen{ref = Ref, pid = '$1', socket = '$2',
 			     type = '$3', _='_'}, [], [{{'$1', '$2', '$3'}}]}]) of
-	[{Pid, Listen, Type}|_] when pid(Pid) ->
+	[{Pid, Listen, Type}|_] when is_pid(Pid) ->
 	    unlink(Pid),
 	    ets:delete(?CONNECTION_DB, Pid),
 	    %% Just close the listen socket. Will cause the accept processs 
@@ -294,7 +294,7 @@ handle_call({connect, Type, Socket, _AcceptPid, AccepRef, ProxyOptions}, _From, 
 	true ->
 	    case orber_iiop_insup:start_connection(Type, Socket, 
 						   AccepRef, ProxyOptions) of
-		{ok, Pid} when pid(Pid) ->
+		{ok, Pid} when is_pid(Pid) ->
 		    link(Pid),
 		    {reply, {ok, Pid, true}, update_counter(State, 1)};
 		Other ->
@@ -311,7 +311,7 @@ handle_call({connect, Type, Socket, AcceptPid, AccepRef, ProxyOptions}, _From,
 	true ->
 	    case orber_iiop_insup:start_connection(Type, Socket, 
 						   AccepRef, ProxyOptions) of
-		{ok, Pid} when pid(Pid) ->
+		{ok, Pid} when is_pid(Pid) ->
 		    link(Pid),
 		    Ref = erlang:make_ref(),
 		    {reply, {ok, Pid, Ref}, 
@@ -384,7 +384,7 @@ handle_cast(_, State) ->
 %%------------------------------------------------------------
 %% Standard gen_server handles
 %%------------------------------------------------------------
-handle_info({'EXIT', Pid, _Reason}, State) when pid(Pid) ->
+handle_info({'EXIT', Pid, _Reason}, State) when is_pid(Pid) ->
     case ets:lookup(?CONNECTION_DB, Pid) of
 	[#listen{pid = Pid, socket = Listen, port = Port, type = Type, 
 		 ref = Ref, options = Options, proxy_options = POpts}] ->

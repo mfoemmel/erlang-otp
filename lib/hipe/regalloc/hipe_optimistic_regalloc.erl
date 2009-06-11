@@ -945,14 +945,16 @@ splits([], _SavedSpillCosts) ->
 splits([L|Ls], SavedSpillCosts) ->
   Spl = splits(Ls, SavedSpillCosts),
   SpillCost = hipe_spillcost:spill_cost(L, SavedSpillCosts),
-  Spl1 = lists:map(fun({Cols, NonCols, OldSpillCost}) ->
-		       {[L|Cols], NonCols, OldSpillCost}
-		   end, Spl),
-  Spl2 = lists:map(fun({Cols, NonCols, OldSpillCost}) ->
-		       {Cols, [L|NonCols], OldSpillCost + SpillCost}
-		   end, Spl),
+  Spl1 = [splits_1(S, L) || S <- Spl],
+  Spl2 = [splits_2(S, L, SpillCost) || S <- Spl],
   spillCostOrderedMerge(Spl1, Spl2, []).
 
+splits_1({Cols, NonCols, OldSpillCost}, L) ->
+    {[L|Cols], NonCols, OldSpillCost}.
+
+splits_2({Cols, NonCols, OldSpillCost}, L, SpillCost) ->
+    {Cols, [L|NonCols], OldSpillCost + SpillCost}.
+ 
 %% Merge two ordered sub-splits into one.
 
 spillCostOrderedMerge(Spl1, [], Spl) ->
@@ -1865,13 +1867,10 @@ conservative_countV([Node|AdjV], U, Worklists, IG, K, Cnt) ->
 
 selectSpill(WorkLists, IG, SpillLimit) ->
   [CAR|CDR] = hipe_reg_worklists:spill(WorkLists),
-  
   SpillCost = getCost(CAR, IG, SpillLimit),
   M = findCheapest(CDR, IG, SpillCost, CAR, SpillLimit),
-  
   WorkLists1 = hipe_reg_worklists:remove_spill(M, WorkLists),
-  WorkLists2 = hipe_reg_worklists:add_simplify(M, WorkLists1),
-  WorkLists2.
+  hipe_reg_worklists:add_simplify(M, WorkLists1).
 
 %%---------------------------------------------------------------------
 %% Function:    selectSpill
@@ -1924,7 +1923,7 @@ findCheapest([Node|Nodes], IG, Cost, Cheapest, SpillLimit) ->
 
 getCost(Node, IG, SpillLimit) ->
   case Node > SpillLimit of
-    true ->  inf;
+    true -> inf;
     false ->
       SpillCost = hipe_ig:node_spill_cost(Node, IG),
       ?debug_msg("Actual spillcost f node ~w is ~w~n", [Node, SpillCost]),
@@ -1953,16 +1952,16 @@ getCost(Node, IG, SpillLimit) ->
 %%----------------------------------------------------------------------
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-freeze(K,WorkLists,Moves,IG,Alias) ->
+freeze(K, WorkLists, Moves, IG, Alias) ->
   [U|_] = hipe_reg_worklists:freeze(WorkLists),         % Smarter routine?
-  ?debug_msg("freezing node ~p~n",[U]),
+  ?debug_msg("freezing node ~p~n", [U]),
   WorkLists0 = hipe_reg_worklists:remove_freeze(U, WorkLists),
   %% The published algorithm adds U to the simplify worklist
   %% before the freezeMoves() call. That breaks the worklist
   %% invariants, which is why the order is switched here.
-  {WorkLists1,Moves1} = freezeMoves(U,K,WorkLists0,Moves,IG,Alias),
+  {WorkLists1, Moves1} = freezeMoves(U, K, WorkLists0, Moves, IG, Alias),
   WorkLists2 = hipe_reg_worklists:add_simplify(U, WorkLists1),
-  {WorkLists2,Moves1}.
+  {WorkLists2, Moves1}.
 -endif.
 
 %%----------------------------------------------------------------------
@@ -1986,9 +1985,9 @@ freeze(K,WorkLists,Moves,IG,Alias) ->
 %%----------------------------------------------------------------------
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
-freezeMoves(U,K,WorkLists,Moves,IG,Alias) ->
+freezeMoves(U, K, WorkLists, Moves, IG, Alias) ->
   Nodes = hipe_moves:node_moves(U, Moves),
-  freezeEm(U,Nodes,K,WorkLists,Moves,IG,Alias).
+  freezeEm(U, Nodes, K, WorkLists, Moves, IG, Alias).
 
 %% Find what the other value in a copy instruction is, return false if 
 %% the instruction isn't a move with the first argument in it.
@@ -2011,22 +2010,21 @@ moves(U, Move, Alias, Moves) ->
      true -> exit({?MODULE,moves}) % XXX: shouldn't happen
   end.
 
-freezeEm(_U,[],_K,WorkLists,Moves,_IG,_Alias) -> 
+freezeEm(_U, [], _K, WorkLists, Moves, _IG, _Alias) -> 
   {WorkLists,Moves};
-freezeEm(U,[M|Ms],K,WorkLists,Moves,IG,Alias) ->
+freezeEm(U, [M|Ms], K, WorkLists, Moves, IG, Alias) ->
   V = moves(U, M, Alias, Moves),
-  {WorkLists2,Moves2} = freezeEm2(U,V,M,K,WorkLists,
-				  Moves,IG,Alias),
-  freezeEm(U,Ms,K,WorkLists2,Moves2,IG,Alias).
+  {WorkLists2,Moves2} = freezeEm2(U, V, M, K, WorkLists, Moves, IG, Alias),
+  freezeEm(U, Ms, K, WorkLists2, Moves2, IG, Alias).
 
-freezeEm2(U,V,M,K,WorkLists,Moves,IG,Alias) ->
+freezeEm2(U, V, M, K, WorkLists, Moves, IG, Alias) ->
   case hipe_moves:member_active(M, Moves) of
     true ->
       Moves1 = hipe_moves:remove_active(M, Moves),
-      freezeEm3(U,V,M,K,WorkLists,Moves1,IG,Alias);	
+      freezeEm3(U, V, M, K, WorkLists, Moves1, IG, Alias);	
     false ->
       Moves1 = hipe_moves:remove_worklist(M, Moves),
-      freezeEm3(U,V,M,K,WorkLists,Moves1,IG,Alias)
+      freezeEm3(U, V, M, K, WorkLists, Moves1, IG, Alias)
   end.
 
 freezeEm3(_U,V,_M,K,WorkLists,Moves,IG,_Alias) ->

@@ -23,6 +23,7 @@
    * Throughout this file the prefix mfs is used for megaco_flex_scanner.
    * The reason is to get shorter function and variable names.
    */
+
 %option case-insensitive
 
   /* MEGACO_YY_LINENO_OPTION
@@ -34,6 +35,7 @@
    */
 %MEGACO_YY_LINENO_OPTION%
 
+%MEGACO_YY_REENTRANT_OPTION%
 %option noyywrap
 %option noinput
 %option nounput 
@@ -57,13 +59,51 @@
 #define RBRKT      0x7b
 #define NUL        0x0
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  #define MEGACO_EXTENDED_MARKER        ERL_DRV_EXTENDED_MARKER
+  #define MEGACO_DRIVER_FLAGS           ERL_DRV_FLAG_USE_PORT_LOCKING
+  #define MEGACO_EXTENDED_MAJOR_VERSION ERL_DRV_EXTENDED_MAJOR_VERSION
+  #define MEGACO_EXTENDED_MINOR_VERSION ERL_DRV_EXTENDED_MINOR_VERSION
+#else
+  #define MEGACO_EXTENDED_MARKER        0
+  #define MEGACO_DRIVER_FLAGS           0
+  #define MEGACO_EXTENDED_MAJOR_VERSION 0
+  #define MEGACO_EXTENDED_MINOR_VERSION 0
+#endif
+
+
 #define FREE(bufP)        driver_free(bufP)
 #define ALLOC(sz)         driver_alloc(sz)
 #define REALLOC(bufP, sz) driver_realloc(bufP, sz)
 
 #define YY_MAIN false
 
-#define YY_FATAL_ERROR(msg) mfs_fatal_error(msg)
+// #define YY_FATAL_ERROR(msg) mfs_fatal_error(msg)
+
+
+typedef struct {
+    ErlDrvPort      port;
+    char*           digit_map_name_ptr;
+    int             digit_map_name_len;
+    char*           digit_map_value_ptr;
+    int             digit_map_value_len;
+    char*           digit_map_start_ptr;
+    char*           digit_map_short_ptr;
+    char*           digit_map_long_ptr;
+    char*           digit_map_duration_ptr;
+    int             error;
+    char            error_msg[512];
+    char*           text_buf;
+    char*           text_ptr;
+    ErlDrvTermData* term_spec;
+    int             term_spec_size;
+    int             term_spec_index;
+    int             token_counter;
+} MfsErlDrvData;
+
+#if !defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static MfsErlDrvData mfs_drv_data;
+#endif
 
 char flex_version[] = "%FLEX_VERSION%";
 
@@ -221,8 +261,11 @@ static ErlDrvTermData mfs_ErrorDescriptor = 0;
  * See MEGACO_YY_LINENO_OPTION above and
  *     MEGACO_LINENO_OR_TOKENCOUNTER below.
  */
+#if !defined(MEGACO_REENTRANT_FLEX_SCANNER)
 %MEGACO_DUMMY_DECL_YY_LINENO%
+#endif
 
+/*
 static ErlDrvPort      mfs_port                = 0;
 static char* 	       mfs_digit_map_name_ptr  = 0;
 static int 	       mfs_digit_map_name_len  = 0;
@@ -240,27 +283,48 @@ static ErlDrvTermData* mfs_term_spec           = 0;
 static int   	       mfs_term_spec_size      = 0;
 static int   	       mfs_term_spec_index     = 0;
 static int   	       mfs_token_counter       = 0;
+*/
 
-static void mfs_alloc_failed(char* msg, int sz);
-static void mfs_fatal_error(char* msg); 
+
+static void mfs_alloc_failed(MfsErlDrvData* dataP, char* msg, int sz);
+static void mfs_fatal_error(MfsErlDrvData* dataP, char* msg); 
+static void mfs_ensure_term_spec(MfsErlDrvData* dataP, int size);
+
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+
+static void mfs_short_load_token(ErlDrvTermData token_tag, 
+                                 yyscan_t yyscanner);
+static void mfs_lower_load_token(ErlDrvTermData token_tag, int is_empty, 
+                                 yyscan_t yyscanner);
+static void mfs_octet_load_token(ErlDrvTermData token_tag, int is_empty, 
+                                 yyscan_t yyscanner);
+static void mfs_load_property_groups(MfsErlDrvData* dataP, yyscan_t yyscanner);
+static void mfs_load_map_name(yyscan_t yyscanner);
+static void mfs_load_map_value(yyscan_t yyscanner);
+static void mfs_load_map_timer(yyscan_t yyscanner);
+static void mfs_load_map_token(yyscan_t yyscanner);
+
+#else
+
 static void mfs_short_load_token(ErlDrvTermData token_tag);
 static void mfs_lower_load_token(ErlDrvTermData token_tag, int is_empty);
 static void mfs_octet_load_token(ErlDrvTermData token_tag, int is_empty);
-static void mfs_load_property_groups();
+static void mfs_load_property_groups(MfsErlDrvData* dataP);
 static void mfs_load_map_name();
 static void mfs_load_map_value();
 static void mfs_load_map_timer();
 static void mfs_load_map_token();
-static void mfs_ensure_term_spec(int size);
+
+#endif
 
 static ErlDrvData mfs_start(ErlDrvPort port, char *buf);
 static void 	  mfs_stop(ErlDrvData handle);
 static void 	  mfs_command(ErlDrvData handle, 
-                                              char *buf, int buf_len);
+                              char *buf, int buf_len);
 static int 	  mfs_control(ErlDrvData handle, 
-                                              unsigned int command,
-                        	             char *buf, int buf_len, 
-      			                     char **res_buf, int res_buf_len);
+                              unsigned int command,
+                              char *buf, int buf_len, 
+      			      char **res_buf, int res_buf_len);
 static void 	  mfs_finish(void);
 
 /* 
@@ -279,26 +343,57 @@ static ErlDrvEntry mfs_entry = {
     NULL,              /* void * that is not used (BC) */
     mfs_control,       /* control, port_control callback */
     NULL,              /* timeout, called on timeouts */
-    NULL               /* outputv, vector output interface */
+    NULL,              /* outputv, vector output interface */
+    NULL,              /* ready_async, called after an asynchronous call has completed */
+    NULL,              /* flush, port is about to be closed */
+    NULL,              /* call, a syncronous call into the driver */
+    NULL,              /* event, event selected by driver_event() has occurred */
+    MEGACO_EXTENDED_MARKER,         /* extended_marker, which we use if reentrant */
+    MEGACO_EXTENDED_MAJOR_VERSION,  /* major_version, ... */
+    MEGACO_EXTENDED_MINOR_VERSION,  /* minor_version, ... */
+    MEGACO_DRIVER_FLAGS,            /* driver_flags, used for port lock indication */
+    NULL,              /* handle2, emulator internal use */
+    NULL               /* process_exit, Called when a process monitor fires */
+#if defined(MEGACO_DRV_ENTRY_HAS_STOP_SELECT)
+    ,NULL              /* stop_select, Called to close an event object */
+#endif
 };    
 
-#define LOAD_TOKEN(TokenTag) mfs_lower_load_token(TokenTag, FALSE)
 
-#define LOAD_EMPTY_TOKEN(TokenTag) mfs_lower_load_token(TokenTag, TRUE)
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
 
-#define LOAD_SHORT_TOKEN(TokenTag) mfs_short_load_token(TokenTag)
+#define LOAD_TOKEN(TokenTag)             mfs_lower_load_token(TokenTag, FALSE, yyscanner)
+#define LOAD_EMPTY_TOKEN(TokenTag)       mfs_lower_load_token(TokenTag, TRUE, yyscanner)
+#define LOAD_SHORT_TOKEN(TokenTag)       mfs_short_load_token(TokenTag, yyscanner)
+#define LOAD_OCTET_TOKEN(TokenTag)       mfs_octet_load_token(TokenTag, FALSE, yyscanner)
+#define LOAD_EMPTY_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag, TRUE, yyscanner)
+#define LOAD_MAP_NAME()                  mfs_load_map_name(yyscanner)
+#define LOAD_MAP_TIMER()                 mfs_load_map_timer(yyscanner)
+#define LOAD_MAP_TOKEN()                 mfs_load_map_token(yyscanner)
+#define LOAD_MAP_VALUE()                 mfs_load_map_value(yyscanner)
+#define LOAD_PROP_GRPS(dataP)            mfs_load_property_groups(dataP, yyscanner)
 
-#define LOAD_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag, 0)
+#else
 
-#define LOAD_EMPTY_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag, 1)
+#define LOAD_TOKEN(TokenTag)             mfs_lower_load_token(TokenTag, FALSE)
+#define LOAD_EMPTY_TOKEN(TokenTag)       mfs_lower_load_token(TokenTag, TRUE)
+#define LOAD_SHORT_TOKEN(TokenTag)       mfs_short_load_token(TokenTag)
+#define LOAD_OCTET_TOKEN(TokenTag)       mfs_octet_load_token(TokenTag, FALSE)
+#define LOAD_EMPTY_OCTET_TOKEN(TokenTag) mfs_octet_load_token(TokenTag, TRUE)
+#define LOAD_MAP_NAME()                  mfs_load_map_name()
+#define LOAD_MAP_TIMER()                 mfs_load_map_timer()
+#define LOAD_MAP_TOKEN()                 mfs_load_map_token()
+#define LOAD_MAP_VALUE()                 mfs_load_map_value()
+#define LOAD_PROP_GRPS(dataP)            mfs_load_property_groups(dataP)
 
+#endif
 
 /* OTP-4236 */
-#define ASSIGN_TERM_SPEC(what)                     \
-{                                                  \
-   if (mfs_term_spec != NULL) {                    \
-     mfs_term_spec[mfs_term_spec_index++] = what;  \
-   }                                               \
+#define ASSIGN_TERM_SPEC(dataP, what)                   \
+{                                                       \
+   if (dataP->term_spec != NULL) {                      \
+     dataP->term_spec[dataP->term_spec_index++] = what; \
+   }                                                    \
 }
 
 %}
@@ -365,21 +460,21 @@ wild        ((w\-)?)
 ((DigitMap)|DM){equal}{lbrkt}           BEGIN(MAP_VALUE);
 ((DigitMap)|DM){lbrkt}                  BEGIN(MAP_VALUE);
 
-<MAP_NAME>{safechar}+                   {mfs_load_map_name(); BEGIN(MAP_OPT_LBRKT);}
+<MAP_NAME>{safechar}+                   {LOAD_MAP_NAME(); BEGIN(MAP_OPT_LBRKT);}
 
 <MAP_OPT_LBRKT>{lbrkt}                  BEGIN(MAP_VALUE);
-<MAP_OPT_LBRKT><<EOF>>                  {mfs_load_map_token(); LOAD_TOKEN(mfs_endOfMessage); BEGIN(INITIAL); yyterminate();}
-<MAP_OPT_LBRKT>.|\n                     {mfs_load_map_token(); yyless(0); BEGIN(INITIAL);}
+<MAP_OPT_LBRKT><<EOF>>                  {LOAD_MAP_TOKEN(); LOAD_TOKEN(mfs_endOfMessage); BEGIN(INITIAL); yyterminate();}
+<MAP_OPT_LBRKT>.|\n                     {LOAD_MAP_TOKEN(); yyless(0); BEGIN(INITIAL);}
 
-<MAP_VALUE>t{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
-<MAP_VALUE>s{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
-<MAP_VALUE>l{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
-<MAP_VALUE>z{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>t{colon}{digit}{1,2}         {LOAD_MAP_TIMER(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>s{colon}{digit}{1,2}         {LOAD_MAP_TIMER(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>l{colon}{digit}{1,2}         {LOAD_MAP_TIMER(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>z{colon}{digit}{1,2}         {LOAD_MAP_TIMER(); BEGIN(MAP_SKIP_COMMA);}
 <MAP_VALUE>.|\n                         {yyless(0); BEGIN(MAP_BODY);}
 
 <MAP_SKIP_COMMA>{comma}                 BEGIN(MAP_VALUE);
 
-<MAP_BODY>{octet}+                      {mfs_load_map_value(); mfs_load_map_token(); BEGIN(SKIP_RBRKT);}
+<MAP_BODY>{octet}+                      {LOAD_MAP_VALUE(); LOAD_MAP_TOKEN(); BEGIN(SKIP_RBRKT);}
 
 {equal}                                 LOAD_SHORT_TOKEN(mfs_EQUAL);
 {colon}                                 LOAD_SHORT_TOKEN(mfs_COLON);
@@ -643,7 +738,13 @@ v                                       LOAD_TOKEN(mfs_VersionToken);
  * See MEGACO_YY_LINENO_OPTION and 
  *     MEGACO_DUMMY_DECL_YY_LINENO above.
  */
-#define LINENO_OR_TOKENCNT %MEGACO_LINENO_OR_TOKENCOUNTER%
+
+#if defined(MEGACO_LINENO)
+#define LINENO_OR_TOKENCNT(P) yylineno
+#else
+#define LINENO_OR_TOKENCNT(P) P->token_counter
+#endif
+
 
 /* #define MFS_DEBUG true */    /* temporary */
 #if defined(MFS_DEBUG)
@@ -703,13 +804,12 @@ static void mfs_dbg_buf_print(char* func, char* bufName, char* buf, int len)
 
 #endif /* if defined(MFS_DEBUG) */
 
-
-static void mfs_alloc_failed(char* msg, int sz)
+static void mfs_alloc_failed(MfsErlDrvData* dataP, char* msg, int sz)
 {
   /*
    * Make sure we are not allready in error state
    */
-  if (!mfs_error) {
+  if (!dataP->error) {
 
     /* 
      * Make sure that there is room in the buffer:
@@ -721,45 +821,44 @@ static void mfs_alloc_failed(char* msg, int sz)
      */
 
     int msg_len = strlen(msg);
-    if ((10 + 10 + msg_len) < sizeof(mfs_error_msg)) {
-      if (0 >= sprintf(mfs_error_msg, "%s of %d bytes", msg, sz)) {
-	mfs_fatal_error(msg);
+    if ((10 + 10 + msg_len) < sizeof(dataP->error_msg)) {
+      if (0 >= sprintf(dataP->error_msg, "%s of %d bytes", msg, sz)) {
+	mfs_fatal_error(dataP, msg);
       }
     } else {
-      mfs_fatal_error(msg);
+      mfs_fatal_error(dataP, msg);
     }
-    mfs_error = TRUE;
+    dataP->error = TRUE;
   }
 }
 
 
-static void mfs_ensure_term_spec(int size)
+static void mfs_ensure_term_spec(MfsErlDrvData* dataP, int size)
 {
-  /*
   DBG( ("mfs_ensure_term_spec -> entry with"
 	"\n   size:       %d"
 	"\nwhen"
 	"\n   spec_index: %d"
 	"\n   spec_size:  %d"
-	"\n", size, mfs_term_spec_index, mfs_term_spec_size) );
-  */
+	"\n", size, dataP->term_spec_index, dataP->term_spec_size) );
 
   /* OTP-4236 - BEGIN */
-  if ((mfs_term_spec_index + size) >= mfs_term_spec_size) {
+  if ((dataP->term_spec_index + size) >= dataP->term_spec_size) {
     void *tmp;
 
     DBG( ("mfs_ensure_term_spec -> allocate more memory when"
 	  "\n   term_spec_index: %d"
 	  "\n   term_spec_size:  %d\n", 
-	  mfs_term_spec_index, mfs_term_spec_size) );
+	  dataP->term_spec_index, dataP->term_spec_size) );
 
-    mfs_term_spec_size = (mfs_term_spec_size * 2) + size;
+    dataP->term_spec_size = (dataP->term_spec_size * 2) + size;
 
     DBG( ("mfs_ensure_term_spec -> "
 	  "term_spec is at 0x%X, new term_spec_size is %d\n", 
-	  (unsigned int) mfs_term_spec, mfs_term_spec_size) );
+	  (unsigned int) dataP->term_spec, dataP->term_spec_size) );
 
-    tmp = REALLOC(mfs_term_spec, mfs_term_spec_size * sizeof(ErlDrvTermData));
+    tmp = REALLOC(dataP->term_spec, 
+                  dataP->term_spec_size * sizeof(ErlDrvTermData));
 
     if (tmp == NULL) {
       /*
@@ -767,42 +866,65 @@ static void mfs_ensure_term_spec(int size)
        * Just give ut. I.e. free the memory we have (note that
        * the assign macro tests the buffer before assigning).
        */
-      FREE(mfs_term_spec);
-      mfs_term_spec = NULL;
+      FREE(dataP->term_spec);
+      dataP->term_spec = NULL;
 
-      mfs_alloc_failed("failed reallocating term spec buffer", 
-		       mfs_term_spec_size * sizeof(ErlDrvTermData));
+      mfs_alloc_failed(dataP, "failed reallocating term spec buffer", 
+		       dataP->term_spec_size * sizeof(ErlDrvTermData));
 
     } else {
-      mfs_term_spec = tmp;
+      dataP->term_spec = tmp;
     }
 
     DBG( ("mfs_ensure_term_spec -> new term_spec is at 0x%X\n", 
-	  (unsigned int) mfs_term_spec) );
+	  (unsigned int) dataP->term_spec) );
   }
   /* OTP-4236 - END */
 }
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_short_load_token(ErlDrvTermData TokenTag, yyscan_t yyscanner)
+#else
 static void mfs_short_load_token(ErlDrvTermData TokenTag)
+#endif
 {
   /* Build a {TokenTag, LineNumber} tuple */
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
 
+  /*
   DBG( ("mfs_short_load_token -> entry with"
 	"\n   TokenTag: %ld\n", TokenTag) );
+  */
 
-  mfs_ensure_term_spec(6); 
-  mfs_token_counter++; 
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(TokenTag);
-  ASSIGN_TERM_SPEC(ERL_DRV_INT);
-  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
-  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-  ASSIGN_TERM_SPEC(2);
+  mfs_ensure_term_spec(dataP, 6); 
+  dataP->token_counter++; 
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(dataP, TokenTag);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(dataP, LINENO_OR_TOKENCNT(dataP));
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(dataP, 2);
 }
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_octet_load_token(ErlDrvTermData TokenTag, int is_empty, 
+                                 yyscan_t yyscanner)
+#else
 static void mfs_octet_load_token(ErlDrvTermData TokenTag, int is_empty)
+#endif
 {
   /* Build a {TokenTag, LineNumber, String} tuple */
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
 
   DBG( ("mfs_octet_load_token -> entry with"
 	"\n   TokenTag: %d"
@@ -810,73 +932,95 @@ static void mfs_octet_load_token(ErlDrvTermData TokenTag, int is_empty)
 	"\n   yyleng:   %d"
         "\n", (int) TokenTag, is_empty, yyleng) );
 
-  mfs_ensure_term_spec(9); 
-  mfs_token_counter++; 
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(TokenTag);
-  ASSIGN_TERM_SPEC(ERL_DRV_INT);
-  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+  mfs_ensure_term_spec(dataP, 9); 
+  dataP->token_counter++; 
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(dataP, TokenTag);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(dataP, LINENO_OR_TOKENCNT(dataP));
 
   if (is_empty) {
 
-    ASSIGN_TERM_SPEC(ERL_DRV_NIL);         // End of list
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_NIL);         // End of list
 
   } else {
 
-    mfs_load_property_groups();
+    LOAD_PROP_GRPS(dataP);
 
   }
 
-  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-  ASSIGN_TERM_SPEC(3);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(dataP, 3);
 }
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_lower_load_token(ErlDrvTermData TokenTag, int is_empty, 
+                                 yyscan_t yyscanner)
+#else
 static void mfs_lower_load_token(ErlDrvTermData TokenTag, int is_empty)
+#endif
 {
   /* Build a {TokenTag, LineNumber, LowerCaseString} tuple */
   int i;
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
 
   DBG( ("mfs_lower_load_token -> entry with"
 	"\n   TokenTag: %ld"
 	"\n   is_empty: %d"
         "\n", TokenTag, is_empty) );
 
-  mfs_ensure_term_spec(9); 
-  mfs_token_counter++; 
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(TokenTag);
-  ASSIGN_TERM_SPEC(ERL_DRV_INT);
-  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
-  ASSIGN_TERM_SPEC(ERL_DRV_STRING);
+  mfs_ensure_term_spec(dataP, 9); 
+  dataP->token_counter++; 
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(dataP, TokenTag);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(dataP, LINENO_OR_TOKENCNT(dataP));
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_STRING);
 
   if (is_empty) {
 
-    ASSIGN_TERM_SPEC((ErlDrvTermData)"");
-    ASSIGN_TERM_SPEC(0);
+    ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData)"");
+    ASSIGN_TERM_SPEC(dataP, 0);
 
   } else {
     for ( i = 0; i < yyleng; ++i ) {
-      mfs_text_ptr[i] = tolower(yytext[i]);
+      dataP->text_ptr[i] = tolower(yytext[i]);
     }
     
-    DBG_BUF("mfs_lower_load_token", "mfs_text_ptr", 
-             mfs_text_ptr, yyleng);
+    DBG_BUF("mfs_lower_load_token", "dataP->text_ptr", 
+             dataP->text_ptr, yyleng);
     
-    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_text_ptr);
-    mfs_text_ptr += yyleng;
-    ASSIGN_TERM_SPEC(yyleng);
+    ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) dataP->text_ptr);
+    dataP->text_ptr += yyleng;
+    ASSIGN_TERM_SPEC(dataP, yyleng);
   }
 
-  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-  ASSIGN_TERM_SPEC(3);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(dataP, 3);
 }
 
 #define PG_ERR_PRE "bad_property_parm:"
 #define PG_ERR1    "Could not find property parm value for"
 #define PG_ERR2    "Could not find proper property parm name"
 
-static void mfs_load_property_groups()
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_load_property_groups(MfsErlDrvData* dataP, yyscan_t yyscanner)
+#else
+static void mfs_load_property_groups(MfsErlDrvData* dataP)
+#endif
 {
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  // MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  // MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
+
   DBG( ("mfs_load_property_groups -> entry\n") );
 
   /* 
@@ -900,7 +1044,7 @@ static void mfs_load_property_groups()
   int valueStart = 0; // Start position of the property parm name
   int valueLen   = 0; // Length of the value part
 
-  mfs_ensure_term_spec(10);  /* Just in case... */
+  mfs_ensure_term_spec(dataP, 10);  /* Just in case... */
  
   while (i <= yyleng) {
     
@@ -954,10 +1098,10 @@ static void mfs_load_property_groups()
               DBG( ("mfs_load_property_groups -> "
                     "start of new group - terminate previous group\n") );
 
-              mfs_ensure_term_spec(3);
-              ASSIGN_TERM_SPEC(ERL_DRV_NIL);                  // End of list
-              ASSIGN_TERM_SPEC(ERL_DRV_LIST);                 // List
-              ASSIGN_TERM_SPEC((ErlDrvTermData) numPps + 1);  // Length of (group) list
+              mfs_ensure_term_spec(dataP, 3);
+              ASSIGN_TERM_SPEC(dataP, ERL_DRV_NIL);                  // End of list
+              ASSIGN_TERM_SPEC(dataP, ERL_DRV_LIST);                 // List
+              ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) numPps + 1);  // Length of (group) list
               numPps = 0; /* reset for next group */
             } // if ...
             numGroups++;
@@ -986,10 +1130,10 @@ static void mfs_load_property_groups()
           } // while ...
 
           /* Name */
-          name = mfs_text_ptr; 
+          name = dataP->text_ptr; 
           strncpy(name, &yytext[nameStart], nameLen);
           name[nameLen] = 0;
-          mfs_text_ptr += (nameLen + 1); // Make room for the NULL termination
+          dataP->text_ptr += (nameLen + 1); // Make room for the NULL termination
 
           /* Check that we actually got a proper value */
           if (valueLen == 0) {
@@ -1005,14 +1149,14 @@ static void mfs_load_property_groups()
              *          }).
              */ 
     
-            if (0 >= sprintf(mfs_error_msg, "%s %s %s", 
+            if (0 >= sprintf(dataP->error_msg, "%s %s %s", 
                              PG_ERR_PRE, PG_ERR1, name)) {
-              mfs_fatal_error(PG_ERR1);
+              mfs_fatal_error(dataP, PG_ERR1);
             }
-            mfs_error = TRUE;
+            dataP->error = TRUE;
 
             DBG( ("mfs_load_property_groups -> "
-                  "done after value error (~s)\n", name) );
+                  "done after value error (%s)\n", name) );
 
             return;  // Bail out
 
@@ -1028,18 +1172,18 @@ static void mfs_load_property_groups()
              *          }). % with extension mark
              */ 
   
-            mfs_ensure_term_spec(15);       // 2 + 3 + 6 + 2 + 2
+            mfs_ensure_term_spec(dataP, 15);       // 2 + 3 + 6 + 2 + 2
   
             DBG( ("mfs_load_property_groups -> "
                   "insert PropertyParm record name\n") );
-            ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) mfs_PropertyParm);
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) mfs_PropertyParm);
   	  
             /* Name */
             DBG( ("mfs_load_property_groups -> insert name field\n") );
-            ASSIGN_TERM_SPEC(ERL_DRV_STRING);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) name);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) nameLen);
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_STRING);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) name);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) nameLen);
   	
             /* 
              * value, which is actually a list of length 1 
@@ -1047,26 +1191,26 @@ static void mfs_load_property_groups()
              */
             DBG( ("mfs_load_property_groups -> "
                   "insert value field (length = %d)\n", valueLen) );
-            value = mfs_text_ptr; 
+            value = dataP->text_ptr; 
             strncpy(value, &yytext[valueStart], valueLen);
-            mfs_text_ptr += valueLen;
-            ASSIGN_TERM_SPEC(ERL_DRV_STRING);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) value);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) valueLen);
-            ASSIGN_TERM_SPEC(ERL_DRV_NIL);            // End of value list
-            ASSIGN_TERM_SPEC(ERL_DRV_LIST); 
-            ASSIGN_TERM_SPEC((ErlDrvTermData) 1 + 1); // Length of (group) list
+            dataP->text_ptr += valueLen;
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_STRING);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) value);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) valueLen);
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_NIL);            // End of value list
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_LIST); 
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) 1 + 1); // Length of (group) list
   	  
             /* extraInfo - never used */
             DBG( ("mfs_load_property_groups -> "
                   "insert the extraInfo field\n") );
-            ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) mfs_asn1_NOVALUE);
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) mfs_asn1_NOVALUE);
   
             DBG( ("mfs_load_property_groups -> "
                   "terminate PropertyParm tuple\n") );
-            ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-            ASSIGN_TERM_SPEC((ErlDrvTermData) 4);
+            ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+            ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) 4);
             break;
 
           } // if (valueLen == 0) ...
@@ -1086,12 +1230,12 @@ static void mfs_load_property_groups()
               "property parm name not found when "
               "nameStart = %d\n", nameStart) );
 
-        if (0 >= sprintf(mfs_error_msg, "%s %s (name start at %d)", 
+        if (0 >= sprintf(dataP->error_msg, "%s %s (name start at %d)", 
                          PG_ERR_PRE, PG_ERR2, nameStart)) {
-          mfs_fatal_error(PG_ERR2);
+          mfs_fatal_error(dataP, PG_ERR2);
         }
 
-        mfs_error = TRUE;
+        dataP->error = TRUE;
 
         DBG( ("mfs_load_property_groups -> done after name error\n") );
 
@@ -1106,7 +1250,7 @@ static void mfs_load_property_groups()
     } // if ((yytext[i] != SP)...
   } // while ...      
       
-  mfs_ensure_term_spec(4); // 2 + 2 just in case
+  mfs_ensure_term_spec(dataP, 4); // 2 + 2 just in case
 
   /* Make sure we actually have some groups */
 
@@ -1117,9 +1261,9 @@ static void mfs_load_property_groups()
           numPps) );
 
     /* Terminate the final group */
-    ASSIGN_TERM_SPEC(ERL_DRV_NIL);                  // End of list
-    ASSIGN_TERM_SPEC(ERL_DRV_LIST); 
-    ASSIGN_TERM_SPEC((ErlDrvTermData) numPps + 1);  // Length of (group) list
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_NIL);                  // End of list
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_LIST); 
+    ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) numPps + 1);  // Length of (group) list
     
   }
 
@@ -1127,44 +1271,76 @@ static void mfs_load_property_groups()
         "terminate groups (list of property groups) list (length = %d)\n", 
         numGroups) );
   
-  ASSIGN_TERM_SPEC(ERL_DRV_NIL);                    // End of list
-  ASSIGN_TERM_SPEC(ERL_DRV_LIST);
-  ASSIGN_TERM_SPEC((ErlDrvTermData) numGroups + 1); // Length of (groups) list
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_NIL);                    // End of list
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_LIST);
+  ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) numGroups + 1); // Length of (groups) list
 
   DBG( ("mfs_load_property_groups -> done\n") );
 }
 
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_load_map_name(yyscan_t yyscanner)
+#else
 static void mfs_load_map_name()
+#endif
 {
-    /* Copy digit map name as lower case */
-    int i;
-
-    for ( i = 0; i < yyleng; ++i ) {
-      mfs_text_ptr[i] = tolower(yytext[i]);
-    }
-
-    mfs_digit_map_name_ptr = mfs_text_ptr;
-    mfs_digit_map_name_len = yyleng;
-    mfs_text_ptr += yyleng;
+  /* Copy digit map name as lower case */
+  int i;
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
+  
+  for ( i = 0; i < yyleng; ++i ) {
+    dataP->text_ptr[i] = tolower(yytext[i]);
+  }
+  
+  dataP->digit_map_name_ptr = dataP->text_ptr;
+  dataP->digit_map_name_len = yyleng;
+  dataP->text_ptr += yyleng;
 }
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_load_map_value(yyscan_t yyscanner)
+#else
 static void mfs_load_map_value()
+#endif
 {
-    /* Copy digit map value as lower case */
-    int i;
-
-    for ( i = 0; i < yyleng; ++i ) {
-      mfs_text_ptr[i] = tolower(yytext[i]);
-    }
-
-    mfs_digit_map_value_ptr = mfs_text_ptr;
-    mfs_digit_map_value_len = yyleng;
-    mfs_text_ptr += yyleng;
+  /* Copy digit map value as lower case */
+  int i;
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
+  
+  for ( i = 0; i < yyleng; ++i ) {
+    dataP->text_ptr[i] = tolower(yytext[i]);
+  }
+  
+  dataP->digit_map_value_ptr = dataP->text_ptr;
+  dataP->digit_map_value_len = yyleng;
+  dataP->text_ptr += yyleng;
 }
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_load_map_timer(yyscan_t yyscanner)
+#else
 static void mfs_load_map_timer()
+#endif
 {
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
+  int timer_len = yyleng - 2;
+
   /* The digit map timer consists of 3 or 4 characters:
    * z and Z are actually version 2 only
    * 0 - the kind of timer (t|T|s|S|l|L|z|Z)
@@ -1173,8 +1349,6 @@ static void mfs_load_map_timer()
    * 3 - optional digit
    */
   
-  int timer_len = yyleng - 2;
-
   /*
   DBG( ("mfs_load_map_timer -> entry when yyleng: %d\n", yyleng) );
   DBG( ("mfs_load_map_timer -> yytext: 0x%x\n", yytext) );
@@ -1188,120 +1362,129 @@ static void mfs_load_map_timer()
   /* Pad with leading zero */
 
   if (timer_len == 1) {
-    mfs_text_ptr[0] = '0';
-    mfs_text_ptr[1] = yytext[2];
+    dataP->text_ptr[0] = '0';
+    dataP->text_ptr[1] = yytext[2];
   } else if (timer_len == 2) {
-    mfs_text_ptr[0] = yytext[2];
-    mfs_text_ptr[1] = yytext[3];
+    dataP->text_ptr[0] = yytext[2];
+    dataP->text_ptr[1] = yytext[3];
   }
 
   /*
-  DBG( ("mfs_load_map_timer -> mfs_text_ptr[0]: %u (%c)\n", 
-	mfs_text_ptr[0], mfs_text_ptr[0]) );
-  DBG( ("mfs_load_map_timer -> mfs_text_ptr[1]: %u (%c)\n", 
-	mfs_text_ptr[1], mfs_text_ptr[1]) );
+  DBG( ("mfs_load_map_timer -> dataP->text_ptr[0]: %u (%c)\n", 
+	dataP->text_ptr[0], dataP->text_ptr[0]) );
+  DBG( ("mfs_load_map_timer -> dataP->text_ptr[1]: %u (%c)\n", 
+	dataP->text_ptr[1], dataP->text_ptr[1]) );
 
-  DBG( ("mfs_load_map_timer -> mfs_text_ptr: 0x%x\n", 
-	mfs_text_ptr) );
+  DBG( ("mfs_load_map_timer -> dataP->text_ptr: 0x%x\n", 
+	dataP->text_ptr) );
   */
 
   switch (yytext[0]) {
   case 't':
   case 'T':
-    mfs_digit_map_start_ptr = mfs_text_ptr;
+    dataP->digit_map_start_ptr = dataP->text_ptr;
     break;;
   case 's':
   case 'S':
-    mfs_digit_map_short_ptr = mfs_text_ptr;
+    dataP->digit_map_short_ptr = dataP->text_ptr;
     break;;
   case 'l':
   case 'L':
-    mfs_digit_map_long_ptr = mfs_text_ptr;
+    dataP->digit_map_long_ptr = dataP->text_ptr;
     break;;
   case 'z':
   case 'Z':
-    mfs_digit_map_duration_ptr = mfs_text_ptr;
+    dataP->digit_map_duration_ptr = dataP->text_ptr;
     break;;
   }
 
   /* We pad when there is only one digit, so it will always be two */
-  mfs_text_ptr += 2; 
+  dataP->text_ptr += 2; 
 
 }
 
-static void load_timer_field(char* text)
+static void mfs_load_timer_field(MfsErlDrvData* dataP, char* text)
 {
-
-  mfs_ensure_term_spec(2);    /* OTP-4236 */
+  mfs_ensure_term_spec(dataP, 2);    /* OTP-4236 */
   if (text == NULL) {
-    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-    ASSIGN_TERM_SPEC(mfs_asn1_NOVALUE);
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(dataP, mfs_asn1_NOVALUE);
   } else {
-    ASSIGN_TERM_SPEC(ERL_DRV_INT);
-    ASSIGN_TERM_SPEC(((text[0] - '0') * 10) + (text[1] - '0'));
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_INT);
+    ASSIGN_TERM_SPEC(dataP, ((text[0] - '0') * 10) + (text[1] - '0'));
   }
 }
 
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+static void mfs_load_map_token(yyscan_t yyscanner)
+#else
 static void mfs_load_map_token()
+#endif
 {
   /* 
    * Build a {'DigitMapDescriptorToken', LineNumber, 
    *          {'DigitMapDescriptor', DigitMapName, DigitMapValue}} tuple 
    */
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  struct yyguts_t * yyg = (struct yyguts_t*)yyscanner; 
+  MfsErlDrvData* dataP = (MfsErlDrvData*) yyget_extra(yyscanner);
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
 
-  mfs_ensure_term_spec(20); 
-  mfs_token_counter++; 
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(mfs_DigitMapDescriptorToken);
-  ASSIGN_TERM_SPEC(ERL_DRV_INT);
-  ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+  mfs_ensure_term_spec(dataP, 20); 
+  dataP->token_counter++; 
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(dataP, mfs_DigitMapDescriptorToken);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_INT);
+  ASSIGN_TERM_SPEC(dataP, LINENO_OR_TOKENCNT(dataP));
   
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(mfs_DigitMapDescriptor);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(dataP, mfs_DigitMapDescriptor);
   
-  if (mfs_digit_map_name_ptr == 0) {
-    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-    ASSIGN_TERM_SPEC(mfs_asn1_NOVALUE);
+  if (dataP->digit_map_name_ptr == 0) {
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(dataP, mfs_asn1_NOVALUE);
   } else {
-    ASSIGN_TERM_SPEC(ERL_DRV_STRING);
-    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_digit_map_name_ptr);
-    ASSIGN_TERM_SPEC(mfs_digit_map_name_len);
-    mfs_digit_map_name_ptr = NULL; 
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_STRING);
+    ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) dataP->digit_map_name_ptr);
+    ASSIGN_TERM_SPEC(dataP, dataP->digit_map_name_len);
+    dataP->digit_map_name_ptr = NULL; 
   }
   
-  if (mfs_digit_map_value_ptr == NULL) {
-    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-    ASSIGN_TERM_SPEC(mfs_asn1_NOVALUE);
+  if (dataP->digit_map_value_ptr == NULL) {
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(dataP, mfs_asn1_NOVALUE);
   } else {
-    ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-    ASSIGN_TERM_SPEC(mfs_DigitMapValue);
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+    ASSIGN_TERM_SPEC(dataP, mfs_DigitMapValue);
     
     /* Take care of timer values */
-    load_timer_field(mfs_digit_map_start_ptr);
-    mfs_digit_map_start_ptr = NULL;
+    mfs_load_timer_field(dataP, dataP->digit_map_start_ptr);
+    dataP->digit_map_start_ptr = NULL;
     
-    load_timer_field(mfs_digit_map_short_ptr);
-    mfs_digit_map_short_ptr = NULL;
+    mfs_load_timer_field(dataP, dataP->digit_map_short_ptr);
+    dataP->digit_map_short_ptr = NULL;
     
-    load_timer_field(mfs_digit_map_long_ptr);
-    mfs_digit_map_long_ptr = NULL;
+    mfs_load_timer_field(dataP, dataP->digit_map_long_ptr);
+    dataP->digit_map_long_ptr = NULL;
     
-    load_timer_field(mfs_digit_map_duration_ptr);
-    mfs_digit_map_duration_ptr = NULL;
+    mfs_load_timer_field(dataP, dataP->digit_map_duration_ptr);
+    dataP->digit_map_duration_ptr = NULL;
     
-    ASSIGN_TERM_SPEC(ERL_DRV_STRING);
-    ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_digit_map_value_ptr);
-    ASSIGN_TERM_SPEC(mfs_digit_map_value_len);
-    mfs_digit_map_value_ptr = NULL; 
-    ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-    ASSIGN_TERM_SPEC(6);
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_STRING);
+    ASSIGN_TERM_SPEC(dataP, (ErlDrvTermData) dataP->digit_map_value_ptr);
+    ASSIGN_TERM_SPEC(dataP, dataP->digit_map_value_len);
+    dataP->digit_map_value_ptr = NULL; 
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+    ASSIGN_TERM_SPEC(dataP, 6);
   }
   
-  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-  ASSIGN_TERM_SPEC(3);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(dataP, 3);
   
-  ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-  ASSIGN_TERM_SPEC(3);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+  ASSIGN_TERM_SPEC(dataP, 3);
 
 }
 
@@ -1317,7 +1500,29 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
 {
   DBG( ("mfs_start -> entry\n") );
 
-  mfs_port = port;
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  MfsErlDrvData* dataP = ALLOC(sizeof(MfsErlDrvData));
+#else
+  MfsErlDrvData* dataP = &mfs_drv_data;
+#endif
+
+  dataP->port                   = port;
+  dataP->digit_map_name_ptr     = NULL;
+  dataP->digit_map_name_len     = 0;
+  dataP->digit_map_value_ptr    = NULL;
+  dataP->digit_map_value_len    = 0;
+  dataP->digit_map_start_ptr    = NULL;
+  dataP->digit_map_short_ptr    = NULL;
+  dataP->digit_map_long_ptr     = NULL;
+  dataP->digit_map_duration_ptr = NULL;
+  dataP->error                  = FALSE;
+  /* dataP->error_msg[512]; */
+  dataP->text_buf               = NULL;
+  dataP->text_ptr               = NULL;
+  dataP->term_spec              = NULL;
+  dataP->term_spec_size         = 0;
+  dataP->term_spec_index        = 0;
+  dataP->token_counter          = 0;
 
   mfs_AddToken = driver_mk_atom("AddToken");
   mfs_AndAUDITSelectToken = driver_mk_atom("AndAUDITSelectToken");
@@ -1468,12 +1673,14 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
 
   DBG( ("mfs_start -> exit\n") );
 
-  return (ErlDrvData) 0;
+  return (ErlDrvData) dataP;
 }
 
 static void mfs_stop(ErlDrvData handle)
 {
-  mfs_port = 0;
+  MfsErlDrvData*  dataP = (MfsErlDrvData*) handle;
+
+  dataP->port = 0;
 
   DBG( ("mfs_stop -> exit\n") );
 
@@ -1483,7 +1690,7 @@ static void mfs_stop(ErlDrvData handle)
 static void mfs_command(ErlDrvData handle, 
 			char *buf, int buf_len)
 {
-  driver_failure_atom(mfs_port, "bad_usage");
+  driver_failure_atom(((MfsErlDrvData*) handle)->port, "bad_usage");
 
   return;
 }
@@ -1493,18 +1700,24 @@ static int mfs_control(ErlDrvData          handle,
 		       char  *buf,     int buf_len, 
 		       char **res_buf, int res_buf_len)
 {
+  MfsErlDrvData*  dataP = (MfsErlDrvData*) handle;
+  char*           tmp;
   YY_BUFFER_STATE state;
-
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+  yyscan_t        scanner;
+  /* struct yyguts_t * yyg = (struct yyguts_t*) scanner; */
+#endif
+	
   DBG( ("mfs_control -> entry with"
 	"\n   command:     %d"
 	"\n   buf_len:     %d"
 	"\n   res_buf_len: %d\n", command, buf_len, res_buf_len) );
 
-  if (NULL == (mfs_text_buf = ALLOC(buf_len))) {
+  if (NULL == (tmp = ALLOC(buf_len))) {
     int len;
-    mfs_alloc_failed("failed allocating text buffer", buf_len);
+    mfs_alloc_failed(dataP, "failed allocating text buffer", buf_len);
 
-    len = strlen(mfs_error_msg);
+    len = strlen(dataP->error_msg);
 
     if (res_buf_len < len) {
       /* 
@@ -1515,21 +1728,25 @@ static int mfs_control(ErlDrvData          handle,
       len = res_buf_len;
     }
 
-    strncpy(*res_buf, mfs_error_msg, len);
+    strncpy(*res_buf, dataP->error_msg, len);
 
     return len;
   }
-  mfs_text_ptr = mfs_text_buf;
+  dataP->text_buf = tmp;
+  dataP->text_ptr = tmp;
 
+  dataP->term_spec_size = 1000 + buf_len;       /* OTP-4237 */
 
-  mfs_term_spec_size  = 1000 + buf_len;       /* OTP-4237 */
-  mfs_term_spec       = ALLOC(mfs_term_spec_size * sizeof(ErlDrvTermData));
-  if (NULL == mfs_term_spec) {
+  DBG( ("mfs_control -> allocate term-spec buffer: "
+	"\n   term_spec_size: %d\n", dataP->term_spec_size) );
+
+  dataP->term_spec = ALLOC(dataP->term_spec_size * sizeof(ErlDrvTermData));
+  if (NULL == dataP->term_spec) {
     int len;
-    mfs_alloc_failed("failed allocating term spec buffer", 
-		     mfs_term_spec_size * sizeof(ErlDrvTermData));
+    mfs_alloc_failed(dataP, "failed allocating term spec buffer", 
+		     dataP->term_spec_size * sizeof(ErlDrvTermData));
 
-    len = strlen(mfs_error_msg);
+    len = strlen(dataP->error_msg);
 
     if (res_buf_len < len) {
       /* 
@@ -1540,55 +1757,121 @@ static int mfs_control(ErlDrvData          handle,
       len = res_buf_len;
     }
 
-    strncpy(*res_buf, mfs_error_msg, len);
+    strncpy(*res_buf, dataP->error_msg, len);
 
-    FREE(mfs_text_buf);
+    FREE(dataP->text_buf);
 
     return len;    
   }
-  mfs_term_spec_index = 0;
-
-  mfs_token_counter   = 0;
-  mfs_error           = FALSE;
+  dataP->term_spec_index = 0;
+  dataP->token_counter   = 0;
+  dataP->error           = FALSE;
 
   /* Prepare the first field in the {tokens, TokenList, LastLine} tuple */
-  mfs_ensure_term_spec(2);
-  ASSIGN_TERM_SPEC(ERL_DRV_ATOM);
-  ASSIGN_TERM_SPEC(driver_mk_atom("tokens"));
+  DBG( ("mfs_control -> prepare the first field in the tokens tuple\n") );
+  mfs_ensure_term_spec(dataP, 2);
+  ASSIGN_TERM_SPEC(dataP, ERL_DRV_ATOM);
+  ASSIGN_TERM_SPEC(dataP, driver_mk_atom("tokens"));
 
   /* Perform the actual scan */
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+
+  /*
+   * R e e n t r a n t   s c a n n e r 
+   */
+
+  DBG( ("mfs_control -> initiate scanner\n") );
+  yylex_init(&scanner);
+
+  DBG( ("mfs_control -> maybe enable flex debug\n") );
+  yyset_debug(MFS_FLEX_DEBUG, scanner);
+
+  DBG( ("mfs_control -> set my extra data (ErlDrvData)\n") );
+  yyset_extra(dataP, scanner);
+
+  DBG( ("mfs_control -> scan bytes\n") );
+  state = yy_scan_bytes(buf, buf_len, scanner);
+
+  DBG( ("mfs_control -> set initial line-no (1) when state is at 0x%x\n", 
+        (unsigned int) state) );
+  yyset_lineno(1, scanner);
+
+  DBG( ("mfs_control -> do the actual scan\n") );
+  yylex(scanner);
+
+#else
+
+  /*
+   * N o n  -  R e e n t r a n t   s c a n n e r 
+   */
+
   yylineno = 1;
   state = yy_scan_bytes(buf, buf_len);
   yylex();
   yy_delete_buffer(state);
 
-  if (!mfs_error) {
+#endif
+
+  DBG( ("mfs_control -> scan done - now check if ok or not (%d)\n", dataP->error) );
+  if (!dataP->error) {
 
     /* 
      * Prepare the rest of the {tokens, TokenList, LastLine} tuple 
      * and send it as message top caller. 
      */
-    mfs_ensure_term_spec(7);
-    ASSIGN_TERM_SPEC(ERL_DRV_NIL);
-    ASSIGN_TERM_SPEC(ERL_DRV_LIST);
-    ASSIGN_TERM_SPEC(mfs_token_counter + 1);
-    ASSIGN_TERM_SPEC(ERL_DRV_INT);
-    ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
-    ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-    ASSIGN_TERM_SPEC(3);
+
+    DBG( ("mfs_control -> ensure term spec(7)\n") );
+
+    mfs_ensure_term_spec(dataP, 7);
+    DBG( ("mfs_control -> assign nil\n") );
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_NIL);
+    DBG( ("mfs_control -> assign type list\n") );
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_LIST);
+    DBG( ("mfs_control -> assign size of list: %d\n", dataP->token_counter + 1) );
+    ASSIGN_TERM_SPEC(dataP, dataP->token_counter + 1);
+    DBG( ("mfs_control -> assign type int\n") );
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_INT);
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+    DBG( ("mfs_control -> assign lineno (or tokenno): %d\n", yyget_lineno(scanner)) );
+    // ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+    ASSIGN_TERM_SPEC(dataP, yyget_lineno(scanner));
+#else
+    DBG( ("mfs_control -> assign lineno (or tokenno): %d\n", LINENO_OR_TOKENCNT(dataP)) );
+    // ASSIGN_TERM_SPEC(LINENO_OR_TOKENCNT);
+    ASSIGN_TERM_SPEC(dataP, LINENO_OR_TOKENCNT(dataP));
+#endif
+    // ASSIGN_TERM_SPEC(1);
+    DBG( ("mfs_control -> assign tuple\n") );
+    ASSIGN_TERM_SPEC(dataP, ERL_DRV_TUPLE);
+    DBG( ("mfs_control -> assign size 3\n") );
+    ASSIGN_TERM_SPEC(dataP, 3);
     
     DBG( ("mfs_control -> send the term when"
 	  "\n   term_spec_index: %d"
 	  "\n   term_spec_size:  %d\n", 
-	  mfs_term_spec_index, mfs_term_spec_size) );
+	  dataP->term_spec_index, dataP->term_spec_size) );
 
-    driver_send_term(mfs_port, 
-                     driver_caller(mfs_port),
-                     mfs_term_spec, 
-                     mfs_term_spec_index);
+    driver_send_term(dataP->port, 
+                     driver_caller(dataP->port),
+                     dataP->term_spec, 
+                     dataP->term_spec_index);
     
-    if (mfs_text_buf  != NULL) FREE(mfs_text_buf);
-    if (mfs_term_spec != NULL) FREE(mfs_term_spec);
+    if (dataP->text_buf  != NULL) FREE(dataP->text_buf);
+    if (dataP->term_spec != NULL) FREE(dataP->term_spec);
+
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+
+    /*
+     * R e e n t r a n t   s c a n n e r 
+     */
+
+    DBG( ("mfs_control -> delete buffer\n") );
+    yy_delete_buffer(state, scanner);
+
+    DBG( ("mfs_control -> destroy scanner\n") );
+    yylex_destroy(scanner);
+
+#endif
 
     DBG( ("mfs_control -> done (0)\n") );
 
@@ -1598,10 +1881,13 @@ static int mfs_control(ErlDrvData          handle,
     /* 
      * Return the error message 
      */
-    int len = strlen(mfs_error_msg);
+    int len = strlen(dataP->error_msg);
+
+    DBG( ("mfs_control -> return the error message: \n%s\n\n", 
+          dataP->error_msg) );
 
     /*
-     * If we fail to realloc a bigger block of memory
+     * If we fail to alloc a bigger block of memory
      * we have to make do with what we got
      */
     if (res_buf_len < len) {
@@ -1612,10 +1898,24 @@ static int mfs_control(ErlDrvData          handle,
 	len = res_buf_len;
     }
 
-    strncpy(*res_buf, mfs_error_msg, len);
+    strncpy(*res_buf, dataP->error_msg, len);
 
-    if (mfs_text_buf  != NULL) FREE(mfs_text_buf);
-    if (mfs_term_spec != NULL) FREE(mfs_term_spec);
+    if (dataP->text_buf  != NULL) FREE(dataP->text_buf);
+    if (dataP->term_spec != NULL) FREE(dataP->term_spec);
+
+#if defined(MEGACO_REENTRANT_FLEX_SCANNER)
+
+    /*
+     * R e e n t r a n t   s c a n n e r 
+     */
+
+    DBG( ("mfs_control -> delete buffer\n") );
+    yy_delete_buffer(state, scanner);
+
+    DBG( ("mfs_control -> destroy scanner\n") );
+    yylex_destroy(scanner);
+
+#endif
 
     DBG( ("mfs_control -> done (%d)\n", len) );
 
@@ -1628,16 +1928,16 @@ static void mfs_finish(void)
   return;
 }
 
-static void mfs_fatal_error(char* msg)
+static void mfs_fatal_error(MfsErlDrvData* dataP, char* msg)
 {
-  if (!mfs_error) {
+  if (!dataP->error) {
     int len = strlen(msg);
 
-    if (len >= sizeof(mfs_error_msg))
-      len = sizeof(mfs_error_msg) - 1;
+    if (len >= sizeof(dataP->error_msg))
+      len = sizeof(dataP->error_msg) - 1;
       
-    strncpy(mfs_error_msg, msg, len);
-    mfs_error_msg[len] = '\0';
-    mfs_error = TRUE;
+    strncpy(dataP->error_msg, msg, len);
+    dataP->error_msg[len] = '\0';
+    dataP->error = TRUE;
   }
 }

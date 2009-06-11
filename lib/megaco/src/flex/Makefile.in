@@ -59,9 +59,20 @@ ERLANG_OSTYPE = @ERLANG_OSTYPE@
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),)
 ifeq ($(findstring win32,$(TARGET)), win32)
 ENABLE_MEGACO_FLEX_SCANNER = false
+ENABLE_REENTRANT_MEGACO_FLEX_SCANNER = false
 else
 ENABLE_MEGACO_FLEX_SCANNER = @ENABLE_MEGACO_FLEX_SCANNER@
+ENABLE_REENTRANT_MEGACO_FLEX_SCANNER = @ENABLE_REENTRANT_MEGACO_FLEX_SCANNER@
 endif
+endif
+ERL_COMPILE_FLAGS += -DENABLE_MEGACO_FLEX_SCANNER=$(ENABLE_MEGACO_FLEX_SCANNER)
+
+ifeq ($(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER),true)
+CFLAGS_MT += -DMEGACO_REENTRANT_FLEX_SCANNER
+MT_LEX_FLAGS += -R
+ERL_COMPILE_FLAGS += -DMEGACO_REENTRANT_FLEX_SCANNER=true
+else
+ERL_COMPILE_FLAGS += -DMEGACO_REENTRANT_FLEX_SCANNER=false
 endif
 
 # Shall the library be built with line-number checks or without
@@ -107,9 +118,9 @@ TARGET_FILES =  \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 FLEX_SRC   = $(FLEX_MODULES:%=%.flex.src)
-FLEX_FILES = $(FLEX_MODULES:%=%.flex)
+FLEX_FILES = $(STD_DRV).flex $(MT_DRV).flex
 
-C_TARGETS  = $(FLEX_MODULES:%=%.c)
+C_TARGETS  = $(STD_DRV).c $(MT_DRV).c
 
 
 # ----------------------------------------------------
@@ -127,8 +138,8 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 FLEX_SCANNER_SO = 
 SOLIBS = $(FLEX_SCANNER_SO)
 else
-FLEX_SCANNER_SO = $(LIBDIR)/megaco_flex_scanner_drv.so 
-FLEX_SCANNER_MT_SO = $(LIBDIR)/megaco_flex_scanner_drv_mt.so 
+FLEX_SCANNER_SO = $(LIBDIR)/$(STD_DRV).so 
+FLEX_SCANNER_MT_SO = $(LIBDIR)/$(MT_DRV).so 
 SOLIBS = $(FLEX_SCANNER_SO) $(FLEX_SCANNER_MT_SO) 
 endif
 endif
@@ -152,11 +163,16 @@ CFLAGS += -DMFS_DEBUG=true
 endif
 
 ifeq ($(MFS_FLEX_PERF),true)
-LEX_FLAGS = -p
+STD_LEX_FLAGS += -p
+MT_LEX_FLAGS += -p
 endif
 
 ifeq ($(MFS_FLEX_DEBUG),true)
-LEX_FLAGS = -d
+CFLAGS += -DMFS_FLEX_DEBUG=1
+STD_LEX_FLAGS += -d
+MT_LEX_FLAGS += -d
+else
+CFLAGS += -DMFS_FLEX_DEBUG=0
 endif
 
 CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall 
@@ -168,10 +184,18 @@ CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall
 #endif
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
-LEX_FLAGS += -Ca
-else
-LEX_FLAGS += -Cfe
+CFLAGS += -DMEGACO_LINENO
+STD_LEX_FLAGS += -Ca
+MT_LEX_FLAGS += -Ca
+ifeq ($(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER),true)
+MT_LEX_FLAGS += --yylineno
 endif
+else
+CFLAGS += -DMEGACO_TOKENCNT
+STD_LEX_FLAGS += -Cfe
+MT_LEX_FLAGS += -Cfe
+endif
+
 
 
 # ----------------------------------------------------
@@ -185,20 +209,26 @@ debug opt: $(TARGET_FILES)
 endif
 
 clean:
-	rm -f $(TARGET_FILES) $(FLEX_FILES) $(C_TARGETS) $(SOLIBS) 
+	rm -f $(TARGET_FILES) 
+	rm -f $(FLEX_FILES) 
+	rm -f $(C_TARGETS) 
+	rm -f $(SOLIBS) 
 	rm -f errs core *~
 
 docs:
 
 info:
-	@echo "ENABLE_MEGACO_FLEX_SCANNER        = $(ENABLE_MEGACO_FLEX_SCANNER)"
-	@echo "ENABLE_MEGACO_FLEX_SCANNER_LINENO = $(ENABLE_MEGACO_FLEX_SCANNER_LINENO)"
+	@echo "ENABLE_MEGACO_FLEX_SCANNER           = $(ENABLE_MEGACO_FLEX_SCANNER)"
+	@echo "ENABLE_MEGACO_FLEX_SCANNER_LINENO    = $(ENABLE_MEGACO_FLEX_SCANNER_LINENO)"
+	@echo "ENABLE_REENTRANT_MEGACO_FLEX_SCANNER = $(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER)"
 	@echo ""
 	@echo "FLEX_VSN     = $(FLEX_VSN)"
 	@echo ""
 	@echo "CFLAGS       = $(CFLAGS)"
 	@echo "CFLAGS_MT    = $(CFLAGS_MT)"
 	@echo "DRV_FLAGS    = $(DRV_FLAGS)"
+	@echo "STD_LEX_FLAGS = $(STD_LEX_FLAGS)"
+	@echo "MT_LEX_FLAGS  = $(MT_LEX_FLAGS)"
 	@echo ""
 	@echo "MODULES      = $(MODULES)"
 	@echo "ERL_FILES    = $(ERL_FILES)"
@@ -244,39 +274,122 @@ endif
 
 release_docs_spec:
 
-megaco_flex_scanner_drv.flex: megaco_flex_scanner_drv.flex.src
+# megaco_flex_scanner_drv.flex: megaco_flex_scanner_drv.flex.src
+# ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
+# ifeq ($(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER),true)
+# 	@printf "\treentrant [flex] scanner lineno enabled\n"
+# 	$(PERL) -p -e \
+#           's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+#            s/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
+#            s/%MEGACO_YY_REENTRANT_OPTION%/%option reentrant/ ;  \
+#            s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\//' \
+#            < $< > $@
+# else
+# 	@printf "\tnon-reentrant [flex] scanner lineno enabled\n"
+# 	$(PERL) -p -e \
+#           's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+#            s/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
+#            s/%MEGACO_YY_REENTRANT_OPTION%/\/\* %option reentrant \*\// ; \
+#            s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\//' \
+#            < $< > $@
+# endif
+# else
+# ifeq ($(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER),true)
+# 	@printf "\treentrant [flex] scanner lineno disabled\n"
+# 	$(PERL) -p -e \
+#           's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+#            s/%MEGACO_YY_LINENO_OPTION%/\/\* %option yylineno \*\// ; \
+#            s/%MEGACO_YY_REENTRANT_OPTION%/%option reentrant/ ;  \
+#            s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; - REENTRANT SCANNER*\//' \
+#            < $< > $@
+# else
+# 	@printf "\tnon-reentrant [flex] scanner lineno disabled\n"
+# 	$(PERL) -p -e \
+#           's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+#            s/%MEGACO_YY_LINENO_OPTION%/\/\* %option yylineno \*\// ; \
+#            s/%MEGACO_YY_REENTRANT_OPTION%/\/\* %option reentrant \*\// ; \
+#            s/%MEGACO_DUMMY_DECL_YY_LINENO%/static int yylineno = 1;/' \
+#            < $< > $@
+# endif
+# endif
+# 
+
+$(STD_DRV).flex: megaco_flex_scanner_drv.flex.src
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
-	@printf "\tflex scanner lineno enabled\n"
+	@printf "std [flex] scanner - lineno enabled\n"
 	$(PERL) -p -e \
           's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
            s/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
-           s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\// ; \
-           s/%MEGACO_LINENO_OR_TOKENCOUNTER%/yylineno/' \
+           s/%MEGACO_YY_REENTRANT_OPTION%/\/\* %option reentrant \*\// ; \
+           s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\//' \
            < $< > $@
 else
-	@printf "\tflex scanner lineno disabled\n"
+	@printf "std [flex] scanner - lineno disabled\n"
 	$(PERL) -p -e \
           's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
-           s/%MEGACO_YY_LINENO_OPTION%/  \/\* %option yylineno \*\// ; \
-           s/%MEGACO_DUMMY_DECL_YY_LINENO%/static int yylineno = 1;/ ; \
-           s/%MEGACO_LINENO_OR_TOKENCOUNTER%/mfs_token_counter/' \
+           s/%MEGACO_YY_LINENO_OPTION%/\/\* %option yylineno \*\// ; \
+           s/%MEGACO_YY_REENTRANT_OPTION%/\/\* %option reentrant \*\// ; \
+           s/%MEGACO_DUMMY_DECL_YY_LINENO%/static int yylineno = 1;/' \
            < $< > $@
 endif
 
-megaco_flex_scanner_drv.c: megaco_flex_scanner_drv.flex
-	$(LEX) $(LEX_FLAGS) -P$* -o$@ $< 
+$(MT_DRV).flex: megaco_flex_scanner_drv.flex.src
+ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
+ifeq ($(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER),true)
+	@printf "multi-threaded reentrant [flex] scanner - lineno enabled\n"
+	$(PERL) -p -e \
+          's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+           s/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
+           s/%MEGACO_YY_REENTRANT_OPTION%/%option reentrant/ ;  \
+           s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\//' \
+           < $< > $@
+else
+	@printf "multi-threaded non-reentrant [flex] scanner - lineno enabled\n"
+	$(PERL) -p -e \
+          's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+           s/%MEGACO_YY_LINENO_OPTION%/%option yylineno/ ;  \
+           s/%MEGACO_YY_REENTRANT_OPTION%/\/\* %option reentrant \*\// ; \
+           s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; *\//' \
+           < $< > $@
+endif
+else
+ifeq ($(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER),true)
+	@printf "multi-threaded reentrant [flex] scanner - lineno disabled\n"
+	$(PERL) -p -e \
+          's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+           s/%MEGACO_YY_LINENO_OPTION%/\/\* %option yylineno \*\// ; \
+           s/%MEGACO_YY_REENTRANT_OPTION%/%option reentrant/ ;  \
+           s/%MEGACO_DUMMY_DECL_YY_LINENO%/\/* static int yylineno = 1; - REENTRANT SCANNER*\//' \
+           < $< > $@
+else
+	@printf "multi-threaded non-reentrant [flex] scanner - lineno disabled\n"
+	$(PERL) -p -e \
+          's/%FLEX_VERSION%/$(FLEX_VSN)/ ;  \
+           s/%MEGACO_YY_LINENO_OPTION%/\/\* %option yylineno \*\// ; \
+           s/%MEGACO_YY_REENTRANT_OPTION%/\/\* %option reentrant \*\// ; \
+           s/%MEGACO_DUMMY_DECL_YY_LINENO%/static int yylineno = 1;/' \
+           < $< > $@
+endif
+endif
+
+# megaco_flex_scanner_drv.c: megaco_flex_scanner_drv.flex
+# 	$(LEX) $(LEX_FLAGS) -P$* -o$@ $< 
+$(STD_DRV).c: $(STD_DRV).flex
+	$(LEX) $(STD_LEX_FLAGS) -P$* -o$@ $< 
+$(MT_DRV).c: $(MT_DRV).flex
+	$(LEX) $(MT_LEX_FLAGS) -P$* -o$@ $< 
 
 solibs: $(LIBDIR) $(SOLIBS) 
 
 # No need to link with -lfl as we have also defined %option noyywrap - 
 # and having -lfl doesn't work under Darwin for some reason. - Sean
-$(LIBDIR)/megaco_flex_scanner_drv.so: megaco_flex_scanner_drv.c 
+$(LIBDIR)/$(STD_DRV).so: $(STD_DRV).c 
 	@echo "std driver:"
-	$(CC) $(STD_DRV_NAME) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv.so $< 
+	$(CC) $(STD_DRV_NAME) $(CFLAGS) $(LDFLAGS) -o $(LIBDIR)/$(STD_DRV).so $< 
 
-$(LIBDIR)/megaco_flex_scanner_drv_mt.so: megaco_flex_scanner_drv.c 
+$(LIBDIR)/$(MT_DRV).so: $(MT_DRV).c 
 	@echo "multi-threaded driver:"
-	$(CC) $(MT_DRV_NAME) $(CFLAGS_MT) $(LDFLAGS) -o $(LIBDIR)/megaco_flex_scanner_drv_mt.so $< 
+	$(CC) $(MT_DRV_NAME) $(CFLAGS_MT) $(LDFLAGS) -o $(LIBDIR)/$(MT_DRV).so $< 
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)

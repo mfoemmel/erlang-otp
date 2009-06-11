@@ -229,18 +229,14 @@ gen_class(C=#class{name=Name,methods=Ms,options=Opts}) ->
     erase(current_class),
     C#class{methods=NewMs}.
 
-%%gen_methods(ClassName, Ms) ->
-%%    [gen_method(ClassName, M) ||  M <- Ms].
-
 gen_method(_CName, M=#method{where=erl_no_opt}) ->     M;
 gen_method(CName, M=#method{where=taylormade, name=Name, id=Id}) ->     
     {ok, Bin} = file:read_file(filename:join([wx_extra, CName ++".c_src"])),
     Str0 = binary_to_list(Bin),
     %%    io:format("C++ Class ~p ~p ~n", [CName, Name]),
-    {match, Start, Len} = regexp:first_match(Str0, "<<" ++ Name),
-    {match, End, _} = regexp:first_match(Str0, Name ++ ">>"),
-    Str1 = string:substr(Str0, Start+Len, End-Start-Len),
-    %% {ok, Str, _} = regexp:sub(Str1, "FUNCID", integer_to_list(Id)),
+    
+    {match, [Str1]} = re:run(Str0, "<<"++Name++"(.*)"++Name++">>",
+			   [dotall, {capture, all_but_first, list}]),
     ?WTC("gen_method"),
     w(Str1, [wx_gen_erl:get_unique_name(Id)]),
     M;
@@ -885,9 +881,9 @@ build_ret(Name,_,#type{base={comp,_,_},single=array}) ->
     w(" rt.endList(~s.GetCount());~n",[Name]);    
 build_ret(Name,_,#type{name=List,single=list,base={class,Class}}) ->
     w(" int i=0;~n"),
-    w(" for(~s::Node *node = ~s.GetFirst(); node; node = node->GetNext()) {~n",
-      [List, Name]),
-    w("   ~s * ~sTmp = node->GetData();~n", [Class,Name]),
+    w(" for(~s::const_iterator it = ~s.begin(); it != ~s.end(); ++it) {~n",
+      [List, Name, Name]),
+    w("   ~s * ~sTmp = *it;~n", [Class,Name]),
     w("   rt.addRef(getRef((void *)~sTmp,memenv), \"~s\"); i++;}~n",[Name,Class]),
     w(" rt.endList(~s.GetCount());~n",[Name]);    
     
@@ -989,7 +985,11 @@ gen_macros() ->
     w("#include <wx/statline.h>~n"), 
     w("#include <wx/clipbrd.h>~n"), 
     w("#include <wx/splitter.h>~n"),
-
+    w("#include <wx/choicebk.h>~n"),
+    w("#include <wx/toolbook.h>~n"),
+    w("#include <wx/listbook.h>~n"),
+    w("#include <wx/treebook.h>~n"),
+    
     w("~n~n", []),
     [w("#define ~s_~s ~p~n", [Class,Name,Id]) || 
 	{Class,Name,_,Id} <- wx_gen_erl:get_unique_names()],
@@ -1095,16 +1095,16 @@ encode_events(Evs) ->
       " wxMBConvUTF32 UTFconverter;~n"
       " wxeEtype *Etype = etmap[event->GetEventType()];~n"
       " wxeCallbackData *cb = (wxeCallbackData *)event->m_callbackUserData;~n"
-      "  WxeApp * app = (WxeApp *) wxTheApp;~n"
+      " WxeApp * app = (WxeApp *) wxTheApp;~n"
       " wxeMemEnv *memenv = app->getMemEnv(port);~n"
-      "  wxeReturn rt = wxeReturn(port, cb->listener);~n"),
+      " if(!memenv) return 0;~n~n"
+      " wxeReturn rt = wxeReturn(port, cb->listener);~n"),
     
     w("~n rt.addAtom((char*)\"wx\");~n"
       " rt.addInt((int) event->GetId());~n"
       " rt.addRef(getRef((void *)(cb->obj), memenv), cb->class_name);~n"
       " rt.addExt2Term(cb->user_data);~n"),
 
-    w(" if(!memenv) return 0;~n~n"),
     w(" switch(Etype->cID) {~n"),
     lists:foreach(fun(Ev) -> encode_event(Ev) end, Evs),
     w(" }~n~n"),

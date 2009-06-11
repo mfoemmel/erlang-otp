@@ -47,7 +47,7 @@
 -define(GLclampd,64/native-float).
 -define(GLsizeiptr,64/native-unsigned).
 -define(GLintptr,64/native-unsigned).
--define(GLhandleARB,32/native-unsigned).
+-define(GLhandleARB,64/native-unsigned).
 
 -export([tesselate/2,build1DMipmapLevels/9,build1DMipmaps/6,build2DMipmapLevels/10,
   build2DMipmaps/7,build3DMipmapLevels/11,build3DMipmaps/8,checkExtension/2,

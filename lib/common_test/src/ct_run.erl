@@ -65,7 +65,15 @@ script_start() ->
 	case ct_repeat:loop_test(script, Args) of
 	    false ->	    
 		{ok,Cwd} = file:get_cwd(),
-		io:format("~nCommon Test starting (cwd is ~s)~n~n", [Cwd]),
+		CTVsn = 
+		    case filename:basename(code:lib_dir(common_test)) of
+			CTBase when is_list(CTBase) ->
+			    case string:tokens(CTBase, "-") of
+				["common_test",Vsn] -> " v"++Vsn;
+				_ -> ""
+			    end
+		    end,
+		io:format("~nCommon Test~s starting (cwd is ~s)~n~n", [CTVsn,Cwd]),
 		Self = self(),
 		Pid = spawn_link(fun() -> script_start1(Self, Args) end),
 	        receive 
@@ -1204,7 +1212,7 @@ do_run_test(Tests, Skip, Opt) ->
 	ok ->
 	    ct_util:set_testdata({stats,{0,0,0}}),
 	    ct_util:set_testdata({cover,undefined}),
-	    test_server_ctrl:start(),
+	    test_server_ctrl:start_link(local),
 	    case lists:keysearch(cover_spec, 1, Opt) of
 		{value,{_,CovData={CovFile,
 				   CovNodes,
@@ -1272,7 +1280,8 @@ do_run_test(Tests, Skip, Opt) ->
 	    ct_event:notify(#event{name=start_info,
 				   node=node(),
 				   data={NoOfTests,NoOfSuites,NoOfCases}}),
-	    CleanUp = add_jobs(Tests, Skip, Opt, []),	    
+	    CleanUp = add_jobs(Tests, Skip, Opt, []),
+	    unlink(whereis(test_server_ctrl)),
 	    catch test_server_ctrl:wait_finish(), 
 	    %% check if last testcase has left a "dead" trace window 
 	    %% behind, and if so, kill it

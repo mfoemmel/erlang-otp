@@ -29,12 +29,14 @@
     <file>application.sgml</file>
   </header>
   <description>
-    <p>The <em>Parsetools</em> application contains utilities for parsing,
-      e.g. the <c>yecc</c> module. Yecc is an
-      <term id="LALR-1"></term>parser generator for Erlang, similar to
-      yacc. Yecc takes a <term id="BNF"></term>grammar definition as input,
-      and produces Erlang code for a parser as output.</p>
+    <p>The <em>Parsetools</em> application contains utilities for
+      parsing and scanning. Yecc is an <term id="LALR-1"></term>parser
+      generator for Erlang, similar to yacc. Yecc takes a <term
+      id="BNF"></term>grammar definition as input, and produces Erlang
+      code for a parser as output. Leex is a regular expression based
+      lexical analyzer generator for Erlang, similar to lex or flex.</p>
   </description>
   <include file="yecc"></include>
+  <include file="leex"></include>
 </application>
 

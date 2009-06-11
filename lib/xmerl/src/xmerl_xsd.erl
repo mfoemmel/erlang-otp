@@ -2482,11 +2482,11 @@ check_element_type([],[CMEl|CMRest],Env,Block,S,Checked) ->
 		   {missing_mandatory_element,CMEl}},
 	    {Checked,[],acc_errs(S,Err)}
     end;
-check_element_type(XML=[],
+check_element_type(_XML=[],
 		   #schema_complex_type{name=_Name,base_type=BT,
 					complexity=simple,
 					content=_C} = CT,
-		   Env,Block,S,Checked) ->
+		   _Env,_Block,S,Checked) ->
 
     %% maybe check attributes here as well.
     {ResolvedType,_} = resolve({simple_or_complex_Type,BT},S),

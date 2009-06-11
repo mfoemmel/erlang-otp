@@ -9,7 +9,7 @@
 # TeX files that the DVI file depend on
 # ----------------------------------------------------
 
-book.dvi: book.tex ref_man.tex yecc.tex
+book.dvi: book.tex leex.tex ref_man.tex yecc.tex
 
 # ----------------------------------------------------
 # Source inlined when transforming from source to LaTeX

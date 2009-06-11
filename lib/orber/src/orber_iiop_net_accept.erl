@@ -60,7 +60,7 @@ start(Type, Listen, Ref, ProxyOptions) ->
 %%-----------------------------------------------------------------
 net_accept(Type, ListenFd, Parent, Ref, ProxyOptions) ->
     case catch orber_socket:accept(Type, ListenFd) of
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    ok;
 	S ->
 	    case orber_iiop_net:connect(Type, S, self(), Ref, ProxyOptions) of

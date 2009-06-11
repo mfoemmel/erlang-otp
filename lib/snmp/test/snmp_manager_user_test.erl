@@ -56,6 +56,7 @@
 	 register_monitor_and_crash2/1, 
 	 register_monitor_and_crash3/1, 
 	 register_monitor_and_crash4/1, 
+	 register_monitor_and_crash5/1, 
 	 register_monitor_request_and_crash1/1,
 	 register_monitor_request_and_crash2/1,
 	 register_monitor_request_and_crash3/1,
@@ -157,6 +158,7 @@ register_user(suite) ->
      register_monitor_and_crash2,
      register_monitor_and_crash3,
      register_monitor_and_crash4,
+     register_monitor_and_crash5,
      register_monitor_request_and_crash1,
      register_monitor_request_and_crash2,
      register_monitor_request_and_crash3,
@@ -943,6 +945,110 @@ register_monitor_and_crash4(Conf) when is_list(Conf) ->
 
 %% ------------------------------------------------------------------
 
+register_monitor_and_crash5(suite) -> [];
+register_monitor_and_crash5(doc) ->
+    "OTP-7961: "
+	"Start 2 user processes, "
+	"register-monitor a user for per process, "
+	"let each user register an agent "
+	"and crash the first user process.";
+register_monitor_and_crash5(Conf) when is_list(Conf) ->
+    put(tname,rlac4),
+    p("start"),
+    process_flag(trap_exit, true),
+
+    ConfDir = ?config(manager_conf_dir, Conf),
+    DbDir = ?config(manager_db_dir, Conf),
+
+    write_manager_conf(ConfDir),
+
+    Opts = [{server, [{verbosity, trace}]},
+            {net_if, [{verbosity, trace}]},
+            {note_store, [{verbosity, trace}]},
+            {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
+ 
+    p("start manager"),
+    ?line ok = snmpm:start_link(Opts),
+ 
+    ?SLEEP(1000),
+
+    Id1 = gurka, %% make_ref(), 
+    Id2 = tomat, %% make_ref(), 
+
+    p("start user processes"),
+    ?line Pid1 = start_user(),
+    ?line Pid2 = start_user(),
+
+    ?line [] = Users1 = which_users(),
+    p("Users1: ~p", [Users1]),
+    
+    ?line ok = register_user_monitor(Pid1, Id1),
+    ?line ok = register_user_monitor(Pid2, Id2),
+
+    LocalHost = snmp_test_lib:localhost(),
+
+    TargetName1 = "kalle1",
+    Address1    = LocalHost,
+    Port1       = 5001,
+    EngineId1   = "agentEngineId-1",
+
+    TargetName2 = "kalle2",
+    Address2 = LocalHost,
+    Port2       = 5002,
+    EngineId2   = "agentEngineId-2",
+
+    ?line ok = register_agent(Pid1, 
+			      Id1, TargetName1, [{address,   Address1},
+						 {port,      Port1},
+						 {engine_id, EngineId1}]),
+    ?line ok = register_agent(Pid2, 
+			      Id2, TargetName2, [{address,   Address2},
+						 {port,      Port2},
+						 {engine_id, EngineId2}]),
+
+    ?line Users2 = case which_users() of
+		       [Id1, Id2] = U1 ->
+			   U1;
+		       [Id2, Id1] = U2 ->
+			   U2;
+		       U3 ->
+			   ?FAIL({invalid_users, U3})
+		   end,
+    p("Users2: ~p", [Users2]),
+
+    p("verify all agent(s): expect 2"),
+    ?line Agents1 = case which_agents() of
+			[TargetName1, TargetName2] = A1 ->
+			    A1;
+			[TargetName2, TargetName1] = A2 ->
+			    A2;
+		       A3 ->
+			   ?FAIL({invalid_agents, A3})
+		   end,
+    p("Agents1: ~p", [Agents1]),
+
+    ?line ok = simulate_crash(Pid1),
+
+    p("wait some time"),
+    ?SLEEP(1000),
+
+    ?line [Id2] = Users3 = which_users(),
+    p("Users3: ~p", [Users3]),
+    
+    ?line [TargetName2] = Agents2 = which_agents(),
+    p("Agents2: ~p", [Agents2]),
+    
+    ?line stop_user(Pid2),
+
+    p("stop manager"),
+    ?line ok = snmpm:stop(),
+
+    p("end"),
+    ok.
+
+
+%% ------------------------------------------------------------------
+
 register_monitor_request_and_crash1(suite) -> [];
 register_monitor_request_and_crash1(doc) ->
     "Start a single user process, "
@@ -1087,10 +1193,17 @@ unregister_user(Pid, Id) ->
     snmp_manager_user_test_lib:unregister(Pid, Id).
 
 
+register_agent(Pid, Id, TargetName, Config) ->
+    snmp_manager_user_test_lib:register_agent(Pid, Id, TargetName, Config).
+
+
 %% ------
 
 which_users() ->
     snmpm:which_users().
+
+which_agents() ->
+    snmpm:which_agents().
 
 
 %% ------

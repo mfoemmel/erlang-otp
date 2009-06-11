@@ -33,7 +33,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/eunit-$(VSN)
 # Macros
 # ----------------------------------------------------
 
-EXAMPLE_FILES = fib.erl
+EXAMPLE_FILES = fib.erl tests.txt
 
 # ----------------------------------------------------
 # Make Rules

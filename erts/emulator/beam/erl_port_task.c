@@ -31,6 +31,7 @@
 
 #include "global.h"
 #include "erl_port_task.h"
+#include "dist.h"
 
 #if defined(DEBUG) && 0
 #define HARD_DEBUG
@@ -864,6 +865,9 @@ erts_port_task_execute(ErtsRunQueue *runq, Port **curr_port_pp)
 	    (*pp->drv_ptr->event)((ErlDrvData) pp->drv_data, ptp->event, ptp->event_data);
 	    io_tasks_executed++;
 	    break;
+	case ERTS_PORT_TASK_DIST_CMD:
+	    reds += erts_dist_command(pp, CONTEXT_REDS-reds);
+	    break;
 	default:
 	    erl_exit(ERTS_ABORT_EXIT,
 		     "Invalid port task type: %d\n",
@@ -1004,6 +1008,8 @@ handle_remaining_tasks(ErtsRunQueue *runq, Port *pp)
 	    case ERTS_PORT_TASK_EVENT:
 		erts_stale_drv_select(pp->id, ptp->event, 0, 1);
 		break;
+	    case ERTS_PORT_TASK_DIST_CMD:
+		break;
 	    default:
 		erl_exit(ERTS_ABORT_EXIT,
 			 "Invalid port task type: %d\n",
@@ -1092,7 +1098,6 @@ erts_port_migrate(Port *prt, int *prt_locked,
 /*
  * Initialize the module.
  */
-
 void
 erts_port_task_init(void)
 {

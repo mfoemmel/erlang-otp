@@ -33,23 +33,33 @@ typedef struct hash_db_term {
     DbTerm dbterm;         /* The actual term */
 } HashDbTerm;
 
+#define DB_HASH_LOCK_CNT 16
+typedef struct db_table_hash_fine_locks {
+    union {
+	erts_smp_rwmtx_t lck;
+	byte _cache_line_alignment[64];
+    }lck_vec[DB_HASH_LOCK_CNT];
+} DbTableHashFineLocks;
+
 typedef struct db_table_hash {
     DbTableCommon common;
 
-    /* Hash-specific fields */
-    FixedDeletion *fixdel;	/*
-				 * List of slots where elements have
-				 * been deleted while table is fixed.
-				 */
-    HashDbTerm ***seg;		/* The actual table */
-
-    /* Hash-specific fields, 32-bit quantities */
-    int szm;          /* current size mask */
-    int nactive;      /* Number of "active" slots */
+    erts_smp_atomic_t segtab;  /* The segment table (struct segment**) */
+    erts_smp_atomic_t szm;     /* current size mask. */
+    
+    /* SMP: nslots and nsegs are protected by is_resizing or table write lock */
     int nslots;       /* Total number of slots */
-    int p;            /* Split position */
-    int nsegs;        /* Number of segments */
+    int nsegs;        /* Size of segment table */
+
+    /* List of slots where elements have been deleted while table was fixed */
+    erts_smp_atomic_t fixdel;  /* (FixedDeletion*) */	
+    erts_smp_atomic_t nactive; /* Number of "active" slots */
+    erts_smp_atomic_t is_resizing; /* grow/shrink in progress */
+#ifdef ERTS_SMP
+    DbTableHashFineLocks* locks;
+#endif
 } DbTableHash;
+
 
 /*
 ** Function prototypes, looks the same (except the suffix) for all 
@@ -57,16 +67,17 @@ typedef struct db_table_hash {
 */
 void db_initialize_hash(void);
 void db_unfix_table_hash(DbTableHash *tb /* [in out] */);
+Uint db_kept_items_hash(DbTableHash *tb);
 
 /* Interface for meta pid table */
 int db_create_hash(Process *p, 
 		   DbTable *tbl /* [in out] */);
 
-int db_put_hash(Process *p, DbTable *tbl, Eterm obj, Eterm *ret);
+int db_put_hash(DbTable *tbl, Eterm obj, int key_clash_fail);
 
 int db_get_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret);
 
-int db_erase_hash(Process *p, DbTable *tbl, Eterm key, Eterm *ret);
+int db_erase_hash(DbTable *tbl, Eterm key, Eterm *ret);
 
 int db_get_element_array(DbTable *tbl, 
 			 Eterm key,

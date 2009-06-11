@@ -46,7 +46,7 @@ book.dvi: book.tex part.tex ref_man.tex snmp.tex snmp_advanced_agent.tex \
 		snmpa.tex snmpa_conf.tex snmpa_error.tex snmpa_error_io.tex \
 		snmpa_error_logger.tex snmpa_error_report.tex \
 		snmpa_local_db.tex snmpa_mpd.tex \
-		snmpa_network_interface.tex \
+		snmpa_discovery_handler.tex \
 		snmpa_network_interface.tex \
 		snmpa_network_interface_filter.tex \
 		snmpa_notification_delivery_info_receiver.tex \

@@ -1176,7 +1176,7 @@ state_items([{RP, LA} | L], Is, Id, RpRhs) ->
 state_items(_, Is, Id, _RpRhs) ->
     {Id, Is}.
 
--compile({inline,[{compute_closure,3}]}).
+-compile({inline,[compute_closure/3]}).
 compute_closure(Lookahead, RulePointer, RpInfo) ->
     case element(RulePointer, RpInfo) of
         []=Void -> % no followers, or terminal
@@ -2195,7 +2195,7 @@ output_inlined(St0, FunctionName, Reduce, Infile) ->
           end,
 
     CodeStartLine = lists:max([0, Line0 - 4]),
-    St10 = fwrite(St5, <<"-compile({inline,{~w,1}}).\n">>, [FunctionName]),
+    St10 = fwrite(St5, <<"-compile({inline,~w/1}).\n">>, [FunctionName]),
     St20 = output_file_directive(St10, Infile, CodeStartLine),
     St30 = fwrite(St20, <<"~w(__Stack0) ->\n">>, [FunctionName]),
     %% Currently the (old) inliner emits less code if matching the
@@ -2220,7 +2220,7 @@ inlined_function_name(State, "Cat") ->
 inlined_function_name(State, Terminal) ->
     list_to_atom(concat([yeccpars2_, State, '_', Terminal])).
 
--compile({nowarn_unused_function,{function_name,2}}).
+-compile({nowarn_unused_function,function_name/2}).
 function_name(Name, Suf) ->
     list_to_atom(concat([Name, '_' | quoted_atom(Suf)])).
 
@@ -2251,27 +2251,27 @@ goto(From, Symbol, St) ->
 
 %%% Bit mask operations.
 
--compile({inline,[{set_empty,0}]}).
+-compile({inline,[set_empty/0]}).
 set_empty() ->
     0.
 
 set_add(I, BM) ->
     (1 bsl I) bor BM.
 
--compile({inline,[{set_member,2}]}).
+-compile({inline,[set_member/2]}).
 set_member(I, BM) ->
     ((1 bsl I) band BM) =/= 0.
 
 %% Assumes I is a member...
--compile({inline,[{set_delete,2}]}).
+-compile({inline,[set_delete/2]}).
 set_delete(I, BM) ->
     (1 bsl I) bxor BM.
 
--compile({inline,[{set_union,2}]}).
+-compile({inline,[set_union/2]}).
 set_union(BM1, BM2) ->
     BM1 bor BM2.
 
--compile({inline,[{set_is_subset,2}]}).
+-compile({inline,[set_is_subset/2]}).
 set_is_subset(BM1, BM2) ->
     (BM1 band BM2) =:= BM1.
 
@@ -2314,7 +2314,7 @@ decode_terminals(BM, I, InvSymbolTab) ->
 set_add_terminal({_Symbol, TerminalNum}, BM) ->
     set_add(TerminalNum, BM).
 
--compile({inline,[{is_terminal,2}]}).
+-compile({inline,[is_terminal/2]}).
 is_terminal(_Tab, SymbolCode) ->
     SymbolCode >= 0.
 

@@ -92,15 +92,36 @@
 %%--------------------------------------------------------------------
  
 -type ordset(T)      :: [T] .      %% XXX: temporarily
--type core_fun()     :: {'c_fun',_,_,_}.        %% XXX: belongs in 'cerl*'
--type core_module()  :: {'c_module',_,_,_,_,_}. %% XXX: belongs in 'cerl*'
--type core_tree()    :: tuple().                %% XXX: belongs in 'cerl*'
--type core_records() :: tuple().                %% XXX: belongs in 'cerl*'
--type core_var()     :: {'c_var',_,_}.          %% XXX: belongs in 'cerl*'
--type core_literal() :: {'c_literal',_,_}.      %% XXX: belongs in 'cerl*'
+-type core_literal() :: {'c_literal',_,_}.        %% XXX: belongs in 'cerl*'
+-type core_binary()  :: {'c_binary',_,_}.         %% XXX: belongs in 'cerl*'
+-type core_bitstr()  :: {'c_bitstr',_,_,_,_,_,_}. %% XXX: belongs in 'cerl*'
 -type core_cons()    :: {'c_cons',_,_,_}.         %% XXX: belongs in 'cerl*'
--type core_tuple()   :: {'c_tuple',_,_}.        %% XXX: belongs in 'cerl*'
--type erl_type()     :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}.    %% XXX: belongs to 'erl_types'
+-type core_tuple()   :: {'c_tuple',_,_}.          %% XXX: belongs in 'cerl*'
+-type core_var()     :: {'c_var',_,_}.            %% XXX: belongs in 'cerl*'
+-type core_values()  :: {'c_values',_,_}.         %% XXX: belongs in 'cerl*'
+-type core_fun()     :: {'c_fun',_,_,_}.          %% XXX: belongs in 'cerl*'
+-type core_seq()     :: {'c_seq',_,_,_}.          %% XXX: belongs in 'cerl*'
+-type core_let()     :: {'c_let',_,_,_,_}.        %% XXX: belongs in 'cerl*'
+-type core_letrec()  :: {'c_letrec',_,_,_}.       %% XXX: belongs in 'cerl*'
+-type core_case()    :: {'c_case',_,_,_}.         %% XXX: belongs in 'cerl*'
+-type core_clause()  :: {'c_clause',_,_,_,_}.     %% XXX: belongs in 'cerl*'
+-type core_alias()   :: {'c_alias',_,_,_}.        %% XXX: belongs in 'cerl*'
+-type core_receive() :: {'c_receive',_,_,_,_}.    %% XXX: belongs in 'cerl*'
+-type core_apply()   :: {'c_apply',_,_,_}.        %% XXX: belongs in 'cerl*'
+-type core_call()    :: {'c_call',_,_,_,_}.       %% XXX: belongs in 'cerl*'
+-type core_primop()  :: {'c_primop',_,_,_}.       %% XXX: belongs in 'cerl*'
+-type core_try()     :: {'c_try',_,_,_,_,_,_}.    %% XXX: belongs in 'cerl*'
+-type core_catch()   :: {'c_catch',_,_}.          %% XXX: belongs in 'cerl*'
+-type core_module()  :: {'c_module',_,_,_,_,_}.   %% XXX: belongs in 'cerl*'
+-type core_records() :: core_module().            %% XXX: belongs in 'cerl*'
+-type core_tree()    :: core_literal() | core_binary() | core_bitstr()
+                      | core_cons()    | core_tuple()  | core_var()
+                      | core_values()  | core_fun()    | core_seq()
+                      | core_let()     | core_letrec() | core_case()
+                      | core_clause()  | core_alias()  | core_receive()
+                      | core_apply()   | core_call()   | core_primop()
+                      | core_try()     | core_catch()  | core_module(). %% XXX: belongs in 'cerl*'
+-type erl_type()     :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}. %% XXX: belongs to 'erl_types'
 
 %%--------------------------------------------------------------------
 %% Basic types used either in the record definitions below or in other

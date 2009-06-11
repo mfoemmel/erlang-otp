@@ -16,7 +16,6 @@
 %% 
 %% %CopyrightEnd%
 %%
-
 %%
 %%----------------------------------------------------------------------
 %% Purpose: The ssh subsystem supervisor 
@@ -73,7 +72,8 @@ ssh_connectinon_child_spec(Opts) ->
     Role = proplists:get_value(role, Opts),
     Name = id(Role, ssh_connection_sup, Address, Port),
     StartFunc = {ssh_connection_sup, start_link, [Opts]},
-    Restart = permanent, 
+    Restart = transient, 
+%    Restart = permanent, 
     Shutdown = infinity,
     Modules = [ssh_connection_sup],
     Type = supervisor,
@@ -85,7 +85,8 @@ ssh_channel_child_spec(Opts) ->
     Role = proplists:get_value(role, Opts),
     Name = id(Role, ssh_channel_sup, Address, Port),
     StartFunc = {ssh_channel_sup, start_link, [Opts]},
-    Restart = permanent, 
+    Restart = transient, 
+%    Restart = permanent, 
     Shutdown = infinity,
     Modules = [ssh_channel_sup],
     Type = supervisor,

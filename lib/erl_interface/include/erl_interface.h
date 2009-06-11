@@ -169,12 +169,12 @@ typedef struct {
 typedef struct {
   Erl_Header h;
   int len;
-  unsigned char *a;
+  char *a;
 } Erl_Atom;
 
 typedef struct {
   Erl_Header h;
-  unsigned char * node;
+  char * node;
   unsigned int number;
   unsigned int serial;
   unsigned char creation;
@@ -182,14 +182,14 @@ typedef struct {
 
 typedef struct {    
   Erl_Header h;
-  unsigned char * node;
+  char * node;
   unsigned int number;
   unsigned char creation;
 } Erl_Port;
 
 typedef struct {
   Erl_Header h;
-  unsigned char * node;
+  char * node;
   int len;
   unsigned int n[3];
   unsigned char creation;
@@ -233,7 +233,7 @@ typedef struct {
 typedef struct {    
   Erl_Header h;
   int len;           
-  unsigned char *name;        
+  char *name;        
   struct _eterm *v;  
 } Erl_Variable;
 
@@ -278,7 +278,7 @@ typedef struct {
   ETERM *msg; /* the actual message */
   ETERM *from;
   ETERM *to;
-  unsigned char to_name[MAXREGLEN+1];
+  char to_name[MAXREGLEN+1];
 } ErlMessage;
 
 typedef unsigned char Erl_Heap;

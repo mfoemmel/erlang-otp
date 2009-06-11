@@ -48,13 +48,6 @@ extern int erts_async_thread_suggested_stack_size;
 
 typedef struct erts_driver_t_ erts_driver_t;
 
-#define MAXINDX 255
-
-typedef struct cache {
-    Eterm in_arr[MAXINDX];
-    Eterm out_arr[MAXINDX];
-} ErlCache;
-
 #define SMALL_IO_QUEUE 5   /* Number of fixed elements */
 
 typedef struct {
@@ -166,7 +159,7 @@ struct port {
     char *name;		         /* String used in the open */
     erts_driver_t* drv_ptr;
     long drv_data;
-    ProcessList *suspended;	 /* List of suspended processes. */
+    ErtsProcList *suspended;	 /* List of suspended processes. */
     LineBuf *linebuf;            /* Buffer to hold data not ready for
 				    process to get (line oriented I/O)*/
     Uint32 status;		 /* Status and type flags */
@@ -880,13 +873,6 @@ Eterm copy_struct_lazy(Process*, Eterm, Uint);
 
 #endif /* HYBRID */
 
-/* dist.c */
-/* More in dist.h */
-/* Atom cache */
-extern void clear_cache(DistEntry*);
-extern void create_cache(DistEntry*);
-extern void delete_cache(DistEntry*);
-
 /* Utilities */
 extern void erts_delete_nodes_monitors(Process *, ErtsProcLocks);
 extern Eterm erts_monitor_nodes(Process *, Eterm, Eterm);
@@ -953,22 +939,6 @@ void MD5Init(MD5_CTX *);
 void MD5Update(MD5_CTX *, unsigned char *, unsigned int);
 void MD5Final(unsigned char [16], MD5_CTX *);
 
-/* external.c */
-int erts_to_external_format(DistEntry*, Eterm, byte**, byte**, Uint *);
-Eterm erts_from_external_format(DistEntry*, Eterm**, byte**, ErlOffHeap*);
-Eterm encode_size_struct(Eterm, unsigned);
-Sint erts_decoded_size(byte* t, Uint size, int no_refc_bins);
-Eterm erts_term_to_binary(Process* p, Eterm Term, int level, Uint flags);
-
-typedef struct {
-    byte *extp;
-    int exttmp;
-} ErtsBinary2TermState;
-
-Sint erts_binary2term_prepare(ErtsBinary2TermState *, byte *, Sint);
-void erts_binary2term_abort(ErtsBinary2TermState *);
-Eterm erts_binary2term_create(ErtsBinary2TermState *, Eterm **hpp, ErlOffHeap *);
-
 /* ggc.c */
 
 
@@ -1006,6 +976,9 @@ typedef struct {
     char *driver_name;
 } ErtsPortNames;
 
+#define ERTS_SPAWN_DRIVER 1
+#define ERTS_SPAWN_EXECUTABLE 2
+#define ERTS_SPAWN_ANY (ERTS_SPAWN_DRIVER | ERTS_SPAWN_EXECUTABLE)
 
 int erts_add_driver_entry(ErlDrvEntry *drv, DE_Handle *handle, int driver_list_locked);
 void erts_destroy_driver(erts_driver_t *drv);
@@ -1021,7 +994,7 @@ void erts_port_command(Process *, Eterm, Port *, Eterm);
 Eterm erts_port_control(Process*, Port*, Uint, Eterm);
 int erts_write_to_port(Eterm caller_id, Port *p, Eterm list);
 void print_port_info(int, void *, int);
-void dist_port_command(Port*, byte*, int);
+void erts_raw_port_command(Port*, byte*, Uint);
 void driver_report_exit(int, int);
 LineBuf* allocate_linebuf(int);
 int async_ready(Port *, void*);

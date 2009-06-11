@@ -485,7 +485,7 @@ add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,What) ->
     orber:dbg("[~p] PusherConsumer:remove_filter(~p); Not an integer", 
@@ -498,7 +498,7 @@ remove_filter(_,_,_,What) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,What) ->
     orber:dbg("[~p] PusherConsumer:get_filter(~p); Not an integer", 
@@ -672,9 +672,9 @@ forward(any, SendTo, State, Event, Status, OE_THIS) ->
 	ok ->
 	    ?DBG("PROXY FORWARD ANY: ~p~n",[Event]),
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-			      record(E, 'NO_PERMISSION') ;
-			      record(E, 'CosEventComm_Disconnected') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+			      is_record(E, 'NO_PERMISSION') orelse
+			      is_record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PusherConsumer:forward();~n"
 		      "Admin/Channel no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
@@ -701,9 +701,9 @@ forward(seq, SendTo, State, Event, Status, OE_THIS) ->
     case catch oe_CosNotificationComm_Event:callSeq(SendTo, Event, Status) of
 	ok ->
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-			      record(E, 'NO_PERMISSION') ;
-			      record(E, 'CosEventComm_Disconnected') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+			      is_record(E, 'NO_PERMISSION') orelse
+			      is_record(E, 'CosEventComm_Disconnected') ->
 	    ?DBG("ADMIN NO LONGER EXIST; DROPPING: ~p~n", [Event]),
 	    'CosNotification_Common':notify([{proxy, OE_THIS},
 					     {client, ?get_Client(State)}, 

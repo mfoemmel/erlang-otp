@@ -208,7 +208,7 @@ create_key(Host, Port, []) ->
 create_key(Host, Port, 
 	   [#'IOP_ServiceContext'
 	    {context_id=?ORBER_GENERIC_CTX_ID, 
-	     context_data = {interface, Interface}}|_]) when list(Interface) ->
+	     context_data = {interface, Interface}}|_]) when is_list(Interface) ->
     {Host, Port, Interface};
 create_key(Host, Port, 
 	   [#'IOP_ServiceContext'
@@ -231,7 +231,7 @@ reconfigure(Options, Host, Port) ->
     reconfigure(Options, Host, Port, 0).
 reconfigure(Options, Host, Port, Interface) ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port, Interface}) of
-	[#connection{child = P}] when pid(P) ->
+	[#connection{child = P}] when is_pid(P) ->
 	    case check_options(Options, [], []) of
 		{[], Proxy} ->
 		    reconfigure_proxy(Proxy, [P]);
@@ -396,7 +396,7 @@ handle_call({connect, Host, Port, SocketType, SocketOptions, Chars, Wchars, Key}
 	    case catch spawn_link(?MODULE, setup_connection, 
 				  [self(), Host, Port, SocketType, 
 				   SocketOptions, Chars, Wchars, Key]) of
-		Slave when pid(Slave) ->
+		Slave when is_pid(Slave) ->
 		    ets:insert(?PM_CONNECTION_DB, 
 			       #connection{hp = Key, child = connecting, 
 					   interceptors = false, slave = Slave}),

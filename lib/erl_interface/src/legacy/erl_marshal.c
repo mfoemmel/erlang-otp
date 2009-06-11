@@ -1630,9 +1630,9 @@ static int cmp_small_big(unsigned char**e1, unsigned char **e2)
     erlang_big *b1,*b2;
 
     i1 = i2 = 0;
-    if ( ei_decode_long(*e1,&i1,&l1) < 0 ) return -1;
+    if ( ei_decode_long((char *)*e1,&i1,&l1) < 0 ) return -1;
     
-    ei_get_type(*e2,&i2,&t2,&n2);
+    ei_get_type((char *)*e2,&i2,&t2,&n2);
     
     /* any small will fit in two digits */
     if ( (b1 = ei_alloc_big(2)) == NULL ) return -1;
@@ -1646,7 +1646,7 @@ static int cmp_small_big(unsigned char**e1, unsigned char **e2)
         return 1;
     }
 
-    if ( ei_decode_big(*e2,&i2,b2) < 0 ) {
+    if ( ei_decode_big((char *)*e2,&i2,b2) < 0 ) {
         ei_free_big(b1);
         ei_free_big(b2);
         return 1;
@@ -1672,8 +1672,8 @@ static int cmp_small_float(unsigned char**e1, unsigned char **e2)
     /* small -> float -> float_comp */
 
     i1 = i2 = 0;
-    if ( ei_decode_long(*e1,&i1,&l1) < 0 ) return -1;
-    if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
+    if ( ei_decode_long((char *)*e1,&i1,&l1) < 0 ) return -1;
+    if ( ei_decode_double((char *)*e2,&i2,&f2) < 0 ) return 1;
     
     f1 = to_float(l1);
 
@@ -1694,11 +1694,11 @@ static int cmp_float_big(unsigned char**e1, unsigned char **e2)
     /* big -> float if overflow return big sign else float_comp */
     
     i1 = i2 = 0;
-    if ( ei_decode_double(*e1,&i1,&f1) < 0 ) return -1;
+    if ( ei_decode_double((char *)*e1,&i1,&f1) < 0 ) return -1;
     
-    if (ei_get_type(*e2,&i2,&t2,&n2) < 0) return 1;
+    if (ei_get_type((char *)*e2,&i2,&t2,&n2) < 0) return 1;
     if ((b2 = ei_alloc_big(n2)) == NULL) return 1;
-    if (ei_decode_big(*e2,&i2,b2) < 0) return 1;
+    if (ei_decode_big((char *)*e2,&i2,b2) < 0) return 1;
     
     /* convert the big to float */
     if ( ei_big_to_double(b2,&f2) < 0 ) {
@@ -1722,11 +1722,11 @@ static int cmp_small_small(unsigned char**e1, unsigned char **e2)
     long l1,l2;
 
     i1 = i2 = 0;
-    if ( ei_decode_long(*e1,&i1,&l1) < 0 ) {
+    if ( ei_decode_long((char *)*e1,&i1,&l1) < 0 ) {
         fprintf(stderr,"Failed to decode 1\r\n");
         return -1;
     }
-    if ( ei_decode_long(*e2,&i2,&l2) < 0 ) {
+    if ( ei_decode_long((char *)*e2,&i2,&l2) < 0 ) {
         fprintf(stderr,"Failed to decode 2\r\n");
         return 1;
     }
@@ -1745,8 +1745,8 @@ static int cmp_float_float(unsigned char**e1, unsigned char **e2)
     double f1,f2;
 
     i1 = i2 = 0;
-    if ( ei_decode_double(*e1,&i1,&f1) < 0 ) return -1;
-    if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
+    if ( ei_decode_double((char *)*e1,&i1,&f1) < 0 ) return -1;
+    if ( ei_decode_double((char *)*e2,&i2,&f2) < 0 ) return 1;
     
     *e1 += i1;
     *e2 += i2;
@@ -1763,14 +1763,14 @@ static int cmp_big_big(unsigned char**e1, unsigned char **e2)
     erlang_big *b1,*b2;
 
     i1 = i2 = 0;
-    ei_get_type(*e1,&i1,&t1,&n1);
-    ei_get_type(*e2,&i2,&t2,&n2);
+    ei_get_type((char *)*e1,&i1,&t1,&n1);
+    ei_get_type((char *)*e2,&i2,&t2,&n2);
     
     b1 = ei_alloc_big(n1);
     b2 = ei_alloc_big(n2);
     
-    ei_decode_big(*e1,&i1,b1);
-    ei_decode_big(*e2,&i2,b2);
+    ei_decode_big((char *)*e1,&i1,b1);
+    ei_decode_big((char *)*e2,&i2,b2);
     
     res = ei_big_comp(b1,b2);
     

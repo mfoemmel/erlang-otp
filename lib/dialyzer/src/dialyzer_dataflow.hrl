@@ -40,28 +40,33 @@
 %% Basic types used in the race analysis
 %%-----------------------------------------------------------------------
 
--type rcommand() :: dep_calls() | warn_calls() | fun_calls() | case_tags().
--type dep_list() :: [dep_calls()].
+-type dep_list()  :: [#dep_call{}].
+-type core_args() :: [core_vars()] | 'empty'.
+-type table_var() :: label() | ?no_label.
+-type table()     :: {'named', table_var(), str()}| 'other' | 'no_t'.
+-type call()      :: 'whereis' | 'register' | 'ets_new' | 'ets_lookup'
+                   | 'ets_insert' | 'function_call'. 
 
 %%----------------------------------------------------------------------
 %% Record declarations used by dialyzer_dataflow and dialyzer_races
 %%----------------------------------------------------------------------
 
--record(dialyzer_races, {curr_fun           :: mfa_or_funlbl(),
-                         curr_fun_label     :: label(),
-                         local_calls   = [] :: [_], % TO FIX
-                         public_tables = [] :: [atom()],
-			 race_list     = [] :: code(),
-			 race_warnings = [] :: [dial_warning()]}).
+-record(dialyzer_races, {curr_fun              :: mfa_or_funlbl(),
+                         curr_fun_label        :: label(),
+                         curr_fun_args         :: core_args(),
+			 new_table = 'no_t'    :: table(),
+			 race_list     = []    :: code(),
+                         race_analysis = false :: bool(), %% true for fun types and warning mode
+			 race_warnings = []    :: [dial_warning()]}).
 
--record(state, {callgraph                   :: #dialyzer_callgraph{},
-		envs                        :: dict(),
-		fun_tab		            :: dict(),
-		plt		            :: #dialyzer_plt{},
-		opaques                     :: [erl_type()],
-		races                       :: #dialyzer_races{},
-		records                     :: dict(),
-		tree_map	            :: dict(),
-		warning_mode = false	    :: bool(),
-		warnings = []               :: [dial_warning()],
-		work                        :: {[_], [_], set()}}).
+-record(state, {callgraph            :: #dialyzer_callgraph{},
+		envs                 :: dict(),
+		fun_tab		     :: dict(),
+		plt		     :: #dialyzer_plt{},
+		opaques              :: [erl_type()],
+		races                :: #dialyzer_races{},
+		records              :: dict(),
+		tree_map	     :: dict(),
+		warning_mode = false :: bool(),
+		warnings = []        :: [dial_warning()],
+		work                 :: {[_], [_], set()}}).

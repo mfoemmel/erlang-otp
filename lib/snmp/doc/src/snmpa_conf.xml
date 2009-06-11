@@ -37,6 +37,7 @@
     <p>The module <c>snmpa_conf</c> contains various utility functions to 
       used for manipulating (write/append/read) the config files of the
       SNMP agent. </p>
+
     <marker id="agent_entry"></marker>
   </description>
   <funcs>
@@ -54,9 +55,11 @@
           see 
           <seealso marker="snmp_agent_config_files#agent_information">Agent Information</seealso> 
           for more info. </p>
+
         <marker id="write_agent_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_agent_config(Dir, Conf) -> ok</name>
       <name>write_agent_config(Dir, Hdr, Conf) -> ok</name>
@@ -75,9 +78,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#agent_information">Agent Information</seealso> 
           for more info. </p>
+
         <marker id="append_agent_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_agent_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent config to the config file</fsummary>
@@ -92,9 +97,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#agent_information">Agent Information</seealso> 
           for more info. </p>
+
         <marker id="read_agent_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_agent_config(Dir) -> Conf</name>
       <fsummary>Read the agent config from the config file</fsummary>
@@ -109,9 +116,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#agent_information">Agent Information</seealso> 
           for more info. </p>
+
         <marker id="standard_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>standard_entry(Tag, Val) -> standard_entry()</name>
       <fsummary>Create an standard entry</fsummary>
@@ -127,9 +136,11 @@
           see 
           <seealso marker="snmp_agent_config_files#system_information">System Information</seealso> 
           for more info. </p>
+
         <marker id="write_standard_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_standard_config(Dir, Conf) -> ok</name>
       <name>write_standard_config(Dir, Hdr, Conf) -> ok</name>
@@ -149,9 +160,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#system_information">System Information</seealso> 
           for more info. </p>
+
         <marker id="append_standard_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_standard_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent standard config to the config file</fsummary>
@@ -167,9 +180,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#system_information">System Information</seealso> 
           for more info. </p>
+
         <marker id="read_standard_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_standard_config(Dir) -> Conf</name>
       <fsummary>Read the agent standard config from the config file</fsummary>
@@ -184,9 +199,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#system_information">System Information</seealso> 
           for more info. </p>
+
         <marker id="context_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>context_entry(Context) -> context_entry()</name>
       <fsummary>Create an context entry</fsummary>
@@ -200,9 +217,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#context">Contexts</seealso> 
           for more info. </p>
+
         <marker id="write_context_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_context_config(Dir, Conf) -> ok</name>
       <name>write_context_config(Dir, Hdr, Conf) -> ok</name>
@@ -222,9 +241,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#context">Contexts</seealso> 
           for more info. </p>
+
         <marker id="append_context_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_context_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent context(s) to the config file</fsummary>
@@ -240,9 +261,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#context">Contexts</seealso> 
           for more info. </p>
+
         <marker id="read_context_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_context_config(Dir) -> Conf</name>
       <fsummary>Read the agent context config from the config file</fsummary>
@@ -257,9 +280,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#context">Contexts</seealso> 
           for more info. </p>
+
         <marker id="community_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>community_entry(CommunityIndex) -> community_entry()</name>
       <name>community_entry(CommunityIndex, CommunityName, SecName, ContextName, TransportTag) -> community_entry()</name>
@@ -283,9 +308,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#community">Community</seealso> 
           for more info. </p>
+
         <marker id="write_community_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_community_config(Dir, Conf) -> ok</name>
       <name>write_community_config(Dir, Hdr, Conf) -> ok</name>
@@ -305,9 +332,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#community">Community</seealso> 
           for more info. </p>
+
         <marker id="append_community_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_community_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent community config to the config file</fsummary>
@@ -323,9 +352,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#community">Community</seealso> 
           for more info. </p>
+
         <marker id="read_community_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_community_config(Dir) -> Conf</name>
       <fsummary>Read the agent community config from the config file</fsummary>
@@ -340,9 +371,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#community">Communities</seealso> 
           for more info. </p>
+
         <marker id="target_addr_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>target_addr_entry(Name, Ip, TagList, ParamsName, EngineId) -> target_addr_entry()</name>
       <name>target_addr_entry(Name, Ip, TagList, ParamsName, EngineId, TMask) -> target_addr_entry()</name>
@@ -375,9 +408,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_addr">Target Address Definitions</seealso> 
           for more info. </p>
+
         <marker id="write_target_addr_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_target_addr_config(Dir, Conf) -> ok</name>
       <name>write_target_addr_config(Dir, Hdr, Conf) -> ok</name>
@@ -397,9 +432,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_addr">Target Address Definitions</seealso> 
           for more info. </p>
+
         <marker id="append_target_addr_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_target_addr_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent target_addr config to the config file</fsummary>
@@ -415,9 +452,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_addr">Target Address Definitions</seealso> 
           for more info. </p>
+
         <marker id="read_target_addr_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_target_addr_config(Dir) -> Conf</name>
       <fsummary>Read the agent target_addr config from the config file</fsummary>
@@ -432,9 +471,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_addr">Target Address Definitions</seealso> 
           for more info. </p>
+
         <marker id="target_params_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>target_params_entry(Name, Vsn) -> target_params_entry()</name>
       <name>target_params_entry(Name, Vsn, SecName, SecLevel) -> target_params_entry()</name>
@@ -467,9 +508,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_params">Target Parameters Definitions</seealso> 
           for more info. </p>
+
         <marker id="write_target_params_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_target_params_config(Dir, Conf) -> ok</name>
       <name>write_target_params_config(Dir, Hdr, Conf) -> ok</name>
@@ -489,9 +532,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_params">Target Parameters Definitions</seealso> 
           for more info. </p>
+
         <marker id="append_target_params_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_target_params_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent target_params config to the config file</fsummary>
@@ -507,9 +552,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_params">Target Parameters Definitions</seealso> 
           for more info. </p>
+
         <marker id="read_target_params_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_target_params_config(Dir) -> Conf</name>
       <fsummary>Read the agent target_params config from the config file</fsummary>
@@ -524,9 +571,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#target_params">Target Parameters Definitions</seealso> 
           for more info. </p>
+
         <marker id="vacm_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>vacm_s2g_entry(SecModel, SecName, GroupName) -> vacm_s2g_entry()</name>
       <name>vacm_acc_entry(GroupName, Prefix, SecModel, SecLevel, Match, ReadView, WriteView, NotifyView) -> vacm_acc_entry()</name>
@@ -560,9 +609,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#vacm">MIB Views for VACM</seealso> 
           for more info. </p>
+
         <marker id="write_vacm_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_vacm_config(Dir, Conf) -> ok</name>
       <name>write_vacm_config(Dir, Hdr, Conf) -> ok</name>
@@ -583,9 +634,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#vacm">MIB Views for VACM</seealso> 
           for more info. </p>
+
         <marker id="append_vacm_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_vacm_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent vacm config to the config file</fsummary>
@@ -601,9 +654,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#vacm">MIB Views for VACM</seealso> 
           for more info. </p>
+
         <marker id="read_vacm_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_vacm_config(Dir) -> Conf</name>
       <fsummary>Read the agent vacm config from the config file</fsummary>
@@ -618,9 +673,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#vacm">MIB Views for VACM</seealso> 
           for more info. </p>
+
         <marker id="usm_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>usm_entry(EngineId) -> usm_entry()</name>
       <name>usm_entry(EngineID, UserName, SecName, Clone, AuthP, AuthKeyC, OwnAuthKeyC, PrivP, PrivKeyC, OwnPrivKeyC, Public, AuthKey, PrivKey) -> usm_entry()</name>
@@ -649,9 +706,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#usm">Security data for USM</seealso> 
           for more info. </p>
+
         <marker id="write_usm_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_usm_config(Dir, Conf) -> ok</name>
       <name>write_usm_config(Dir, Hdr, Conf) -> ok</name>
@@ -671,9 +730,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#usm">Security data for USM</seealso> 
           for more info. </p>
+
         <marker id="append_usm_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_usm_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent usm config to the config file</fsummary>
@@ -692,6 +753,7 @@
         <marker id="read_usm_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_usm_config(Dir) -> Conf</name>
       <fsummary>Read the agent usm config from the config file</fsummary>
@@ -706,9 +768,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#usm">Security data for USM</seealso> 
           for more info. </p>
+
         <marker id="notify_entry"></marker>
       </desc>
     </func>
+
     <func>
       <name>notify_entry(Name, Tag, Type) -> notify_entry()</name>
       <fsummary>Create an notify entry</fsummary>
@@ -725,9 +789,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#notify">Notify Definitions</seealso> 
           for more info. </p>
+
         <marker id="write_notify_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>write_notify_config(Dir, Conf) -> ok</name>
       <name>write_notify_config(Dir, Hdr, Conf) -> ok</name>
@@ -747,9 +813,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#notify">Notify Definitions</seealso> 
           for more info. </p>
+
         <marker id="append_notify_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>append_notify_config(Dir, Conf) -> ok</name>
       <fsummary>Append the agent notify config to the config file</fsummary>
@@ -765,9 +833,11 @@
         <p>See 
           <seealso marker="snmp_agent_config_files#notify">Notify Definitions</seealso> 
           for more info. </p>
+
         <marker id="read_notify_config"></marker>
       </desc>
     </func>
+
     <func>
       <name>read_notify_config(Dir) -> Conf</name>
       <fsummary>Read the agent notify config from the config file</fsummary>

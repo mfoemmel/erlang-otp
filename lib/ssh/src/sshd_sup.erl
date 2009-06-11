@@ -16,7 +16,6 @@
 %% 
 %% %CopyrightEnd%
 %%
-
 %%
 %%----------------------------------------------------------------------
 %% Purpose: The top supervisor for ssh servers hangs under 
@@ -45,7 +44,14 @@ start_child(ServerOpts) ->
     case ssh_system_sup:system_supervisor(Address, Port) of
        undefined ->
 	    Spec =  child_spec(Address, Port, ServerOpts),    
-	    supervisor:start_child(?MODULE, Spec);
+	    case supervisor:start_child(?MODULE, Spec) of
+		{error, already_present} ->
+		    Name = id(Address, Port),
+		    supervisor:delete_child(?MODULE, Name),
+		    supervisor:start_child(?MODULE, Spec);
+		Reply ->
+		    Reply
+	    end;
 	Pid ->
 	    AccPid = ssh_system_sup:acceptor_supervisor(Pid),
 	    ssh_acceptor_sup:start_child(AccPid, ServerOpts)

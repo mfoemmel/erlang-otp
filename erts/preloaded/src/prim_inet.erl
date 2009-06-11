@@ -97,7 +97,7 @@ fdopen1(Protocol, Family, Fd) when is_integer(Fd) ->
     end.
 
 open0(Protocol) ->
-    try	erlang:open_port({spawn,protocol2drv(Protocol)}, [binary]) of
+    try	erlang:open_port({spawn_driver,protocol2drv(Protocol)}, [binary]) of
 	Port -> {ok,Port}
     catch
 	error:Reason -> {error,Reason}

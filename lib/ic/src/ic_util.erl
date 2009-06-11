@@ -87,12 +87,12 @@ mk_oe_name(_Gen, Name) -> lists:flatten(["oe_" | Name]).
 mk_align(String) ->
     io_lib:format("OE_ALIGN(~s)",[String]).
 
-to_atom(A) when atom(A) -> A;
-to_atom(L) when list(L) -> list_to_atom(L).
+to_atom(A) when is_atom(A) -> A;
+to_atom(L) when is_list(L) -> list_to_atom(L).
 
-to_list(A) when list(A) -> A;
-to_list(L) when atom(L) -> atom_to_list(L);
-to_list(X) when integer(X) -> integer_to_list(X).
+to_list(A) when is_list(A) -> A;
+to_list(L) when is_atom(L) -> atom_to_list(L);
+to_list(X) when is_integer(X) -> integer_to_list(X).
 
 
 
@@ -247,23 +247,23 @@ adjustScopeToJavaLoop(S,[X | Xs]) ->
 %% Well, this is not an evaluator, it just 
 %% prints the hole operation, sorry.
 %%
-eval_java(G,N,Arg) when record(Arg, scoped_id) ->
+eval_java(G,N,Arg) when is_record(Arg, scoped_id) ->
     {FSN, _, _, _} = 
 	ic_symtab:get_full_scoped_name(G, N, Arg),
     ic_util:to_dot(G,FSN);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<integer_literal>' ->
     element(3,Arg);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<character_literal>' ->
     element(3,Arg);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<wcharacter_literal>' ->
     element(3,Arg);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<boolean_literal>' ->
     element(3,Arg);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<floating_pt_literal>' ->
     element(3,Arg);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<string_literal>' ->
     element(3,Arg);
-eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
+eval_java(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<wstring_literal>' ->
     element(3,Arg);
 eval_java(G,N,{Op,Arg1,Arg2}) ->
     "(" ++ eval_java(G,N,Arg1) ++ 
@@ -278,23 +278,23 @@ eval_java(G,N,{Op,Arg1,Arg2}) ->
 %% Well, this is not an evaluator, it just 
 %% prints the hole operation, sorry.
 %%
-eval_c(G,N,Arg) when record(Arg, scoped_id) ->
+eval_c(G,N,Arg) when is_record(Arg, scoped_id) ->
     {FSN, _, _, _} = 
 	ic_symtab:get_full_scoped_name(G, N, Arg),
     ic_util:to_undersc(FSN);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<integer_literal>' ->
     element(3,Arg);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<character_literal>' ->
     element(3,Arg);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<wcharacter_literal>' ->
     element(3,Arg);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<boolean_literal>' ->
     element(3,Arg);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<floating_pt_literal>' ->
     element(3,Arg);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<string_literal>' ->
     element(3,Arg);
-eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
+eval_c(_G,_N,Arg) when is_tuple(Arg) andalso element(1,Arg) == '<wstring_literal>' ->
     element(3,Arg);
 eval_c(G,N,{Op,Arg1,Arg2}) ->
     "(" ++ eval_c(G,N,Arg1) ++ 

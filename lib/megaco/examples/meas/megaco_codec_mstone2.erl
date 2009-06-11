@@ -32,12 +32,11 @@
 %%            It keeps a list of all codec combinations, including
 %%            all the messages (in a list) for each codec. 
 %%            Initially it creates a timer (finished) (circa 10 minutes). 
-%%            It spawns a worker process 
-%%            for each codec config (it also creates a monitor to each
-%%            process so it knows when they exit). When the result comes 
-%%            in from a process (in the form of a DOWN message), spawns 
-%%            a new worker process for this codec config and update's 
-%%            the statistics.
+%%            It spawns a worker process for each codec config (it also 
+%%            creates a monitor to each process so it knows when they 
+%%            exit). When the result comes in from a process (in the 
+%%            form of a DOWN message), spawns a new worker process for 
+%%            this codec config and update's the statistics.
 %%            When the finished timer expires, it will stop respawing
 %%            the worker processes, and instead just wait for them all
 %%            to finish. 
@@ -53,9 +52,12 @@
 
 
 %% Exports
--export([start/0, 
-	 start_no_drv/0, 
-	 start_only_drv/0]).
+-export([
+	 start/0,          start/1, 
+	 start_flex/0,     start_flex/1, 
+	 start_no_drv/0,   start_no_drv/1, 
+	 start_only_drv/0, start_only_drv/1
+	]).
 
 
 %%%----------------------------------------------------------------------
@@ -75,8 +77,12 @@
 -define(VERSION3, ?MSTONE_VERSION3).
 
 -ifndef(MSTONE_CODECS).
--define(MSTONE_CODECS, [pretty, compact, per, ber, erlang]).
+-define(MSTONE_CODECS, megaco_codec_transform:codecs()).
 -endif.
+
+-define(DEFAULT_MESSAGE_PACKAGE, megaco_codec_transform:default_message_package()).
+-define(DEFAULT_FACTOR,          1).
+-define(DEFAULT_DRV_INCLUDE,     ignore).
 
 -ifndef(MSTONE_RUNNER_MIN_HEAP_SZ).
 %% -define(MSTONE_RUNNER_MIN_HEAP_SZ,  16#7fff).
@@ -102,22 +108,69 @@
 %%% API
 %%%----------------------------------------------------------------------
 
+start() ->
+    start(?DEFAULT_MESSAGE_PACKAGE).
+
+start([MessagePackage]) ->
+    do_start(MessagePackage, ?DEFAULT_DRV_INCLUDE);
+start(MessagePackage) ->
+    do_start(MessagePackage, ?DEFAULT_DRV_INCLUDE).
+
+
+start_flex() ->
+    start_flex(?DEFAULT_MESSAGE_PACKAGE).
+
+start_flex([MessagePackage]) ->
+    do_start(MessagePackage, flex);
+start_flex(MessagePackage) ->
+    do_start(MessagePackage, flex).
+
+
 start_no_drv() ->
-    do_start(no_drv).
+    start_no_drv(?DEFAULT_MESSAGE_PACKAGE).
+
+start_no_drv([MessagePackage]) ->
+    do_start(MessagePackage, no_drv);
+start_no_drv(MessagePackage) ->
+    do_start(MessagePackage, no_drv).
+
 
 start_only_drv() ->
-    do_start(only_drv).
+    start_only_drv(?DEFAULT_MESSAGE_PACKAGE).
 
-start() ->
-    do_start(ignore).
+start_only_drv([MessagePackage]) ->
+    do_start(MessagePackage, only_drv);
+start_only_drv(MessagePackage) ->
+    do_start(MessagePackage, only_drv).
 
-do_start(DrvInclude) ->
+
+do_start(MessagePackageRaw, DrvInclude) ->
+%%     io:format("do_start -> entry with"
+%% 	      "~n   MessagePackageRaw: ~p"
+%% 	      "~n   DrvInclude:        ~p"
+%% 	      "~n", [MessagePackageRaw, DrvInclude]), 
+    MessagePackage = parse_message_package(MessagePackageRaw),
+    mstone_init(MessagePackage, DrvInclude).
+    
+parse_message_package(MessagePackageRaw) when is_list(MessagePackageRaw) ->
+    list_to_atom(MessagePackageRaw);
+parse_message_package(MessagePackage) when is_atom(MessagePackage) ->
+    MessagePackage;
+parse_message_package(BadMessagePackage) ->
+    throw({error, {bad_message_package, BadMessagePackage}}).
+
+
+mstone_init(MessagePackage, DrvInclude) ->
     io:format("~n", []),
+    ?LIB:set_default_sched_bind(), 
     ?LIB:display_os_info(),
     ?LIB:display_system_info(),
     ?LIB:display_app_info(),
     io:format("~n", []),
-    Ref = erlang:monitor(process, spawn(fun() -> loader(DrvInclude) end)),
+    Ref = erlang:monitor(process, 
+			 spawn(fun() -> 
+				       loader(MessagePackage, DrvInclude) 
+			       end)),
     receive
 	{'DOWN', Ref, process, _Pid, {done, Result}} ->
 	    display_result(Result);
@@ -206,53 +259,54 @@ erl_image(Erl, Conf) ->
 
 %%%----------------------------------------------------------------------
 
-loader(DrvInclude) ->
-    loader(?MSTONE_CODECS, DrvInclude).
+loader(MessagePackage, DrvInclude) ->
+    loader(?MSTONE_CODECS, MessagePackage, DrvInclude).
 
 
-%% Dirs is a list of directories containing files,
-%% each with a single megaco message. 
-%%
-%% Note that it is a requirement that each dir has
-%% the name of the codec with which the messages has
-%% been encoded: 
+%% Codecs is a list of megaco codec shortnames: 
 %%
 %%    pretty | compact | ber | per | erlang
 %%
 
-loader(Dirs, DrvInclude) ->
+loader(Codecs, MessagePackage, DrvInclude) ->
     process_flag(trap_exit, true),
-    case (catch init(Dirs, DrvInclude)) of
+    case (catch init(Codecs, MessagePackage, DrvInclude)) of
 	{ok, State} ->
 	    loader_loop(running, State);
 	Error ->
 	    exit(Error)
     end.
 
-init(Dirs, DrvInclude) ->
+init(Codecs, MessagePackage, DrvInclude) ->
     ets:new(mstone, [set, private, named_table, {keypos, 1}]),
     ets:insert(mstone, {worker_cnt, 0}),
     {Pid, FlexConf} = ?LIB:start_flex_scanner(),
-    io:format("read messages", []),
-    CodecData = init_codec_data(?LIB:expand_dirs(Dirs, DrvInclude), FlexConf),
+    io:format("prepare messages", []),
+    EMessages = ?LIB:expanded_messages(MessagePackage, Codecs, DrvInclude), 
+    io:format("~ninit codec data", []),
+    CodecData = init_codec_data(EMessages, FlexConf),
     Timer = erlang:send_after(?MSTONE_RUN_TIME, self(), mstone_finished), 
-    io:format("~n~n", []),
-    {ok, #state{timer = Timer, 
-		idle  = CodecData, 
-		flex_handler = Pid, flex_conf = FlexConf}}.
+    io:format("~n", []),
+    {ok, #state{timer        = Timer, 
+		idle         = CodecData, 
+		flex_handler = Pid, 
+		flex_conf    = FlexConf}}.
 
-init_codec_data(EDirs, FlexConf) ->
-    [init_codec_data(MsgDir, Codec, Conf, FlexConf) || 
-	{MsgDir, Codec, Conf} <- EDirs].
+init_codec_data(EMsgs, FlexConf) ->
+    [init_codec_data(Codec, Mod, Conf, Msgs, FlexConf) || 
+	{Codec, Mod, Conf, Msgs} <- EMsgs].
 
-init_codec_data(MsgDir, Codec, Conf0, FlexConf) 
-  when is_list(MsgDir) and is_atom(Codec) and is_list(Conf0) ->
+init_codec_data(Codec, Mod, Conf0, Msgs0, FlexConf) 
+  when is_atom(Codec) andalso 
+       is_atom(Mod)   andalso 
+       is_list(Conf0) andalso 
+       is_list(Msgs0)  ->
     io:format(".", []),
     Conf = [{version3,?VERSION3}|init_codec_conf(FlexConf, Conf0)], 
-    Msgs = [?LIB:detect_version(Codec, Conf, Bin) || 
-	       Bin <- ?LIB:read_messages(MsgDir)],
-    ets:insert(mstone, {{codec_cnt, Codec, Conf}, 0}),
-    #codec_data{mod = Codec, config = Conf, msgs = Msgs}.
+    Msgs = [?LIB:detect_version(Mod, Conf, Bin) || {_, Bin} <- Msgs0],
+    ets:insert(mstone, {{codec_cnt, Mod, Conf}, 0}),
+    #codec_data{mod = Mod, config = Conf, msgs = Msgs}.
+    
 
 init_codec_conf(FlexConf, [flex_scanner]) ->
     FlexConf;
@@ -264,6 +318,7 @@ init_codec_conf(_, Conf) ->
 
 loader_loop(finishing, #state{flex_handler = Pid, running = []}) ->	
     %% we are done
+    io:format("~n", []),
     ?LIB:stop_flex_scanner(Pid),
     exit({done, lists:sort(ets:tab2list(mstone))});
 
@@ -285,7 +340,6 @@ loader_loop(running, #state{idle = []} = State) ->
 loader_loop(running, State) ->	
     receive
 	mstone_finished ->
-	    %% io:format("finishing~n", []),
 	    loader_loop(finishing, State);
 
 	{'DOWN', Ref, process, _Pid, {mstone_done, Codec, Conf, Cnt}} ->
@@ -298,7 +352,7 @@ loader_loop(running, State) ->
 
 done_worker(Ref, Codec, Conf, Cnt,
 	    #state{running = Running, idle = Idle} = State) ->
-    %% io:format("worker ~w ~w done~n", [Codec, Conf]),
+    %% io:format("worker ~w ~w done with ~w~n", [Codec, Conf, Cnt]),
     ets:update_counter(mstone, worker_cnt, 1),
     ets:update_counter(mstone, {codec_cnt, Codec, Conf}, Cnt),
     Running2 = lists:keydelete(Ref, #codec_data.ref, Running),

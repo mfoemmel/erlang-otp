@@ -473,7 +473,7 @@ from(_H, []) -> [].
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% framework_call(Callback,Func,Args,DefaultReturn) -> Retur | DefaultReturn
+%% framework_call(Callback,Func,Args,DefaultReturn) -> Return | DefaultReturn
 %% 
 %% Calls the given Func in Callback
 framework_call(Func,Args) ->
@@ -576,6 +576,15 @@ package_atom(Mod) when is_list(Mod) ->
 %% from TraceSpecFile and enable call trace for
 %% specified functions.
 call_trace(TraceSpec) ->
+    case catch try_call_trace(TraceSpec) of
+	{'EXIT',Reason} ->
+	    erlang:display(Reason),
+	    exit(Reason);
+	Ok ->
+	    Ok
+    end.    
+
+try_call_trace(TraceSpec) ->
     case file:consult(TraceSpec) of
 	{ok,Terms} ->
 	    dbg:tracer(),

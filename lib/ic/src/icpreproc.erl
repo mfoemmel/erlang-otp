@@ -52,7 +52,7 @@ preproc(G, File) ->
 	    Line	= Cmd++" "++Flags++" "++File,
 	    % FIXME: Check status code of command instead of this test
 	    case os:cmd(Line) of
-		[$#, $ , C | Rest] when integer(C), C > $0, C =< $9 ->
+		[$#, $ , C | Rest] when is_integer(C), C > $0, C =< $9 ->
 		    [$#, $ , C | Rest];
 		X ->
 		    ic_error:fatal_error(G, {preproc, filter(X)})

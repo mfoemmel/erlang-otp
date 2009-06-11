@@ -29,6 +29,47 @@
   </header>
   <p>This document describes the changes made to the Kernel application.</p>
 
+<section><title>Kernel 2.13.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A bug when doing io:get_line (among other calls) from a
+	    file opened with encoding other than latin1, causing
+	    false unicode errors to occur, is now corrected.</p>
+          <p>
+	    Own Id: OTP-7974</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Added functionality to get higher resolution timestamp
+	    from system. The erlang:now function returns a timestamp
+	    that's not always consistent with the actual operating
+	    system time (due to resilience against large time changes
+	    in the operating system). The function os:timestamp/0 is
+	    added to get a similar timestamp as the one being
+	    returned by erlang:now, but untouched by Erlangs time
+	    correcting and smoothing algorithms. The timestamp
+	    returned by os:timestamp is always consistent with the
+	    operating systems view of time, like the calendar
+	    functions for getting wall clock time, but with higher
+	    resolution. Example of usage can be found in the os
+	    manual page.</p>
+          <p>
+	    Own Id: OTP-7971</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Kernel 2.13.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

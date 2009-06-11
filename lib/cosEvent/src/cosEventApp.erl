@@ -163,7 +163,7 @@ stop(_) ->
 start_channel() ->
     start_channel(?DEFAULT_OPTIONS).
 
-start_channel(Options) when list(Options) ->
+start_channel(Options) when is_list(Options) ->
     ServerOpts = get_option(?SERVER, Options),
     'oe_CosEventComm_Channel':oe_create([Options, ServerOpts], ServerOpts);
 start_channel(Options) ->
@@ -180,7 +180,7 @@ start_channel(Options) ->
 start_channel_link() ->
     start_channel_link(?DEFAULT_OPTIONS).
 
-start_channel_link(Options) when list(Options) ->
+start_channel_link(Options) when is_list(Options) ->
     ServerOpts = get_option(?SERVER, Options),
     'oe_CosEventComm_Channel':oe_create_link([Options, ServerOpts], ServerOpts);
 start_channel_link(Options) ->

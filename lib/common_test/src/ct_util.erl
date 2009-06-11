@@ -37,7 +37,8 @@
 
 -export([save_suite_data/3, save_suite_data/2, read_suite_data/1, 
 	 delete_suite_data/0, delete_suite_data/1, match_delete_suite_data/1,
-	 delete_testdata/0, delete_testdata/1, set_testdata/1, get_testdata/1]).
+	 delete_testdata/0, delete_testdata/1, set_testdata/1, get_testdata/1,
+	 update_testdata/2]).
 
 -export([override_silence_all_connections/0, override_silence_connections/1, 
 	 get_overridden_silenced_connections/0, 
@@ -320,6 +321,9 @@ delete_testdata() ->
 delete_testdata(Key) ->
     call({delete_testdata, Key}).
 
+update_testdata(Key, Fun) ->
+    call({update_testdata, Key, Fun}).
+
 set_testdata(TestData) ->
     call({set_testdata, TestData}).
 
@@ -407,6 +411,18 @@ loop(Mode,TestData,StartDir) ->
 		    return(From,undefined)
 	    end,
 	    loop(From,TestData,StartDir);
+	{{update_testdata,Key,Fun},From} ->
+	    TestData1 =
+		case lists:keysearch(Key,1,TestData) of
+		    {value,{Key,Val}} ->
+			NewVal = Fun(Val),
+			return(From,NewVal),
+			[{Key,NewVal}|lists:keydelete(Key,1,TestData)];
+		    _ ->
+			return(From,undefined),
+			TestData
+		end,
+	    loop(From,TestData1,StartDir);	    
 	{{set_cwd,Dir},From} ->
 	    return(From,file:set_cwd(Dir)),
 	    loop(From,TestData,StartDir);
@@ -414,6 +430,10 @@ loop(Mode,TestData,StartDir) ->
 	    return(From,file:set_cwd(StartDir)),
 	    loop(From,TestData,StartDir);
 	{{stop,How},From} ->
+	    Time = calendar:local_time(),
+	    ct_event:sync_notify(#event{name=test_done,
+					node=node(),
+					data=Time}),
 	    ets:delete(?attr_table),
 	    close_connections(ets:tab2list(?conn_table)),
 	    ets:delete(?conn_table),

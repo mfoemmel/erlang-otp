@@ -79,14 +79,14 @@ script(RequestURI, Method, [_ | Rest]) ->
 %% load
 
 load("Action "++  Action, []) ->
-  case regexp:split(Action, " ") of
+  case inets_regexp:split(Action, " ") of
     {ok,[MimeType, CGIScript]} ->
       {ok,[],{action, {MimeType, CGIScript}}};
     {ok,_} ->
       {error,?NICE(httpd_conf:clean(Action)++" is an invalid Action")}
   end;
 load("Script " ++ Script,[]) ->
-  case regexp:split(Script, " ") of
+  case inets_regexp:split(Script, " ") of
     {ok,[Method, CGIScript]} ->
       {ok,[],{script, {Method, CGIScript}}};
     {ok,_} ->

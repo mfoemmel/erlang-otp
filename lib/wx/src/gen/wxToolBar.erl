@@ -30,14 +30,14 @@
 -module(wxToolBar).
 -include("wxe.hrl").
 -export([addCheckTool/4,addCheckTool/5,addControl/2,addRadioTool/4,addRadioTool/5,
-  addSeparator/1,addTool/4,addTool/5,deleteTool/2,deleteToolByPos/2,
-  enableTool/3,findById/2,findControl/2,findToolForPosition/3,getMargins/1,
-  getToolBitmapSize/1,getToolEnabled/2,getToolLongHelp/2,getToolPacking/1,
-  getToolPos/2,getToolSeparation/1,getToolShortHelp/2,getToolSize/1,
-  getToolState/2,insertControl/3,insertSeparator/2,insertTool/3,insertTool/4,
-  insertTool/5,insertTool/6,realize/1,removeTool/2,setMargins/3,setToolBitmapSize/2,
-  setToolLongHelp/3,setToolPacking/2,setToolSeparation/2,setToolShortHelp/3,
-  toggleTool/3]).
+  addSeparator/1,addTool/2,addTool/3,addTool/4,addTool/5,addTool/6,addTool/7,
+  deleteTool/2,deleteToolByPos/2,enableTool/3,findById/2,findControl/2,
+  findToolForPosition/3,getMargins/1,getToolBitmapSize/1,getToolEnabled/2,
+  getToolLongHelp/2,getToolPacking/1,getToolPos/2,getToolSeparation/1,
+  getToolShortHelp/2,getToolSize/1,getToolState/2,insertControl/3,insertSeparator/2,
+  insertTool/3,insertTool/4,insertTool/5,insertTool/6,realize/1,removeTool/2,
+  setMargins/3,setToolBitmapSize/2,setToolLongHelp/3,setToolPacking/2,
+  setToolSeparation/2,setToolShortHelp/3,toggleTool/3]).
 
 %% inherited exports
 -export([cacheBestSize/2,captureMouse/1,center/1,center/2,centerOnParent/1,
@@ -98,17 +98,69 @@ addSeparator(#wx_ref{type=ThisT,ref=ThisRef}) ->
   wxe_util:call(?wxToolBar_AddSeparator,
   <<ThisRef:32/?UI>>).
 
-%% @spec (This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap()) -> wx:wx()
-%% @equiv addTool(This,Toolid,Label,Bitmap, [])
+%% @spec (This::wxToolBar(), Tool::wx:wx()) -> wx:wx()
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxtoolbar.html#wxtoolbaraddtool">external documentation</a>.
+addTool(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=ToolT,ref=ToolRef}) ->
+  ?CLASS(ThisT,wxToolBar),
+  ?CLASS(ToolT,wx),
+  wxe_util:call(?wxToolBar_AddTool_1,
+  <<ThisRef:32/?UI,ToolRef:32/?UI>>).
+
+%% @spec (This::wxToolBar(), Toolid::integer(), Bitmap::wxBitmap:wxBitmap()) -> wx:wx()
+%% @equiv addTool(This,Toolid,Bitmap, [])
+addTool(This,Toolid,Bitmap)
+ when is_record(This, wx_ref),is_integer(Toolid),is_record(Bitmap, wx_ref) ->
+  addTool(This,Toolid,Bitmap, []).
+
+%% @spec (This::wxToolBar(),Toolid::integer(),X::string()|term(),X::term()) -> wx:wx()
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxtoolbar.html#wxtoolbaraddtool">external documentation</a>.
+%% <br /> Alternatives: 
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap()) -> addTool(This,Toolid,Label,Bitmap, []) </c></p>
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Bitmap::wxBitmap:wxBitmap(), BmpDisabled::wxBitmap:wxBitmap()) -> addTool(This,Toolid,Bitmap,BmpDisabled, []) </c></p>
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Bitmap::wxBitmap:wxBitmap(), [Option]) -> wx:wx() </c>
+%%<br /> Option = {shortHelpString, string()} | {longHelpString, string()}
+%% </p>
+
 addTool(This,Toolid,Label,Bitmap)
  when is_record(This, wx_ref),is_integer(Toolid),is_list(Label),is_record(Bitmap, wx_ref) ->
-  addTool(This,Toolid,Label,Bitmap, []).
+  addTool(This,Toolid,Label,Bitmap, []);
 
-%% @spec (This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap(), [Option]) -> wx:wx()
-%% Option = {shortHelp, string()} | {kind, WxItemKind}
-%% WxItemKind = integer()
+addTool(This,Toolid,Bitmap,BmpDisabled)
+ when is_record(This, wx_ref),is_integer(Toolid),is_record(Bitmap, wx_ref),is_record(BmpDisabled, wx_ref) ->
+  addTool(This,Toolid,Bitmap,BmpDisabled, []);
+addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,#wx_ref{type=BitmapT,ref=BitmapRef}, Options)
+ when is_integer(Toolid),is_list(Options) ->
+  ?CLASS(ThisT,wxToolBar),
+  ?CLASS(BitmapT,wxBitmap),
+  MOpts = fun({shortHelpString, ShortHelpString}, Acc) ->   ShortHelpString_UC = unicode:characters_to_binary([ShortHelpString,0]),[<<1:32/?UI,(byte_size(ShortHelpString_UC)):32/?UI,(ShortHelpString_UC)/binary, 0:(((8- ((0+byte_size(ShortHelpString_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          ({longHelpString, LongHelpString}, Acc) ->   LongHelpString_UC = unicode:characters_to_binary([LongHelpString,0]),[<<2:32/?UI,(byte_size(LongHelpString_UC)):32/?UI,(LongHelpString_UC)/binary, 0:(((8- ((0+byte_size(LongHelpString_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
+  BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
+  wxe_util:call(?wxToolBar_AddTool_3,
+  <<ThisRef:32/?UI,Toolid:32/?UI,BitmapRef:32/?UI, 0:32,BinOpt/binary>>).
+
+%% @spec (This::wxToolBar(),Toolid::integer(),X::string()|term(),X::term(),X::term()) -> wx:wx()
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxtoolbar.html#wxtoolbaraddtool">external documentation</a>.
+%% <br /> Alternatives: 
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap(), BmpDisabled::wxBitmap:wxBitmap()) -> addTool(This,Toolid,Label,Bitmap,BmpDisabled, []) </c></p>
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap(), [Option]) -> wx:wx() </c>
+%%<br /> Option = {shortHelp, string()} | {kind, WxItemKind}
+%%<br /> WxItemKind = integer()
 %%<br /> WxItemKind is one of ?wxITEM_SEPARATOR | ?wxITEM_NORMAL | ?wxITEM_CHECK | ?wxITEM_RADIO | ?wxITEM_MAX
+%% </p>
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Bitmap::wxBitmap:wxBitmap(), BmpDisabled::wxBitmap:wxBitmap(), [Option]) -> wx:wx() </c>
+%%<br /> Option = {toggle, bool()} | {clientData, wx:wx()} | {shortHelpString, string()} | {longHelpString, string()}
+%% </p>
+
+addTool(This,Toolid,Label,Bitmap,BmpDisabled)
+ when is_record(This, wx_ref),is_integer(Toolid),is_list(Label),is_record(Bitmap, wx_ref),is_record(BmpDisabled, wx_ref) ->
+  addTool(This,Toolid,Label,Bitmap,BmpDisabled, []);
 addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,Label,#wx_ref{type=BitmapT,ref=BitmapRef}, Options)
  when is_integer(Toolid),is_list(Label),is_list(Options) ->
   ?CLASS(ThisT,wxToolBar),
@@ -118,8 +170,68 @@ addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,Label,#wx_ref{type=BitmapT,ref=Bi
           ({kind, Kind}, Acc) -> [<<2:32/?UI,Kind:32/?UI>>|Acc];
           (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
   BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
-  wxe_util:call(?wxToolBar_AddTool,
-  <<ThisRef:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI, 0:32,BinOpt/binary>>).
+  wxe_util:call(?wxToolBar_AddTool_4_0,
+  <<ThisRef:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI, 0:32,BinOpt/binary>>);
+addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,#wx_ref{type=BitmapT,ref=BitmapRef},#wx_ref{type=BmpDisabledT,ref=BmpDisabledRef}, Options)
+ when is_integer(Toolid),is_list(Options) ->
+  ?CLASS(ThisT,wxToolBar),
+  ?CLASS(BitmapT,wxBitmap),
+  ?CLASS(BmpDisabledT,wxBitmap),
+  MOpts = fun({toggle, Toggle}, Acc) -> [<<1:32/?UI,(wxe_util:from_bool(Toggle)):32/?UI>>|Acc];
+          ({clientData, #wx_ref{type=ClientDataT,ref=ClientDataRef}}, Acc) ->   ?CLASS(ClientDataT,wx),[<<2:32/?UI,ClientDataRef:32/?UI>>|Acc];
+          ({shortHelpString, ShortHelpString}, Acc) ->   ShortHelpString_UC = unicode:characters_to_binary([ShortHelpString,0]),[<<3:32/?UI,(byte_size(ShortHelpString_UC)):32/?UI,(ShortHelpString_UC)/binary, 0:(((8- ((0+byte_size(ShortHelpString_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          ({longHelpString, LongHelpString}, Acc) ->   LongHelpString_UC = unicode:characters_to_binary([LongHelpString,0]),[<<4:32/?UI,(byte_size(LongHelpString_UC)):32/?UI,(LongHelpString_UC)/binary, 0:(((8- ((0+byte_size(LongHelpString_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
+  BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
+  wxe_util:call(?wxToolBar_AddTool_4_1,
+  <<ThisRef:32/?UI,Toolid:32/?UI,BitmapRef:32/?UI,BmpDisabledRef:32/?UI, BinOpt/binary>>).
+
+%% @spec (This::wxToolBar(),Toolid::integer(),X::term()|string(),X::term(),X::bool()|term(),X::integer()|term()) -> wx:wx()
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxtoolbar.html#wxtoolbaraddtool">external documentation</a>.
+%% <br /> Alternatives: 
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Bitmap::wxBitmap:wxBitmap(), BmpDisabled::wxBitmap:wxBitmap(), Toggle::bool(), XPos::integer()) -> addTool(This,Toolid,Bitmap,BmpDisabled,Toggle,XPos, []) </c></p>
+%% <p><c>
+%% addTool(This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap(), BmpDisabled::wxBitmap:wxBitmap(), [Option]) -> wx:wx() </c>
+%%<br /> Option = {kind, WxItemKind} | {shortHelp, string()} | {longHelp, string()} | {data, wx:wx()}
+%%<br /> WxItemKind = integer()
+%%<br /> WxItemKind is one of ?wxITEM_SEPARATOR | ?wxITEM_NORMAL | ?wxITEM_CHECK | ?wxITEM_RADIO | ?wxITEM_MAX
+%% </p>
+
+addTool(This,Toolid,Bitmap,BmpDisabled,Toggle,XPos)
+ when is_record(This, wx_ref),is_integer(Toolid),is_record(Bitmap, wx_ref),is_record(BmpDisabled, wx_ref),is_boolean(Toggle),is_integer(XPos) ->
+  addTool(This,Toolid,Bitmap,BmpDisabled,Toggle,XPos, []);
+addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,Label,#wx_ref{type=BitmapT,ref=BitmapRef},#wx_ref{type=BmpDisabledT,ref=BmpDisabledRef}, Options)
+ when is_integer(Toolid),is_list(Label),is_list(Options) ->
+  ?CLASS(ThisT,wxToolBar),
+  Label_UC = unicode:characters_to_binary([Label,0]),
+  ?CLASS(BitmapT,wxBitmap),
+  ?CLASS(BmpDisabledT,wxBitmap),
+  MOpts = fun({kind, Kind}, Acc) -> [<<1:32/?UI,Kind:32/?UI>>|Acc];
+          ({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<2:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<3:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          ({data, #wx_ref{type=DataT,ref=DataRef}}, Acc) ->   ?CLASS(DataT,wx),[<<4:32/?UI,DataRef:32/?UI>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
+  BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
+  wxe_util:call(?wxToolBar_AddTool_5,
+  <<ThisRef:32/?UI,Toolid:32/?UI,(byte_size(Label_UC)):32/?UI,(Label_UC)/binary, 0:(((8- ((4+byte_size(Label_UC)) band 16#7)) band 16#7))/unit:8,BitmapRef:32/?UI,BmpDisabledRef:32/?UI, BinOpt/binary>>).
+
+%% @spec (This::wxToolBar(), Toolid::integer(), Bitmap::wxBitmap:wxBitmap(), BmpDisabled::wxBitmap:wxBitmap(), Toggle::bool(), XPos::integer(), [Option]) -> wx:wx()
+%% Option = {yPos, integer()} | {clientData, wx:wx()} | {shortHelp, string()} | {longHelp, string()}
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxtoolbar.html#wxtoolbaraddtool">external documentation</a>.
+addTool(#wx_ref{type=ThisT,ref=ThisRef},Toolid,#wx_ref{type=BitmapT,ref=BitmapRef},#wx_ref{type=BmpDisabledT,ref=BmpDisabledRef},Toggle,XPos, Options)
+ when is_integer(Toolid),is_boolean(Toggle),is_integer(XPos),is_list(Options) ->
+  ?CLASS(ThisT,wxToolBar),
+  ?CLASS(BitmapT,wxBitmap),
+  ?CLASS(BmpDisabledT,wxBitmap),
+  MOpts = fun({yPos, YPos}, Acc) -> [<<1:32/?UI,YPos:32/?UI>>|Acc];
+          ({clientData, #wx_ref{type=ClientDataT,ref=ClientDataRef}}, Acc) ->   ?CLASS(ClientDataT,wx),[<<2:32/?UI,ClientDataRef:32/?UI>>|Acc];
+          ({shortHelp, ShortHelp}, Acc) ->   ShortHelp_UC = unicode:characters_to_binary([ShortHelp,0]),[<<3:32/?UI,(byte_size(ShortHelp_UC)):32/?UI,(ShortHelp_UC)/binary, 0:(((8- ((0+byte_size(ShortHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          ({longHelp, LongHelp}, Acc) ->   LongHelp_UC = unicode:characters_to_binary([LongHelp,0]),[<<4:32/?UI,(byte_size(LongHelp_UC)):32/?UI,(LongHelp_UC)/binary, 0:(((8- ((0+byte_size(LongHelp_UC)) band 16#7)) band 16#7))/unit:8>>|Acc];
+          (BadOpt, _) -> erlang:error({badoption, BadOpt}) end,
+  BinOpt = list_to_binary(lists:foldl(MOpts, [<<0:32>>], Options)),
+  wxe_util:call(?wxToolBar_AddTool_6,
+  <<ThisRef:32/?UI,Toolid:32/?UI,BitmapRef:32/?UI,BmpDisabledRef:32/?UI,(wxe_util:from_bool(Toggle)):32/?UI,XPos:32/?UI, BinOpt/binary>>).
 
 %% @spec (This::wxToolBar(), Toolid::integer(), Label::string(), Bitmap::wxBitmap:wxBitmap()) -> wx:wx()
 %% @equiv addCheckTool(This,Toolid,Label,Bitmap, [])

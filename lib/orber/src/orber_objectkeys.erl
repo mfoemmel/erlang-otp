@@ -208,7 +208,7 @@ stop_all() ->
 
 get_pid(Objkey) ->
     case catch ets:lookup_element(orber_objkeys, Objkey, 3) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid;
 	dead ->
 	    {error, "unable to contact object"};
@@ -223,7 +223,7 @@ get_pid(Objkey) ->
 					     infinity))
     end.
 
-is_persistent(Pid) when pid(Pid) ->
+is_persistent(Pid) when is_pid(Pid) ->
     case catch get_key_from_pid(Pid) of
 	{'EXCEPTION', _} ->
 	    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
@@ -239,7 +239,7 @@ is_persistent(Objkey) ->
     end.
 
 
-gc(Sec) when integer(Sec) ->
+gc(Sec) when is_integer(Sec) ->
     Fun = fun() -> 
 		  mnesia:write_lock_table(orber_objkeys),
 		  Objects = mnesia:match_object({orber_objkeys, '_', dead, true,'_'}),
@@ -260,7 +260,7 @@ gc(Sec) when integer(Sec) ->
 register(Objkey, Pid) ->
     'register'(Objkey, Pid, false).
 
-register(Objkey, Pid, Type) when pid(Pid) ->
+register(Objkey, Pid, Type) when is_pid(Pid) ->
     ?CHECK_EXCEPTION(gen_server:call(orber_objkeyserver,
 				     {register, Objkey, Pid, Type}, 
 				     infinity));
@@ -379,7 +379,7 @@ handle_call({register, Objkey, Pid, Type}, _From, State) ->
 			       X#orber_objkeys.pid == dead ->
 			  %% A persistent object is being restarted. Update Pid & time.
 			  mnesia:write(X#orber_objkeys{pid=Pid, timestamp=now()});
-		      [X] when pid(X#orber_objkeys.pid) ->
+		      [X] when is_pid(X#orber_objkeys.pid) ->
 			  %% Object exists, i.e., trying to create an object with
 			  %% the same name.
 			  orber:dbg("[~p] orber_objectkeys:register(~p, ~p); Object already exists.", 
@@ -394,7 +394,7 @@ handle_call({register, Objkey, Pid, Type}, _From, State) ->
 	  end,
     R = write_result(mnesia:transaction(_WF)),
     if
-	R == ok, pid(Pid) ->
+	R == ok andalso is_pid(Pid) ->
 	    link(Pid);
 	true ->
 	    true
@@ -406,7 +406,7 @@ handle_call({delete, Objkey}, _From, State) ->
     case Qres of
 	[] ->
 	    true;
-	[X] when pid(X#orber_objkeys.pid) ->
+	[X] when is_pid(X#orber_objkeys.pid) ->
 	    unlink(X#orber_objkeys.pid);
 	_ ->
 	    true
@@ -420,7 +420,7 @@ handle_call({get_pid, Objkey}, _From, State) ->
 		 mnesia:read({orber_objkeys, Objkey})
 	 end,
     case mnesia:transaction(_F) of
-	{atomic, [X]} when pid(X#orber_objkeys.pid) ->
+	{atomic, [X]} when is_pid(X#orber_objkeys.pid) ->
 	    {reply, X#orber_objkeys.pid, State};
 	{atomic, [X]} when X#orber_objkeys.pid == dead ->
 	    {reply,
@@ -465,16 +465,16 @@ handle_call({check, _}, _From, State) ->
     {reply, 'unknown_object', State}.
 
 	    
-handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
+handle_info({'EXIT', Pid, Reason}, State) when is_pid(Pid) ->
     _WF = fun() ->
 		  case mnesia:match_object({orber_objkeys, '_', Pid,'_','_'}) of
 		      [] ->
 			  ok;
 		      [X] when X#orber_objkeys.persistent==false ->
 			  mnesia:delete({orber_objkeys, X#orber_objkeys.object_key});
-		      [X] when pid(X#orber_objkeys.pid),
-			       X#orber_objkeys.persistent==true,
-			       Reason /= normal,
+		      [X] when is_pid(X#orber_objkeys.pid) andalso
+			       X#orber_objkeys.persistent==true andalso
+			       Reason /= normal andalso
 			       Reason /= shutdown ->
 			  mnesia:write(X#orber_objkeys{pid=dead,
 						       timestamp=now()});

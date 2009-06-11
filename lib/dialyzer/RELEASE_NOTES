@@ -3,8 +3,17 @@
 		(in reversed chronological order)
 ==============================================================================
 
+Version 1.9.2 (in Erlang/OTP R13B-1)
+------------------------------------
+ - Fixed problem with type inference going into an infinite loop when
+   analyzing a strongly connected component of functions that do not
+   return but also contain an erroneous call which makes them fail and
+   be assigned the type none() instead of the type unit().
+ - More accurate type information for some BIFs and library files.
+ - Introduced boolean() as the `official' name for the type was so far
+   known as bool().  The latter is still accepted as well as boolean().
 
-Version 1.9.1 (in Erlang/OTP R13A)
+Version 1.9.1 (in Erlang/OTP R13B)
 ----------------------------------
  - Contains the changes described below (R13A) but also:
     - Has better handling of opaque types

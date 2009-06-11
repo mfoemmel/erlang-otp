@@ -4717,13 +4717,22 @@ missing_to_str2([X]) ->
 missing_to_str2([H|T]) ->
     [integer_to_list(H) , "," | missing_to_str2(T)].
 
+return_unexpected_trans_reply(ConnData, TransId, 
+			      {actionReplies, _} = UserReply, Extra) ->
+    Trans = make_transaction_reply(ConnData, TransId, UserReply),
+    return_unexpected_trans(ConnData, Trans, Extra);
+return_unexpected_trans_reply(ConnData, TransId, 
+			      {transactionError, _} = UserReply, Extra) ->
+    Trans = make_transaction_reply(ConnData, TransId, UserReply),
+    return_unexpected_trans(ConnData, Trans, Extra);
 return_unexpected_trans_reply(CD, TransId, {error, Reason}, Extra) ->
     ?report_important(CD, "unexpected trans reply with error", 
 		      [TransId, Reason, Extra]),
     ok;
-return_unexpected_trans_reply(ConnData, TransId, UserReply, Extra) ->
-    Trans = make_transaction_reply(ConnData, TransId, UserReply),
-    return_unexpected_trans(ConnData, Trans, Extra).
+return_unexpected_trans_reply(CD, TransId, Crap, Extra) ->
+    ?report_important(CD, "unexpected trans reply with crap", 
+		      [TransId, Crap, Extra]),
+    ok.
 
 return_unexpected_trans(ConnData, Trans) ->
     Extra = ?default_user_callback_extra, 

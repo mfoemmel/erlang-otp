@@ -24,7 +24,7 @@
 	 table_next/2,
 	 is_engine_id_known/1, get_user/2, get_user_from_security_name/2,
 	 mk_key_change/3, mk_key_change/5, extract_new_key/3, mk_random/1]).
--export([add_user/13, delete_user/1]).
+-export([add_user/1, add_user/13, delete_user/1]).
 
 %% Internal
 -export([check_usm/1]).
@@ -260,6 +260,9 @@ add_user(EngineID, Name, SecName, Clone, AuthP, AuthKeyC, OwnAuthKeyC,
 	 PrivP, PrivKeyC, OwnPrivKeyC, Public, AuthKey, PrivKey) ->
     User = {EngineID, Name, SecName, Clone, AuthP, AuthKeyC, OwnAuthKeyC,
 	    PrivP, PrivKeyC, OwnPrivKeyC, Public, AuthKey, PrivKey},
+    add_user(User).
+
+add_user(User) ->
     case (catch check_usm(User)) of
 	{ok, Row} ->
 	    case (catch check_user(Row)) of
@@ -340,11 +343,16 @@ get_user_from_security_name(EngineID, SecName) ->
     Key = [length(EngineID) | EngineID] ++ [length(SecName) | SecName],
     case snmp_generic:table_get_row(db(usmUserTable), Key, 
 				    foi(usmUserTable)) of
-	Row when tuple(Row) ->
+	Row when is_tuple(Row) ->
+	    ?vtrace("get_user_from_security_name -> "
+		    "found user using the identity function", []),
 	    Row;
 	undefined ->
-	    F = fun(_, Row) when element(?usmUserEngineID,Row) == EngineID,
-				 element(?usmUserSecurityName,Row) == SecName ->
+	    ?vtrace("get_user_from_security_name -> "
+		    "user *not* found using the identity function", []),
+	    F = fun(_, Row) when (
+			      (element(?usmUserEngineID,Row) =:= EngineID) andalso 
+			      (element(?usmUserSecurityName,Row) =:= SecName)) ->
 			throw({ok, Row});
 		   (_, _) ->
 			ok

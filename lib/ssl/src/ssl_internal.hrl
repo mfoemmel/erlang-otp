@@ -74,11 +74,13 @@
 	  debug           %
 	  }).
 
--record(socket_options, {
-	  mode, 
-	  packet,
-	  header,
-	  active
+-record(socket_options,
+	{
+	  mode   = list, 
+	  packet = 0,
+	  packet_size = 0,
+	  header = 0,
+	  active = true
 	 }).
 
 -endif. % -ifdef(ssl_internal).

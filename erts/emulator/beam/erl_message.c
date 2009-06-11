@@ -60,17 +60,8 @@ new_message_buffer(Uint size)
 {
     ErlHeapFragment* bp;
     bp = (ErlHeapFragment*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP_FRAG,
-					    (sizeof(ErlHeapFragment)
-					     - sizeof(Eterm)
-					     + size*sizeof(Eterm)));
-    bp->next = NULL;
-    bp->size = size;
-    bp->off_heap.mso = NULL;
-#ifndef HYBRID /* FIND ME! */
-    bp->off_heap.funs = NULL;
-#endif
-    bp->off_heap.externals = NULL;
-    bp->off_heap.overhead = 0;
+					    ERTS_HEAP_FRAG_SIZE(size));
+    ERTS_INIT_HEAP_FRAG(bp, size);
     return bp;
 }
 
@@ -237,6 +228,171 @@ link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp)
     }
 }
 
+Eterm
+erts_msg_distext2heap(Process *pp,
+		      ErtsProcLocks *plcksp,
+		      ErlHeapFragment **bpp,
+		      Eterm *tokenp,
+		      ErtsDistExternal *dist_extp)
+{
+    Eterm msg;
+    Uint tok_sz = 0;
+    Eterm *hp = NULL;
+    Eterm *hp_end = NULL;
+    ErlOffHeap *ohp;
+    Sint sz;
+
+    *bpp = NULL;
+    sz = erts_decode_dist_ext_size(dist_extp, 0);
+    if (sz < 0)
+	goto decode_error;
+    if (is_not_nil(*tokenp)) {
+	ErlHeapFragment *heap_frag = erts_dist_ext_trailer(dist_extp);
+	tok_sz = heap_frag->size;
+	sz += tok_sz;
+    }
+    if (pp)
+	hp = erts_alloc_message_heap(sz, bpp, &ohp, pp, plcksp);
+    else {
+	*bpp = new_message_buffer(sz);
+	hp = (*bpp)->mem;
+	ohp = &(*bpp)->off_heap;
+    }
+    hp_end = hp + sz;
+    msg = erts_decode_dist_ext(&hp, ohp, dist_extp);
+    if (is_non_value(msg))
+	goto decode_error;
+    if (is_not_nil(*tokenp)) {
+	ErlHeapFragment *heap_frag = erts_dist_ext_trailer(dist_extp);
+	*tokenp = copy_struct(*tokenp, tok_sz, &hp, ohp);
+	erts_cleanup_offheap(&heap_frag->off_heap);
+    }
+    erts_free_dist_ext_copy(dist_extp);
+    if (hp_end != hp) {
+	if (!(*bpp)) {
+	    HRelease(pp, hp_end, hp);
+	}
+	else {
+	    Uint final_size = hp - &(*bpp)->mem[0];
+	    Eterm brefs[2] = {msg, *tokenp};
+	    ASSERT(sz - (hp_end - hp) == final_size);
+	    *bpp = erts_resize_message_buffer(*bpp, final_size, &brefs[0], 2);
+	    msg = brefs[0];
+	    *tokenp = brefs[1];
+	}
+    }
+    return msg;
+
+ decode_error:
+    if (is_not_nil(*tokenp)) {
+	ErlHeapFragment *heap_frag = erts_dist_ext_trailer(dist_extp);
+	erts_cleanup_offheap(&heap_frag->off_heap);
+    }
+    erts_free_dist_ext_copy(dist_extp);
+    if (*bpp)
+	free_message_buffer(*bpp);
+    else if (hp) {
+	HRelease(pp, hp_end, hp);
+    }
+    *bpp = NULL;
+    return THE_NON_VALUE;
+ }
+
+static ERTS_INLINE void
+notify_new_message(Process *receiver)
+{
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS
+		       & erts_proc_lc_my_proc_locks(receiver));
+
+    ACTIVATE(receiver);
+
+    switch (receiver->status) {
+    case P_GARBING:
+	switch (receiver->gcstatus) {
+	case P_SUSPENDED:
+	    goto suspended;
+	case P_WAITING:
+	    goto waiting;
+	default:
+	    break;
+	}
+	break;
+    case P_SUSPENDED:
+    suspended:
+	receiver->rstatus = P_RUNABLE;
+	break;
+    case P_WAITING:
+    waiting:
+	erts_add_to_runq(receiver);
+	break;
+    default:
+	break;
+    }
+}
+
+void
+erts_queue_dist_message(Process *rcvr,
+			ErtsProcLocks *rcvr_locks,
+			ErtsDistExternal *dist_ext,
+			Eterm token)
+{
+    ErlMessage* mp;
+#ifdef ERTS_SMP
+    ErtsProcLocks need_locks;
+#endif
+
+    ERTS_SMP_LC_ASSERT(*rcvr_locks == erts_proc_lc_my_proc_locks(rcvr));
+
+    mp = message_alloc();
+
+#ifdef ERTS_SMP
+    need_locks = ~(*rcvr_locks) & (ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
+    if (need_locks) {
+	*rcvr_locks |= need_locks;
+	if (erts_smp_proc_trylock(rcvr, need_locks) == EBUSY) {
+	    if (need_locks == ERTS_PROC_LOCK_MSGQ) {
+		erts_smp_proc_unlock(rcvr, ERTS_PROC_LOCK_STATUS);
+		need_locks = (ERTS_PROC_LOCK_MSGQ
+			      | ERTS_PROC_LOCK_STATUS);
+	    }
+	    erts_smp_proc_lock(rcvr, need_locks);
+	}
+    }
+
+    if (rcvr->is_exiting || ERTS_PROC_PENDING_EXIT(rcvr)) {
+	/* Drop message if receiver is exiting or has a pending exit ... */
+	if (is_not_nil(token)) {
+	    ErlHeapFragment *heap_frag;
+	    heap_frag = erts_dist_ext_trailer(mp->data.dist_ext);
+	    erts_cleanup_offheap(&heap_frag->off_heap);
+	}
+	erts_free_dist_ext_copy(dist_ext);
+	message_free(mp);
+    }
+    else
+#endif
+    if (IS_TRACED_FL(rcvr, F_TRACE_RECEIVE)) {
+	/* Ahh... need to decode it in order to trace it... */
+	ErlHeapFragment *mbuf;
+	Eterm msg;
+	message_free(mp);
+	msg = erts_msg_distext2heap(rcvr, rcvr_locks, &mbuf, &token, dist_ext);
+	if (is_value(msg))
+	    erts_queue_message(rcvr, rcvr_locks, mbuf, msg, token);
+    }
+    else {
+	/* Enqueue message on external format */
+
+	ERL_MESSAGE_TERM(mp) = THE_NON_VALUE;
+	ERL_MESSAGE_TOKEN(mp) = token;
+	mp->next = NULL;
+
+	mp->data.dist_ext = dist_ext;
+	LINK_MESSAGE(rcvr, mp);
+
+	notify_new_message(rcvr);
+    }
+}
 
 /* Add a message last in message queue */
 void
@@ -289,7 +445,7 @@ erts_queue_message(Process* receiver,
 
 #ifdef ERTS_SMP
     if (*receiver_locks & ERTS_PROC_LOCK_MAIN) {
-	mp->bp = bp;
+	mp->data.heap_frag = bp;
 
 	/*
 	 * We move 'in queue' to 'private queue' and place
@@ -303,38 +459,15 @@ erts_queue_message(Process* receiver,
 	LINK_MESSAGE_PRIVQ(receiver, mp);
     }
     else {
-	mp->bp = bp;
+	mp->data.heap_frag = bp;
 	LINK_MESSAGE(receiver, mp);
     }
 #else
-    mp->bp = bp;
+    mp->data.heap_frag = bp;
     LINK_MESSAGE(receiver, mp);
 #endif
 
-    ACTIVATE(receiver);
-
-    switch (receiver->status) {
-    case P_GARBING:
-	switch (receiver->gcstatus) {
-	case P_SUSPENDED:
-	    goto suspended;
-	case P_WAITING:
-	    goto waiting;
-	default:
-	    break;
-	}
-	break;
-    case P_SUSPENDED:
-    suspended:
-	receiver->rstatus = P_RUNABLE;
-	break;
-    case P_WAITING:
-    waiting:
-	erts_add_to_runq(receiver);
-	break;
-    default:
-	break;
-    }
+    notify_new_message(receiver);
 
     if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
 	trace_receive(receiver, message);
@@ -356,7 +489,6 @@ erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp)
 	HEAP_TOP(proc) = HEAP_LIMIT(proc);
     }
 }
-
 
 /*
  * Moves content of message buffer attached to a message into a heap.
@@ -393,7 +525,7 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
     Uint dbg_term_sz, dbg_token_sz;
 #endif
 
-    bp = msg->bp;
+    bp = msg->data.heap_frag;
     term = ERL_MESSAGE_TERM(msg);
     token = ERL_MESSAGE_TOKEN(msg);
     if (!bp) {
@@ -414,7 +546,7 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 #endif
 
     ASSERT(bp);
-    msg->bp = NULL;
+    msg->data.attached = NULL;
 
     off_heap->overhead += bp->off_heap.overhead;
     sz = bp->size;
@@ -638,11 +770,59 @@ erts_move_msg_mbuf_to_heap(Eterm** hpp, ErlOffHeap* off_heap, ErlMessage *msg)
 
 }
 
-void
-erts_move_msg_mbuf_to_proc_mbufs(Process *p, ErlMessage *msg)
+Uint
+erts_msg_attached_data_size_aux(ErlMessage *msg)
 {
-    link_mbuf_to_proc(p, msg->bp);
-    msg->bp = NULL;
+    Sint sz;
+    ASSERT(is_non_value(ERL_MESSAGE_TERM(msg)));
+    ASSERT(msg->data.dist_ext);
+    ASSERT(msg->data.dist_ext->heap_size < 0);
+
+    sz = erts_decode_dist_ext_size(msg->data.dist_ext, 0);
+    if (sz < 0) {
+	/* Bad external; remove it */
+	if (is_not_nil(ERL_MESSAGE_TOKEN(msg))) {
+	    ErlHeapFragment *heap_frag;
+	    heap_frag = erts_dist_ext_trailer(msg->data.dist_ext);
+	    erts_cleanup_offheap(&heap_frag->off_heap);
+	}
+	erts_free_dist_ext_copy(msg->data.dist_ext);
+	msg->data.dist_ext = NULL;
+	return 0;
+    }
+
+    msg->data.dist_ext->heap_size = sz;
+    if (is_not_nil(msg->m[1])) {
+	ErlHeapFragment *heap_frag;
+	heap_frag = erts_dist_ext_trailer(msg->data.dist_ext);
+	sz += heap_frag->size;
+    }
+    return sz;
+}
+
+void
+erts_move_msg_attached_data_to_heap(Eterm **hpp, ErlOffHeap *ohp, ErlMessage *msg)
+{
+    if (is_value(ERL_MESSAGE_TERM(msg)))
+	erts_move_msg_mbuf_to_heap(hpp, ohp, msg);
+    else if (msg->data.dist_ext) {
+	ASSERT(msg->data.dist_ext->heap_size >= 0);
+	if (is_not_nil(ERL_MESSAGE_TOKEN(msg))) {
+	    ErlHeapFragment *heap_frag;
+	    heap_frag = erts_dist_ext_trailer(msg->data.dist_ext);
+	    ERL_MESSAGE_TOKEN(msg) = copy_struct(ERL_MESSAGE_TOKEN(msg),
+						 heap_frag->size,
+						 hpp,
+						 ohp);
+	    erts_cleanup_offheap(&heap_frag->off_heap);
+	}
+	ERL_MESSAGE_TERM(msg) = erts_decode_dist_ext(hpp,
+						     ohp,
+						     msg->data.dist_ext);
+	erts_free_dist_ext_copy(msg->data.dist_ext);
+	msg->data.dist_ext = NULL;
+    }
+    /* else: bad external detected when calculating size */
 }
 
 /*
@@ -759,7 +939,7 @@ erts_send_message(Process* sender,
 	{
 	    ErlMessage* mp = message_alloc();
 
-	    mp->bp = NULL;
+	    mp->data.attached = NULL;
 	    ERL_MESSAGE_TERM(mp) = message;
 	    ERL_MESSAGE_TOKEN(mp) = NIL;
 	    mp->next = NULL;
@@ -816,7 +996,7 @@ erts_send_message(Process* sender,
 	ERL_MESSAGE_TERM(mp) = message;
 	ERL_MESSAGE_TOKEN(mp) = NIL;
 	mp->next = NULL;
-	mp->bp = NULL;
+	mp->data.attached = NULL;
 	LINK_MESSAGE(receiver, mp);
 
 	if (receiver->status == P_WAITING) {

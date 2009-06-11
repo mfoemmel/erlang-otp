@@ -31,6 +31,43 @@
   <p>This document describes the changes made to the SSL application.
     </p>
 
+<section><title>SSL 3.10.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+            <p>Packet handling was not implemented correctly.</p>
+            <p>Inet option handling support have been improved.</p>
+            <p>The <c>verify_fun</c> is now invoked even if
+            verify_peer is used, that implies that by default
+            {bad_cert,unknown_ca} is an accepted fault during the
+            client connection phase. The check can still be done by
+            suppling another verify_fun.</p>
+          <p>
+            Own Id: OTP-8011 Aux Id: seq11287 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
+<section><title>SSL 3.10.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            A "new_ssl" socket was not closed if the controlling
+            process died without calling ssl:close/1.</p>
+          <p>
+            Own Id: OTP-7963 Aux Id: seq11276 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>SSL 3.10.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

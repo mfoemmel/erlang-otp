@@ -331,6 +331,12 @@ obsolete_1(ssh_sftp, connect, A) when 1 =< A, A =< 3 ->
     {deprecated,{ssh_sftp,start_channel,A},"R14B"};
 obsolete_1(ssh_sftp, stop, 1) ->
     {deprecated,{ssh_sftp,stop_channel,1},"R14B"};
+
+%% Added in R13B01.
+obsolete_1(ssl_pkix, decode_cert_file, A) when A =:= 1; A =:= 2 ->
+    {deprecated,"deprecated (will be removed in R14B); use public_key:pem_to_der/1 and public_key:pkix_decode_cert/2 instead"};
+obsolete_1(ssl_pkix, decode_cert, A) when A =:= 1; A =:= 2 ->
+    {deprecated,{public_key,pkix_decode_cert,2},"R14B"};
     
 obsolete_1(_, _, _) ->
     no.

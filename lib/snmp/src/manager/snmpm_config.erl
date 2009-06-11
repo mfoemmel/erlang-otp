@@ -72,7 +72,7 @@
 
 	 load_mib/1, unload_mib/1, which_mibs/0, 
 	 make_mini_mib/0,
-	 name_to_oid/1, oid_to_name/1,
+	 name_to_oid/1, oid_to_name/1, oid_to_type/1, 
 
 	 system_start_time/0,
 
@@ -527,7 +527,7 @@ system_info() ->
 
 system_info(all) ->
     lists:sort(ets:tab2list(snmpm_config_table));
-system_info(Key) when atom(Key) ->
+system_info(Key) when is_atom(Key) ->
     case ets:lookup(snmpm_config_table, Key) of
 	[{_, Val}] ->
 	    {ok, Val};
@@ -633,7 +633,8 @@ reset_usm_cache(SnmpEngineID) ->
 set_engine_time(Time) ->
     call({set_engine_time, Time}).
 
-register_usm_user(EngineID, Name, Config) when list(EngineID), list(Name) ->
+register_usm_user(EngineID, Name, Config) 
+  when is_list(EngineID) andalso is_list(Name) ->
     case verify_usm_user_config(EngineID, Name, Config) of
 	{ok, User} ->
 	    call({register_usm_user, User});
@@ -641,7 +642,8 @@ register_usm_user(EngineID, Name, Config) when list(EngineID), list(Name) ->
 	    Error
     end.
 
-unregister_usm_user(EngineID, Name) when list(EngineID), list(Name) ->
+unregister_usm_user(EngineID, Name) 
+  when is_list(EngineID) andalso is_list(Name) ->
     call({unregister_usm_user, EngineID, Name}).
 
 verify_usm_user_config(EngineID, Name, Config) ->
@@ -717,7 +719,7 @@ do_usm_user_info(_, Item) ->
     {error, {bad_iten, Item}}.
 
 update_usm_user_info(EngineID, UserName, Item, Val) 
-  when Item =/= engine_id, Item =/= name ->
+  when (Item =/= engine_id) andalso (Item =/= name) ->
     call({update_usm_user_info, EngineID, UserName, Item, Val}).
 
 get_usm_user(EngineID, UserName) ->
@@ -827,10 +829,10 @@ reset_stats_counter(Counter) ->
 get_stats_counters() ->
     ets:tab2list(snmpm_stats_table).
     
-load_mib(Mib) when list(Mib) ->
+load_mib(Mib) when is_list(Mib) ->
     call({load_mib, Mib}).
 
-unload_mib(Mib) when list(Mib) ->
+unload_mib(Mib) when is_list(Mib) ->
     call({unload_mib, Mib}).
 
 which_mibs() ->
@@ -852,6 +854,14 @@ oid_to_name(Oid) ->
     case ets:lookup(snmpm_mib_table, {mini_mib, Oid}) of
 	[{_, Name, _, _}] ->
 	    {ok, Name};
+	[] ->
+	    {error, not_found}
+    end.
+
+oid_to_type(Oid) ->
+    case ets:lookup(snmpm_mib_table, {mini_mib, Oid}) of
+	[{_, _, Type, _}] ->
+	    {ok, Type};
 	[] ->
 	    {error, not_found}
     end.
@@ -1205,7 +1215,7 @@ verify_option({def_user_data, _Data}) ->
 verify_option(Opt) ->
     {error, {invalid_option, Opt}}.
 
-verify_prio(Prio) when atom(Prio) ->
+verify_prio(Prio) when is_atom(Prio) ->
     ok;
 verify_prio(Prio) ->
     error({invalid_prio, Prio}).
@@ -1214,14 +1224,14 @@ verify_irb(auto) ->
     ok;
 verify_irb(user) ->
     ok;
-verify_irb({user, To}) when is_integer(To) and (To > 0) ->
+verify_irb({user, To}) when is_integer(To) andalso (To > 0) ->
     ok;
 verify_irb(IRB) ->
     error({invalid_irb, IRB}).
 
 verify_mibs([]) ->
     ok;
-verify_mibs([Mib|Mibs]) when list(Mib) ->
+verify_mibs([Mib|Mibs]) when is_list(Mib) ->
     verify_mibs(Mibs);
 verify_mibs(Mibs) ->
     error({invalid_mibs, Mibs}).
@@ -1260,7 +1270,7 @@ verify_server_opts([{timeout, Timeout}|Opts]) ->
 verify_server_opts([Opt|_]) ->
     error({invalid_server_option, Opt}).
 
-verify_server_timeout(T) when integer(T), T > 0 ->
+verify_server_timeout(T) when is_integer(T) andalso (T > 0) ->
     ok;
 verify_server_timeout(T) ->
     error({invalid_server_timeout, T}).
@@ -1273,7 +1283,7 @@ verify_net_if_opts([{module, Mod}|Opts]) ->
 verify_net_if_opts([{verbosity, Verbosity}|Opts]) ->
     verify_verbosity(Verbosity),
     verify_net_if_opts(Opts);
-verify_net_if_opts([{options, Options}|Opts]) when list(Options) ->
+verify_net_if_opts([{options, Options}|Opts]) when is_list(Options) ->
     verify_net_if_opts(Opts);
 verify_net_if_opts([Opt|_]) ->
     error({invalid_net_if_option, Opt}).
@@ -1298,7 +1308,7 @@ verify_note_store_opts([{timeout, Timeout}|Opts]) ->
 verify_note_store_opts([Opt|_]) ->
     error({invalid_note_store_option, Opt}).
 
-verify_note_store_timeout(T) when integer(T), T > 0 ->
+verify_note_store_timeout(T) when is_integer(T) andalso (T > 0) ->
     ok;
 verify_note_store_timeout(T) ->
     error({invalid_note_store_timeout, T}).
@@ -1344,7 +1354,8 @@ verify_conf_repair(InvalidRepair) ->
 
 verify_conf_auto_save(infinity) ->
     ok;
-verify_conf_auto_save(AutoSave) when integer(AutoSave), AutoSave > 0 ->
+verify_conf_auto_save(AutoSave) 
+  when is_integer(AutoSave) andalso (AutoSave > 0) ->
     ok;
 verify_conf_auto_save(InvalidAutoSave) ->
     error({invalid_conf_db_auto_save, InvalidAutoSave}).
@@ -1401,13 +1412,16 @@ verify_log_dir(Dir) ->
 	    error({invalid_audit_trail_log_dir, Dir})
     end.
 
-verify_log_size(Sz) when integer(Sz), Sz > 0 ->
+verify_log_size(Sz) when is_integer(Sz) andalso (Sz > 0) ->
     ok;
 verify_log_size(infinity) ->
     ok;
 verify_log_size({MaxNoBytes, MaxNoFiles}) 
-  when integer(MaxNoBytes), MaxNoBytes > 0,
-       integer(MaxNoFiles), MaxNoFiles > 0, MaxNoFiles < 65000 ->
+  when (is_integer(MaxNoBytes) andalso 
+	(MaxNoBytes > 0) andalso 
+	is_integer(MaxNoFiles) andalso 
+	(MaxNoFiles > 0) andalso 
+	(MaxNoFiles < 65000)) ->
     ok;
 verify_log_size(Sz) ->
     error({invalid_audit_trail_log_size, Sz}).
@@ -1419,7 +1433,7 @@ verify_log_repair(Repair) ->
     error({invalid_audit_trail_log_repair, Repair}).
 
 
-verify_module(_, Mod) when atom(Mod) ->
+verify_module(_, Mod) when is_atom(Mod) ->
     ok;
 verify_module(ReasonTag, Mod) ->
     error({invalid_module, ReasonTag, Mod}).
@@ -1431,7 +1445,7 @@ verify_module(ReasonTag, Mod) ->
 % verify_bool(ReasonTag, Bool) ->
 %     error({invalid_bool, ReasonTag, Bool}).
 
-verify_dir(Dir) when list(Dir) ->
+verify_dir(Dir) when is_list(Dir) ->
     case file:read_file_info(Dir) of
 	{ok, #file_info{type = directory}} ->
 	    ok;
@@ -1754,7 +1768,7 @@ init_usm_users_config([User|Users]) ->
     init_usm_user_config(User),
     init_usm_users_config(Users).
 
-init_usm_user_config(User) when record(User, usm_user) ->
+init_usm_user_config(User) when is_record(User, usm_user) ->
     case handle_register_usm_user(User) of
 	ok ->
 	    ok;
@@ -1825,7 +1839,7 @@ verify_usm_user_auth(usmNoAuthProtocol, AuthKey) ->
 	    error({invalid_auth_key, usmNoAuthProtocol})
     end;
 verify_usm_user_auth(usmHMACMD5AuthProtocol, AuthKey) 
-  when list(AuthKey), length(AuthKey) == 16 ->
+  when is_list(AuthKey) andalso (length(AuthKey) =:= 16) ->
     case is_crypto_supported(md5_mac_96) of
 	true -> 
 	    case snmp_conf:all_integer(AuthKey) of
@@ -1837,13 +1851,13 @@ verify_usm_user_auth(usmHMACMD5AuthProtocol, AuthKey)
 	false -> 
 	    error({unsupported_crypto, md5_mac_96})
     end;    
-verify_usm_user_auth(usmHMACMD5AuthProtocol, AuthKey) when list(AuthKey) ->
+verify_usm_user_auth(usmHMACMD5AuthProtocol, AuthKey) when is_list(AuthKey) ->
     Len = length(AuthKey),
     error({invalid_auth_key, usmHMACMD5AuthProtocol, Len});
 verify_usm_user_auth(usmHMACMD5AuthProtocol, _AuthKey) ->
     error({invalid_auth_key, usmHMACMD5AuthProtocol});
 verify_usm_user_auth(usmHMACSHAAuthProtocol, AuthKey) 
-  when list(AuthKey), length(AuthKey) == 20 ->
+  when is_list(AuthKey) andalso (length(AuthKey) =:= 20) ->
     case is_crypto_supported(sha_mac_96) of
 	true -> 
 	    case snmp_conf:all_integer(AuthKey) of
@@ -1855,7 +1869,7 @@ verify_usm_user_auth(usmHMACSHAAuthProtocol, AuthKey)
 	false -> 
 	    error({unsupported_crypto, sha_mac_96})
     end;
-verify_usm_user_auth(usmHMACSHAAuthProtocol, AuthKey) when list(AuthKey) ->
+verify_usm_user_auth(usmHMACSHAAuthProtocol, AuthKey) when is_list(AuthKey) ->
     Len = length(AuthKey),
     error({invalid_auth_key, usmHMACSHAAuthProtocol, Len});
 verify_usm_user_auth(usmHMACSHAAuthProtocol, _AuthKey) ->
@@ -1871,7 +1885,7 @@ verify_usm_user_priv(usmNoPrivProtocol, PrivKey) ->
 	    error({invalid_priv_key, usmNoPrivProtocol})
     end;
 verify_usm_user_priv(usmDESPrivProtocol, PrivKey) 
-  when length(PrivKey) == 16 ->
+  when (length(PrivKey) =:= 16) ->
     case is_crypto_supported(des_cbc_decrypt) of
 	true -> 
 	    case snmp_conf:all_integer(PrivKey) of
@@ -1883,13 +1897,13 @@ verify_usm_user_priv(usmDESPrivProtocol, PrivKey)
 	false -> 
 	    error({unsupported_crypto, des_cbc_decrypt})
     end;
-verify_usm_user_priv(usmDESPrivProtocol, PrivKey) when list(PrivKey) ->
+verify_usm_user_priv(usmDESPrivProtocol, PrivKey) when is_list(PrivKey) ->
     Len = length(PrivKey),
     error({invalid_priv_key, usmDESPrivProtocol, Len});
 verify_usm_user_priv(usmDESPrivProtocol, _PrivKey) ->
     error({invalid_priv_key, usmDESPrivProtocol});
 verify_usm_user_priv(usmAesCfb128Protocol, PrivKey) 
-  when length(PrivKey) == 16 ->
+  when (length(PrivKey) =:= 16) ->
     case is_crypto_supported(aes_cfb_128_decrypt) of
 	true -> 
 	    case snmp_conf:all_integer(PrivKey) of
@@ -1901,7 +1915,7 @@ verify_usm_user_priv(usmAesCfb128Protocol, PrivKey)
 	false -> 
 	    error({unsupported_crypto, aes_cfb_128_decrypt})
     end;
-verify_usm_user_priv(usmAesCfb128Protocol, PrivKey) when list(PrivKey) ->
+verify_usm_user_priv(usmAesCfb128Protocol, PrivKey) when is_list(PrivKey) ->
     Len = length(PrivKey),
     error({invalid_priv_key, usmAesCfb128Protocol, Len});
 verify_usm_user_priv(usmAesCfb128Protocol, _PrivKey) ->
@@ -2301,7 +2315,7 @@ code_change(_Vsn, State, _Extra) ->
 
 stop_backup_server(undefined) ->
     ok;
-stop_backup_server({Pid, _}) when pid(Pid) ->
+stop_backup_server({Pid, _}) when is_pid(Pid) ->
     exit(Pid, kill).
 
 
@@ -2635,7 +2649,7 @@ do_update_usm_user_info(Key,
     end;    
 do_update_usm_user_info(_Key, 
 			#usm_user{auth = usmHMACMD5AuthProtocol}, 
-			auth_key, Val) when list(Val) ->
+			auth_key, Val) when is_list(Val) ->
     Len = length(Val),
     {error, {invalid_auth_key_length, usmHMACMD5AuthProtocol, Len}};
 do_update_usm_user_info(_Key, 
@@ -2645,7 +2659,7 @@ do_update_usm_user_info(_Key,
 do_update_usm_user_info(Key, 
 			#usm_user{auth = usmHMACSHAAuthProtocol} = User, 
 			auth_key, Val) 
-  when length(Val) == 20 ->
+  when length(Val) =:= 20 ->
     case is_crypto_supported(sha_mac_96) of
 	true -> 
 	    do_update_usm_user_info(Key, User#usm_user{auth_key = Val});
@@ -2654,7 +2668,7 @@ do_update_usm_user_info(Key,
     end;    
 do_update_usm_user_info(_Key, 
 			#usm_user{auth = usmHMACSHAAuthProtocol}, 
-			auth_key, Val) when list(Val) ->
+			auth_key, Val) when is_list(Val) ->
     Len = length(Val),
     {error, {invalid_auth_key_length, usmHMACSHAAuthProtocol, Len}};
 do_update_usm_user_info(_Key, 
@@ -2662,9 +2676,9 @@ do_update_usm_user_info(_Key,
 			auth_key, Val) ->
     {error, {invalid_auth_key, usmHMACSHAAuthProtocol, Val}};
 do_update_usm_user_info(Key, User, priv, Val) 
-  when Val == usmNoPrivProtocol; 
-       Val == usmDESPrivProtocol;
-       Val == usmAesCfb128Protocol ->
+  when (Val =:= usmNoPrivProtocol) orelse 
+       (Val =:= usmDESPrivProtocol) orelse
+       (Val =:= usmAesCfb128Protocol) ->
     do_update_usm_user_info(Key, User#usm_user{priv = Val});
 do_update_usm_user_info(_Key, _User, priv, Val) ->
     {error, {invalid_priv_protocol, Val}};
@@ -2680,7 +2694,7 @@ do_update_usm_user_info(Key,
 do_update_usm_user_info(Key, 
 			#usm_user{priv = usmDESPrivProtocol} = User, 
 			priv_key, Val) 
-  when length(Val) == 16 ->
+  when length(Val) =:= 16 ->
     case is_crypto_supported(des_cbc_decrypt) of
 	true -> 
 	    do_update_usm_user_info(Key, User#usm_user{priv_key = Val});
@@ -2690,7 +2704,7 @@ do_update_usm_user_info(Key,
 do_update_usm_user_info(Key, 
 			#usm_user{priv = usmAesCfb128Protocoll} = User, 
 			priv_key, Val) 
-  when length(Val) == 16 ->
+  when length(Val) =:= 16 ->
     case is_crypto_supported(aes_cfb_128_decrypt) of
 	true -> 
 	    do_update_usm_user_info(Key, User#usm_user{priv_key = Val});
@@ -2699,7 +2713,7 @@ do_update_usm_user_info(Key,
     end;    
 do_update_usm_user_info(_Key, 
 			#usm_user{auth = usmHMACSHAAuthProtocol}, 
-			priv_key, Val) when list(Val) ->
+			priv_key, Val) when is_list(Val) ->
     Len = length(Val),
     {error, {invalid_priv_key_length, usmHMACSHAAuthProtocol, Len}};
 do_update_usm_user_info(_Key, 
@@ -2851,7 +2865,7 @@ handle_load_mib(Mib) ->
 	false ->
 	    Mibs = [Mib|Mibs0],
 	    case (catch do_load_mib(Mib)) of
-		MiniElems when list(MiniElems) ->
+		MiniElems when is_list(MiniElems) ->
 		    ets:insert(snmpm_config_table, {mibs, Mibs}),
 		    update_mini_mib(MiniElems),
 		    ok;
@@ -2862,15 +2876,17 @@ handle_load_mib(Mib) ->
 
 update_mini_mib([]) ->
     ok;
-update_mini_mib([{Oid, N, Type, MibName}|Elems]) ->
+update_mini_mib([{Oid, Name, Type, MibName}|Elems]) ->
     Key = {mini_mib, Oid},
     case ets:lookup(snmpm_mib_table, Key) of
-	[{Key, _N, _Type, _AnotherMibName}] ->
+	[{Key, _Name, _Type, _AnotherMibName}] ->
 	    %% Already loaded from another mib
 	    update_mini_mib(Elems);
 	[] ->
 	    %% Not yet loaded
-	    ets:insert(snmpm_mib_table, {Key, N, Type, MibName}),
+	    ?vtrace("update mini mib -> ~w: ~w [~w] from ~s", 
+		    [Name, Oid, Type, MibName]),    
+	    ets:insert(snmpm_mib_table, {Key, Name, Type, MibName}),
 	    update_mini_mib(Elems)
     end.
 
@@ -2928,7 +2944,7 @@ do_load_mib(MibFile) ->
 	    error({failed_reading_mib, MibFile, Reason})
     end.
 
-mib_name(N) when list(N) ->
+mib_name(N) when is_list(N) ->
     list_to_atom(N);
 mib_name(N) ->
     N.
@@ -3048,7 +3064,7 @@ get_info() ->
 		  {user,    UserSz}, 
 		  {usm,     UsmSz}]}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
 	{memory, Sz} when is_integer(Sz) ->
 	    Sz;

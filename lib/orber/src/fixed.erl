@@ -53,9 +53,9 @@
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
-create(Digits, Scale, Value) when integer(Digits), Digits >= 0, Digits < 32,
-				  integer(Scale), Scale >= 0, Digits >= Scale,
-				  integer(Value), Value =< ?FIXED_MAX,
+create(Digits, Scale, Value) when is_integer(Digits) andalso Digits >= 0 andalso Digits < 32 andalso
+				  is_integer(Scale) andalso Scale >= 0 andalso Digits >= Scale andalso
+				  is_integer(Value) andalso Value =< ?FIXED_MAX andalso
 				  Value >= ?FIXED_MIN ->
     case count_digits(abs(Value)) of
 	Dig when Dig =< Digits ->
@@ -144,7 +144,7 @@ multiply(F1, F2) ->
 	      [?LINE, F1, F2], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
-unary_minus(Fixed) when record(Fixed, fixed) ->
+unary_minus(Fixed) when is_record(Fixed, fixed) ->
     Fixed#fixed{value = -(Fixed#fixed.value)};
 unary_minus(Fixed) ->
     orber:dbg("[~p] fixed:unary_minus(~p).~n"

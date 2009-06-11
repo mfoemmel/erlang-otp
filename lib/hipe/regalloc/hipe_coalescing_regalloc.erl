@@ -55,11 +55,11 @@
 
 regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   %% Build interference graph
-  ?debug_msg("Build IG\n",[]),
+  ?debug_msg("Build IG\n", []),
   IG = hipe_ig:build(CFG, Target),
-  %% io:format("IG: ~p\n",[IG]),
+  %% io:format("IG: ~p\n", [IG]),
 
-  ?debug_msg("Init\n",[]),
+  ?debug_msg("Init\n", []),
   Num_Temps = Target:number_of_temporaries(CFG),
   ?debug_msg("Coalescing RA: num_temps = ~p~n", [Num_Temps]),
   Allocatable = Target:allocatable(),
@@ -67,34 +67,34 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   All_colors = colset_from_list(Allocatable),
 
   %% Add registers with their own coloring
-  ?debug_msg("Moves\n",[]),
+  ?debug_msg("Moves\n", []),
   Move_sets = hipe_moves:new(IG),
 
-  ?debug_msg("Build Worklist\n",[]),
+  ?debug_msg("Build Worklist\n", []),
   Worklists = hipe_reg_worklists:new(IG, Target, CFG, Move_sets, K, Num_Temps),
   Alias = initAlias(Num_Temps),
 
-  ?debug_msg("Do coloring\n~p~n",[Worklists]),
+  ?debug_msg("Do coloring\n~p~n", [Worklists]),
   {_IG0, Worklists0, _Moves0, Alias0} = 
     do_coloring(IG, Worklists, Move_sets, Alias, K, SpillLimit, Target),
   %% io:format("SelStk0 ~w\n",[SelStk0]),
-  ?debug_msg("Init node sets\n",[]),
+  ?debug_msg("Init node sets\n", []),
   Node_sets = hipe_node_sets:new(),
   %% io:format("NodeSet: ~w\n NonAlloc ~w\n",[Node_sets,Target:non_alloc(CFG)]),
-  ?debug_msg("Default coloring\n",[]),
+  ?debug_msg("Default coloring\n", []),
   {Color0,Node_sets1} = 
     defaultColoring(Target:all_precoloured(),
 		    initColor(Num_Temps), Node_sets, Target),
 
-  ?debug_msg("Assign colors\n",[]),
+  ?debug_msg("Assign colors\n", []),
   {Color1,Node_sets2} =
     assignColors(hipe_reg_worklists:stack(Worklists0), Node_sets1, Color0, 
 		 Alias0, All_colors, Target),
   %% io:format("color0:~w\nColor1:~w\nNodes:~w\nNodes2:~w\nNum_Temps:~w\n",[Color0,Color1,Node_sets,Node_sets2,Num_Temps]),
 
-  ?debug_msg("Build mapping ~p\n",[Node_sets2]),
+  ?debug_msg("Build mapping ~p\n", [Node_sets2]),
   Coloring = build_namelist(Node_sets2, SpillIndex, Alias0, Color1),
-  ?debug_msg("Coloring ~p\n",[Coloring]),
+  ?debug_msg("Coloring ~p\n", [Coloring]),
   Coloring.
 
 %%----------------------------------------------------------------------
@@ -131,13 +131,11 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
 		 Worklists, 
 		 Moves, 
 		 K),
-      do_coloring(IG0, Worklists0, Moves0, Alias,
-		  K, SpillLimit, Target);
+      do_coloring(IG0, Worklists0, Moves0, Alias, K, SpillLimit, Target);
      Coalesce =:= true ->
       {Moves0, IG0, Worklists0, Alias0} =
 	coalesce(Moves, IG, Worklists, Alias, K, Target),
-      do_coloring(IG0, Worklists0, Moves0, Alias0, 
-		  K, SpillLimit, Target);
+      do_coloring(IG0, Worklists0, Moves0, Alias0, K, SpillLimit, Target);
      Freeze =:= true ->
       {Worklists0,Moves0} = 
 	freeze(K, Worklists, Moves, IG, Alias),
@@ -146,8 +144,7 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
      Spill =:= true ->
       {Worklists0, Moves0} = 
 	selectSpill(Worklists, Moves, IG, K, Alias, SpillLimit),
-      do_coloring(IG, Worklists0, Moves0, Alias, 
-		  K, SpillLimit, Target);
+      do_coloring(IG, Worklists0, Moves0, Alias, K, SpillLimit, Target);
      true -> % Catchall case
       {IG, Worklists, Moves, Alias}
     end.
@@ -324,17 +321,17 @@ build_coalescedlist([Node|Ns], Color, Alias, List) when is_integer(Node) ->
   AC = getColor(getAlias(Node, Alias), Color),
   build_coalescedlist(Ns, Color, Alias, [{Node,{reg,AC}}|List]).
 
-build_reglist([],_Color,List) -> 
+build_reglist([], _Color, List) -> 
   List;
-build_reglist([Node|Ns],Color,List) ->
-  build_reglist(Ns,Color,[{Node,{reg,getColor(Node,Color)}}|List]).
+build_reglist([Node|Ns], Color, List) ->
+  build_reglist(Ns, Color, [{Node,{reg,getColor(Node,Color)}}|List]).
 
-build_alias_list([],_I,List) ->
+build_alias_list([], _I, List) ->
   List;
-build_alias_list([Alias|Aliases],I,List) when is_integer(Alias) ->
-  build_alias_list(Aliases,I+1,[I|List]);
-build_alias_list([_Alias|Aliases],I,List) ->
-  build_alias_list(Aliases,I+1,List).
+build_alias_list([Alias|Aliases], I, List) when is_integer(Alias) ->
+  build_alias_list(Aliases, I+1, [I|List]);
+build_alias_list([_Alias|Aliases], I, List) ->
+  build_alias_list(Aliases, I+1, List).
 
 %%----------------------------------------------------------------------
 %% Function:    assignColors
@@ -359,7 +356,7 @@ build_alias_list([_Alias|Aliases],I,List) ->
 %%   NodeSets       --  The updated node sets.
 %%----------------------------------------------------------------------
 
-assignColors(Stack,NodeSets,Color,Alias,AllColors,Target) ->
+assignColors(Stack, NodeSets, Color, Alias, AllColors, Target) ->
   case Stack of
     [] ->
       {Color,NodeSets};
@@ -401,31 +398,31 @@ assignColors(Stack,NodeSets,Color,Alias,AllColors,Target) ->
 %%   NewNodeSets    -- The updated node sets
 %%---------------------------------------------------------------------
 
-defaultColoring([],Color,NodeSets,_Target) ->
+defaultColoring([], Color, NodeSets, _Target) ->
   {Color,NodeSets};
-defaultColoring([Reg|Regs],Color,NodeSets,Target) ->
-  Color1 = setColor(Reg,Target:physical_name(Reg),Color),
+defaultColoring([Reg|Regs], Color, NodeSets, Target) ->
+  Color1 = setColor(Reg,Target:physical_name(Reg), Color),
   NodeSets1 = hipe_node_sets:add_colored(Reg, NodeSets),
-  defaultColoring(Regs,Color1,NodeSets1,Target).
+  defaultColoring(Regs, Color1, NodeSets1, Target).
 
 %% Find the colors that are OK for a node with certain edges.
 
-findOkColors(Edges,AllColors,Color,Alias) ->
+findOkColors(Edges, AllColors, Color, Alias) ->
   find(Edges, AllColors, Color, Alias).
 
 %% Find all the colors of the nodes in the list [Node|Nodes] and remove them 
 %% from the set OkColors, when the list is empty, return OkColors.
 
-find([],OkColors,_Color,_Alias) ->
+find([], OkColors, _Color, _Alias) ->
   OkColors;
-find([Node0|Nodes],OkColors,Color,Alias) ->
+find([Node0|Nodes], OkColors, Color, Alias) ->
   Node = getAlias(Node0, Alias),
   case getColor(Node, Color) of
     [] ->
-      find(Nodes,OkColors,Color,Alias);
+      find(Nodes, OkColors, Color, Alias);
     Col ->
       OkColors1 = colset_del_element(Col, OkColors),
-      find(Nodes,OkColors1,Color,Alias)
+      find(Nodes, OkColors1, Color, Alias)
   end.
 
 %%%
@@ -504,12 +501,12 @@ hweight16(W) ->
 initColor(NrNodes) ->
   {colmap, hipe_bifs:array(NrNodes, [])}.
 
-getColor(Node, {colmap,ColMap}) ->
+getColor(Node, {colmap, ColMap}) ->
   hipe_bifs:array_sub(ColMap, Node).
 
-setColor(Node, Colour, {colmap,ColMap}) ->
+setColor(Node, Colour, {colmap, ColMap} = Col) ->
   hipe_bifs:array_update(ColMap, Node, Colour),  
-  {colmap, ColMap}.
+  Col.
 
 %%%
 %%% Alias ADT providing a partial mapping from nodes to nodes.
@@ -526,9 +523,9 @@ getAlias(Node, {alias,AliasMap}) ->
       getAlias(AliasNode, {alias,AliasMap})
   end.
 
-setAlias(Node, AliasNode, {alias,AliasMap}) ->
+setAlias(Node, AliasNode, {alias, AliasMap} = Alias) ->
   hipe_bifs:array_update(AliasMap, Node, AliasNode),
-  {alias, AliasMap}.
+  Alias.
 
 aliasToList({alias,AliasMap}) ->
   aliasToList(AliasMap, hipe_bifs:array_length(AliasMap), []).
@@ -843,7 +840,8 @@ conservative_countU([Node|AdjU], AdjV, U, Worklists, IG, K, Cnt) ->
 	true -> conservative_countU(AdjU, AdjV, U, Worklists, IG, K, Cnt);
 	_ ->
 	  Cnt1 = Cnt + 1,
-	  if Cnt1 < K -> conservative_countU(AdjU, AdjV, U, Worklists, IG, K, Cnt1);
+	  if Cnt1 < K ->
+	      conservative_countU(AdjU, AdjV, U, Worklists, IG, K, Cnt1);
 	     true -> false
 	  end
       end
@@ -861,7 +859,8 @@ conservative_countV([Node|AdjV], U, Worklists, IG, K, Cnt) ->
 	    true -> conservative_countV(AdjV, U, Worklists, IG, K, Cnt);
 	    _ ->
 	      Cnt1 = Cnt + 1,
-	      if Cnt1 < K -> conservative_countV(AdjV, U, Worklists, IG, K, Cnt1);
+	      if Cnt1 < K ->
+		  conservative_countV(AdjV, U, Worklists, IG, K, Cnt1);
 		 true -> false
 	      end
 	  end
@@ -888,8 +887,8 @@ conservative_countV([Node|AdjV], U, Worklists, IG, K, Cnt) ->
 selectSpill(WorkLists, Moves, IG, K, Alias, SpillLimit) ->
   [CAR|CDR] = hipe_reg_worklists:spill(WorkLists),
   
-  SpillCost = getCost(CAR, IG,SpillLimit),
-  M = findCheapest(CDR,IG,SpillCost,CAR, SpillLimit),
+  SpillCost = getCost(CAR, IG, SpillLimit),
+  M = findCheapest(CDR, IG, SpillCost, CAR, SpillLimit),
   
   WorkLists1 = hipe_reg_worklists:remove_spill(M, WorkLists),
   %% The published algorithm adds M to the simplify worklist
@@ -917,7 +916,7 @@ findCheapest([Node|Nodes], IG, Cost, Cheapest, SpillLimit) ->
 
 getCost(Node, IG, SpillLimit) ->
   case Node > SpillLimit of
-    true ->  inf;
+    true -> inf;
     false -> hipe_ig:node_spill_cost(Node, IG)
   end.
 
@@ -942,9 +941,9 @@ getCost(Node, IG, SpillLimit) ->
 %%   Moves          -- The updated movelists
 %%----------------------------------------------------------------------
 
-freeze(K,WorkLists,Moves,IG,Alias) ->
+freeze(K, WorkLists, Moves, IG, Alias) ->
   [U|_] = hipe_reg_worklists:freeze(WorkLists),         % Smarter routine?
-  ?debug_msg("freezing node ~p~n",[U]),
+  ?debug_msg("freezing node ~p~n", [U]),
   WorkLists0 = hipe_reg_worklists:remove_freeze(U, WorkLists),
   %% The published algorithm adds U to the simplify worklist
   %% before the freezeMoves() call. That breaks the worklist
@@ -973,9 +972,9 @@ freeze(K,WorkLists,Moves,IG,Alias) ->
 %%   Moves          -- The updated movelists
 %%----------------------------------------------------------------------
 
-freezeMoves(U,K,WorkLists,Moves,IG,Alias) ->
+freezeMoves(U, K, WorkLists, Moves, IG, Alias) ->
   Nodes = hipe_moves:node_moves(U, Moves),
-  freezeEm(U,Nodes,K,WorkLists,Moves,IG,Alias).
+  freezeEm(U, Nodes, K, WorkLists, Moves, IG, Alias).
 
 %% Find what the other value in a copy instruction is, return false if 
 %% the instruction isn't a move with the first argument in it.
@@ -998,33 +997,33 @@ moves(U, Move, Alias, Moves) ->
      true -> exit({?MODULE,moves}) % XXX: shouldn't happen
   end.
 
-freezeEm(_U,[],_K,WorkLists,Moves,_IG,_Alias) -> 
+freezeEm(_U, [], _K, WorkLists, Moves, _IG, _Alias) ->
   {WorkLists,Moves};
-freezeEm(U,[M|Ms],K,WorkLists,Moves,IG,Alias) ->
+freezeEm(U,[M|Ms], K, WorkLists, Moves, IG, Alias) ->
   V = moves(U, M, Alias, Moves),
-  {WorkLists2,Moves2} = freezeEm2(U,V,M,K,WorkLists,Moves,IG,Alias),
-  freezeEm(U,Ms,K,WorkLists2,Moves2,IG,Alias).
+  {WorkLists2,Moves2} = freezeEm2(U, V, M, K, WorkLists, Moves, IG, Alias),
+  freezeEm(U, Ms, K, WorkLists2, Moves2, IG, Alias).
 
-freezeEm2(U,V,M,K,WorkLists,Moves,IG,Alias) ->
+freezeEm2(U, V, M, K, WorkLists, Moves, IG, Alias) ->
   case hipe_moves:member_active(M, Moves) of
     true ->
       Moves1 = hipe_moves:remove_active(M, Moves),
-      freezeEm3(U,V,M,K,WorkLists,Moves1,IG,Alias);	
+      freezeEm3(U, V, M, K, WorkLists, Moves1, IG, Alias);	
     false ->
       Moves1 = hipe_moves:remove_worklist(M, Moves),
-      freezeEm3(U,V,M,K,WorkLists,Moves1,IG,Alias)
+      freezeEm3(U, V, M, K, WorkLists, Moves1, IG, Alias)
   end.
 
-freezeEm3(_U,V,_M,K,WorkLists,Moves,IG,_Alias) ->
+freezeEm3(_U, V, _M, K, WorkLists, Moves, IG, _Alias) ->
   Moves1 = Moves, % drop frozen move M
   V1 = V, % getAlias(V,Alias),
   %% "not MoveRelated(v)" is cheaper than "NodeMoves(v) = {}"
-  case ((not hipe_moves:move_related(V1,Moves1)) andalso
-	hipe_ig:is_trivially_colourable(V1,K,IG)) of
+  case ((not hipe_moves:move_related(V1, Moves1)) andalso
+	hipe_ig:is_trivially_colourable(V1, K, IG)) of
     true ->
       ?debug_msg("freezing move to ~p~n", [V]),
       Worklists1 = hipe_reg_worklists:transfer_freeze_simplify(V1, WorkLists),
-      {Worklists1,Moves1};
+      {Worklists1, Moves1};
     false ->
-      {WorkLists,Moves1}
+      {WorkLists, Moves1}
   end.

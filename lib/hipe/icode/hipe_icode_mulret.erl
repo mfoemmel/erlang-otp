@@ -102,13 +102,8 @@ mkTable([], Table) -> Table.
 %% Return    : 
 %% Notes     : 
 %%>----------------------------------------------------------------------<
-isFunDef({_,F,_}) ->
-  case hd(atom_to_list(F)) of
-    45 ->   %% 45 is the character '-'
-      true;
-    _ ->
-      false
-  end.
+isFunDef({_, F, _}) ->
+  hd(atom_to_list(F)) =:= 45.   %% 45 is the character '-'
 
 %%>----------------------------------------------------------------------<
 %% Procedure : mkCallList/1
@@ -514,8 +509,7 @@ checkExported(_, []) -> true.
 optimize(List, _Mod, Opts, Table) -> 
   {FunLst, CallLst} = Table,
   List2 = optimizeFuns(FunLst, Opts, List),
-  List3 = optimizeCalls(CallLst, Opts, List2),
-    List3.
+  optimizeCalls(CallLst, Opts, List2).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : optimizeFuns/3
@@ -528,7 +522,6 @@ optimizeFuns([{Fun, _}|FunList], Opts, List) ->
   NewList = findFun(List, Fun),
   optimizeFuns(FunList, Opts, NewList);
 optimizeFuns([],_,List) -> List.
-
 
 findFun(List, Fun) -> findFun(List, Fun, []).
 findFun([{Fun, Icode}|List], Fun, Res) ->
@@ -825,9 +818,7 @@ cleanUpAffectedCode(Cfg, OldVar, Callee, Label, Visited) ->
   Cfg2 = hipe_icode_cfg:bb_add(Cfg, Label, NewBlock),
   Cfg3 = resolveSuccBlocks(Succs, OldVar, DstLst, [Label|Visited],
 			   NewFailLab, Cfg2),
-  Cfg4 = insertMiddleFailBlock(Cfg3, NewFailLab, FailLab, OldVar, DstLst),
-  Cfg4.
-
+  insertMiddleFailBlock(Cfg3, NewFailLab, FailLab, OldVar, DstLst).
 
 divideAtCall(Code, Caller) ->
   divideAtCall(Code, Caller, []).

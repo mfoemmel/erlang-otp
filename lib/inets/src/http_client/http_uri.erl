@@ -92,7 +92,7 @@ parse_host_port(Scheme, HostPort) ->
     {Host, int_port(Port)}.
     
 split_uri(UriPart, SplitChar, NoMatchResult, SkipLeft, SkipRight) ->
-    case regexp:first_match(UriPart, SplitChar) of
+    case inets_regexp:first_match(UriPart, SplitChar) of
 	{match, Match, _} ->
 	    {string:substr(UriPart, 1, Match - SkipLeft),
 	     string:substr(UriPart, Match + SkipRight, length(UriPart))}; 

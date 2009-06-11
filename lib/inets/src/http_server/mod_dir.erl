@@ -122,12 +122,12 @@ header(Path,RequestURI) ->
 	RequestURI ++ "</H1>\n<PRE><IMG SRC=\"" ++ icon(blank) ++
 	"\" ALT="     "> Name                   Last modified         "
 	"Size  Description <HR>\n",
-    case regexp:sub(RequestURI,"[^/]*\$","") of
+    case inets_regexp:sub(RequestURI,"[^/]*\$","") of
 	{ok,"/",_} ->
 	    Header;
 	{ok,ParentRequestURI,_} ->
 	    {ok,ParentPath,_} =
-		regexp:sub(string:strip(Path,right,$/),"[^/]*\$",""),
+		inets_regexp:sub(string:strip(Path,right,$/),"[^/]*\$",""),
 	    Header++format(ParentPath,ParentRequestURI)
     end.
 

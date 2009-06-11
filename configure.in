@@ -5,7 +5,7 @@ AC_INIT()
 
 default_cache_file=./config.cache
 
-if test "x$no_recursion" != "xyes"; then
+if test "x$no_recursion" != "xyes" -a "x$OVERRIDE_CONFIG_CACHE" = "x"; then
     # The no_recursion variable is not documented, but the only
     # action we take on it is disabling caching which is safe!
     if test "x$cache_file" != "x$default_cache_file"; then
@@ -149,7 +149,12 @@ AC_ARG_ENABLE(hipe,
   --disable-hipe          disable hipe support])
 
 AC_ARG_ENABLE(megaco_flex_scanner_lineno,
-[  --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno])
+[  --enable-megaco-flex-scanner-lineno enable megaco flex scanner lineno
+  --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno])
+
+AC_ARG_ENABLE(megaco_reentrant_flex_scanner,
+[  --enable-megaco-reentrant-flex-scanner enable reentrans megaco flex scanner
+  --disable-megaco-reentrant-flex-scanner disable reentrans megaco flex scanner])
 
 AC_ARG_WITH(ssl,
 [  --with-ssl=PATH         specify location of OpenSSL include and lib

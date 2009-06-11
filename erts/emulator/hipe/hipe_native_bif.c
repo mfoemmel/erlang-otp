@@ -505,41 +505,14 @@ int hipe_bs_validate_unicode_retract(ErlBinMatchBuffer* mb, Eterm arg)
     return 1;
 }
 
-/*
- * Shallow copy to heap if possible; otherwise,
- * move to heap via garbage collection.
- */
-
-#define MV_MSG_MBUF_INTO_PROC(M)					\
-do {									\
-    if ((M)->bp) {							\
-	Uint need = (M)->bp->size;					\
-	Uint *htop = HEAP_TOP(c_p);					\
- 	if (c_p->stop - htop >= need) {					\
-	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
-	    ASSERT(htop - HEAP_TOP(c_p) == need);			\
-	    HEAP_TOP(c_p) = htop;					\
-	}								\
-	else {								\
-	    /* SWAPOUT; */						\
-	    /* reg[0] = r(0); */					\
-	    /* PROCESS_MAIN_CHK_LOCKS(c_p); */				\
-	    c_p->fcalls -= erts_garbage_collect(c_p, 0, NULL, 0);	\
-	    /* PROCESS_MAIN_CHK_LOCKS(c_p); */				\
-	    /* r(0) = reg[0]; */					\
-	    /* SWAPIN; */						\
-	    ASSERT(!(M)->bp);						\
-	}								\
-    }									\
-    ASSERT(!(M)->bp);							\
-} while (0)
-
 /* This is like the loop_rec_fr BEAM instruction
  */
 Eterm hipe_check_get_msg(Process *c_p)
 {
     Eterm ret;
     ErlMessage *msgp;
+
+ next_message:
 
     msgp = PEEK_MESSAGE(c_p);
 
@@ -564,8 +537,19 @@ Eterm hipe_check_get_msg(Process *c_p)
 	}
 #endif
     }
-    MV_MSG_MBUF_INTO_PROC(msgp);
+    ErtsMoveMsgAttachmentIntoProc(msgp, c_p, c_p->stop, HEAP_TOP(c_p),
+				  c_p->fcalls, (void) 0, (void) 0);
     ret = ERL_MESSAGE_TERM(msgp);
+    if (is_non_value(ret)) {
+	/*
+	 * A corrupt distribution message that we weren't able to decode;
+	 * remove it...
+	 */
+	ASSERT(!msgp->data.attached);
+	UNLINK_MESSAGE(c_p, msgp);
+	free_message(msgp);
+	goto next_message;
+    }
     return ret;
 }
 

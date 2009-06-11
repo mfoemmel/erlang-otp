@@ -102,7 +102,7 @@ stop() ->
 %%              to a c-process that uses the ODBC API to open a connection
 %%              to the database. 
 %%-------------------------------------------------------------------------
-connect(ConnectionStr, Options) when list(ConnectionStr), list(Options) ->
+connect(ConnectionStr, Options) when is_list(ConnectionStr), is_list(Options) ->
     
     %% Spawn the erlang control process.
     try  supervisor:start_child(odbc_sup, [[{client, self()}]]) of
@@ -121,7 +121,7 @@ connect(ConnectionStr, Options) when list(ConnectionStr), list(Options) ->
 %% Description: Disconnects from the database and terminates both the erlang
 %%              control process and the database handling c-process. 
 %%--------------------------------------------------------------------------
-disconnect(ConnectionReference) when pid(ConnectionReference)->
+disconnect(ConnectionReference) when is_pid(ConnectionReference)->
     ODBCCmd = [?CLOSE_CONNECTION],
     case call(ConnectionReference, {disconnect, ODBCCmd}, 5000) of 
 	{error, connection_closed} ->
@@ -150,22 +150,22 @@ commit(ConnectionReference, CommitMode) ->
     commit(ConnectionReference, CommitMode, ?DEFAULT_TIMEOUT).
 
 commit(ConnectionReference, commit, infinity) 
-  when pid(ConnectionReference) ->
+  when is_pid(ConnectionReference) ->
     ODBCCmd = [?COMMIT_TRANSACTION, ?COMMIT],
     call(ConnectionReference, {commit, ODBCCmd}, infinity);
 
 commit(ConnectionReference, commit, TimeOut) 
-  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0  ->
+  when is_pid(ConnectionReference), is_integer(TimeOut), TimeOut > 0  ->
     ODBCCmd = [?COMMIT_TRANSACTION, ?COMMIT],
     call(ConnectionReference, {commit, ODBCCmd}, TimeOut);
 
 commit(ConnectionReference, rollback, infinity) 
-  when pid(ConnectionReference) ->
+  when is_pid(ConnectionReference) ->
     ODBCCmd = [?COMMIT_TRANSACTION, ?ROLLBACK],
     call(ConnectionReference, {commit, ODBCCmd}, infinity);
 
 commit(ConnectionReference, rollback, TimeOut) 
-  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0  ->
+  when is_pid(ConnectionReference), is_integer(TimeOut), TimeOut > 0  ->
     ODBCCmd = [?COMMIT_TRANSACTION, ?ROLLBACK],
     call(ConnectionReference, {commit, ODBCCmd}, TimeOut).
 
@@ -181,12 +181,12 @@ sql_query(ConnectionReference, SQLQuery) ->
     sql_query(ConnectionReference, SQLQuery, ?DEFAULT_TIMEOUT).
 
 sql_query(ConnectionReference, SQLQuery, infinity) when 
-  pid(ConnectionReference), list(SQLQuery) -> 
+  is_pid(ConnectionReference), is_list(SQLQuery) -> 
     ODBCCmd = [?QUERY, SQLQuery],
     call(ConnectionReference, {sql_query, ODBCCmd}, infinity);
 
 sql_query(ConnectionReference, SQLQuery, TimeOut) 
-  when pid(ConnectionReference),list(SQLQuery),integer(TimeOut),TimeOut>0 -> 
+  when is_pid(ConnectionReference),is_list(SQLQuery),integer(TimeOut),TimeOut>0 -> 
     ODBCCmd = [?QUERY, SQLQuery],
     call(ConnectionReference, {sql_query, ODBCCmd}, TimeOut).
 
@@ -203,12 +203,12 @@ select_count(ConnectionReference, SQLQuery) ->
     select_count(ConnectionReference, SQLQuery, ?DEFAULT_TIMEOUT).
 
 select_count(ConnectionReference, SQLQuery, infinity) when 
-  pid(ConnectionReference), list(SQLQuery) ->
+  is_pid(ConnectionReference), is_list(SQLQuery) ->
     ODBCCmd = [?SELECT_COUNT, SQLQuery],
     call(ConnectionReference, {select_count, ODBCCmd}, infinity);
 
 select_count(ConnectionReference, SQLQuery, TimeOut) when 
-  pid(ConnectionReference), list(SQLQuery), integer(TimeOut), TimeOut > 0 ->
+  is_pid(ConnectionReference), is_list(SQLQuery), is_integer(TimeOut), TimeOut > 0 ->
     ODBCCmd = [?SELECT_COUNT, SQLQuery],
     call(ConnectionReference, {select_count, ODBCCmd}, TimeOut).
 
@@ -222,12 +222,12 @@ select_count(ConnectionReference, SQLQuery, TimeOut) when
 first(ConnectionReference) ->	
     first(ConnectionReference, ?DEFAULT_TIMEOUT).	
 
-first(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+first(ConnectionReference, infinity) when is_pid(ConnectionReference) ->	
     ODBCCmd = [?SELECT, ?SELECT_FIRST],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, infinity);
 
 first(ConnectionReference, TimeOut)
-  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
+  when is_pid(ConnectionReference), is_integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_FIRST],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, TimeOut).
 
@@ -241,12 +241,12 @@ first(ConnectionReference, TimeOut)
 last(ConnectionReference) ->	
     last(ConnectionReference, ?DEFAULT_TIMEOUT).	
 
-last(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+last(ConnectionReference, infinity) when is_pid(ConnectionReference) ->	
     ODBCCmd = [?SELECT, ?SELECT_LAST],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, infinity);
 
 last(ConnectionReference, TimeOut) 
-  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
+  when is_pid(ConnectionReference), is_integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_LAST],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd}, TimeOut).
 %%--------------------------------------------------------------------------
@@ -260,12 +260,12 @@ last(ConnectionReference, TimeOut)
 next(ConnectionReference) ->	
     next(ConnectionReference, ?DEFAULT_TIMEOUT).	
     
-next(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+next(ConnectionReference, infinity) when is_pid(ConnectionReference) ->	
     ODBCCmd = [?SELECT, ?SELECT_NEXT],
     call(ConnectionReference, {select_cmd, next, ODBCCmd}, infinity);
 
 next(ConnectionReference, TimeOut) 
-  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
+  when is_pid(ConnectionReference), is_integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_NEXT],
     call(ConnectionReference, {select_cmd, next, ODBCCmd}, TimeOut).
 
@@ -280,12 +280,12 @@ next(ConnectionReference, TimeOut)
 prev(ConnectionReference) ->	
     prev(ConnectionReference, ?DEFAULT_TIMEOUT).	
 
-prev(ConnectionReference, infinity) when pid(ConnectionReference) ->	
+prev(ConnectionReference, infinity) when is_pid(ConnectionReference) ->	
     ODBCCmd = [?SELECT, ?SELECT_PREV],
     call(ConnectionReference, {select_cmd, relative, ODBCCmd}, infinity);
 
 prev(ConnectionReference, TimeOut) 
-  when pid(ConnectionReference), integer(TimeOut), TimeOut > 0 ->	
+  when is_pid(ConnectionReference), is_integer(TimeOut), TimeOut > 0 ->	
     ODBCCmd = [?SELECT, ?SELECT_PREV],
     call(ConnectionReference, {select_cmd, relative, ODBCCmd}, TimeOut).
 
@@ -306,7 +306,7 @@ select(ConnectionReference, Position, N) ->
     select(ConnectionReference, Position, N, ?DEFAULT_TIMEOUT).
 
 select(ConnectionReference, next, N, infinity) 
-  when pid(ConnectionReference), integer(N), N > 0 ->
+  when is_pid(ConnectionReference), is_integer(N), N > 0 ->
     ODBCCmd = [?SELECT, ?SELECT_N_NEXT,
 	       integer_to_list(?DUMMY_OFFSET), ";", 
 	       integer_to_list(N), ";"],
@@ -314,8 +314,8 @@ select(ConnectionReference, next, N, infinity)
 	 infinity);
 
 select(ConnectionReference, next, N, TimeOut) 
-  when pid(ConnectionReference), integer(N), N > 0,
-  integer(TimeOut), TimeOut > 0 ->
+  when is_pid(ConnectionReference), is_integer(N), N > 0,
+  is_integer(TimeOut), TimeOut > 0 ->
     ODBCCmd = [?SELECT, ?SELECT_N_NEXT,
 	       integer_to_list(?DUMMY_OFFSET), ";", 
 	       integer_to_list(N), ";"],
@@ -323,30 +323,30 @@ select(ConnectionReference, next, N, TimeOut)
 	 TimeOut);
 
 select(ConnectionReference, {relative, Pos} , N, infinity) 
-  when pid(ConnectionReference), integer(Pos), Pos > 0, integer(N), N > 0 ->
+  when is_pid(ConnectionReference), is_integer(Pos), Pos > 0, is_integer(N), N > 0 ->
     ODBCCmd = [?SELECT, ?SELECT_RELATIVE,
 	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
     call(ConnectionReference, {select_cmd, relative, ODBCCmd},
 	 infinity);
 
 select(ConnectionReference, {relative, Pos} , N, TimeOut) 
-  when pid(ConnectionReference), integer(Pos), Pos >0, integer(N),  N > 0,
-  integer(TimeOut), TimeOut > 0 ->
+  when is_pid(ConnectionReference), is_integer(Pos), Pos >0, is_integer(N),  N > 0,
+  is_integer(TimeOut), TimeOut > 0 ->
     ODBCCmd = [?SELECT,?SELECT_RELATIVE,
 	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
     call(ConnectionReference, {select_cmd, relative, ODBCCmd},
 	 TimeOut);
 
 select(ConnectionReference, {absolute, Pos} , N, infinity) 
-  when pid(ConnectionReference), integer(Pos), Pos > 0, integer(N), N > 0 ->
+  when is_pid(ConnectionReference), is_integer(Pos), Pos > 0, is_integer(N), N > 0 ->
     ODBCCmd = [?SELECT, ?SELECT_ABSOLUTE,
 	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd},
 	 infinity);
 
 select(ConnectionReference, {absolute, Pos} , N, TimeOut) 
-  when pid(ConnectionReference), integer(Pos), Pos > 0, integer(N),  N > 0, 
-  integer(TimeOut), TimeOut > 0  ->
+  when is_pid(ConnectionReference), is_integer(Pos), Pos > 0, is_integer(N),  N > 0, 
+  is_integer(TimeOut), TimeOut > 0  ->
     ODBCCmd = [?SELECT, ?SELECT_ABSOLUTE,
 	       integer_to_list(Pos), ";", integer_to_list(N), ";"],
     call(ConnectionReference, {select_cmd, absolute, ODBCCmd},
@@ -361,7 +361,7 @@ param_query(ConnectionReference, SQLQuery, Params) ->
     param_query(ConnectionReference, SQLQuery, Params, ?DEFAULT_TIMEOUT).
 
 param_query(ConnectionReference, SQLQuery, Params, infinity) 
-  when pid(ConnectionReference), list(SQLQuery), list(Params) ->
+  when is_pid(ConnectionReference), is_list(SQLQuery), is_list(Params) ->
     Values = param_values(Params),
     NoRows = length(Values),
     NewParams = lists:map(fun fix_params/1, Params),
@@ -370,8 +370,8 @@ param_query(ConnectionReference, SQLQuery, Params, infinity)
     call(ConnectionReference, {param_query, ODBCCmd}, infinity);
 
 param_query(ConnectionReference, SQLQuery, Params, TimeOut)
-  when pid(ConnectionReference), list(SQLQuery), list(Params),
-       integer(TimeOut), TimeOut > 0 ->
+  when is_pid(ConnectionReference), is_list(SQLQuery), is_list(Params),
+       is_integer(TimeOut), TimeOut > 0 ->
     Values = param_values(Params),
     NoRows = length(Values),
     NewParams = lists:map(fun fix_params/1, Params),
@@ -392,12 +392,12 @@ describe_table(ConnectionReference, Table) ->
     describe_table(ConnectionReference, Table, ?DEFAULT_TIMEOUT).
 
 describe_table(ConnectionReference, Table, infinity) when 
-  pid(ConnectionReference), list(Table) -> 
+  is_pid(ConnectionReference), is_list(Table) -> 
     ODBCCmd = [?DESCRIBE, "SELECT * FROM " ++ Table],
     call(ConnectionReference, {describe_table, ODBCCmd}, infinity);
 
 describe_table(ConnectionReference, Table, TimeOut) 
-  when pid(ConnectionReference),list(Table),integer(TimeOut),TimeOut>0 -> 
+  when is_pid(ConnectionReference),is_list(Table),integer(TimeOut),TimeOut>0 -> 
     ODBCCmd = [?DESCRIBE, "SELECT * FROM " ++ Table],
     call(ConnectionReference, {describe_table, ODBCCmd}, TimeOut).
 %%%=========================================================================
@@ -448,7 +448,7 @@ init(Args) ->
 
     %% Start the port program (a c program) that utilizes the odbc driver 
     case os:find_executable(?SERVERPROG, ?SERVERDIR) of
-	FileName when list(FileName)->
+	FileName when is_list(FileName)->
 	    Port  = open_port({spawn, FileName},
 			      [{packet, ?LENGTH_INDICATOR_SIZE}, binary,
 			       exit_status]),

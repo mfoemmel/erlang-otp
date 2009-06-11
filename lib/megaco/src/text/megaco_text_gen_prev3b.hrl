@@ -1696,12 +1696,21 @@ enc_tid_component(Component, State) when is_list(Component) ->
 enc_tid_component(Invalid, _State) ->
     error({invalid_id_list_component, Invalid}).
 
-enc_tid_sub_component(Sub, _State) ->
-    case Sub of
-	all    -> ?megaco_all;
-	choose -> ?megaco_choose;
-	Char when is_integer(Char) -> Char
-    end.
+enc_tid_sub_component(all = _Sub, _State) ->
+    ?megaco_all;
+enc_tid_sub_component(choose = _Sub, _State) ->
+    ?megaco_choose;
+enc_tid_sub_component(Char, _State) when is_integer(Char) ->
+    Char;
+enc_tid_sub_component(Invalid, _State) ->
+    error({invalid_id_list_sub_component, Invalid}).
+
+%% enc_tid_sub_component(Sub, _State) ->
+%%     case Sub of
+%% 	all    -> ?megaco_all;
+%% 	choose -> ?megaco_choose;
+%% 	Char when is_integer(Char) -> Char
+%%     end.
 
 %% mediaDescriptor      = MediaToken LBRKT mediaParm *(COMMA mediaParm) RBRKT
 %% ; at-most-once per item

@@ -303,9 +303,9 @@ destroy(_OE_THIS, State) ->
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
 
-match(_OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
+match(_OE_THIS, State, Event) when is_record(Event,'any'), ?is_EmptyFilter(State) ->
     {reply, true, State};
-match(_OE_THIS, State, Event) when record(Event,'any') ->
+match(_OE_THIS, State, Event) when is_record(Event,'any') ->
     match_any_event(State, Event, ?get_ConstraintAllData(State));
 match(_,_,What) ->
     orber:dbg("[~p] CosNotifyFilter_Filter:match(~p);~n"
@@ -319,10 +319,10 @@ match(_,_,What) ->
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
 match_structured(_OE_THIS, State, Event) when 
-  record(Event,'CosNotification_StructuredEvent'), ?is_EmptyFilter(State) ->
+  is_record(Event,'CosNotification_StructuredEvent') andalso ?is_EmptyFilter(State) ->
     {reply, true, State};
 match_structured(_OE_THIS, State, Event) when 
-  record(Event,'CosNotification_StructuredEvent') ->
+  is_record(Event,'CosNotification_StructuredEvent') ->
     match_str_event(State, Event, ?get_ConstraintAllData(State));
 match_structured(_,_,What) ->
     orber:dbg("[~p] CosNotifyFilter_Filter:match_structured(~p);~n"
@@ -353,7 +353,7 @@ attach_callback(_OE_THIS, State, CB) ->
 %% Arguments: ID - CosNotifyFilter::CallbackID
 %% Returns  : ok | {'EXCEPTION', CosNotifyFilter::CallbackNotFound}
 %%-----------------------------------------------------------
-detach_callback(_OE_THIS, State, ID) when integer(ID) ->
+detach_callback(_OE_THIS, State, ID) when is_integer(ID) ->
     {reply, ok, ?del_Callback(State, ID)};
 detach_callback(_,_,What) ->
     orber:dbg("[~p] CosNotifyFilter_Filter:detach_callback(~p);~n"
@@ -409,7 +409,7 @@ lookup_constraints(IDs, State) ->
 lookup_constraints([], _State, Accum) ->
     Accum;
 lookup_constraints([H|T], State, Accum) 
-  when record(H, 'CosNotifyFilter_ConstraintInfo') ->
+  when is_record(H, 'CosNotifyFilter_ConstraintInfo') ->
     case ?get_Constraint(State, H#'CosNotifyFilter_ConstraintInfo'.constraint_id) of
 	error ->
 	    corba:raise(#'CosNotifyFilter_ConstraintNotFound'
@@ -419,7 +419,7 @@ lookup_constraints([H|T], State, Accum)
 	    %% the correct type, i.e., ConstraintInfoSeq
 	    lookup_constraints(T, State, Accum)
     end;
-lookup_constraints([H|T], State, Accum) when integer(H) ->
+lookup_constraints([H|T], State, Accum) when is_integer(H) ->
     case ?get_Constraint(State,H) of
 	error ->
 	    corba:raise(#'CosNotifyFilter_ConstraintNotFound'{id=H});
@@ -435,7 +435,7 @@ lookup_constraints(_, _, _) ->
 delete_constraints([], State) ->
     State;
 delete_constraints([H|T], State) 
-  when record(H, 'CosNotifyFilter_ConstraintInfo') ->
+  when is_record(H, 'CosNotifyFilter_ConstraintInfo') ->
     case catch ?del_Constraint(State,
 			       H#'CosNotifyFilter_ConstraintInfo'.constraint_id) of
 	{ok, NewState} ->

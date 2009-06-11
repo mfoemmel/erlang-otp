@@ -36,7 +36,7 @@
 %%-----------------------------------------------------------------
 -export([]).
 
-union_gen(G, N, X, c) when record(X, union) ->
+union_gen(G, N, X, c) when is_record(X, union) ->
     emit_c_union(G, N, X);
 union_gen(_G, _N, _X, _L) ->
     ok.
@@ -392,7 +392,7 @@ getCaseTypeStr(_G, N, X, I, T) ->
 	    error
     end.
 
-isList(L) when list(L) ->
+isList(L) when is_list(L) ->
     true;
 isList(_) ->
     false.

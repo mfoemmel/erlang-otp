@@ -341,7 +341,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 'ZorM_<export>' -> '$empty' : [] .
 'ZorM_<export>' -> 'ZorM_<export>' '<export>' 
   %% Complicated because <export> might be a list (of type defs for instance)
-  : if  list('$2') -> '$2' ++ '$1';
+  : if  is_list('$2') -> '$2' ++ '$1';
         true       -> ['$2' | '$1']
     end .
 

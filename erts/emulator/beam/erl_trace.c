@@ -366,11 +366,12 @@ WRITE_SYS_MSG_TO_PORT(Eterm unused_to,
     byte *ptr;
     unsigned size;
 
-    size = encode_size_struct(message, TERM_TO_BINARY_DFLAGS);
+    size = erts_encode_ext_size(message);
     buffer = (byte *) erts_alloc(ERTS_ALC_T_TMP, size);
 
     ptr = buffer;
-    erts_to_external_format(NULL, message, &ptr, NULL, NULL);
+
+    erts_encode_ext(message, &ptr);
     if (!(ptr <= buffer+size)) {
 	erl_exit(1, "Internal error in do_send_to_port: %d\n", ptr-buffer);
     }
@@ -378,7 +379,7 @@ WRITE_SYS_MSG_TO_PORT(Eterm unused_to,
 #ifndef ERTS_SMP
     if (!INVALID_TRACER_PORT(trace_port, trace_port->id)) {
 #endif
-	dist_port_command(trace_port, buffer, ptr-buffer);
+	erts_raw_port_command(trace_port, buffer, ptr-buffer);
 #ifndef ERTS_SMP
 	erts_port_release(trace_port);
     }

@@ -11,7 +11,7 @@
 
 book.dvi: book.tex part.tex ref_man.tex xmerl.tex xmerl_eventp.tex \
 		xmerl_scan.tex xmerl_ug.tex xmerl_xpath.tex \
-		xmerl_xs.tex xmerl_xsd.tex
+		xmerl_xs.tex xmerl_xsd.tex xmerl_sax_parser.tex
 
 # ----------------------------------------------------
 # Source inlined when transforming from source to LaTeX

@@ -174,10 +174,10 @@ stop(_) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-start_time_service(Tdf, Inaccuracy) when integer(Tdf), integer(Inaccuracy) ->
+start_time_service(Tdf, Inaccuracy) when is_integer(Tdf) andalso is_integer(Inaccuracy) ->
     case supervisor:start_child(?SUPERVISOR_NAME, 
 				?SUP_TIMESERVICE_SPEC(Tdf, Inaccuracy)) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	_Other->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
@@ -204,7 +204,7 @@ stop_time_service(Obj) ->
 start_timerevent_service(Timer) ->
     case supervisor:start_child(?SUPERVISOR_NAME, 
 				?SUP_TIMEREVENTSERVICE_SPEC([Timer])) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	_Other->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
@@ -259,7 +259,7 @@ create_link(Module, Env, ArgList) ->
 start_event_handler(Args) ->
     Name = create_name(eventhandler),
     case supervisor:start_child(?SUPERVISOR_NAME, ?SUP_TIMEREVENTHANDLER_SPEC(Name,Args)) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	_Other->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})

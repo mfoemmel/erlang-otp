@@ -493,6 +493,8 @@ cpu_cmp(const void *vx, const void *vy)
 	return x->node - y->node;
     if (x->processor != y->processor)
 	return x->processor - y->processor;
+    if (x->processor_node != y->processor_node)
+	return x->processor_node - y->processor_node;
     if (x->core != y->core)
 	return x->core - y->core;
     if (x->thread != y->thread)
@@ -568,6 +570,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
     for (ix = 0; ix < cpuinfo->configured; ix++) {
 	cpuinfo->topology[ix].node = -1;
 	cpuinfo->topology[ix].processor = -1;
+	cpuinfo->topology[ix].processor_node = -1;
 	cpuinfo->topology[ix].core = -1;
 	cpuinfo->topology[ix].thread = -1;
 	cpuinfo->topology[ix].logical = -1;
@@ -581,7 +584,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
     }
 
     do {
-	int node_id;
+	int node_id = -1;
 
 	if (!got_nodes) {
 	    if (!realpath("/sys/devices/system/cpu", cpath))
@@ -643,6 +646,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
 		ix++;
 		cpuinfo->topology[ix].node	= node_id;
 		cpuinfo->topology[ix].processor	= processor_id;
+		cpuinfo->topology[ix].processor_node = -1; /* Currently not detected */
 		cpuinfo->topology[ix].core	= core_id;
 		cpuinfo->topology[ix].thread	= 0; /* we'll numerate later */
 		cpuinfo->topology[ix].logical	= cpu_id;
@@ -669,13 +673,12 @@ read_topology(erts_cpu_info_t *cpuinfo)
 	last = &cpuinfo->topology[cpuinfo->configured-1];
 
 	while (this <= last) {
-	    if (this->node >= 0) {
-		this->thread = ((this->node == prev->node
-				 && this->processor == prev->processor
-				 && this->core == prev->core)
-				? prev->thread + 1
-				: 0);
-	    }
+	    this->thread = ((this->node == prev->node
+			     && this->processor == prev->processor
+			     && this->processor_node == prev->processor_node
+			     && this->core == prev->core)
+			    ? prev->thread + 1
+			    : 0);
 	    prev = this++;
 	}
     }
@@ -762,6 +765,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
     for (ix = 0; ix < cpuinfo->configured; ix++) {
 	cpuinfo->topology[ix].node = -1;
 	cpuinfo->topology[ix].processor = -1;
+	cpuinfo->topology[ix].processor_node = -1;
 	cpuinfo->topology[ix].core = -1;
 	cpuinfo->topology[ix].thread = -1;
 	cpuinfo->topology[ix].logical = -1;
@@ -780,8 +784,9 @@ read_topology(erts_cpu_info_t *cpuinfo)
 		 * Don't know how to figure numa nodes out;
 		 * hope there is only one...
 		 */
-		cpuinfo->topology[ix].node = 0;
+		cpuinfo->topology[ix].node = -1;
 		cpuinfo->topology[ix].processor = data_lookup_int(ks,"chip_id");
+		cpuinfo->topology[ix].processor_node = -1;
 		cpuinfo->topology[ix].core = data_lookup_int(ks, "core_id");
 		cpuinfo->topology[ix].thread = 0; /* we'll numerate later */
 		cpuinfo->topology[ix].logical = ks->ks_instance;
@@ -812,13 +817,12 @@ read_topology(erts_cpu_info_t *cpuinfo)
 	last = &cpuinfo->topology[cpuinfo->configured-1];
 
 	while (this <= last) {
-	    if (this->node >= 0) {
-		this->thread = ((this->node == prev->node
-				 && this->processor == prev->processor
-				 && this->core == prev->core)
-				? prev->thread + 1
-				: 0);
-	    }
+	    this->thread = ((this->node == prev->node
+			     && this->processor == prev->processor
+			     && this->processor_node == prev->processor_node
+			     && this->core == prev->core)
+			    ? prev->thread + 1
+			    : 0);
 	    prev = this++;
 	}
     }

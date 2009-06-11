@@ -765,8 +765,8 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 	 */
 	ErtsGcQuickSanityCheck(p);
 	for (msgp = p->msg.first; msgp; msgp = msgp->next) {
-	    if (msgp->bp) {
-		erts_move_msg_mbuf_to_heap(&p->htop, &p->off_heap, msgp);
+	    if (msgp->data.attached) {
+		erts_move_msg_attached_data_to_heap(&p->htop, &p->off_heap, msgp);
 		ErtsGcQuickSanityCheck(p);
 	    }
 	}
@@ -1305,8 +1305,8 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
      * Copy newly received message onto the end of the new heap.
      */
     for (msgp = p->msg.first; msgp; msgp = msgp->next) {
-	if (msgp->bp) {
-	    erts_move_msg_mbuf_to_heap(&p->htop, &p->off_heap, msgp);
+	if (msgp->data.attached) {
+	    erts_move_msg_attached_data_to_heap(&p->htop, &p->off_heap, msgp);
 	    ErtsGcQuickSanityCheck(p);
 	}
     }
@@ -1375,8 +1375,8 @@ combined_message_size(Process* p)
     ErlMessage *msgp;
 
     for (msgp = p->msg.first; msgp; msgp = msgp->next) {
-	if (msgp->bp) {
-	    sz += msgp->bp->size;
+	if (msgp->data.attached) {
+	    sz += erts_msg_attached_data_size(msgp);
 	}
     }
     return sz;
@@ -1870,16 +1870,16 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
 
     for (mp = p->msg.first; mp != NULL; mp = mp->next) {
 	/*
-	 * In most cases, mp->bp points to a heap fragment which is
+	 * In most cases, mp->data.attached points to a heap fragment which is
 	 * self-contained and we will copy it to the heap at the
 	 * end of the GC to avoid scanning it.
 	 *
 	 * In a few cases, however, such as in process_info(Pid, messages)
 	 * and trace_delivered/1, a new message points to a term that has
-	 * been allocated by HAlloc() and mp->bp is NULL. Therefore we need
-	 * this loop.
+	 * been allocated by HAlloc() and mp->data.attached is NULL. Therefore
+	 * we need this loop.
 	 */
-	if (mp->bp == NULL) {
+	if (mp->data.attached == NULL) {
 	    n_htop = collect_root_array(p, n_htop, mp->m, 2);
 	}
     }
@@ -1981,7 +1981,7 @@ setup_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset)
 	    rootset->size = new_size;
 	    avail = new_size - n;
 	}
-	if (mp->bp == 0) {
+	if (mp->data.attached == NULL) {
 	    roots[n].v = mp->m;
 	    roots[n].sz = 2;
 	    n++;
@@ -2470,15 +2470,16 @@ offset_mqueue(Process *p, Sint offs, char* area, Uint area_size)
 
     while (mp != NULL) {
         Eterm mesg = ERL_MESSAGE_TERM(mp);
-	switch (primary_tag(mesg)) {
-	case TAG_PRIMARY_LIST:
-	case TAG_PRIMARY_BOXED:
-	    if (in_area(ptr_val(mesg), area, area_size)) {
-		ERL_MESSAGE_TERM(mp) = offset_ptr(mesg, offs);
+	if (is_value(mesg)) {
+	    switch (primary_tag(mesg)) {
+	    case TAG_PRIMARY_LIST:
+	    case TAG_PRIMARY_BOXED:
+		if (in_area(ptr_val(mesg), area, area_size)) {
+		    ERL_MESSAGE_TERM(mp) = offset_ptr(mesg, offs);
+		}
+		break;
 	    }
-            break;
-        }
-
+	}
 	mesg = ERL_MESSAGE_TOKEN(mp);
 	if (is_boxed(mesg) && in_area(ptr_val(mesg), area, area_size)) {
 	    ERL_MESSAGE_TOKEN(mp) = offset_ptr(mesg, offs);
@@ -2541,8 +2542,17 @@ within2(Eterm *ptr, Process *p, Eterm *real_htop)
         bp = bp->next;
     }
     while (mp) {
-	if (mp->bp && mp->bp->mem <= ptr && ptr < mp->bp->mem + mp->bp->size)
-	    return 1;
+	if (mp->data.attached) {
+	    ErlHeapFragment *hfp;
+	    if (is_value(ERL_MESSAGE_TERM(mp)))
+		hfp = mp->data.heap_frag;
+	    else if (is_not_nil(ERL_MESSAGE_TOKEN(mp)))
+		hfp = erts_dist_ext_trailer(mp->data.dist_ext);
+	    else
+		hfp = NULL;
+	    if (hfp && hfp->mem <= ptr && ptr < hfp->mem + hfp->size)
+		return 1;
+	}
         mp = mp->next;
     }
     return 0;

@@ -1890,7 +1890,7 @@ eq(Eterm a, Eterm b)
 		ASSERT(1 == external_data_words(a));
 		ASSERT(1 == external_data_words(b));
 
-		if(ap->data[0] != bp->data[0])
+		if(ap->data.ui[0] != bp->data.ui[0])
 		    return 0;
 		return 1;
 	    }

@@ -449,8 +449,8 @@ case wxWindow_GetChildren: { // wxWindow::GetChildren
  if(!This) throw wxe_badarg(0);
  const wxWindowList Result = This->GetChildren();
  int i=0;
- for(wxWindowList::Node *node = Result.GetFirst(); node; node = node->GetNext()) {
-   wxWindow * ResultTmp = node->GetData();
+ for(wxWindowList::const_iterator it = Result.begin(); it != Result.end(); ++it) {
+   wxWindow * ResultTmp = *it;
    rt.addRef(getRef((void *)ResultTmp,memenv), "wxWindow"); i++;}
  rt.endList(Result.GetCount());
  break; 
@@ -7460,8 +7460,8 @@ case wxMenu_GetMenuItems: { // wxMenu::GetMenuItems
  if(!This) throw wxe_badarg(0);
  const wxMenuItemList Result = This->GetMenuItems();
  int i=0;
- for(wxMenuItemList::Node *node = Result.GetFirst(); node; node = node->GetNext()) {
-   wxMenuItem * ResultTmp = node->GetData();
+ for(wxMenuItemList::const_iterator it = Result.begin(); it != Result.end(); ++it) {
+   wxMenuItem * ResultTmp = *it;
    rt.addRef(getRef((void *)ResultTmp,memenv), "wxMenuItem"); i++;}
  rt.endList(Result.GetCount());
  break; 
@@ -7985,7 +7985,42 @@ case wxToolBar_AddSeparator: { // wxToolBar::AddSeparator
  rt.addRef(getRef((void *)Result,memenv), "wx");
  break; 
 }
-case wxToolBar_AddTool: { // wxToolBar::AddTool 
+case wxToolBar_AddTool_5: { // wxToolBar::AddTool 
+ wxItemKind kind=wxITEM_NORMAL;
+ wxString shortHelp= wxEmptyString;
+ wxString longHelp= wxEmptyString;
+ wxObject * data=NULL;
+ wxToolBar *This = (wxToolBar *) getPtr(bp,memenv); bp += 4;
+ int * toolid = (int *) bp; bp += 4;
+ int * labelLen = (int *) bp; bp += 4;
+ wxString label = wxString(bp, wxConvUTF8);
+ bp += *labelLen+((8-((4+ *labelLen) & 7)) & 7);
+ wxBitmap *bitmap = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ wxBitmap *bmpDisabled = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+kind = *(wxItemKind *) bp; bp += 4;;
+  } break;
+  case 2: {bp += 4;
+ int * shortHelpLen = (int *) bp; bp += 4;
+ shortHelp = wxString(bp, wxConvUTF8);
+ bp += *shortHelpLen+((8-((0+ *shortHelpLen) & 7)) & 7);
+  } break;
+  case 3: {bp += 4;
+ int * longHelpLen = (int *) bp; bp += 4;
+ longHelp = wxString(bp, wxConvUTF8);
+ bp += *longHelpLen+((8-((0+ *longHelpLen) & 7)) & 7);
+  } break;
+  case 4: {bp += 4;
+data = (wxObject *) getPtr(bp,memenv); bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ wxToolBarToolBase * Result = (wxToolBarToolBase*)This->AddTool((int) *toolid,label,*bitmap,*bmpDisabled,(wxItemKind) kind,shortHelp,longHelp,data);
+ rt.addRef(getRef((void *)Result,memenv), "wx");
+ break; 
+}
+case wxToolBar_AddTool_4_0: { // wxToolBar::AddTool 
  wxString shortHelp= wxEmptyString;
  wxItemKind kind=wxITEM_NORMAL;
  wxToolBar *This = (wxToolBar *) getPtr(bp,memenv); bp += 4;
@@ -8007,6 +8042,104 @@ kind = *(wxItemKind *) bp; bp += 4;;
  }}; 
  if(!This) throw wxe_badarg(0);
  wxToolBarToolBase * Result = (wxToolBarToolBase*)This->AddTool((int) *toolid,label,*bitmap,shortHelp,(wxItemKind) kind);
+ rt.addRef(getRef((void *)Result,memenv), "wx");
+ break; 
+}
+case wxToolBar_AddTool_1: { // wxToolBar::AddTool 
+ wxToolBar *This = (wxToolBar *) getPtr(bp,memenv); bp += 4;
+ wxToolBarToolBase *tool = (wxToolBarToolBase *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxToolBarToolBase * Result = (wxToolBarToolBase*)This->AddTool(tool);
+ rt.addRef(getRef((void *)Result,memenv), "wx");
+ break; 
+}
+case wxToolBar_AddTool_4_1: { // wxToolBar::AddTool 
+ bool toggle=false;
+ wxObject * clientData=NULL;
+ wxString shortHelpString= wxEmptyString;
+ wxString longHelpString= wxEmptyString;
+ wxToolBar *This = (wxToolBar *) getPtr(bp,memenv); bp += 4;
+ int * toolid = (int *) bp; bp += 4;
+ wxBitmap *bitmap = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ wxBitmap *bmpDisabled = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ toggle = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+clientData = (wxObject *) getPtr(bp,memenv); bp += 4;
+  } break;
+  case 3: {bp += 4;
+ int * shortHelpStringLen = (int *) bp; bp += 4;
+ shortHelpString = wxString(bp, wxConvUTF8);
+ bp += *shortHelpStringLen+((8-((0+ *shortHelpStringLen) & 7)) & 7);
+  } break;
+  case 4: {bp += 4;
+ int * longHelpStringLen = (int *) bp; bp += 4;
+ longHelpString = wxString(bp, wxConvUTF8);
+ bp += *longHelpStringLen+((8-((0+ *longHelpStringLen) & 7)) & 7);
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ wxToolBarToolBase * Result = (wxToolBarToolBase*)This->AddTool((int) *toolid,*bitmap,*bmpDisabled,toggle,clientData,shortHelpString,longHelpString);
+ rt.addRef(getRef((void *)Result,memenv), "wx");
+ break; 
+}
+case wxToolBar_AddTool_3: { // wxToolBar::AddTool 
+ wxString shortHelpString= wxEmptyString;
+ wxString longHelpString= wxEmptyString;
+ wxToolBar *This = (wxToolBar *) getPtr(bp,memenv); bp += 4;
+ int * toolid = (int *) bp; bp += 4;
+ wxBitmap *bitmap = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * shortHelpStringLen = (int *) bp; bp += 4;
+ shortHelpString = wxString(bp, wxConvUTF8);
+ bp += *shortHelpStringLen+((8-((0+ *shortHelpStringLen) & 7)) & 7);
+  } break;
+  case 2: {bp += 4;
+ int * longHelpStringLen = (int *) bp; bp += 4;
+ longHelpString = wxString(bp, wxConvUTF8);
+ bp += *longHelpStringLen+((8-((0+ *longHelpStringLen) & 7)) & 7);
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ wxToolBarToolBase * Result = (wxToolBarToolBase*)This->AddTool((int) *toolid,*bitmap,shortHelpString,longHelpString);
+ rt.addRef(getRef((void *)Result,memenv), "wx");
+ break; 
+}
+case wxToolBar_AddTool_6: { // wxToolBar::AddTool 
+ wxCoord yPos=wxDefaultCoord;
+ wxObject * clientData=NULL;
+ wxString shortHelp= wxEmptyString;
+ wxString longHelp= wxEmptyString;
+ wxToolBar *This = (wxToolBar *) getPtr(bp,memenv); bp += 4;
+ int * toolid = (int *) bp; bp += 4;
+ wxBitmap *bitmap = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ wxBitmap *bmpDisabled = (wxBitmap *) getPtr(bp,memenv); bp += 4;
+ bool * toggle = (bool *) bp; bp += 4;
+ int * xPos = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ yPos = (wxCoord)*(int *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+clientData = (wxObject *) getPtr(bp,memenv); bp += 4;
+  } break;
+  case 3: {bp += 4;
+ int * shortHelpLen = (int *) bp; bp += 4;
+ shortHelp = wxString(bp, wxConvUTF8);
+ bp += *shortHelpLen+((8-((0+ *shortHelpLen) & 7)) & 7);
+  } break;
+  case 4: {bp += 4;
+ int * longHelpLen = (int *) bp; bp += 4;
+ longHelp = wxString(bp, wxConvUTF8);
+ bp += *longHelpLen+((8-((0+ *longHelpLen) & 7)) & 7);
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ wxToolBarToolBase * Result = (wxToolBarToolBase*)This->AddTool((int) *toolid,*bitmap,*bmpDisabled,(bool) *toggle,(wxCoord) *xPos,yPos,clientData,shortHelp,longHelp);
  rt.addRef(getRef((void *)Result,memenv), "wx");
  break; 
 }
@@ -10772,8 +10905,8 @@ case wxSizer_GetChildren: { // wxSizer::GetChildren
  if(!This) throw wxe_badarg(0);
  wxSizerItemList Result = This->GetChildren();
  int i=0;
- for(wxSizerItemList::Node *node = Result.GetFirst(); node; node = node->GetNext()) {
-   wxSizerItem * ResultTmp = node->GetData();
+ for(wxSizerItemList::const_iterator it = Result.begin(); it != Result.end(); ++it) {
+   wxSizerItem * ResultTmp = *it;
    rt.addRef(getRef((void *)ResultTmp,memenv), "wxSizerItem"); i++;}
  rt.endList(Result.GetCount());
  break; 
@@ -16773,6 +16906,1118 @@ case wxNotebook_ChangeSelection: { // wxNotebook::ChangeSelection
  int * nPage = (int *) bp; bp += 4;
  if(!This) throw wxe_badarg(0);
  int Result = This->ChangeSelection((size_t) *nPage);
+ rt.addInt(Result);
+ break; 
+}
+case wxChoicebook_new_0: { // wxChoicebook::wxChoicebook 
+ wxChoicebook * Result = new EwxChoicebook();
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxChoicebook");
+ break; 
+}
+case wxChoicebook_new_3: { // wxChoicebook::wxChoicebook 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ wxChoicebook * Result = new EwxChoicebook(parent,(wxWindowID) *id,pos,size,style);
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxChoicebook");
+ break; 
+}
+case wxChoicebook_AddPage: { // wxChoicebook::AddPage 
+ bool bSelect=false;
+ int imageId=-1;
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((4+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->AddPage(page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_AdvanceSelection: { // wxChoicebook::AdvanceSelection 
+ bool forward=true;
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ forward = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->AdvanceSelection(forward);
+ break; 
+}
+case wxChoicebook_AssignImageList: { // wxChoicebook::AssignImageList 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->AssignImageList(imageList);
+ break; 
+}
+case wxChoicebook_Create: { // wxChoicebook::Create 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0;
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->Create(parent,(wxWindowID) *id,pos,size,style);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_DeleteAllPages: { // wxChoicebook::DeleteAllPages 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeleteAllPages();
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_DeletePage: { // wxChoicebook::DeletePage 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeletePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_RemovePage: { // wxChoicebook::RemovePage 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->RemovePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_GetCurrentPage: { // wxChoicebook::GetCurrentPage 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetCurrentPage();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxChoicebook_GetImageList: { // wxChoicebook::GetImageList 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxImageList * Result = (wxImageList*)This->GetImageList();
+ rt.addRef(getRef((void *)Result,memenv), "wxImageList");
+ break; 
+}
+case wxChoicebook_GetPage: { // wxChoicebook::GetPage 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetPage((size_t) *n);
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxChoicebook_GetPageCount: { // wxChoicebook::GetPageCount 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ size_t Result = This->GetPageCount();
+ rt.addInt(Result);
+ break; 
+}
+case wxChoicebook_GetPageImage: { // wxChoicebook::GetPageImage 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetPageImage((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxChoicebook_GetPageText: { // wxChoicebook::GetPageText 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetPageText((size_t) *n);
+ rt.add(Result);
+ break; 
+}
+case wxChoicebook_GetSelection: { // wxChoicebook::GetSelection 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSelection();
+ rt.addInt(Result);
+ break; 
+}
+case wxChoicebook_HitTest: { // wxChoicebook::HitTest 
+ long flags;
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * ptX = (int *) bp; bp += 4;
+ int * ptY = (int *) bp; bp += 4;
+ wxPoint pt = wxPoint(*ptX,*ptY);
+ if(!This) throw wxe_badarg(0);
+ int Result = This->HitTest(pt,&flags);
+ rt.addInt(Result);
+ rt.addInt(flags);
+ rt.addTupleCount(2);
+ break; 
+}
+case wxChoicebook_InsertPage: { // wxChoicebook::InsertPage 
+ bool bSelect=false;
+ int imageId=-1;
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((0+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->InsertPage((size_t) *n,page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_SetImageList: { // wxChoicebook::SetImageList 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetImageList(imageList);
+ break; 
+}
+case wxChoicebook_SetPageSize: { // wxChoicebook::SetPageSize 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ wxSize size = wxSize(*sizeW,*sizeH);
+ if(!This) throw wxe_badarg(0);
+ This->SetPageSize(size);
+ break; 
+}
+case wxChoicebook_SetPageImage: { // wxChoicebook::SetPageImage 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * imageId = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageImage((size_t) *n,(int) *imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_SetPageText: { // wxChoicebook::SetPageText 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * strTextLen = (int *) bp; bp += 4;
+ wxString strText = wxString(bp, wxConvUTF8);
+ bp += *strTextLen+((8-((4+ *strTextLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageText((size_t) *n,strText);
+ rt.addBool(Result);
+ break; 
+}
+case wxChoicebook_SetSelection: { // wxChoicebook::SetSelection 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->SetSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxChoicebook_ChangeSelection: { // wxChoicebook::ChangeSelection 
+ wxChoicebook *This = (wxChoicebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->ChangeSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxToolbook_new_0: { // wxToolbook::wxToolbook 
+ wxToolbook * Result = new EwxToolbook();
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxToolbook");
+ break; 
+}
+case wxToolbook_new_3: { // wxToolbook::wxToolbook 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ wxToolbook * Result = new EwxToolbook(parent,(wxWindowID) *id,pos,size,style);
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxToolbook");
+ break; 
+}
+case wxToolbook_AddPage: { // wxToolbook::AddPage 
+ bool bSelect=false;
+ int imageId=-1;
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((4+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->AddPage(page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_AdvanceSelection: { // wxToolbook::AdvanceSelection 
+ bool forward=true;
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ forward = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->AdvanceSelection(forward);
+ break; 
+}
+case wxToolbook_AssignImageList: { // wxToolbook::AssignImageList 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->AssignImageList(imageList);
+ break; 
+}
+case wxToolbook_Create: { // wxToolbook::Create 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0;
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->Create(parent,(wxWindowID) *id,pos,size,style);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_DeleteAllPages: { // wxToolbook::DeleteAllPages 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeleteAllPages();
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_DeletePage: { // wxToolbook::DeletePage 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeletePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_RemovePage: { // wxToolbook::RemovePage 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->RemovePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_GetCurrentPage: { // wxToolbook::GetCurrentPage 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetCurrentPage();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxToolbook_GetImageList: { // wxToolbook::GetImageList 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxImageList * Result = (wxImageList*)This->GetImageList();
+ rt.addRef(getRef((void *)Result,memenv), "wxImageList");
+ break; 
+}
+case wxToolbook_GetPage: { // wxToolbook::GetPage 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetPage((size_t) *n);
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxToolbook_GetPageCount: { // wxToolbook::GetPageCount 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ size_t Result = This->GetPageCount();
+ rt.addInt(Result);
+ break; 
+}
+case wxToolbook_GetPageImage: { // wxToolbook::GetPageImage 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetPageImage((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxToolbook_GetPageText: { // wxToolbook::GetPageText 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetPageText((size_t) *n);
+ rt.add(Result);
+ break; 
+}
+case wxToolbook_GetSelection: { // wxToolbook::GetSelection 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSelection();
+ rt.addInt(Result);
+ break; 
+}
+case wxToolbook_HitTest: { // wxToolbook::HitTest 
+ long flags;
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * ptX = (int *) bp; bp += 4;
+ int * ptY = (int *) bp; bp += 4;
+ wxPoint pt = wxPoint(*ptX,*ptY);
+ if(!This) throw wxe_badarg(0);
+ int Result = This->HitTest(pt,&flags);
+ rt.addInt(Result);
+ rt.addInt(flags);
+ rt.addTupleCount(2);
+ break; 
+}
+case wxToolbook_InsertPage: { // wxToolbook::InsertPage 
+ bool bSelect=false;
+ int imageId=-1;
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((0+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->InsertPage((size_t) *n,page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_SetImageList: { // wxToolbook::SetImageList 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetImageList(imageList);
+ break; 
+}
+case wxToolbook_SetPageSize: { // wxToolbook::SetPageSize 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ wxSize size = wxSize(*sizeW,*sizeH);
+ if(!This) throw wxe_badarg(0);
+ This->SetPageSize(size);
+ break; 
+}
+case wxToolbook_SetPageImage: { // wxToolbook::SetPageImage 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * imageId = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageImage((size_t) *n,(int) *imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_SetPageText: { // wxToolbook::SetPageText 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * strTextLen = (int *) bp; bp += 4;
+ wxString strText = wxString(bp, wxConvUTF8);
+ bp += *strTextLen+((8-((4+ *strTextLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageText((size_t) *n,strText);
+ rt.addBool(Result);
+ break; 
+}
+case wxToolbook_SetSelection: { // wxToolbook::SetSelection 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->SetSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxToolbook_ChangeSelection: { // wxToolbook::ChangeSelection 
+ wxToolbook *This = (wxToolbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->ChangeSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxListbook_new_0: { // wxListbook::wxListbook 
+ wxListbook * Result = new EwxListbook();
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxListbook");
+ break; 
+}
+case wxListbook_new_3: { // wxListbook::wxListbook 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ wxListbook * Result = new EwxListbook(parent,(wxWindowID) *id,pos,size,style);
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxListbook");
+ break; 
+}
+case wxListbook_AddPage: { // wxListbook::AddPage 
+ bool bSelect=false;
+ int imageId=-1;
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((4+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->AddPage(page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_AdvanceSelection: { // wxListbook::AdvanceSelection 
+ bool forward=true;
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ forward = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->AdvanceSelection(forward);
+ break; 
+}
+case wxListbook_AssignImageList: { // wxListbook::AssignImageList 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->AssignImageList(imageList);
+ break; 
+}
+case wxListbook_Create: { // wxListbook::Create 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0;
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->Create(parent,(wxWindowID) *id,pos,size,style);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_DeleteAllPages: { // wxListbook::DeleteAllPages 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeleteAllPages();
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_DeletePage: { // wxListbook::DeletePage 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeletePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_RemovePage: { // wxListbook::RemovePage 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->RemovePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_GetCurrentPage: { // wxListbook::GetCurrentPage 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetCurrentPage();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxListbook_GetImageList: { // wxListbook::GetImageList 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxImageList * Result = (wxImageList*)This->GetImageList();
+ rt.addRef(getRef((void *)Result,memenv), "wxImageList");
+ break; 
+}
+case wxListbook_GetPage: { // wxListbook::GetPage 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetPage((size_t) *n);
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxListbook_GetPageCount: { // wxListbook::GetPageCount 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ size_t Result = This->GetPageCount();
+ rt.addInt(Result);
+ break; 
+}
+case wxListbook_GetPageImage: { // wxListbook::GetPageImage 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetPageImage((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxListbook_GetPageText: { // wxListbook::GetPageText 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetPageText((size_t) *n);
+ rt.add(Result);
+ break; 
+}
+case wxListbook_GetSelection: { // wxListbook::GetSelection 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSelection();
+ rt.addInt(Result);
+ break; 
+}
+case wxListbook_HitTest: { // wxListbook::HitTest 
+ long flags;
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * ptX = (int *) bp; bp += 4;
+ int * ptY = (int *) bp; bp += 4;
+ wxPoint pt = wxPoint(*ptX,*ptY);
+ if(!This) throw wxe_badarg(0);
+ int Result = This->HitTest(pt,&flags);
+ rt.addInt(Result);
+ rt.addInt(flags);
+ rt.addTupleCount(2);
+ break; 
+}
+case wxListbook_InsertPage: { // wxListbook::InsertPage 
+ bool bSelect=false;
+ int imageId=-1;
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((0+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->InsertPage((size_t) *n,page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_SetImageList: { // wxListbook::SetImageList 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetImageList(imageList);
+ break; 
+}
+case wxListbook_SetPageSize: { // wxListbook::SetPageSize 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ wxSize size = wxSize(*sizeW,*sizeH);
+ if(!This) throw wxe_badarg(0);
+ This->SetPageSize(size);
+ break; 
+}
+case wxListbook_SetPageImage: { // wxListbook::SetPageImage 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * imageId = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageImage((size_t) *n,(int) *imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_SetPageText: { // wxListbook::SetPageText 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * strTextLen = (int *) bp; bp += 4;
+ wxString strText = wxString(bp, wxConvUTF8);
+ bp += *strTextLen+((8-((4+ *strTextLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageText((size_t) *n,strText);
+ rt.addBool(Result);
+ break; 
+}
+case wxListbook_SetSelection: { // wxListbook::SetSelection 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->SetSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxListbook_ChangeSelection: { // wxListbook::ChangeSelection 
+ wxListbook *This = (wxListbook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->ChangeSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxTreebook_new_0: { // wxTreebook::wxTreebook 
+ wxTreebook * Result = new EwxTreebook();
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxTreebook");
+ break; 
+}
+case wxTreebook_new_3: { // wxTreebook::wxTreebook 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=wxBK_DEFAULT;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ wxTreebook * Result = new EwxTreebook(parent,(wxWindowID) *id,pos,size,style);
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxTreebook");
+ break; 
+}
+case wxTreebook_AddPage: { // wxTreebook::AddPage 
+ bool bSelect=false;
+ int imageId=wxNOT_FOUND;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((4+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->AddPage(page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_AdvanceSelection: { // wxTreebook::AdvanceSelection 
+ bool forward=true;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ forward = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->AdvanceSelection(forward);
+ break; 
+}
+case wxTreebook_AssignImageList: { // wxTreebook::AssignImageList 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->AssignImageList(imageList);
+ break; 
+}
+case wxTreebook_Create: { // wxTreebook::Create 
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=wxBK_DEFAULT;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * id = (int *) bp; bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 2: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->Create(parent,(wxWindowID) *id,pos,size,style);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_DeleteAllPages: { // wxTreebook::DeleteAllPages 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeleteAllPages();
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_DeletePage: { // wxTreebook::DeletePage 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->DeletePage((size_t) *pos);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_RemovePage: { // wxTreebook::RemovePage 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->RemovePage((size_t) *n);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_GetCurrentPage: { // wxTreebook::GetCurrentPage 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetCurrentPage();
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxTreebook_GetImageList: { // wxTreebook::GetImageList 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxImageList * Result = (wxImageList*)This->GetImageList();
+ rt.addRef(getRef((void *)Result,memenv), "wxImageList");
+ break; 
+}
+case wxTreebook_GetPage: { // wxTreebook::GetPage 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxWindow * Result = (wxWindow*)This->GetPage((size_t) *n);
+ rt.addRef(getRef((void *)Result,memenv), "wxWindow");
+ break; 
+}
+case wxTreebook_GetPageCount: { // wxTreebook::GetPageCount 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ size_t Result = This->GetPageCount();
+ rt.addInt(Result);
+ break; 
+}
+case wxTreebook_GetPageImage: { // wxTreebook::GetPageImage 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetPageImage((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxTreebook_GetPageText: { // wxTreebook::GetPageText 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetPageText((size_t) *n);
+ rt.add(Result);
+ break; 
+}
+case wxTreebook_GetSelection: { // wxTreebook::GetSelection 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSelection();
+ rt.addInt(Result);
+ break; 
+}
+case wxTreebook_ExpandNode: { // wxTreebook::ExpandNode 
+ bool expand=true;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ expand = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->ExpandNode((size_t) *pos,expand);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_IsNodeExpanded: { // wxTreebook::IsNodeExpanded 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->IsNodeExpanded((size_t) *pos);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_HitTest: { // wxTreebook::HitTest 
+ long flags;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * ptX = (int *) bp; bp += 4;
+ int * ptY = (int *) bp; bp += 4;
+ wxPoint pt = wxPoint(*ptX,*ptY);
+ if(!This) throw wxe_badarg(0);
+ int Result = This->HitTest(pt,&flags);
+ rt.addInt(Result);
+ rt.addInt(flags);
+ rt.addTupleCount(2);
+ break; 
+}
+case wxTreebook_InsertPage: { // wxTreebook::InsertPage 
+ bool bSelect=false;
+ int imageId=wxNOT_FOUND;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((0+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->InsertPage((size_t) *pos,page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_InsertSubPage: { // wxTreebook::InsertSubPage 
+ bool bSelect=false;
+ int imageId=wxNOT_FOUND;
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * pos = (int *) bp; bp += 4;
+ wxWindow *page = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ int * textLen = (int *) bp; bp += 4;
+ wxString text = wxString(bp, wxConvUTF8);
+ bp += *textLen+((8-((0+ *textLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ bSelect = *(bool *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ imageId = (int)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->InsertSubPage((size_t) *pos,page,text,bSelect,imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_SetImageList: { // wxTreebook::SetImageList 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ wxImageList *imageList = (wxImageList *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetImageList(imageList);
+ break; 
+}
+case wxTreebook_SetPageSize: { // wxTreebook::SetPageSize 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ wxSize size = wxSize(*sizeW,*sizeH);
+ if(!This) throw wxe_badarg(0);
+ This->SetPageSize(size);
+ break; 
+}
+case wxTreebook_SetPageImage: { // wxTreebook::SetPageImage 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * imageId = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageImage((size_t) *n,(int) *imageId);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_SetPageText: { // wxTreebook::SetPageText 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ int * strTextLen = (int *) bp; bp += 4;
+ wxString strText = wxString(bp, wxConvUTF8);
+ bp += *strTextLen+((8-((4+ *strTextLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPageText((size_t) *n,strText);
+ rt.addBool(Result);
+ break; 
+}
+case wxTreebook_SetSelection: { // wxTreebook::SetSelection 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->SetSelection((size_t) *n);
+ rt.addInt(Result);
+ break; 
+}
+case wxTreebook_ChangeSelection: { // wxTreebook::ChangeSelection 
+ wxTreebook *This = (wxTreebook *) getPtr(bp,memenv); bp += 4;
+ int * n = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->ChangeSelection((size_t) *n);
  rt.addInt(Result);
  break; 
 }
@@ -28676,7 +29921,7 @@ case wxNotebookEvent_SetSelection: { // wxNotebookEvent::SetSelection
 }
 case wxFileDataObject_new: { // wxFileDataObject::wxFileDataObject 
  wxFileDataObject * Result = new wxFileDataObject();
- newPtr((void *) Result, 198, memenv);
+ newPtr((void *) Result, 202, memenv);
  rt.addRef(getRef((void *)Result,memenv), "wxFileDataObject");
  break; 
 }
@@ -28712,7 +29957,7 @@ case wxTextDataObject_new: { // wxTextDataObject::wxTextDataObject
   } break;
  }}; 
  wxTextDataObject * Result = new wxTextDataObject(text);
- newPtr((void *) Result, 199, memenv);
+ newPtr((void *) Result, 203, memenv);
  rt.addRef(getRef((void *)Result,memenv), "wxTextDataObject");
  break; 
 }
@@ -28748,7 +29993,7 @@ case wxTextDataObject_destroy: { // wxTextDataObject::destroy
 case wxBitmapDataObject_new_1_1: { // wxBitmapDataObject::wxBitmapDataObject 
  wxBitmap *bitmap = (wxBitmap *) getPtr(bp,memenv); bp += 4;
  wxBitmapDataObject * Result = new wxBitmapDataObject(*bitmap);
- newPtr((void *) Result, 200, memenv);
+ newPtr((void *) Result, 204, memenv);
  rt.addRef(getRef((void *)Result,memenv), "wxBitmapDataObject");
  break; 
 }
@@ -28760,7 +30005,7 @@ bitmap = (wxBitmap *) getPtr(bp,memenv); bp += 4;
   } break;
  }}; 
  wxBitmapDataObject * Result = new wxBitmapDataObject(*bitmap);
- newPtr((void *) Result, 200, memenv);
+ newPtr((void *) Result, 204, memenv);
  rt.addRef(getRef((void *)Result,memenv), "wxBitmapDataObject");
  break; 
 }

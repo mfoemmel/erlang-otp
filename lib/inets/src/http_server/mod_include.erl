@@ -89,7 +89,8 @@ update_context([],[],Context) ->
 update_context([Tag|R1],[Value|R2],Context) ->
     update_context(R1,R2,[{Tag,Value}|Context]).
 
-verify_tags(Command,ValidTags,TagList,ValueList) when length(TagList)==length(ValueList) ->
+verify_tags(Command,ValidTags,TagList,ValueList) 
+  when length(TagList) =:= length(ValueList) ->
     verify_tags(Command, ValidTags, TagList);
 verify_tags(Command, _ValidTags, _TagList, _ValueList) ->
     {error, ?NICE(Command ++ " directive has spurious tags")}.
@@ -167,7 +168,7 @@ echo(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
 
 document_name(Data,ConfigDB,RequestURI) ->
     Path = mod_alias:path(Data,ConfigDB,RequestURI),
-    case regexp:match(Path,"[^/]*\$") of
+    case inets_regexp:match(Path,"[^/]*\$") of
 	{match,Start,Length} ->
 	    string:substr(Path,Start,Length);
 	nomatch ->
@@ -181,9 +182,9 @@ document_uri(ConfigDB, RequestURI) ->
     
     VirtualPath = string:substr(RequestURI, 1, 
 				length(RequestURI)-length(AfterPath)),
-    {match, Start, Length} = regexp:match(Path,"[^/]*\$"),
+    {match, Start, Length} = inets_regexp:match(Path,"[^/]*\$"),
     FileName = string:substr(Path,Start,Length),
-    case regexp:match(VirtualPath, FileName++"\$") of
+    case inets_regexp:match(VirtualPath, FileName++"\$") of
 	{match, _, _} ->
 	    httpd_util:decode_hex(VirtualPath)++AfterPath;
 	nomatch ->
@@ -192,7 +193,7 @@ document_uri(ConfigDB, RequestURI) ->
     end.
 
 query_string_unescaped(RequestURI) ->
-  case regexp:match(RequestURI,"[\?].*\$") of
+  case inets_regexp:match(RequestURI,"[\?].*\$") of
     {match,Start,Length} ->
       %% Escape all shell-special variables with \
       escape(string:substr(RequestURI,Start+1,Length-1));      
@@ -328,7 +329,7 @@ cmd(Info, Context, ErrorLog, R, Command) ->
     Dir  = filename:dirname(Command),
     Port = (catch open_port({spawn,Command},[stream,{cd,Dir},{env,Env}])),
     case Port of
-	P when port(P) ->
+	P when is_port(P) ->
 	    {NewErrorLog, Result} = proxy(Port, ErrorLog),
 	    {ok, Context, NewErrorLog, Result, R};
 	{'EXIT', Reason} ->
@@ -383,7 +384,7 @@ exec_script(#mod{config_db = Db, request_uri = RequestUri} = Info,
     Dir  = filename:dirname(Path),
     Port = (catch open_port({spawn,Script},[stream,{env, Env},{cd, Dir}])),
     case Port of
-	P when port(P) ->
+	P when is_port(P) ->
 	    %% Send entity body to port.
 	    Res = case Info#mod.entity_body of
 		      [] ->
@@ -425,15 +426,15 @@ proxy(Port, ErrorLog, Result) ->
     receive
 	{Port, {data, Response}} ->
 	    proxy(Port, ErrorLog, lists:append(Result,Response));
-	{'EXIT', Port, normal} when port(Port) ->
+	{'EXIT', Port, normal} when is_port(Port) ->
 	    process_flag(trap_exit, false),
 	    {ErrorLog, Result};
-	{'EXIT', Port, _Reason} when port(Port) ->
+	{'EXIT', Port, _Reason} when is_port(Port) ->
 	    process_flag(trap_exit, false),
 	    {[{internal_info,
 	       ?NICE("Scrambled output from CGI-script")}|ErrorLog],
 	     Result};
-	{'EXIT', Pid, Reason} when pid(Pid) ->
+	{'EXIT', Pid, Reason} when is_pid(Pid) ->
 	    process_flag(trap_exit, false),
 	    {'EXIT', Pid, Reason};
 	%% This should not happen!
@@ -463,7 +464,7 @@ send_in1(Info, Data, Head, FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
     Size = length(ParsedBody),
     LastModified = case catch httpd_util:rfc1123_date(FileInfo#file_info.mtime) of
-		       Date when list(Date) -> [{last_modified,Date}];
+		       Date when is_list(Date) -> [{last_modified,Date}];
 		       _ -> []
 		   end,
     Head1 = case Info#mod.http_version of 
@@ -580,9 +581,9 @@ parse5([C|R],Comment,Depth) ->
   parse5(R,[C|Comment],Depth).
 
 
-sz(B) when binary(B) -> {binary,size(B)};
-sz(L) when list(L)   -> {list,length(L)};
-sz(_)                -> undefined.
+sz(B) when is_binary(B) -> {binary,size(B)};
+sz(L) when is_list(L)   -> {list,length(L)};
+sz(_)                   -> undefined.
 
 %% send_error - Handle failure to send the file
 %%

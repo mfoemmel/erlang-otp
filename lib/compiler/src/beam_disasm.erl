@@ -622,8 +622,8 @@ resolve_names(Fun, Imports, Str, Lbls, Lambdas, Literals, M) ->
 
 resolve_inst({make_fun2,Args}, _, _, _, Lambdas, _, M) ->
     [OldIndex] = resolve_args(Args),
-    {value,{OldIndex,{F,A,_Lbl,_Index,NumFree,OldUniq}}} =
-	lists:keysearch(OldIndex, 1, Lambdas),
+    {OldIndex,{F,A,_Lbl,_Index,NumFree,OldUniq}} =
+	lists:keyfind(OldIndex, 1, Lambdas),
     {make_fun2,{M,F,A},OldIndex,OldUniq,NumFree};
 resolve_inst({put_literal,[{u,Index},Dst]},_,_,_,_,Literals,_) ->
     {put_literal,{literal,gb_trees:get(Index, Literals)},Dst};

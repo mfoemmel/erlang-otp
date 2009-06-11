@@ -801,5 +801,12 @@ filter(F, S) ->
 
 -spec fold(fun((term(), term()) -> term()), term(), gb_set()) -> term().
 
-fold(F, A, S) ->
-    lists:foldl(F, A, to_list(S)).
+fold(F, A, {_, T}) when is_function(F, 2) ->
+    fold_1(F, A, T).
+
+fold_1(F, Acc0, {Key, Small, Big}) ->
+    Acc1 = fold_1(F, Acc0, Small),
+    Acc = F(Key, Acc1),
+    fold_1(F, Acc, Big);
+fold_1(_, Acc, _) ->
+    Acc.

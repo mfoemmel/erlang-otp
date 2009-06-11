@@ -76,7 +76,7 @@
 install() -> 
     install(0).
 
-install(Time) when integer(Time) ->
+install(Time) when is_integer(Time) ->
     install_loop(?IDL_MODULES, timer:seconds(Time));
 install(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -91,7 +91,7 @@ install(_Time) ->
 install_event() -> 
     install_event(0).
 
-install_event(Time) when integer(Time) ->
+install_event(Time) when is_integer(Time) ->
     install_loop(?EVENT_IDL_MODULES, timer:seconds(Time));
 install_event(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -106,7 +106,7 @@ install_event(_Time) ->
 install_typed() -> 
     install_typed(0).
 
-install_typed(Time) when integer(Time) ->
+install_typed(Time) when is_integer(Time) ->
     install_loop(?TYPED_IDL_MODULES, timer:seconds(Time));
 install_typed(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -128,7 +128,7 @@ install_loop([H|T], Time) ->
 uninstall() -> 
     uninstall(0).
 
-uninstall(Time) when integer(Time) ->
+uninstall(Time) when is_integer(Time) ->
     uninstall_loop(lists:reverse(?IDL_MODULES), timer:seconds(Time));
 uninstall(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -143,7 +143,7 @@ uninstall(_Time) ->
 uninstall_event() -> 
     uninstall_event(0).
 
-uninstall_event(Time) when integer(Time) ->
+uninstall_event(Time) when is_integer(Time) ->
     uninstall_loop(lists:reverse(?EVENT_IDL_MODULES), timer:seconds(Time));
 uninstall_event(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -158,7 +158,7 @@ uninstall_event(_Time) ->
 uninstall_typed() -> 
     uninstall_typed(0).
 
-uninstall_typed(Time) when integer(Time) ->
+uninstall_typed(Time) when is_integer(Time) ->
     uninstall_loop(lists:reverse(?TYPED_IDL_MODULES), timer:seconds(Time));
 uninstall_typed(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -192,13 +192,13 @@ stop() ->
 start_factory() ->
     start_factory(?not_DEFAULT_SETTINGS).
     
-start_factory(Args) when list(Args) ->
+start_factory(Args) when is_list(Args) ->
     SO = 'CosNotification_Common':get_option(server_options, Args, ?not_DEFAULT_SETTINGS),
     SPEC = ['CosNotifyChannelAdmin_EventChannelFactory',Args,
 	    [{sup_child, true}, 
 	     {regname, {local, oe_cosNotificationFactory}}|SO]],
     case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	Other->
 	    orber:dbg("[~p] cosNotificationApp:start_factory( ~p ).~n"
@@ -219,14 +219,14 @@ start_factory(Args) ->
 start_global_factory() ->
     start_global_factory(?not_DEFAULT_SETTINGS).
     
-start_global_factory(Args) when list(Args) ->
+start_global_factory(Args) when is_list(Args) ->
     SO = 'CosNotification_Common':get_option(server_options, Args, ?not_DEFAULT_SETTINGS),
     Name = create_name(),
     SPEC = ['CosNotifyChannelAdmin_EventChannelFactory',Args,
 	    [{sup_child, true}, 
 	     {regname, {global, Name}}|SO]],
     case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	Other->
 	    orber:dbg("[~p] cosNotificationApp:start_global_factory( ~p ).~n"
@@ -261,12 +261,12 @@ start_filter_factory() ->
 			  {tty, false},
 			  {logfile, false},
 			  {server_options, []}]).
-start_filter_factory(Args) when list(Args) ->
+start_filter_factory(Args) when is_list(Args) ->
     SO = 'CosNotification_Common':get_option(server_options, Args, 
 					     ?not_DEFAULT_SETTINGS),
     SPEC = ['CosNotifyFilter_FilterFactory',Args, [{sup_child, true}|SO]],
     case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
-	{ok, Pid, Obj} when pid(Pid) ->
+	{ok, Pid, Obj} when is_pid(Pid) ->
 	    Obj;
 	Other->
 	    orber:dbg("[~p] cosNotificationApp:start_filter_factory( ~p ).~n"
@@ -297,8 +297,9 @@ stop_filter_factory(Fac)->
 %% Effect   : 
 %%------------------------------------------------------------
 create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR) 
-  when list(StrD), list(StrT), list(StrE), list(PSeqV), list(PSeqF),
-       record(AnyR, any) ->
+  when is_list(StrD) andalso is_list(StrT) andalso is_list(StrE) 
+       andalso is_list(PSeqV) andalso is_list(PSeqF) andalso
+       is_record(AnyR, any) ->
 #'CosNotification_StructuredEvent'{header = 
    #'CosNotification_EventHeader'{fixed_header = 
 		  #'CosNotification_FixedEventHeader'{event_type =
@@ -320,7 +321,7 @@ create_structured_event(_StrD,_StrT,_StrE,_PSeqV,_PSeqF,_AnyR) ->
 %%------------------------------------------------------------
 type_check() ->
     case application:get_env(cosNotification, type_check) of
-	{ok, Boolean} when atom(Boolean) ->
+	{ok, Boolean} when is_atom(Boolean) ->
 	    Boolean;
 	_ ->
 	    true
@@ -334,7 +335,7 @@ type_check() ->
 %%------------------------------------------------------------
 notify() ->
     case application:get_env(cosNotification, notify) of
-	{ok, Module} when atom(Module) ->
+	{ok, Module} when is_atom(Module) ->
 	    Module;
 	_ ->
 	    false
@@ -348,7 +349,7 @@ notify() ->
 %%------------------------------------------------------------
 max_events() ->
     case application:get_env(cosNotification, max_events) of
-	{ok, Max} when integer(Max) ->
+	{ok, Max} when is_integer(Max) ->
 	    Max;
 	_ ->
 	    50
@@ -362,7 +363,7 @@ max_events() ->
 %%------------------------------------------------------------
 timeout_events() ->
     case application:get_env(cosNotification, timeout_events) of
-	{ok, Max} when integer(Max) ->
+	{ok, Max} when is_integer(Max) ->
 	    Max;
 	_ ->
 	    3000000 %% 5 minutes
@@ -377,7 +378,7 @@ timeout_events() ->
 %%------------------------------------------------------------
 interval_events() ->
     case application:get_env(cosNotification, interval_events) of
-	{ok, Max} when integer(Max) ->
+	{ok, Max} when is_integer(Max) ->
 	    Max;
 	_ ->
 	    10000 %% 10 seconds

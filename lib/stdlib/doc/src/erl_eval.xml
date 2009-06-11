@@ -4,23 +4,21 @@
 <erlref>
   <header>
     <copyright>
-      <year>1996</year>
-      <year>2007</year>
-      <holder>Ericsson AB, All Rights Reserved</holder>
+      <year>1996</year><year>2009</year>
+      <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
-  The contents of this file are subject to the Erlang Public License,
-  Version 1.1, (the "License"); you may not use this file except in
-  compliance with the License. You should have received a copy of the
-  Erlang Public License along with this software. If not, it can be
-  retrieved online at http://www.erlang.org/.
-
-  Software distributed under the License is distributed on an "AS IS"
-  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-  the License for the specific language governing rights and limitations
-  under the License.
-
-  The Initial Developer of the Original Code is Ericsson AB.
+      The contents of this file are subject to the Erlang Public License,
+      Version 1.1, (the "License"); you may not use this file except in
+      compliance with the License. You should have received a copy of the
+      Erlang Public License along with this software. If not, it can be
+      retrieved online at http://www.erlang.org/.
+    
+      Software distributed under the License is distributed on an "AS IS"
+      basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+      the License for the specific language governing rights and limitations
+      under the License.
+    
     </legalnotice>
 
     <title>erl_eval</title>
@@ -45,7 +43,7 @@
     <func>
       <name>exprs(Expressions, Bindings) -> {value, Value, NewBindings}</name>
       <name>exprs(Expressions, Bindings, LocalFunctionHandler) ->  {value, Value, NewBindings}</name>
-      <name>exprs(Expressions, Bindings, LocalFunctionHandler,  NonlocalFunctionHandler) -> {value, Value, NewBindings}</name>
+      <name>exprs(Expressions, Bindings, LocalFunctionHandler, NonlocalFunctionHandler) -> {value, Value, NewBindings}</name>
       <fsummary>Evaluate expressions</fsummary>
       <type>
         <v>Expressions = as returned by erl_parse or io:parse_erl_exprs/2</v>
@@ -66,14 +64,16 @@
     </func>
     <func>
       <name>expr(Expression, Bindings) -> { value, Value, NewBindings }</name>
-      <name>expr(Expression, Bindings, LocalFunctionHandler) ->  { value, Value, NewBindings }</name>
-      <name>expr(Expression, Bindings, LocalFunctionHandler,  NonlocalFunctionHandler) -> { value, Value, NewBindings }</name>
+      <name>expr(Expression, Bindings, LocalFunctionHandler) -> { value, Value, NewBindings }</name>
+      <name>expr(Expression, Bindings, LocalFunctionHandler, NonlocalFunctionHandler) -> { value, Value, NewBindings }</name>
+      <name>expr(Expression, Bindings, LocalFunctionHandler, NonlocalFunctionHandler, ReturnFormat) -> { value, Value, NewBindings } | Value</name>
       <fsummary>Evaluate expression</fsummary>
       <type>
         <v>Expression = as returned by io:parse_erl_form/2, for example</v>
         <v>Bindings = as returned by bindings/1</v>
         <v>LocalFunctionHandler = {value, Func} | {eval, Func} | none</v>
         <v>NonlocalFunctionHandler = {value, Func} | none</v>
+        <v>ReturnFormat = value | none</v>
       </type>
       <desc>
         <p>Evaluates <c>Expression</c> with the set of bindings
@@ -84,7 +84,9 @@
           <c>LocalFunctionHandler</c> and
           <c>NonlocalFunctionHandler</c>.
           </p>
-        <p>Returns <c>{value, Value, NewBindings}</c>.</p>
+        <p>Returns <c>{value, Value, NewBindings}</c> by default. But
+        if the <c>ReturnFormat</c> is <c>value</c> only the <c>Value</c> 
+        is returned.</p>
       </desc>
     </func>
     <func>

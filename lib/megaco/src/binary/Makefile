@@ -156,7 +156,6 @@ prebuild.skip:
 	@echo "Building prebuild.skip\c"
 	@touch prebuild.skip
 	@for a in $(SPEC_ASN1DB); do \
-		echo ".\c"; \
 		echo $$a >> prebuild.skip; \
 	done
 	@echo ""

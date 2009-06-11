@@ -32,6 +32,119 @@
     <file>notes.sgml</file>
   </header>
   
+  <section><title>Inets 5.1</title>
+
+      <section><title>Improvements and New Features</title>
+        <list>
+          <item>
+            <p>[httpc] Added support for web services using only basic auth,
+              with a token as the user part and no password part.</p>
+            <p>twoggle@gmail.com</p>
+            <p>Own Id: OTP-7998</p>
+          </item>
+
+	  <item>
+	    <p>[httpc] - Bind HTTP client to IP-addr. It is now possible 
+              to specify an alternate ip-address and port to be used when 
+              the client connects to the server. </p>
+	    <p>As a side-effect of this, the option <c>ipv6</c> has been 
+              removed and replaced by the <c>ipfamily</c> option. </p>
+	    <p>See <seealso marker="http#set_options">http:set_options/1,2</seealso> 
+              for more info. </p>
+            <p>*** POTENTIAL INCOMPATIBILITY ***</p>
+	    <p>Own Id: OTP-8004</p>
+          </item>
+
+        </list>
+      </section>
+
+
+      <section><title>Fixed Bugs and Malfunctions</title>
+<!--
+        <p>-</p>
+-->
+
+        <list>
+          <item>
+            <p>Updated guard tests (i.e. is_list(L) instead of
+              list(L) and possibly andalso/orelse instead of ","/";"). </p>
+            <p>Own Id: OTP-7994</p>
+          </item>
+
+          <item>
+            <p>[httpc] - Remove use of the deprecated regexp module. </p>
+            <p>Own Id: OTP-8001</p>
+          </item>
+
+	  <item>
+	    <p>[httpc] - The option <c>max_keep_alive_length</c> was 
+              not handled properly. </p>
+	    <p>Own Id: OTP-8005</p>
+          </item>
+
+
+        </list>
+      </section>
+
+  </section> <!-- 5.1 -->
+
+
+  <section><title>Inets 5.0.14</title>
+
+      <section><title>Improvements and New Features</title>
+        <list>
+          <item>
+            <p>
+              [tftp] The callback watchdog has been removed, as it
+              turned out to be counter productive when the disk was
+              overloaded. Earlier a connection was aborted when a
+              callback (which performs the file access in the TFTP
+              server) took too long time.</p>
+            <p>
+              [tftp] The error message "Too many connections" has been
+              reclassified to be a warning.</p>
+            <p>
+              Own Id: OTP-7888</p>
+          </item>
+        </list>
+      </section>
+
+
+      <section><title>Fixed Bugs and Malfunctions</title>
+        <list>
+	  <item>
+	    <p>[httpc] - Incorrect http version option check. </p>
+            <p>Mats Cronqvist</p>
+	    <p>Own Id: OTP-7882</p>
+          </item>
+
+	  <item>
+	    <p>[httpc] - Unneccessary error report when client 
+              terminating as a result of the server closed the 
+              socket unexpectedly. </p>
+	    <p>Own Id: OTP-7883</p>
+          </item>
+
+	  <item>
+	    <p>[httpc] - Failed transforming a relative URI to 
+              an absolute URI. </p>
+            <p>mtalyans@cisco.com</p>
+	    <p>Own Id: OTP-7950</p>
+          </item>
+
+	  <item>
+	    <p>[httpd] - The HTTP server did not handle the config
+              option ssl_ca_certificate_file. </p>
+            <p>karol.skocik@gmail.com</p>
+	    <p>Own Id: OTP-7976</p>
+          </item>
+
+        </list>
+      </section>
+
+  </section> <!-- 5.0.14 -->
+
+
   <section><title>Inets 5.0.13</title>
   
   <section><title>Fixed Bugs and Malfunctions</title>

@@ -231,8 +231,8 @@ remove_channel(_OE_This, #state{graph = DG} = State, Id) ->
 %% Description: 
 %%----------------------------------------------------------------------
 add_connection(_OE_This, #state{graph = DG, co_counter = C} = State, 
-	       Connection) when record(Connection, 
-				       'CosEventDomainAdmin_Connection') ->
+	       Connection) when is_record(Connection, 
+					  'CosEventDomainAdmin_Connection') ->
     SId = Connection#'CosEventDomainAdmin_Connection'.supplier_id,
     SChannel = lookup_channel(DG, SId),
     CId = Connection#'CosEventDomainAdmin_Connection'.consumer_id,

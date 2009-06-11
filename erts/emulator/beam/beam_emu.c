@@ -88,35 +88,6 @@ do {									\
 #endif
 
 /*
- * Shallow copy to heap if possible; otherwise,
- * move to heap via garbage collection.
- */
-
-#define MV_MSG_MBUF_INTO_PROC(M)					\
-do {									\
-    if ((M)->bp) {							\
-	Uint need = (M)->bp->size;					\
- 	if (E - HTOP >= need) {						\
-	    Uint *htop = HTOP;						\
-	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
-	    ASSERT(htop - HTOP == need);				\
-	    HTOP = htop;						\
-	}								\
-	else {								\
-	    SWAPOUT;							\
-	    reg[0] = r(0);						\
-	    PROCESS_MAIN_CHK_LOCKS(c_p);				\
-	    FCALLS -= erts_garbage_collect(c_p, 0, NULL, 0);		\
-	    PROCESS_MAIN_CHK_LOCKS(c_p);				\
-	    r(0) = reg[0];						\
-	    SWAPIN;							\
-	    ASSERT(!(M)->bp);						\
-	}								\
-    }									\
-    ASSERT(!(M)->bp);							\
-} while (0)
-
-/*
  * Define macros for deep checking of terms.
  */
 
@@ -1578,7 +1549,27 @@ void process_main(void)
 	 }
 #endif
      }
-     MV_MSG_MBUF_INTO_PROC(msgp);
+     ErtsMoveMsgAttachmentIntoProc(msgp, c_p, E, HTOP, FCALLS,
+				   {
+				       SWAPOUT;
+				       reg[0] = r(0);
+				       PROCESS_MAIN_CHK_LOCKS(c_p);
+				   },
+				   {
+				       PROCESS_MAIN_CHK_LOCKS(c_p);
+				       r(0) = reg[0];
+				       SWAPIN;
+				   });
+     if (is_non_value(ERL_MESSAGE_TERM(msgp))) {
+	 /*
+	  * A corrupt distribution message that we weren't able to decode;
+	  * remove it...
+	  */
+	 ASSERT(!msgp->data.attached);
+	 UNLINK_MESSAGE(c_p, msgp);
+	 free_message(msgp);
+	 goto loop_rec__;
+     }
      PreFetch(1, next);
      r(0) = ERL_MESSAGE_TERM(msgp);
      NextPF(1, next);
@@ -5101,7 +5092,7 @@ terminate_proc(Process* c_p, Eterm Value)
     if (c_p->freason & EXF_LOG) {
 	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	erts_dsprintf(dsbufp, "Error in process %T ", c_p->id);
-	if (erts_is_alive())
+	if (erts_is_alive)
 	    erts_dsprintf(dsbufp, "on node %T ", erts_this_node->sysname);
 	erts_dsprintf(dsbufp,"with exit value: %0.*T\n", display_items, Value);
 	erts_send_error_to_logger(c_p->group_leader, dsbufp);

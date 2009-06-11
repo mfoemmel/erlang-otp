@@ -50,7 +50,11 @@ VSN=$(MEGACO_VSN)
 DIR_NAME = megaco_src-$(VSN)$(PRE_VSN)
 
 ifndef APP_RELEASE_DIR
-  APP_RELEASE_DIR = /tmp
+  ifndef TESTROOT
+    APP_RELEASE_DIR = /tmp
+  else
+    APP_RELEASE_DIR = $(TESTROOT)
+  endif
 endif
 
 ifndef APP_TAR_FILE
@@ -78,11 +82,20 @@ SUB_DIRECTORIES = $(SUB_DIRS) doc/src
 
 SPECIAL_TARGETS = 
 
-ifeq ($(FLEX_SCANNER),disable)
-  FLEX_SCANNER_LINENO = --disable-megaco-flex-scanner-lineno
+ifeq ($(FLEX_SCANNER_LINENO),disable)
+  FLEX_SCANNER_LINENO_ENABLER = --disable-megaco-flex-scanner-lineno
 else
-  FLEX_SCANNER_LINENO = --enable-megaco-flex-scanner-lineno
+  FLEX_SCANNER_LINENO_ENABLER = --enable-megaco-flex-scanner-lineno
 endif
+
+ifeq ($(FLEX_SCANNER_REENTRANT),disable)
+  FLEX_SCANNER_REENTRANT_ENABLER = --disable-megaco-reentrant-flex-scanner
+else
+  FLEX_SCANNER_REENTRANT_ENABLER = --enable-megaco-reentrant-flex-scanner
+endif
+
+CONFIGURE_OPTS = $(FLEX_SCANNER_LINENO_ENABLER) $(FLEX_SCANNER_REENTRANT_ENABLER)
+
 
 
 # ----------------------------------------------------
@@ -98,8 +111,14 @@ reconf:
 
 conf: do_configure
 
+dconf: 
+	$(MAKE) conf FLEX_SCANNER_REENTRANT=disable
+
+econf: 
+	$(MAKE) conf FLEX_SCANNER_REENTRANT=enable
+
 do_configure: configure 
-	./configure $(FLEX_SCANNER_LINENO)
+	./configure $(CONFIGURE_OPTS)
 
 configure: configure.in
 	autoconf
@@ -135,12 +154,14 @@ app_doc:
 
 app_dir: $(APP_DIR)
 
-$(APP_DIR):
+tar_exclude: TAR.exclude2
+
+TAR.exclude2: Makefile TAR.exclude
 	cat TAR.exclude > TAR.exclude2; \
         echo "megaco/TAR.exclude2" >> TAR.exclude2; \
         echo "megaco/priv/lib/$(TARGET)" >> TAR.exclude2; \
         echo "megaco/src/flex/$(TARGET)" >> TAR.exclude2; \
-        echo "megaco/src/flex/prebuild.skip" >> TAR.exclude2
+	(cd ..; find megaco -name 'prebuild.skip' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name 'findmerge.*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*.contrib*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*.keep*' >> megaco/TAR.exclude2)
@@ -152,6 +173,8 @@ $(APP_DIR):
 	(cd ..; find megaco/examples/meas -name '*.xls' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name 'core' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '.cmake.state' >> megaco/TAR.exclude2)
+
+$(APP_DIR): tar_exclude
 	mkdir -p $(APP_DIR); \
         (cd ..; tar cfX - megaco/TAR.exclude2 megaco) | \
         (cd $(APP_DIR); tar xf -); \

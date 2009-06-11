@@ -1,6 +1,30 @@
+dnl Process this file with autoconf to produce a configure script. -*-m4-*-
+dnl
+dnl %CopyrightBegin%
+dnl 
+dnl Copyright Ericsson AB 2001-2009. All Rights Reserved.
+dnl 
+dnl The contents of this file are subject to the Erlang Public License,
+dnl Version 1.1, (the "License"); you may not use this file except in
+dnl compliance with the License. You should have received a copy of the
+dnl Erlang Public License along with this software. If not, it can be
+dnl retrieved online at http://www.erlang.org/.
+dnl 
+dnl Software distributed under the License is distributed on an "AS IS"
+dnl basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+dnl the License for the specific language governing rights and limitations
+dnl under the License.
+dnl 
+dnl %CopyrightEnd%
+dnl
 
-define([AC_CACHE_LOAD], )dnl
-define([AC_CACHE_SAVE], )dnl
+dnl define([AC_CACHE_LOAD], )dnl
+dnl define([AC_CACHE_SAVE], )dnl
+
+if test "x$no_recursion" != "xyes" -a "x$OVERRIDE_CONFIG_CACHE" = "x"; then
+    # We do not want to use a common cache!
+    cache_file=/dev/null
+fi
 
 AC_INIT(vsn.mk)
 
@@ -22,6 +46,68 @@ dnl ----------------------------------------------------------------------
 dnl Checks for programs.
 dnl ----------------------------------------------------------------------
 
+AC_DEFUN(ERL_REENTRANT_FLEX,
+[flex_compile='$LEX -R -Pconftest -oconftest.c conftest.flex 1>&AC_FD_CC'
+changequote(253, 273)dnl
+cat > conftest.flex <<EOF
+/*
+ * This (reentrant) example code comes from the flex manual
+ */
+
+%option reentrant stack noyywrap
+%x COMMENT
+
+%%
+
+"//"                 yy_push_state( COMMENT, yyscanner);
+.|\n
+
+<COMMENT>\n          yy_pop_state( yyscanner );
+<COMMENT>[^\n]+      fprintf( yyout, "%s\n", yytext);
+
+%%
+
+int main ( int argc, char * argv[] )
+{
+  yyscan_t scanner;
+
+  yylex_init ( &scanner );
+  yylex ( scanner );
+  yylex_destroy ( scanner );
+  return 0;
+}
+EOF
+changequote([, ])dnl
+AC_MSG_CHECKING(for reentrant capable flex)
+if AC_TRY_EVAL(flex_compile) && test -s conftest.c; then
+   ifelse([$1], , :, [
+   $1])
+   AC_MSG_RESULT([yes])
+else
+   echo "configure: failed program was:" 1>&AC_FD_CC
+   cat conftest.flex 1>&AC_FD_CC
+   echo "configure: PATH was $PATH" 1>&AC_FD_CC
+ifelse([$2], , , [
+  $2
+])dnl
+   AC_MSG_RESULT([no])
+fi
+])
+
+
+dnl
+dnl Shall we attempt to use reentrant flex scanner or not
+dnl
+AC_ARG_ENABLE(megaco_reentrant_flex_scanner,
+[  --enable-megaco-reentrant-flex-scanner  enable reentrans megaco flex scanner
+  --disable-megaco-reentrant-flex-scanner  disable reentrans megaco flex scanner],
+  if test x${enable_megaco_reentrant_flex_scanner} = xno ; then
+    ENABLE_REENTRANT_MEGACO_FLEX_SCANNER=false
+  else
+    ENABLE_REENTRANT_MEGACO_FLEX_SCANNER=true
+  fi, 
+  ENABLE_REENTRANT_MEGACO_FLEX_SCANNER=true)
+
 
 dnl
 dnl flex is needed by megaco. lex wont do!
@@ -32,15 +118,24 @@ if test "$LEX" != flex; then
   ENABLE_MEGACO_FLEX_SCANNER=false
 else
   ENABLE_MEGACO_FLEX_SCANNER=true
+  dnl Check if we can generate a reentrant scanner
+  dnl ENABLE_REENTRANT_MEGACO_FLEX_SCANNER=true
+  if ${ENABLE_REENTRANT_MEGACO_FLEX_SCANNER} = true ; then
+    ERL_REENTRANT_FLEX(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER=true,
+                       ENABLE_REENTRANT_MEGACO_FLEX_SCANNER=false)
+  fi
 fi
 AC_SUBST(ENABLE_MEGACO_FLEX_SCANNER)
+AC_SUBST(ENABLE_REENTRANT_MEGACO_FLEX_SCANNER)
+
 
 
 dnl
 dnl For increased performance it is possible to disable lineno
 dnl
 AC_ARG_ENABLE(megaco_flex_scanner_lineno,
-[  --disable-megaco-flex-scanner-lineno  disable megaco flex scanner lineno],
+[  --enable-megaco-flex-scanner-lineno  enable megaco flex scanner lineno 
+  --disable-megaco-flex-scanner-lineno  disable megaco flex scanner lineno],
   if test x${enable_megaco_flex_scanner_lineno} = xno ; then
     ENABLE_MEGACO_FLEX_SCANNER_LINENO=false
   else
@@ -63,6 +158,19 @@ if test -d ../../system; then
 else
 	OTP_EXTRA_FLAGS=
 fi
+
+
+dnl
+dnl The ErlDrvEntry struct changed in R13 (another field)
+dnl
+AC_CHECK_MEMBERS([struct ErlDrvEntry.stop_select], 
+                 [
+                  CFLAGS="$CFLAGS -DMEGACO_DRV_ENTRY_HAS_STOP_SELECT"
+                 ], 
+                 [],
+                 [
+                  #include "erl_driver.h"
+                 ])
 
 
 dnl

@@ -608,7 +608,7 @@ add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,What) ->
     orber:dbg("[~p] PusherSupplier:remove_filter(~p); Not an integer", 
@@ -621,7 +621,7 @@ remove_filter(_,_,_,What) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,What) ->
     orber:dbg("[~p] PusherSupplier:get_filter(~p); Not an integer", 
@@ -789,9 +789,9 @@ lookup_and_push(State, false) when ?is_SEQUENCE(State) ->
 			ok ->
 			    cosNotification_eventDB:delete_events(Keys),
 			    lookup_and_push(reset_cache(State), false);
-			{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-					      record(E, 'NO_PERMISSION') ;
-					      record(E, 'CosEventComm_Disconnected') ->
+			{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+					      is_record(E, 'NO_PERMISSION') orelse
+					      is_record(E, 'CosEventComm_Disconnected') ->
 			    ?DBG("PUSH SUPPLIER CLIENT NO LONGER EXIST~n", []),
 			    'CosNotification_Common':notify([{proxy, State#state.this},
 							     {client, ?get_Client(State)}, 
@@ -839,9 +839,9 @@ lookup_and_push(State, true) when ?is_SEQUENCE(State) ->
 		ok ->
 		    cosNotification_eventDB:delete_events(Keys),
 		    lookup_and_push(reset_cache(State), false);
-		{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-				      record(E, 'NO_PERMISSION') ;
-				      record(E, 'CosEventComm_Disconnected') ->
+		{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+				      is_record(E, 'NO_PERMISSION') orelse
+				      is_record(E, 'CosEventComm_Disconnected') ->
 		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
 			      "Client no longer exists; terminating and dropping events: ~p", 
 			      [?LINE, Events], ?DEBUG_LEVEL),
@@ -889,9 +889,9 @@ empty_db(State, {Event, _, Keys}) when ?is_STRUCTURED(State) ->
 	    cosNotification_eventDB:delete_events(Keys),
 	    NewState = reset_cache(State),
 	    empty_db(NewState, ?get_Event(NewState));
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-			      record(E, 'NO_PERMISSION') ;
-			      record(E, 'CosEventComm_Disconnected') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+			      is_record(E, 'NO_PERMISSION') orelse
+			      is_record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
 		      "Client no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
@@ -930,9 +930,9 @@ empty_db(State, {Event, _, Keys}) when ?is_ANY(State) ->
 	    cosNotification_eventDB:delete_events(Keys),
 	    NewState = reset_cache(State),
 	    empty_db(NewState, ?get_Event(NewState));
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-			      record(E, 'NO_PERMISSION') ;
-			      record(E, 'CosEventComm_Disconnected') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+			      is_record(E, 'NO_PERMISSION') orelse
+			      is_record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
 		      "Client no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),

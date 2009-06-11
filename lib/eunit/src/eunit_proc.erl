@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: eunit_proc.erl 339 2009-04-05 14:10:47Z rcarlsson $ 
+%% $Id$ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -628,16 +628,28 @@ io_request({put_chars, M, F, As}, Buf) ->
     catch
 	C:T -> {{error, {C,T,erlang:get_stacktrace()}}, Buf}
     end;
+io_request({put_chars, _Enc, Chars}, Buf) ->
+    io_request({put_chars, Chars}, Buf);
+io_request({put_chars, _Enc, Mod, Func, Args}, Buf) ->
+    io_request({put_chars, Mod, Func, Args}, Buf);
+io_request({get_chars, _Enc, _Prompt, _N}, Buf) ->
+    {eof, Buf};
 io_request({get_chars, _Prompt, _N}, Buf) ->
     {eof, Buf};
-io_request({get_chars, _Prompt, _M, _F, _Xs}, Buf) ->
-    {eof, Buf};
 io_request({get_line, _Prompt}, Buf) ->
+    {eof, Buf};
+io_request({get_line, _Enc, _Prompt}, Buf) ->
     {eof, Buf};
 io_request({get_until, _Prompt, _M, _F, _As}, Buf) ->
     {eof, Buf};
 io_request({setopts, _Opts}, Buf) ->
     {ok, Buf};
+io_request(getopts, Buf) ->
+    {error, {error, enotsup}, Buf};
+io_request({get_geometry,columns}, Buf) ->
+    {error, {error, enotsup}, Buf};
+io_request({get_geometry,rows}, Buf) ->
+    {error, {error, enotsup}, Buf};
 io_request({requests, Reqs}, Buf) ->
     io_requests(Reqs, {ok, Buf});
 io_request(_, Buf) ->

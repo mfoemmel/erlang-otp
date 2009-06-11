@@ -1,15 +1,31 @@
 {"%VSN%",	
  [
-  {"1.1.1", [{load_module, ssh_sftpd, soft_purge, soft_purge, []},
-             {load_module, ssh_cli, soft_purge, soft_purge, []},
+  {"1.1.2", [{load_module, ssh_acceptor_sup, soft_purge, soft_purge, []},
+	     {load_module, ssh_connection_sup, soft_purge, soft_purge, []},
+	     {load_module, sshd_sup, soft_purge, soft_purge, []},
+	     {load_module, ssh_subsystem_sup, soft_purge, soft_purge, []},
+	     {load_module, ssh_bits, soft_purge, soft_purge, []},
+	     {load_module, ssh_cli, soft_purge, soft_purge, []},
 	     {load_module, ssh_connection, soft_purge, soft_purge, []},
+	     {load_module, ssh_io, soft_purge, soft_purge, []},
+	     {load_module, ssh_sftp, soft_purge, soft_purge, []},
+	     {load_module, ssh_transport, soft_purge, soft_purge, []},
+	     {load_module, ssh_xfer, soft_purge, soft_purge, []},
 	     {load_module, ssh_connection_manager, soft_purge, soft_purge, []}
             ]}
  ]				    
  [
-  {"1.1.1", [{load_module, ssh_sftpd, soft_purge, soft_purge, []},
-             {load_module, ssh_cli, soft_purge, soft_purge, []},
+  {"1.1.2", [{load_module, ssh_acceptor_sup, soft_purge, soft_purge, []},
+	     {load_module, ssh_connection_sup, soft_purge, soft_purge, []},
+	     {load_module, sshd_sup, soft_purge, soft_purge, []},
+	     {load_module, ssh_subsystem_sup, soft_purge, soft_purge, []},
+	     {load_module, ssh_bits, soft_purge, soft_purge, []},
+	     {load_module, ssh_cli, soft_purge, soft_purge, []},
 	     {load_module, ssh_connection, soft_purge, soft_purge, []},
+	     {load_module, ssh_io, soft_purge, soft_purge, []},
+	     {load_module, ssh_sftp, soft_purge, soft_purge, []},
+	     {load_module, ssh_transport, soft_purge, soft_purge, []},
+	     {load_module, ssh_xfer, soft_purge, soft_purge, []},
 	     {load_module, ssh_connection_manager, soft_purge, soft_purge, []}
             ]}
  ] 

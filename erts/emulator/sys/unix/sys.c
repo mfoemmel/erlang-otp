@@ -379,7 +379,8 @@ void sys_tty_reset(void)
 
 #ifdef __tile__
 /* Direct malloc to spread memory around the caches of multiple tiles. */
-int malloc_use_hash = 1;
+#include <malloc.h>
+MALLOC_USE_HASH(1);
 #endif
 
 #ifdef USE_THREADS
@@ -1410,20 +1411,39 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	return ERL_DRV_ERROR_GENERAL;
     }
 
-    /* make the string suitable for giving to "sh" */
-    len = strlen(name);
-    cmd_line = (char *) erts_alloc_fnf(ERTS_ALC_T_TMP,
-				       CMD_LINE_PREFIX_STR_SZ + len + 1);
-    if (!cmd_line) {
-	close_pipes(ifd, ofd, opts->read_write);
-	errno = ENOMEM;
-	return ERL_DRV_ERROR_ERRNO;
+    if (opts->spawn_type == ERTS_SPAWN_EXECUTABLE) {
+	/* started with spawn_executable, not with spawn */
+	len = strlen(name);
+	cmd_line = (char *) erts_alloc_fnf(ERTS_ALC_T_TMP, len + 1);
+	if (!cmd_line) {
+	    close_pipes(ifd, ofd, opts->read_write);
+	    errno = ENOMEM;
+	    return ERL_DRV_ERROR_ERRNO;
+	}
+	memcpy((void *) cmd_line,(void *) name, len);
+	cmd_line[len] = '\0';
+	if (access(cmd_line,X_OK) != 0) {
+	    int save_errno = errno;
+	    erts_free(ERTS_ALC_T_TMP, cmd_line);
+	    errno = save_errno;
+	    return ERL_DRV_ERROR_ERRNO;
+	}
+    } else {
+	/* make the string suitable for giving to "sh" */
+	len = strlen(name);
+	cmd_line = (char *) erts_alloc_fnf(ERTS_ALC_T_TMP,
+					   CMD_LINE_PREFIX_STR_SZ + len + 1);
+	if (!cmd_line) {
+	    close_pipes(ifd, ofd, opts->read_write);
+	    errno = ENOMEM;
+	    return ERL_DRV_ERROR_ERRNO;
+	}
+	memcpy((void *) cmd_line,
+	       (void *) CMD_LINE_PREFIX_STR,
+	       CMD_LINE_PREFIX_STR_SZ);
+	memcpy((void *) (cmd_line + CMD_LINE_PREFIX_STR_SZ), (void *) name, len);
+	cmd_line[CMD_LINE_PREFIX_STR_SZ + len] = '\0';
     }
-    memcpy((void *) cmd_line,
-	   (void *) CMD_LINE_PREFIX_STR,
-	   CMD_LINE_PREFIX_STR_SZ);
-    memcpy((void *) (cmd_line + CMD_LINE_PREFIX_STR_SZ), (void *) name, len);
-    cmd_line[CMD_LINE_PREFIX_STR_SZ + len] = '\0';
 
     erts_smp_rwmtx_rlock(&environ_rwmtx);
 
@@ -1506,15 +1526,29 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	    
 	    unblock_signals();
 
-	    execle("/bin/sh", "sh", "-c", cmd_line, (char *) NULL, new_environ);
-
+	    if (opts->spawn_type == ERTS_SPAWN_EXECUTABLE) {
+		if (opts->argv == NULL) {
+		    execle(cmd_line,cmd_line,(char *) NULL, new_environ);
+		} else {
+		    if (opts->argv[0] == erts_default_arg0) {
+			opts->argv[0] = cmd_line;
+		    }
+		    execve(cmd_line, opts->argv, new_environ);
+		    if (opts->argv[0] == cmd_line) {
+			opts->argv[0] = erts_default_arg0;
+		    }
+		}
+	    } else {
+		execle("/bin/sh", "sh", "-c", cmd_line, (char *) NULL, new_environ);
+	    }
 	child_error:
 	    _exit(1);
 	}
 #if !DISABLE_VFORK
     }
     else { /* Use vfork() */
-	char *cs_argv[CS_ARGV_NO_OF_ARGS + 1];
+	char **cs_argv= erts_alloc(ERTS_ALC_T_TMP,(CS_ARGV_NO_OF_ARGS + 1)*
+				   sizeof(char *));
 	char fd_close_range[44];                  /* 44 bytes are enough to  */
 	char dup2_op[CS_ARGV_NO_OF_DUP2_OPS][44]; /* hold any "%d:%d" string */
                                                   /* on a 64-bit machine.    */
@@ -1545,15 +1579,36 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
 	cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
 	cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
-	cs_argv[CS_ARGV_CMD_IX] = cmd_line; /* Command */
 	cs_argv[CS_ARGV_UNBIND_IX]
 	    = (unbind ? erts_get_unbind_from_cpu_str(erts_cpuinfo) : "false");
 	cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
 	for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
 	    cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
 
-	cs_argv[CS_ARGV_NO_OF_ARGS] = NULL;
-
+	if (opts->spawn_type == ERTS_SPAWN_EXECUTABLE) {
+	    int num = 0;
+	    int j = 0;
+	    if (opts->argv != NULL) {
+		for(; opts->argv[num] != NULL; ++num)
+		    ;
+	    }
+	    cs_argv = erts_realloc(ERTS_ALC_T_TMP,cs_argv, (CS_ARGV_NO_OF_ARGS + 1 + num + 1) * sizeof(char *));
+	    cs_argv[CS_ARGV_CMD_IX] = "-";
+	    cs_argv[CS_ARGV_NO_OF_ARGS] = cmd_line;
+	    if (opts->argv != NULL) {
+		for (;opts->argv[j] != NULL; ++j) {
+		    if (opts->argv[j] == erts_default_arg0) {
+			cs_argv[CS_ARGV_NO_OF_ARGS + 1 + j] = cmd_line;
+		    } else {
+			cs_argv[CS_ARGV_NO_OF_ARGS + 1 + j] = opts->argv[j];
+		    }
+		}
+	    }
+	    cs_argv[CS_ARGV_NO_OF_ARGS + 1 + j] = NULL;
+	} else {
+	    cs_argv[CS_ARGV_CMD_IX] = cmd_line; /* Command */
+	    cs_argv[CS_ARGV_NO_OF_ARGS] = NULL;
+	}
 	DEBUGF(("Using vfork\n"));
 	pid = vfork();
 
@@ -1570,6 +1625,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	    execve(child_setup_prog, cs_argv, new_environ);
 	    _exit(1);
 	}
+	erts_free(ERTS_ALC_T_TMP,cs_argv);
     }
 #endif
 

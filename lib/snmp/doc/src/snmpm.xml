@@ -931,7 +931,7 @@ priv_key = [integer()]   (length is 16 if priv = usmDESPrivProtocol | usmAesCfb1
 
     <func>
       <name>oid_to_name(Oid) -> {ok, Name} | {error, Reason}</name>
-      <fsummary>Get the oid for an alias-name</fsummary>
+      <fsummary>Get the alias-name of the oid </fsummary>
       <type>
         <v>Oid = oid()</v>
         <v>Name = atom()</v>
@@ -939,6 +939,21 @@ priv_key = [integer()]   (length is 16 if priv = usmDESPrivProtocol | usmAesCfb1
       </type>
       <desc>
         <p>Transform a oid to it's aliasname.</p>
+
+        <marker id="oid_to_type"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>oid_to_type(Oid) -> {ok, Type} | {error, Reason}</name>
+      <fsummary>Get the type of the the oid</fsummary>
+      <type>
+        <v>Oid = oid()</v>
+        <v>Type = atom()</v>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+        <p>Retreive the type (asn1 bertype) of an oid.</p>
 
         <marker id="backup"></marker>
       </desc>

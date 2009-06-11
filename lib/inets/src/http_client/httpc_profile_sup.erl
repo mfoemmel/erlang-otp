@@ -63,12 +63,14 @@ stop_child(Profile) ->
     end.
 
 id(Profile) ->
+    DefaultProfile = http:default_profile(),
     case Profile of
-	default ->
+	DefaultProfile ->
 	    httpc_manager;
 	_ ->
 	    {http, Profile}
     end.
+
 
 %%%=========================================================================
 %%%  Supervisor callback
@@ -94,20 +96,12 @@ child_spec([{httpc, PropList} | Rest], Acc) when is_list(PropList) ->
     Spec = httpc_child_spec(Profile, Dir),
     child_spec(Rest, [Spec | Acc]).
 
-httpc_child_spec(default, Dir) ->
-    Name = httpc_manager,  
-    StartFunc = {httpc_manager, start_link, [{default, Dir}]},
-    Restart = permanent, 
-    Shutdown = 4000,
-    Modules = [httpc_manager],
-    Type = worker,
-    {Name, StartFunc, Restart, Shutdown, Type, Modules};
-
 httpc_child_spec(Profile, Dir) ->
-    Name = {http, Profile},
+    Name = id(Profile),
     StartFunc = {httpc_manager, start_link, [{Profile, Dir}]},
     Restart = permanent, 
     Shutdown = 4000,
     Modules = [httpc_manager],
     Type = worker,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
+

@@ -137,7 +137,7 @@ require(Info, Directory, DirectoryData) ->
 
     %% Any user or group restrictions?
     case ValidGroups of
-	undefined when ValidUsers == undefined ->
+	undefined when ValidUsers =:= undefined ->
 	    authorized;
 	_ ->
 	    case proplists:get_value("authorization", ParsedHeader) of
@@ -283,8 +283,8 @@ secret_path(_Path, [], to_be_found) ->
 secret_path(_Path, [], Directory) ->
     {yes, Directory};
 secret_path(Path, [[NewDirectory] | Rest], Directory) ->
-    case regexp:match(Path, NewDirectory) of
-	{match, _, _} when Directory == to_be_found ->
+    case inets_regexp:match(Path, NewDirectory) of
+	{match, _, _} when Directory =:= to_be_found ->
 	    secret_path(Path, Rest, NewDirectory);
 	{match, _, Length} when Length > length(Directory)->
 	    secret_path(Path, Rest,NewDirectory);
@@ -316,7 +316,7 @@ validate_addr(_RemoteAddr, none) ->           % When called from 'deny'
 validate_addr(_RemoteAddr, []) ->
     false;
 validate_addr(RemoteAddr, [HostRegExp | Rest]) ->
-    case regexp:match(RemoteAddr, HostRegExp) of
+    case inets_regexp:match(RemoteAddr, HostRegExp) of
 	{match,_,_} ->
 	    true;
 	nomatch ->
@@ -403,7 +403,7 @@ load("AuthDBType " ++ Type,
     end;
 
 load("require " ++ Require,[{directory, {Directory, DirData}}|Rest]) ->
-    case regexp:split(Require," ") of
+    case inets_regexp:split(Require," ") of
 	{ok,["user"|Users]} ->
 	    {ok,[{directory, {Directory,
 		  [{require_user,Users}|DirData]}} | Rest]};
@@ -415,7 +415,7 @@ load("require " ++ Require,[{directory, {Directory, DirData}}|Rest]) ->
     end;
 
 load("allow " ++ Allow,[{directory, {Directory, DirData}}|Rest]) ->
-    case regexp:split(Allow," ") of
+    case inets_regexp:split(Allow," ") of
 	{ok,["from","all"]} ->
 	    {ok,[{directory, {Directory,
 		  [{allow_from,all}|DirData]}} | Rest]};
@@ -427,7 +427,7 @@ load("allow " ++ Allow,[{directory, {Directory, DirData}}|Rest]) ->
     end;
 
 load("deny " ++ Deny,[{directory, {Directory, DirData}}|Rest]) ->
-    case regexp:split(Deny," ") of
+    case inets_regexp:split(Deny," ") of
 	{ok, ["from", "all"]} ->
 	    {ok,[{{directory, Directory,
 		  [{deny_from, all}|DirData]}} | Rest]};
@@ -463,7 +463,7 @@ directory_config_check(Directory, DirData) ->
     end.
 check_filename_present(Dir,AuthFile,DirData) ->
     case proplists:get_value(AuthFile,DirData) of
-	Name when list(Name) ->
+	Name when is_list(Name) ->
 	    ok;
 	_ ->
 	    throw({missing_auth_file, AuthFile, {directory, {Dir, DirData}}})
@@ -471,8 +471,8 @@ check_filename_present(Dir,AuthFile,DirData) ->
 
 %% store
 
-store({directory, {Directory, DirData}}, ConfigList) when is_list(Directory), 
-							  is_list(DirData) ->
+store({directory, {Directory, DirData}}, ConfigList) 
+  when is_list(Directory) andalso is_list(DirData) ->
     try directory_config_check(Directory, DirData) of
 	ok ->
 	    store_directory(Directory, DirData, ConfigList) 
@@ -567,7 +567,7 @@ remove(ConfigDB) ->
 update_password(Port, Dir, Old, New, New)->
     update_password(undefined, Port, Dir, Old, New, New).
 
-update_password(Addr, Port, Dir, Old, New, New) when list(New) ->
+update_password(Addr, Port, Dir, Old, New, New) when is_list(New) ->
     mod_auth_server:update_password(Addr, Port, Dir, Old, New);
 
 update_password(_Addr, _Port, _Dir, _Old, _New, _New) ->
@@ -742,9 +742,9 @@ list_group_members(GroupName, Addr, Port, Dir) ->
 %%        {authPassword, AuthPassword} | FunctionSpecificData]
 get_options(Opt, mandatory)->    
     case proplists:get_value(port, Opt, undefined) of
-	Port when integer(Port) ->
+	Port when is_integer(Port) ->
 	    case proplists:get_value(dir, Opt, undefined) of
-		Dir when list(Dir) ->
+		Dir when is_list(Dir) ->
 		    Addr = proplists:get_value(addr, Opt,
 						 undefined),
 		    AuthPwd = proplists:get_value(authPassword, Opt,

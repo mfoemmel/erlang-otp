@@ -67,9 +67,9 @@
 %%-----------------------------------------------------------------
 %% Func: enc_short/2
 %%-----------------------------------------------------------------
-enc_short(X, Message) when integer(X), X >= ?SHORTMIN, X =< ?SHORTMAX -> 
+enc_short(X, Message) when is_integer(X) andalso X >= ?SHORTMIN andalso X =< ?SHORTMAX -> 
     [<<X:16/big-signed-integer>> | Message];
-enc_short(X, _Message) when integer(X) -> 
+enc_short(X, _Message) when is_integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_short(~p); Out of range.", [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_short(X, _Message) ->
@@ -90,9 +90,9 @@ dec_short(little, <<Short:16/little-signed-integer,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_unsigned_short/2
 %%-----------------------------------------------------------------
-enc_unsigned_short(X, Message) when integer(X), X >= ?USHORTMIN, X =< ?USHORTMAX -> 
+enc_unsigned_short(X, Message) when is_integer(X) andalso X >= ?USHORTMIN andalso X =< ?USHORTMAX -> 
     [<<X:16/big-unsigned-integer>> | Message];
-enc_unsigned_short(X, _Message) when integer(X) -> 
+enc_unsigned_short(X, _Message) when is_integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_unsigned_short(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
@@ -115,9 +115,9 @@ dec_unsigned_short(little, <<UShort:16/little-unsigned-integer,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_long/2
 %%-----------------------------------------------------------------
-enc_long(X, Message) when integer(X), X >= ?LONGMIN, X =< ?LONGMAX -> 
+enc_long(X, Message) when is_integer(X) andalso X >= ?LONGMIN andalso X =< ?LONGMAX -> 
     [<<X:32/big-signed-integer>> | Message];
-enc_long(X, _Message) when integer(X) -> 
+enc_long(X, _Message) when is_integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_long(~p); Out of range.",[?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_long(X, _Message) ->
@@ -139,9 +139,9 @@ dec_long(little, <<Long:32/little-signed-integer,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_unsigned_long/2
 %%-----------------------------------------------------------------
-enc_unsigned_long(X, Message) when integer(X), X >= ?ULONGMIN, X =< ?ULONGMAX ->
+enc_unsigned_long(X, Message) when is_integer(X) andalso X >= ?ULONGMIN andalso X =< ?ULONGMAX ->
     [<<X:32/big-unsigned-integer>> | Message];
-enc_unsigned_long(X, _Message) when integer(X) ->
+enc_unsigned_long(X, _Message) when is_integer(X) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_long(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
@@ -185,7 +185,7 @@ dec_bool(<<X:8,_Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_float/2
 %%-----------------------------------------------------------------
-enc_float(X, Message) when number(X) ->
+enc_float(X, Message) when is_number(X) ->
     [<<X:32/big-float>> | Message];
 enc_float(X, _Message) ->
     orber:dbg("[~p] cdrlib:enc_float(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
@@ -202,7 +202,7 @@ dec_float(little, <<Float:32/little-float,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_double/2
 %%-----------------------------------------------------------------
-enc_double(X, Message) when number(X) ->
+enc_double(X, Message) when is_number(X) ->
     [<<X:64/big-float>> | Message];
 enc_double(X, _Message) ->
     orber:dbg("[~p] cdrlib:enc_double(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
@@ -222,7 +222,7 @@ dec_double(little, <<Double:64/little-float,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_char/2
 %%-----------------------------------------------------------------
-enc_char(X, Message) when integer(X), X =< 255, X >= 0 -> 
+enc_char(X, Message) when is_integer(X) andalso X =< 255, X >= 0 -> 
     [<<X:8>> | Message];
 enc_char(X,_) -> 
     orber:dbg("[~p] cdrlib:enc_char(~p); not a char.", [?LINE, X], ?DEBUG_LEVEL),
@@ -240,7 +240,7 @@ dec_char(<<Char:8,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_octet/2
 %%-----------------------------------------------------------------
-enc_octet(X, Message) when integer(X), X =< 255, X >= 0 -> 
+enc_octet(X, Message) when is_integer(X) andalso X =< 255, X >= 0 -> 
     [<<X:8/big-unsigned-integer>> | Message];
 enc_octet(X, _Message) ->
     orber:dbg("[~p] cdrlib:enc_octet(~p); not an octet.", [?LINE, X], ?DEBUG_LEVEL),
@@ -298,9 +298,9 @@ dec_enum(ByteOrder, ElemList, Message) ->
 %%-----------------------------------------------------------------
 %% Func: enc_longlong/2
 %%-----------------------------------------------------------------
-enc_longlong(X, Message) when integer(X), X >= ?LONGLONGMIN, X =< ?LONGLONGMAX -> 
+enc_longlong(X, Message) when is_integer(X) andalso X >= ?LONGLONGMIN andalso X =< ?LONGLONGMAX -> 
     [<<X:64/big-signed-integer>> | Message];
-enc_longlong(X, _Message) when integer(X) -> 
+enc_longlong(X, _Message) when is_integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_longlong(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
@@ -320,9 +320,9 @@ dec_longlong(little, <<LongLong:64/little-signed-integer,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_unsigned_longlong/2
 %%-----------------------------------------------------------------
-enc_unsigned_longlong(X, Message) when integer(X), X >= ?ULONGLONGMIN, X =< ?ULONGLONGMAX ->
+enc_unsigned_longlong(X, Message) when is_integer(X) andalso X >= ?ULONGLONGMIN andalso X =< ?ULONGLONGMAX ->
     [<<X:64/big-unsigned-integer>> | Message];
-enc_unsigned_longlong(X, _Message) when integer(X) ->
+enc_unsigned_longlong(X, _Message) when is_integer(X) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_longlong(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});

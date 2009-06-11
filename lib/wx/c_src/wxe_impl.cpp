@@ -20,8 +20,17 @@
 #include <stdio.h>
 #include <signal.h>
 
+
 #include <wx/wx.h>
+
+// Avoid including these in dcbuffer below
+#include "wx/dcmemory.h"
+#include "wx/dcclient.h"
+#include "wx/window.h"
+// Ok ugly but needed for wxBufferedDC crash workaround
+#define private public
 #include <wx/dcbuffer.h>
+#undef private
 
 #include "wxe_impl.h"
 #include "wxe_events.h"
@@ -438,10 +447,17 @@ void WxeApp::newMemEnv(wxeMetaCommand& Ecmd) {
 
 void WxeApp::destroyMemEnv(wxeMetaCommand& Ecmd) {
   // Clear incoming cmd queue first
-  dispatch_cmds();
-  
+  // dispatch_cmds();
+  wxWindow *parent = NULL;
   wxeMemEnv * memenv = refmap[(ErlDrvTermData) Ecmd.port];
-  // pre-pass delete all dialogs first since they might crash otherwise
+
+  if(wxe_debug) {
+    wxString msg;
+    msg.Printf(wxT("Destroying all memory "));
+    send_msg("debug", &msg);
+  }
+
+  // pre-pass delete all dialogs first since they might crash erlang otherwise
   for(int i=1; i < memenv->next; i++) {
     wxObject * ptr = (wxObject *) memenv->ref2ptr[i];
     if(ptr) { 
@@ -454,12 +470,16 @@ void WxeApp::destroyMemEnv(wxeMetaCommand& Ecmd) {
 	    if(win->IsModal()) {
 	      win->EndModal(-1);
 	    }
+	    parent = win->GetParent();
+	    if(parent) {
+	      ptrMap::iterator parentRef = ptr2ref.find(parent);
+	      if(parentRef == ptr2ref.end()) {
+		// The parent is already dead delete the parent ref
+		win->SetParent(NULL);
+	      } 
+	    }
 	    delete win;
-	  } else if(refd->type < 3 && ptr->IsKindOf(CLASSINFO(wxBufferedDC))) {
-	    // wxBufferedDC tries to blit to window when destroyed
-	    // so destroy it before destroying the window
-	    delete ptr;
-	  }
+	  } 
 	}
       }
     }
@@ -474,7 +494,7 @@ void WxeApp::destroyMemEnv(wxeMetaCommand& Ecmd) {
       if(it != ptr2ref.end()) {
 	wxeRefData *refd = it->second;
 	if(refd->alloc_in_erl && refd->type == 0) {
-	  wxWindow *parent = (wxWindow *) ptr; 
+	  parent = (wxWindow *) ptr; 
 	  // fprintf(stderr, "window %x %d\r\n", (int) parent, refd->ref);
 	  while(parent->GetParent()) {
 	    parent = parent->GetParent();
@@ -500,6 +520,9 @@ void WxeApp::destroyMemEnv(wxeMetaCommand& Ecmd) {
 	wxeRefData *refd = it->second;
 	if(refd->alloc_in_erl) {
 	  int type = refd->type;
+	  if((refd->type == 1) && ((wxObject *)ptr)->IsKindOf(CLASSINFO(wxBufferedDC))) {
+	    ((wxBufferedDC *)ptr)->m_dc = NULL; // Workaround
+	  }
 	  delete_object(ptr, refd);
 	  if(type > 3) {  // Non overridden allocs
 	    delete refd;
@@ -586,17 +609,20 @@ int WxeApp::getRef(void * ptr, wxeMemEnv *memenv) {
 void WxeApp::clearPtr(void * ptr) {
   ptrMap::iterator it;
   it = ptr2ref.find(ptr);
+
   if(it != ptr2ref.end()) {
     wxeRefData *refd = it->second;
     intList free = refd->memenv->free;
     int ref = refd->ref;    
     refd->memenv->ref2ptr[ref] = NULL;
     free.Append(ref);
+
     if(wxe_debug) {
       wxString msg;
       msg.Printf(wxT("Deleting {wx_ref, %d, unknown} at %p "), ref, ptr);
       send_msg("debug", &msg);
     }
+    
     if(refd->pid) {  
       // Send terminate pid to owner
       wxeReturn rt = wxeReturn(WXE_DRV_PORT,refd->memenv->owner, false);
@@ -606,7 +632,7 @@ void WxeApp::clearPtr(void * ptr) {
       rt.send();
       delete refd->pid;
     };
-    if(refd->type < 3 &&  ((wxObject*)ptr)->IsKindOf(CLASSINFO(wxSizer))) {
+    if(refd->type == 1 && ((wxObject*)ptr)->IsKindOf(CLASSINFO(wxSizer))) {
       wxSizerItemList list = ((wxSizer*)ptr)->GetChildren();
       for(wxSizerItemList::compatibility_iterator node = list.GetFirst();
 	  node; node = node->GetNext()) { 
@@ -630,6 +656,7 @@ void WxeApp::clearPtr(void * ptr) {
 	  }
       }
     }
+    
     delete refd;
     ptr2ref.erase(it);
   }
@@ -728,7 +755,8 @@ wxeCommand::wxeCommand(int fc,char * cbuf,int buflen, wxe_data *sd)
 wxeCommand::~wxeCommand() {
   int n = 0;
   while(bin[n]) {
-    driver_free_binary(bin[n]->bin);
+    if(bin[n]->bin) 
+      driver_free_binary(bin[n]->bin);
     driver_free(bin[n++]);
   }
   driver_free(buffer);

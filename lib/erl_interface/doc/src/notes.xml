@@ -29,6 +29,24 @@
   </header>
   <p>This document describes the changes made to the Erl_interface application.</p>
 
+<section><title>Erl_Interface 3.6.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A problem with <c>gethostbyname</c> in <c>erl_start.c</c>
+	    could cause a buffer overflow. This has now been fixed.</p>
+          <p>
+	    Clean up of code and removed compiler warnings.</p>
+          <p>
+	    Own Id: OTP-7978</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erl_Interface 3.6.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

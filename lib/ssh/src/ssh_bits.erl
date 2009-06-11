@@ -44,12 +44,12 @@
 	(fun(B) -> ?binary(B) end)(list_to_binary(name_concat(X)))).
 
 
-name_concat([Name]) when atom(Name) -> atom_to_list(Name);
-name_concat([Name]) when list(Name) -> Name;
+name_concat([Name]) when is_atom(Name) -> atom_to_list(Name);
+name_concat([Name]) when is_list(Name) -> Name;
 name_concat([Name|Ns]) -> 
-    if atom(Name) ->
+    if is_atom(Name) ->
 	    [atom_to_list(Name),"," | name_concat(Ns)];
-       list(Name) ->
+       is_list(Name) ->
 	    [Name,"," | name_concat(Ns)]
     end;
 name_concat([]) -> [].
@@ -183,9 +183,9 @@ enc(Xs, [Type|Ts], Offset) ->
 	    [fill_bits(K,0) | enc(Xs, Ts, Offset+K)];
 	'...' when Ts==[] ->
 	    X=hd(Xs),
-	    if binary(X) -> 
+	    if is_binary(X) -> 
 		    [X];
-	       list(X) ->
+	       is_list(X) ->
 		    [list_to_binary(X)];
 	       X==undefined ->
 		    []
@@ -214,7 +214,7 @@ decode(Binary = <<?BYTE(ID), _/binary>>) ->
 %% Decode a binary form offset 0
 %%
 
-decode(Binary, Types) when binary(Binary), list(Types) ->
+decode(Binary, Types) when is_binary(Binary) andalso is_list(Types) ->
     {_,Elems} = decode(Binary, 0, Types),
     Elems.
 
@@ -470,14 +470,14 @@ rand32() ->
 %% Base 64 encode/decode
 %%
 
-b64_encode(Bs) when list(Bs) -> 
+b64_encode(Bs) when is_list(Bs) -> 
     base64:encode(Bs);    
-b64_encode(Bin) when binary(Bin) ->
+b64_encode(Bin) when is_binary(Bin) ->
     base64:encode(Bin).
 
-b64_decode(Bin) when binary(Bin) -> 
+b64_decode(Bin) when is_binary(Bin) -> 
     base64:mime_decode(Bin);
-b64_decode(Cs) when list(Cs) -> 
+b64_decode(Cs) when is_list(Cs) -> 
     base64:mime_decode(Cs).
 
 

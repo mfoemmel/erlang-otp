@@ -390,7 +390,7 @@ add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,What) ->
     orber:dbg("[~p] CosNotifyChannelAdmin_SupplierAdmin:remove_filter(~p);~n"
@@ -403,7 +403,7 @@ remove_filter(_,_,_,What) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,What) ->
     orber:dbg("[~p] CosNotifyChannelAdmin_SupplierAdmin:get_filter(~p);~n"
@@ -533,7 +533,7 @@ forward(any, State, Event, Status) ->
 	ok ->
 	    ?DBG("SUPPLIERADM FORWARD ANY: ~p~n",[Event]),
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    orber:dbg("[~p] CosNotifyChannelAdmin_SupplierAdmin:forward();~n"
 		      "Channel no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
@@ -556,7 +556,7 @@ forward(seq, State, Event, Status) ->
 	ok ->
 	    ?DBG("SUPPLIERADM FORWARD SEQUENCE: ~p~n",[Event]),
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    orber:dbg("[~p] CosNotifyChannelAdmin_SupplierAdmin:forward();~n"
 		      "Channel no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),

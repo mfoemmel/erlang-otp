@@ -67,7 +67,7 @@ store(G, N, X) ->
     case soft_retrieve(G, Name) of
 	{error, _} ->
 	    ets:insert(G#genobj.symtab, {Name, X});
-	{ok, Y} when record(Y, forward) ->
+	{ok, Y} when is_record(Y, forward) ->
 	    ets:insert(G#genobj.symtab, {Name, X});
 	{ok, _Y} ->
 	    ic_error:error(G, {multiply_defined, X})
@@ -125,7 +125,7 @@ intf_resolv(G, Scope, Id) ->
 intf_resolv2(G, Scope, Id) ->
     N = scoped_id_add(Scope, Id),
     case soft_retrieve(G, scoped_id_strip(N)) of
-	{ok, F} when record(F, forward) ->
+	{ok, F} when is_record(F, forward) ->
 	    ic_error:error(G, {illegal_forward, Id}), [];
 	{ok, _Val} -> 
 	    scoped_id_mk_global(N);
@@ -160,7 +160,7 @@ scoped_id_new(Id) ->
     #scoped_id{line=ic_forms:get_line(Id), id=[ic_forms:get_id(Id)]}.
 
 %% Adds one more id to the list of ids
-scoped_id_add(S1, S2) when record(S2, scoped_id) ->
+scoped_id_add(S1, S2) when is_record(S2, scoped_id) ->
     S1#scoped_id{id=S2#scoped_id.id ++  S1#scoped_id.id, 
 		 line=S2#scoped_id.line};
 scoped_id_add(S, Id) ->
@@ -169,7 +169,7 @@ scoped_id_add(S, Id) ->
 
 scoped_id_mk_global(S) -> S#scoped_id{type=global}.
 
-scoped_id_is_global(S) when record(S, scoped_id), S#scoped_id.type==global -> 
+scoped_id_is_global(S) when is_record(S, scoped_id), S#scoped_id.type==global -> 
     true;
 scoped_id_is_global(_) -> false.
 

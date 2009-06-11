@@ -41,7 +41,8 @@
 	 simulate_crash/2,
 	 register/2, register/3, 
 	 register_monitor/2, register_monitor/3, 
-	 unregister/1, unregister/2
+	 unregister/1, unregister/2,
+	 register_agent/4
         ]).
 
 %%----------------------------------------------------------------------
@@ -101,6 +102,9 @@ unregister(Pid) ->
 
 unregister(Pid, Id) ->
     call(Pid, {unregister, Id}).
+
+register_agent(Pid, Id, TargetName, AgentConfig) ->
+    call(Pid, {register_agent, Id, TargetName, AgentConfig}).
 
 user(#state{parent = Pid} = S) ->
     proc_lib:init_ack(Pid, {ok, self()}),
@@ -186,6 +190,19 @@ user_loop(#state{parent = Parent} = S) ->
 		end,
 	    user_loop(S#state{ids = IDs2});
 	
+	{{register_agent, Id, TargetName, Config}, Parent, Ref} ->
+	    IDs = S#state.ids,
+	    case lists:member(Id, IDs) of
+		true ->
+		    Res = snmpm:register_agent(Id, TargetName, Config),
+		    reply(Parent, Res, Ref),
+		    user_loop(S);
+		false ->
+		    reply(Parent, {error, {unknown_user, Id}}, Ref),
+		    user_loop(S)
+	    end;
+	
+
 
 	%% SNMP manager callback messages (from our callback API):
 

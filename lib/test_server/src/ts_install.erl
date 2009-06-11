@@ -174,6 +174,7 @@ platform(Vars) ->
     LinuxDist = linux_dist(),
     ExtraLabel = extra_platform_label(),
     Schedulers = schedulers(),
+    BindType = bind_type(),
     KP = kernel_poll(),
     IOTHR = io_thread(),
     LC = lock_checking(),
@@ -183,8 +184,8 @@ platform(Vars) ->
     Debug = debug(),
     CpuBits = word_size(),
     Common = lists:concat([Hostname,"/",OsType,"/",CpuType,CpuBits,LinuxDist,
-			   Schedulers,KP,IOTHR,LC,MT,AsyncThreads,HeapType,
-			   Debug,ExtraLabel]),
+			   Schedulers,BindType,KP,IOTHR,LC,MT,AsyncThreads,
+			   HeapType,Debug,ExtraLabel]),
     PlatformId = lists:concat([ErlType, " ", Version, Common]),
     PlatformLabel = ErlType ++ Common,
     PlatformFilename = platform_as_filename(PlatformId),
@@ -254,9 +255,29 @@ async_threads() ->
 
 schedulers() ->
     case catch erlang:system_info(smp_support) of
-	true -> "/S"++integer_to_list(erlang:system_info(schedulers));
+	true ->
+	    case {erlang:system_info(schedulers),
+		  erlang:system_info(schedulers_online)} of
+		{S,S} ->
+		    "/S"++integer_to_list(S);
+		{S,O} ->
+		    "/S"++integer_to_list(S) ++ ":" ++
+			integer_to_list(O)
+	    end;
 	_ -> ""
     end.
+
+bind_type() ->
+    case catch erlang:system_info(scheduler_bind_type) of
+	thread_no_node_processor_spread -> "/sbttnnps";
+	no_node_processor_spread -> "/sbtnnps";
+	no_node_thread_spread -> "/sbtnnts";
+	processor_spread -> "/sbtps";
+	thread_spread -> "/sbtts";
+	no_spread -> "/sbtns";
+	_ -> ""
+    end.
+					
 
 debug() ->
     case string:str(erlang:system_info(system_version), "debug") of

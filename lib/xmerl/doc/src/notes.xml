@@ -29,6 +29,39 @@
   </header>
   <p>This document describes the changes made to the Xmerl application.</p>
 
+
+<section><title>Xmerl 1.2</title>
+    <section><title>Improvements and New Features</title>
+	<p>
+        In xmerl-1.2 we have added the first Beta version of the new 
+        SAX parser (module: xmerl_sax_parser), it supports XML 1.0. 
+        We call it Beta due to that the validation part is not ready yet and that the 
+        parser still has some known limitations (mostly in the DTD area).
+        </p>
+	<p>
+	Known limitations: 
+        </p>
+        <list type="bulleted">
+          <item>the external DTD in the DOCTYPE declaration is handled but other external entities are not supported.</item>
+          <item>the general entity values are just checked in the structure after replacement.</item>
+          <item>
+             parsed entities are supported on markup declaration level (e.g. partly replacement of markup 
+             declaration with PEReference is not supported).
+          </item>
+          <item>conditionalSect in external DTD's are not supported.</item>
+          <item>recursive loops in entity declarations are not detected.</item>
+        </list>
+	<p>	
+	 The version is increased from 1.1.12 to 1.2 is due to that the new parser
+         is dependent on the Unicode support that was added in OTP R13B. The old xmerl 
+         functionality is not changed.
+	</p>
+        <p>
+            Own Id: OTP-6635
+        </p>
+    </section>
+</section>
+
 <section><title>Xmerl 1.1.12</title>
 
     <section><title>Improvements and New Features</title>

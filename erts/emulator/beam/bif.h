@@ -196,19 +196,41 @@ do {							\
 
 extern Export bif_return_trap_export;
 #ifdef DEBUG
-#define ERTS_BIF_YIELD_RETURN(P, VAL, DEBUG_VAL)			\
+#define ERTS_BIF_PREP_YIELD_RETURN_X(RET, P, VAL, DEBUG_VAL)		\
+do {									\
+    ERTS_VBUMP_ALL_REDS(P);						\
+    ERTS_BIF_PREP_TRAP2(RET, &bif_return_trap_export, (P), (VAL),	\
+			(DEBUG_VAL));					\
+} while (0)
+#else
+#define ERTS_BIF_PREP_YIELD_RETURN_X(RET, P, VAL, DEBUG_VAL)		\
+do {									\
+    ERTS_VBUMP_ALL_REDS(P);						\
+    ERTS_BIF_PREP_TRAP1(RET, &bif_return_trap_export, (P), (VAL));	\
+} while (0)
+#endif
+
+#define ERTS_BIF_PREP_YIELD_RETURN(RET, P, VAL) \
+  ERTS_BIF_PREP_YIELD_RETURN_X(RET, (P), (VAL), am_undefined)
+
+#ifdef DEBUG
+#define ERTS_BIF_YIELD_RETURN_X(P, VAL, DEBUG_VAL)			\
 do {									\
     ERTS_VBUMP_ALL_REDS(P);						\
     BIF_TRAP2(&bif_return_trap_export, (P), (VAL), (DEBUG_VAL));	\
 } while (0)
 #else
-#define ERTS_BIF_YIELD_RETURN(P, VAL, DEBUG_VAL)			\
+#define ERTS_BIF_YIELD_RETURN_X(P, VAL, DEBUG_VAL)			\
 do {									\
     ERTS_VBUMP_ALL_REDS(P);						\
     BIF_TRAP1(&bif_return_trap_export, (P), (VAL));			\
 } while (0)
 #endif
 
+#define ERTS_BIF_RETURN_YIELD(P) ERTS_VBUMP_ALL_REDS((P))
+
+#define ERTS_BIF_YIELD_RETURN(P, VAL) \
+  ERTS_BIF_YIELD_RETURN_X((P), (VAL), am_undefined)
 
 #define ERTS_BIF_PREP_YIELD0(RET, TRP, P)				\
 do {									\

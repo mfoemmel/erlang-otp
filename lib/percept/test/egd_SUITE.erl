@@ -99,7 +99,18 @@ image_colors(Config) when is_list(Config) ->
     ?line ok = egd:line(Image, get_point(), get_point(), Green),
     ?line ok = egd:line(Image, get_point(), get_point(), Black),
     ?line ok = egd:line(Image, get_point(), get_point(), Blue),
+
+    HtmlDefaultNames = [black,silver,gray,white,maroon,red,
+    	purple,fuchia,green,lime,olive,yellow,navy,blue,teal,
+      	aqua],
+    
+    lists:foreach(fun
+    	(ColorName) ->
+	    ?line Color = egd:color(ColorName),
+	    ?line ok    = egd:line(Image, get_point(), get_point(), Color)
+	end, HtmlDefaultNames),
  
+    ?line <<_/binary>>  = egd:render(Image),
     ?line ok = egd:destroy(Image),
     erase(image_size),
     ok.

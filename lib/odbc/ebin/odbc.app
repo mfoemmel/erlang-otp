@@ -1,6 +1,6 @@
 {application, odbc,
  [{description, "Erlang ODBC application"},
-  {vsn, "2.10.4"},
+  {vsn, "2.10.5"},
   {modules, [
 	     odbc,
 	     odbc_app,

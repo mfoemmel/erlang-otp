@@ -426,39 +426,39 @@ get_mode(Funs, NativeCode) ->
   end.
 
 get_time(Comp) ->
-  case lists:keysearch(time, 1, Comp) of
-    {value,{_,{Y,Month,D,H,Min,S}}} ->
+  case lists:keyfind(time, 1, Comp) of
+    {_, {Y,Month,D,H,Min,S}} ->
       integer_to_list(Y) ++
 	"-" ++ integer_to_list(Month) ++
 	"-" ++ integer_to_list(D) ++ " " ++
 	integer_to_list(H) ++ ":" ++ integer_to_list(Min) ++
 	":"  ++ integer_to_list(S);
-    _ -> ""
+    false -> ""
   end.
 
 get_version(Comp) ->
-  case lists:keysearch(version, 1, Comp) of
-    {value,{_,V}} when is_list(V) -> V;
-    _ -> ""
+  case lists:keyfind(version, 1, Comp) of
+    {_, V} when is_list(V) -> V;
+    false -> ""
   end.
 
 get_cwd(Options) ->
-  case lists:keysearch(cwd, 1, Options) of
-    {value,{_,V}} when is_atom(V) -> atom_to_list(V);
-    {value,{_,V}} -> V; 
-    _ -> ""
+  case lists:keyfind(cwd, 1, Options) of
+    {_, V} when is_atom(V) -> atom_to_list(V);
+    {_, V} -> V; 
+    false -> ""
   end.
 
 get_options(Comp) ->
-  case lists:keysearch(options, 1, Comp) of
-    {value,{_,V}} when is_list(V) -> V;
-    _ -> ""
+  case lists:keyfind(options, 1, Comp) of
+    {_, V} when is_list(V) -> V;
+    false -> ""
   end.
 
 get_compile(Info) ->
-  case lists:keysearch(compile, 1, Info) of
-    {value,{_,O}} when is_list(O) -> O;
-    _ -> []
+  case lists:keyfind(compile, 1, Info) of
+    {_, O} when is_list(O) -> O;
+    false -> []
   end.
 
 -spec is_profiled(module()) -> bool().

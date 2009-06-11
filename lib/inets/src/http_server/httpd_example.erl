@@ -120,14 +120,14 @@ newformat(SessionID, _Env, _Input)->
     
 %% ------------------------------------------------------
 
-delay(Time) when integer(Time) ->
+delay(Time) when is_integer(Time) ->
     i("httpd_example:delay(~p) -> do the delay",[Time]),
     sleep(Time),
     i("httpd_example:delay(~p) -> done, now reply",[Time]),
     delay_reply("delay ok");
-delay(Time) when list(Time) ->
+delay(Time) when is_list(Time) ->
     delay(httpd_conf:make_integer(Time));
-delay({ok,Time}) when integer(Time) ->
+delay({ok,Time}) when is_integer(Time) ->
     delay(Time);
 delay({error,_Reason}) ->
     i("delay -> called with invalid time"),

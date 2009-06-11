@@ -63,11 +63,11 @@ do_gen(G, File, Form) ->
     ok.
 
 
-gen(G, N, [X|Xs]) when record(X, preproc) ->
+gen(G, N, [X|Xs]) when is_record(X, preproc) ->
     NewG = ic:handle_preproc(G, N, X#preproc.cat, X),
     gen(NewG, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, module) ->
+gen(G, N, [X|Xs]) when is_record(X, module) ->
     CD = ic_code:codeDirective(G,X),
     G2 = ic_file:filename_push(G, N, X, CD),
     N2 = [get_id2(X) | N],
@@ -76,7 +76,7 @@ gen(G, N, [X|Xs]) when record(X, module) ->
     G3 = ic_file:filename_pop(G2, CD),
     gen(G3, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, interface) ->
+gen(G, N, [X|Xs]) when is_record(X, interface) ->
     %% Add inheritence data to pragmatab
     ic_pragma:add_inh_data(G,N,X),
     G2 = ic_file:filename_push(G, N, X, erlang),
@@ -88,22 +88,22 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     G3 = ic_file:filename_pop(G2, erlang),
     gen(G3, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, const) ->
+gen(G, N, [X|Xs]) when is_record(X, const) ->
 %    N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
     gen(G, N, Xs); %% N or N2?
 
-gen(G, N, [X|Xs]) when record(X, op) ->
+gen(G, N, [X|Xs]) when is_record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
     emit_func(G, N, X, Name, ArgNames, TypeList, OutArgs),
     gen(G, N, Xs);
 	
 
-gen(G, N, [X|Xs]) when record(X, attr) ->
+gen(G, N, [X|Xs]) when is_record(X, attr) ->
     emit_attr(G, N, X, fun emit_func/7),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, except) ->
+gen(G, N, [X|Xs]) when is_record(X, except) ->
     icstruct:except_gen(G, N, X, erlang),
     gen(G, N, Xs);
 
@@ -117,9 +117,9 @@ gen(G, N, [X|Xs]) ->
 gen(_G, _N, []) -> ok.
 
 
-may_contain_structs(X) when record(X, typedef) -> true;
-may_contain_structs(X) when record(X, struct) -> true;
-may_contain_structs(X) when record(X, union) -> true;
+may_contain_structs(X) when is_record(X, typedef) -> true;
+may_contain_structs(X) when is_record(X, struct) -> true;
+may_contain_structs(X) when is_record(X, union) -> true;
 may_contain_structs(_X) -> false.
 
 
@@ -132,7 +132,7 @@ may_contain_structs(_X) -> false.
 %%
 
 
-gen_head_special(G, N, X) when record(X, interface) ->
+gen_head_special(G, N, X) when is_record(X, interface) ->
     Fd = ic_genobj:stubfiled(G),
 
     foreach(fun({Name, Body}) ->
@@ -160,24 +160,24 @@ gen_head(G, N, X) ->
 
 exp_top(_G, _N, X, Acc)  when element(1, X) == preproc -> 
     Acc;
-exp_top(G, N, L, Acc)  when list(L) ->
+exp_top(G, N, L, Acc)  when is_list(L) ->
     exp_list(G, N, L, Acc);
-exp_top(G, N, M, Acc)  when record(M, module) ->
+exp_top(G, N, M, Acc)  when is_record(M, module) ->
     exp_list(G, N, get_body(M), Acc);
-exp_top(G, N, I, Acc)  when record(I, interface) ->
+exp_top(G, N, I, Acc)  when is_record(I, interface) ->
     exp_list(G, N, get_body(I), Acc);
 exp_top(G, N, X, Acc) ->
     exp3(G, N, X, Acc).
 
-exp3(_G, _N, C, Acc)  when record(C, const) -> 
+exp3(_G, _N, C, Acc)  when is_record(C, const) -> 
     [{get_id(C#const.id), 0} | Acc];
 
-exp3(_G, _N, Op, Acc)  when record(Op, op) ->
+exp3(_G, _N, Op, Acc)  when is_record(Op, op) ->
     FuncName = get_id(Op#op.id),
     Arity = length(ic:filter_params([in, inout], Op#op.params)),
     [{FuncName, Arity} | Acc];
 
-exp3(_G, _N, A, Acc)  when record(A, attr) ->
+exp3(_G, _N, A, Acc)  when is_record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -250,10 +250,10 @@ emit_op_comment(G, F, X, Name, InP, OutP) ->
 			  get_returns(G, X, InP, OutP) |
 			  get_raises(X)]).
 
-get_title(X) when record(X, attr) -> "Attribute Operation";
+get_title(X) when is_record(X, attr) -> "Attribute Operation";
 get_title(_X) -> "Operation".
 
-get_raises(X) when record(X, op) ->
+get_raises(X) when is_record(X, op) ->
     if  X#op.raises == [] -> [];
 	true ->
 	    ["  Raises:  " ++ 
@@ -343,7 +343,7 @@ genDependency(G) ->
 
 
 
-extract_info(G, _N, X) when record(X, op) ->
+extract_info(G, _N, X) when is_record(X, op) ->
     Name	= get_id2(X),
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),

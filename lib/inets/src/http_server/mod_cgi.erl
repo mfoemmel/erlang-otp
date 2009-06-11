@@ -108,7 +108,7 @@ load("ScriptNoCache " ++ CacheArg, [])->
 %%                        generate a part of the document   
 load("ScriptTimeout " ++ Timeout, [])->
     case catch list_to_integer(httpd_conf:clean(Timeout)) of
-	TimeoutSec when integer(TimeoutSec)  ->
+	TimeoutSec when is_integer(TimeoutSec)  ->
 	   {ok, [], {script_timeout,TimeoutSec*1000}};
 	_ ->
 	   {error, ?NICE(httpd_conf:clean(Timeout)++
@@ -306,7 +306,7 @@ handle_body(Port, #mod{method = "HEAD"} = ModData, _, _, Size, _) ->
 handle_body(Port, ModData, Body, Timeout, Size, IsDisableChunkedSend) ->
     httpd_response:send_chunk(ModData, Body, IsDisableChunkedSend),
     receive 
-	{Port, {data, Data}} when port(Port) ->
+	{Port, {data, Data}} when is_port(Port) ->
 	    handle_body(Port, ModData, Data, Timeout, Size + size(Data),
 			IsDisableChunkedSend);
 	{'EXIT', Port, normal} when is_port(Port) ->

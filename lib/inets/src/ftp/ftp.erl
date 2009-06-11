@@ -113,20 +113,20 @@ open({option_list, Options})->
     call(Pid, {open, ip_comm, Options}, pid);
 
 %% The only option was the tuple form of the ip-number
-open(Host) when tuple(Host) ->
+open(Host) when is_tuple(Host) ->
     open(Host, ?FTP_PORT, []);
 
 %% Host is the string form of the hostname 
 open(Host)->
     open(Host, ?FTP_PORT, []).
 
-open(Host, Port) when integer(Port) ->
+open(Host, Port) when is_integer(Port) ->
     open(Host, Port, []);
 
-open(Host, Flags) when list(Flags) ->
+open(Host, Flags) when is_list(Flags) ->
     open(Host, ?FTP_PORT, Flags).
 
-open(Host, Port, Flags) when integer(Port), list(Flags) ->
+open(Host, Port, Flags) when is_integer(Port) andalso is_list(Flags) ->
     {ok, Pid} = ftp_sup:start_child([[[{client, self()}, Flags], []]]), 
     Opts = [{host, Host}, {port, Port}| Flags], 
     call(Pid, {open, ip_comm, Opts}, pid).
@@ -348,7 +348,7 @@ send(Pid, LocalFileName, RemotFileName) ->
 %%
 %% Description:  Transfer a binary to a remote file.
 %%--------------------------------------------------------------------------
-send_bin(Pid, Bin, RemoteFile) when binary(Bin) ->
+send_bin(Pid, Bin, RemoteFile) when is_binary(Bin) ->
     call(Pid, {send_bin, Bin, RemoteFile}, atom);
 send_bin(_Pid, _Bin, _RemoteFile) ->
   {error, enotbinary}.
@@ -383,7 +383,7 @@ append_chunk_start(Pid, RemoteFile) ->
 %%
 %% Purpose:  Send chunk to remote file.
 %%--------------------------------------------------------------------------
-send_chunk(Pid, Bin) when binary(Bin) ->
+send_chunk(Pid, Bin) when is_binary(Bin) ->
     call(Pid, {transfer_chunk, Bin}, atom);
 send_chunk(_Pid, _Bin) ->
   {error, enotbinary}.
@@ -396,7 +396,7 @@ send_chunk(_Pid, _Bin) ->
 %%
 %% Description:  Append chunk to remote file.
 %%--------------------------------------------------------------------------
-append_chunk(Pid, Bin) when binary(Bin) ->
+append_chunk(Pid, Bin) when is_binary(Bin) ->
     call(Pid, {transfer_chunk, Bin}, atom);
 append_chunk(_Pid, _Bin) ->
   {error, enotbinary}.
@@ -444,7 +444,7 @@ append(Pid, LocalFileName, RemotFileName) ->
 %%
 %% Purpose:  Append a binary to a remote file.
 %%--------------------------------------------------------------------------
-append_bin(Pid, Bin, RemoteFile) when binary(Bin) ->
+append_bin(Pid, Bin, RemoteFile) when is_binary(Bin) ->
     call(Pid, {append_bin, Bin, RemoteFile}, atom);
 append_bin(_Pid, _Bin, _RemoteFile) ->
     {error, enotbinary}.
@@ -456,7 +456,7 @@ append_bin(_Pid, _Bin, _RemoteFile) ->
 %%
 %% Description: Send arbitrary ftp command.
 %%--------------------------------------------------------------------------
-quote(Pid, Cmd) when list(Cmd) ->
+quote(Pid, Cmd) when is_list(Cmd) ->
     call(Pid, {quote, Cmd}, atom).
 
 %%--------------------------------------------------------------------------
@@ -592,7 +592,7 @@ handle_call({_, {open, ip_comm, Opts}}, From, State) ->
 	undefined ->
 	    {stop, normal, {error, ehost}, State};
 	Host ->
-	    IsPosInt = fun(Int) when is_integer(Int), Int > 0 ->
+	    IsPosInt = fun(Int) when is_integer(Int) andalso (Int > 0) ->
 			       true;
 			  (_) -> 
 			       false
@@ -1148,7 +1148,7 @@ handle_ctrl_result({pos_compl, _}, #state{caller = {handle_dir_result, Dir,
 	    %% an error string is allowed by the FTP RFC. 
 	    case lists:dropwhile(fun(?CR) -> false;(_) -> true end, 
 				 binary_to_list(Data)) of
-		L when L == [?CR, ?LF]; L == [] ->	
+		L when (L =:= [?CR, ?LF]) orelse ( L =:= []) ->	
 		    send_ctrl_message(State, mk_cmd("PWD", [])),
 		    activate_ctrl_connection(State),
 		    {noreply, 
@@ -1285,8 +1285,11 @@ ctrl_result_response(pos_compl, #state{client = From} = State, _)  ->
     gen_server:reply(From, ok),
     {noreply, State#state{client = undefined, caller = undefined}};
 
-ctrl_result_response(Status, #state{client = From} = State, _) when
-Status == etnospc; Status == epnospc; Status == efnamena; Status == econn ->
+ctrl_result_response(Status, #state{client = From} = State, _) 
+  when (Status =:= etnospc)  orelse 
+       (Status =:= epnospc)  orelse 
+       (Status =:= efnamena) orelse 
+       (Status =:= econn) ->
 %Status == etnospc; Status == epnospc; Status == econn ->
     gen_server:reply(From, {error, Status}),
 %%    {stop, normal, {error, Status}, State#state{client = undefined}};
@@ -1558,7 +1561,7 @@ call(GenServer, Msg, Format, Timeout) ->
     Result = (catch gen_server:call(GenServer, {self(), Msg}, Timeout)),
 
     case Result of
-	{ok, Bin} when binary(Bin), Format == string ->
+	{ok, Bin} when is_binary(Bin) andalso (Format =:= string) ->
 	    {ok, binary_to_list(Bin)};
 	{'EXIT', _} ->
 	    {error, eclosed};

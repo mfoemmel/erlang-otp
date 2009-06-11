@@ -32,7 +32,7 @@
 -export([compile/3,compile_beam/3,compile_asm/3,compile_core/3]).
 
 
--import(lists, [member/2,reverse/1,reverse/2,keysearch/3,last/1,
+-import(lists, [member/2,reverse/1,reverse/2,keyfind/3,last/1,
 		map/2,flatmap/2,foreach/2,foldr/3,any/2,filter/2]).
 
 %%
@@ -929,8 +929,8 @@ abstract_code(#compile{code=Code,options=Opts,ofile=OFile}) ->
     Abstr = erlang:term_to_binary({raw_abstract_v1,Code}, [compressed]),
     case member(encrypt_debug_info, Opts) of
 	true ->
-	    case keysearch(debug_info_key, 1, Opts) of
-		{value,{_,Key}} ->
+	    case keyfind(debug_info_key, 1, Opts) of
+		{_,Key} ->
 		    encrypt_abs_code(Abstr, Key);
 		false ->
 		    %% Note: #compile.module have not been set yet.
@@ -1026,9 +1026,9 @@ native_compile(St) ->
 native_compile_1(St) ->
     Opts0 = St#compile.options,
     IgnoreErrors = member(ignore_native_errors, Opts0),
-    Opts = case keysearch(hipe, 1, Opts0) of
-	       {value,{hipe,L}} when is_list(L) -> L;
-	       {value,{hipe,X}} -> [X];
+    Opts = case keyfind(hipe, 1, Opts0) of
+	       {hipe,L} when is_list(L) -> L;
+	       {hipe,X} -> [X];
 	       _ -> []
 	   end,
     case catch hipe:compile(St#compile.module,
@@ -1191,8 +1191,8 @@ erlfile(Dir, Base, Suffix) ->
 outfile(Base, Ext, Opts) when is_atom(Ext) ->
     outfile(Base, atom_to_list(Ext), Opts);
 outfile(Base, Ext, Opts) ->
-    Obase = case keysearch(outdir, 1, Opts) of
-		{value, {outdir, Odir}} -> filename:join(Odir, Base);
+    Obase = case keyfind(outdir, 1, Opts) of
+		{outdir, Odir} -> filename:join(Odir, Base);
 		_Other -> Base			% Not found or bad format
 	    end,
     Obase++"."++Ext.

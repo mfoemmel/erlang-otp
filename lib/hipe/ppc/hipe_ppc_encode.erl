@@ -132,8 +132,8 @@ d_form_D_A_d_simple(OPCD, {{r,D}, {d,Disp}, {r,A}}) ->
     d_form(OPCD, D, A, Disp).
 
 d_form_D_A_d_update(OPCD, {{r,D}, {d,Disp}, {r,A}}) ->
-    ?ASSERT(A /= 0),
-    ?ASSERT(A /= D),
+    ?ASSERT(A =/= 0),
+    ?ASSERT(A =/= D),
     d_form(OPCD, D, A, Disp).
 
 lbz(Opnds) -> d_form_D_A_d_simple(10#34, Opnds).
@@ -149,7 +149,7 @@ d_form_frD_A_d_simple(OPCD, {{fr,D}, {d,Disp}, {r,A}}) ->
     d_form(OPCD, D, A, Disp).
 
 d_form_frD_A_d_update(OPCD, {{fr,D}, {d,Disp}, {r,A}}) ->
-    ?ASSERT(A /= 0),
+    ?ASSERT(A =/= 0),
     d_form(OPCD, D, A, Disp).
 
 lfd(Opnds) -> d_form_frD_A_d_simple(10#50, Opnds).
@@ -165,7 +165,7 @@ d_form_S_A_d_simple(OPCD, {{r,S}, {d,Disp}, {r,A}}) ->
     d_form(OPCD, S, A, Disp).
 
 d_form_S_A_d_update(OPCD, {{r,S}, {d,Disp}, {r,A}}) ->
-    ?ASSERT(A /= 0),
+    ?ASSERT(A =/= 0),
     d_form(OPCD, S, A, Disp).
 
 stb(Opnds) -> d_form_S_A_d_simple(10#38, Opnds).
@@ -180,7 +180,7 @@ d_form_frS_A_d_simple(OPCD, {{fr,S}, {d,Disp}, {r,A}}) ->
     d_form(OPCD, S, A, Disp).
 
 d_form_frS_A_d_update(OPCD, {{fr,S}, {d,Disp}, {r,A}}) ->
-    ?ASSERT(A /= 0),
+    ?ASSERT(A =/= 0),
     d_form(OPCD, S, A, Disp).
 
 stfd(Opnds) -> d_form_frS_A_d_simple(10#54, Opnds).
@@ -212,8 +212,8 @@ ds_form_D_A_DS_XO_simple(OPCD, {{r,D}, {ds,DS}, {r,A}}, XO) ->
     ds_form(OPCD, D, A, DS, XO).
 
 ds_form_D_A_DS_XO_update(OPCD, {{r,D}, {ds,DS}, {r,A}}, XO) ->
-    ?ASSERT(A /= 0),
-    ?ASSERT(A /= D),
+    ?ASSERT(A =/= 0),
+    ?ASSERT(A =/= D),
     ds_form(OPCD, D, A, DS, XO).
 
 ld(Opnds) -> ds_form_D_A_DS_XO_simple(10#58, Opnds, 10#0). % 64-bit
@@ -268,8 +268,8 @@ x_form_D_A_B_XO_simple({{r,D}, {r,A}, {r,B}}, XO) ->
     x_form(10#31, D, A, B, XO, 0).
 
 x_form_D_A_B_XO_update({{r,D}, {r,A}, {r,B}}, XO) ->
-    ?ASSERT(A /= 0),
-    ?ASSERT(A /= D),
+    ?ASSERT(A =/= 0),
+    ?ASSERT(A =/= D),
     x_form(10#31, D, A, B, XO, 0).
 
 eciwx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#310). % optional
@@ -295,7 +295,7 @@ x_form_frD_A_B_XO_simple({{fr,D}, {r,A}, {r,B}}, XO) ->
     x_form(10#31, D, A, B, XO, 0).
 
 x_form_frD_A_B_XO_update({{fr,D}, {r,A}, {r,B}}, XO) ->
-    ?ASSERT(A /= 0),
+    ?ASSERT(A =/= 0),
     x_form(10#31, D, A, B, XO, 0).
 
 lfdux(Opnds) -> x_form_frD_A_B_XO_update(Opnds, 10#631).
@@ -363,7 +363,7 @@ x_form_S_A_B_XO_simple({{r,S}, {r,A}, {r,B}}, XO) ->
     x_form(10#31, S, A, B, XO, 0).
 
 x_form_S_A_B_XO_update({{r,S}, {r,A}, {r,B}}, XO) ->
-    ?ASSERT(A /= 0),
+    ?ASSERT(A =/= 0),
     x_form(10#31, S, A, B, XO, 0).
 
 ecowx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#438). % optional
@@ -383,7 +383,7 @@ x_form_frS_A_B_XO_simple({{fr,S}, {r,A}, {r,B}}, XO) ->
     x_form(10#31, S, A, B, XO, 0).
 
 x_form_frS_A_B_XO_update({{fr,S}, {r,A}, {r,B}}, XO) ->
-    ?ASSERT(A /= 0),
+    ?ASSERT(A =/= 0),
     x_form(10#31, S, A, B, XO, 0).
 
 stfdx(Opnds) -> x_form_frS_A_B_XO_simple(Opnds, 10#727).

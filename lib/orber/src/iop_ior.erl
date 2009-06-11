@@ -278,7 +278,7 @@ get_peerdata({'external',
 	       #host_data{protocol = ssl, 
 			  ssl_data = #'SSLIOP_SSL'{port = Port}, 
 			  csiv2_mech = Mech}}},
-	     IOR, Acc, Indexes) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+	     IOR, Acc, Indexes) when is_record(Mech, 'CSIIOP_CompoundSecMech') ->
     Alts = get_alt_addr(TaggedProfile),
     get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
 		 [Index|Indexes]);
@@ -287,7 +287,7 @@ get_peerdata({'external',
 	      {Host, Port, _InitObjkey, Index, TaggedProfile, 
 	       #host_data{protocol = normal, 
 			  csiv2_mech = Mech}}},
-	     IOR, Acc, Indexes) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+	     IOR, Acc, Indexes) when is_record(Mech, 'CSIIOP_CompoundSecMech') ->
     Alts = get_alt_addr(TaggedProfile),
     get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
 		 [Index|Indexes]);
@@ -304,11 +304,11 @@ get_key(#'IOP_IOR'{profiles=P})  ->
     get_key_1(P, false, 0, undefined, #host_data{});
 get_key({Module, Type, Key, _UserDef, OrberDef, Flags}) ->
     if
-	binary(Key) ->
+	is_binary(Key) ->
 	    {'internal', Key, OrberDef, Flags, Module};
 	Type == pseudo ->
 	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
-	atom(Key) ->
+	is_atom(Key) ->
 	    {'internal_registered', Key, OrberDef, Flags, Module}
     end;
 get_key(What) ->
@@ -338,11 +338,11 @@ get_key_1([#'IOP_TaggedProfile'
 	    {object_key={Module, Type, Key, _UserDef, OrberDef, Flags}}}|_], 
 	  _Retry, _Counter, _Exclude, _HD) ->
     if
-	binary(Key) ->
+	is_binary(Key) ->
 	    {'internal', Key, OrberDef, Flags, Module};
 	Type == pseudo ->
 	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
-	atom(Key) ->
+	is_atom(Key) ->
 	    {'internal_registered', Key, OrberDef, Flags, Module}
     end;
 %%--------- Local IIOP-1.1 & IIOP-1.2 Profiles ---------
@@ -352,7 +352,7 @@ get_key_1([#'IOP_TaggedProfile'
 	    {object_key={Module, Type, Key, _UserDef, OrberDef, Flags}}}|_], 
 	  _Retry, _Counter, _Exclude, _HD) ->
     if
-	binary(Key) ->
+	is_binary(Key) ->
 	    {'internal', Key, OrberDef, Flags, Module};
 	Type == pseudo ->
 	    {'internal_registered', {pseudo, Key}, OrberDef, Flags, Module};
@@ -363,7 +363,7 @@ get_key_1([#'IOP_TaggedProfile'
 	    %% groupid in the component-section of IOR. ObjectKey will tell
 	    %% GroupID and database read transaction will tell primary member.
 	    {'internal_registered', {passive, Key}, OrberDef, Flags, Module};
-	atom(Key) ->
+	is_atom(Key) ->
 	    {'internal_registered', Key, OrberDef, Flags, Module}
     end;
 %%--------- External IIOP-1.0 Profile ---------
@@ -442,13 +442,13 @@ check_components([], _, HostData) ->
     HostData;
 check_components([#'IOP_TaggedComponent'{tag=?TAG_SSL_SEC_TRANS, 
 					 component_data=SSLStruct}|Rest], 
-		       Port, HostData) when record(SSLStruct, 'SSLIOP_SSL') ->
+		       Port, HostData) when is_record(SSLStruct, 'SSLIOP_SSL') ->
     check_components(Rest, Port, HostData#host_data{protocol = ssl,
 						    ssl_data = SSLStruct});
 %% CSIv2 Components
 check_components([#'IOP_TaggedComponent'{tag=?TAG_CSI_SEC_MECH_LIST, 
 					 component_data=Data}|Rest], 
-		 Port, HostData) when record(Data, 'CSIIOP_CompoundSecMechList') ->
+		 Port, HostData) when is_record(Data, 'CSIIOP_CompoundSecMechList') ->
     case check_sec_mech(Data#'CSIIOP_CompoundSecMechList'.mechanism_list, Port) of
 	undefined ->
 	    check_components(Rest, Port, HostData);
@@ -585,7 +585,7 @@ check_wchar_codeset(#'CONV_FRAME_CodeSetComponent'{conversion_code_sets=Converte
 %%-----------------------------------------------------------------
 %% Func: add_component/2
 %%-----------------------------------------------------------------
-add_component(Objref, Component) when record(Objref, 'IOP_IOR') ->
+add_component(Objref, Component) when is_record(Objref, 'IOP_IOR') ->
     add_component_ior(Objref, Component);
 add_component(Objref, Component) ->
     add_component_local(Objref, Component, orber:giop_version()).
@@ -651,7 +651,7 @@ add_component_ior_helper([#'IOP_TaggedProfile'
 			   profile_data=#'IIOP_ProfileBody_1_1'
 			   {object_key=Objkey,
 			    components=Components} = PB} = H|T], 
-			 Component, _Status, Acc) when tuple(Objkey) ->
+			 Component, _Status, Acc) when is_tuple(Objkey) ->
     %% The objectkey must be a tuple if it's a local object. We cannot(!!) add components
     %% to an external IOR.
     add_component_ior_helper(T, Component, true, 
@@ -876,7 +876,7 @@ set_flagfield_1([PB| P], Flags) ->
 %%-----------------------------------------------------------------
 check_nil(#'IOP_IOR'{type_id="", profiles=[]}) ->
     true;
-check_nil({Id, _, _, _, _, _}) when atom(Id) ->
+check_nil({Id, _, _, _, _, _}) when is_atom(Id) ->
     false;
 check_nil({Id, _, _, _, _, _}) ->  
     case binary_to_list(Id) of
@@ -908,10 +908,10 @@ print(IoDevice, #'IOP_IOR'{type_id="", profiles=[]}) ->
 	     "================== IOR ====================~n"
 	     "NIL Object Reference.~n"
 	     "================== END ====================~n");
-print(IoDevice, IORStr) when list(IORStr) ->
+print(IoDevice, IORStr) when is_list(IORStr) ->
     IOR = corba:string_to_object(IORStr),
     print_helper(IoDevice, IOR);
-print(IoDevice, IOR) when record(IOR, 'IOP_IOR') ->
+print(IoDevice, IOR) when is_record(IOR, 'IOP_IOR') ->
     print_helper(IoDevice, IOR);
 print(IoDevice, {Mod, Type, Key, UserDef, OrberDef, Flags}) ->
     EnvFlags = orber:get_flags(),
@@ -1100,7 +1100,7 @@ print_components([#'IOP_TaggedComponent'{tag=TAG,
     print_components(T, [lists:flatten([Unused | Octets])| Data]).
 
 
-print_objkey(Objkey) when tuple(Objkey) ->
+print_objkey(Objkey) when is_tuple(Objkey) ->
     io_lib:format("Local Object........:~n~p~n", [Objkey]);
 print_objkey(Objkey) ->
     Hdr = io_lib:format("External Object.....: ~n", []),
@@ -1297,7 +1297,7 @@ code(#giop_env{version = Version, host = Host, iiop_port = IIOPort,
 	  end,
     code(Env, IOR, Bytes, Len).
 
-check_port(Port, _Type) when integer(Port) ->
+check_port(Port, _Type) when is_integer(Port) ->
     Port;
 check_port(_, normal) ->
     orber:iiop_port();

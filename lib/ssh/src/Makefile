@@ -99,6 +99,8 @@ ASN_TABLES = $(ASN_MODULES:%=%.table)
 
 ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj +inline
 
+INTERNAL_HRL_FILES = $(ASN_HRLS) ssh_auth.hrl ssh_connect.hrl ssh_transport.hrl
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -145,7 +147,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(INTERNAL_HRL_FILES) $(ERL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/include

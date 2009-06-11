@@ -23,7 +23,7 @@ dnl autoconf convention that should be cleaned up.
 AC_INIT(vsn.mk)
 AC_PREREQ(2.59)
 
-if test "x$no_recursion" != "xyes"; then
+if test "x$no_recursion" != "xyes" -a "x$OVERRIDE_CONFIG_CACHE" = "x"; then
     # We do not want to use a common cache!
     cache_file=/dev/null
 fi
@@ -640,6 +640,19 @@ case $host_os in
 		dnl otherwise, ranlib has to be run on archives
 		dnl again after installation.
 		INSTALL_DATA="$INSTALL_DATA -p";;
+	*)
+		;;
+esac
+
+dnl
+dnl Fix for Tilera install permissions
+dnl
+
+case $build in
+	*tile*)
+		INSTALL_PROGRAM="$INSTALL_PROGRAM -m755"
+		INSTALL_SCRIPT="$INSTALL_SCRIPT -m755"
+		;;
 	*)
 		;;
 esac
@@ -1288,6 +1301,26 @@ fi
 AC_SUBST(BITS64)
 
 if test "x$ac_compiler_gnu" = "xyes"; then
+AC_MSG_CHECKING([if we should add -fno-tree-copyrename to CFLAGS for computed gotos to work properly])
+AC_TRY_COMPILE([],[
+		#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
+			;
+			#else
+			#error old and ok
+			#endif
+			],
+			no_tree_copyrename=yes,
+			no_tree_copyrename=no)
+
+if test "x$no_tree_copyrename" = "xyes"; then
+	CFLAGS="$CFLAGS -fno-tree-copyrename"
+	AC_MSG_RESULT(yes, adjusting CFLAGS)
+else
+	AC_MSG_RESULT(no)
+fi
+
+
+
 AC_MSG_CHECKING([for broken gcc-4.3.0 compiler])
 AC_TRY_RUN([
 /* pr36339.c */

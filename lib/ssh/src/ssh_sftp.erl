@@ -126,21 +126,26 @@ start_channel(Host, Port, Opts) ->
     end.
 
 stop_channel(Pid) ->
-    [{trap_exit, Bool}]  = process_info(Pid, [trap_exit]),
-    process_flag(trap_exit, true),
-    link(Pid),
-    exit(Pid, ssh_sftp_stop_channel),
-    receive 
-	{'EXIT', Pid, normal} ->
-	    ok
-    after 5000 ->
-	    exit(Pid, kill),
+    case process_info(Pid, [trap_exit]) of
+	[{trap_exit, Bool}] ->
+	    process_flag(trap_exit, true),
+	    link(Pid),
+	    exit(Pid, ssh_sftp_stop_channel),
 	    receive 
-		{'EXIT', Pid, killed} ->
+		{'EXIT', Pid, normal} ->
 		    ok
-	    end
-    end,
-    process_flag(trap_exit, Bool).
+	    after 5000 ->
+		    exit(Pid, kill),
+		    receive 
+			{'EXIT', Pid, killed} ->
+			    ok
+		    end
+	    end,
+	    process_flag(trap_exit, Bool),
+	    ok;
+	undefined ->
+	    ok
+    end.
 
 wait_for_version_negotiation(Pid, Timeout) ->
     call(Pid, wait_for_version_negotiation, Timeout).
@@ -340,7 +345,7 @@ read_file_loop(Pid, Handle, PacketSz, FileOpTimeout, Acc) ->
 write_file(Pid, Name, List) ->
     write_file(Pid, Name, List, ?FILEOP_TIMEOUT).
 
-write_file(Pid, Name, List, FileOpTimeout) when list(List) ->
+write_file(Pid, Name, List, FileOpTimeout) when is_list(List) ->
     write_file(Pid, Name, list_to_binary(List), FileOpTimeout);
 write_file(Pid, Name, Bin, FileOpTimeout) ->
     case open(Pid, Name, [write, binary], FileOpTimeout) of
@@ -530,8 +535,11 @@ do_handle_call({read,Async,Handle,Length}, From, State) ->
 do_handle_call({pwrite,Async,Handle,At,Data0}, From, State) ->
     case lseek_position(Handle, At, State) of
 	{ok,Offset} ->
-	    Data = if binary(Data0) -> Data0;
-		      list(Data0) -> list_to_binary(Data0)
+	    Data = if 
+		       is_binary(Data0) -> 
+			   Data0;
+		       is_list(Data0) -> 
+			   list_to_binary(Data0)
 		   end,
 	    ReqID = State#state.req_id,
 	    Size = size(Data),
@@ -545,8 +553,11 @@ do_handle_call({pwrite,Async,Handle,At,Data0}, From, State) ->
 do_handle_call({write,Async,Handle,Data0}, From, State) ->
     case lseek_position(Handle, cur, State) of
 	{ok,Offset} ->
-	    Data = if binary(Data0) -> Data0;
-		      list(Data0) -> list_to_binary(Data0)
+	    Data = if 
+		       is_binary(Data0) ->
+			   Data0;
+		       is_list(Data0) ->
+			   list_to_binary(Data0)
 		   end,
 	    ReqID = State#state.req_id,
 	    Size = size(Data),
@@ -1058,7 +1069,7 @@ lseek_position(Handle, Pos, State) ->
 lseek_pos(_Pos, undefined, _) ->
     {error, einval};
 lseek_pos(Pos, _CurOffset, _CurSize)
-  when integer(Pos), 0 =< Pos, Pos < ?SSH_FILEXFER_LARGEFILESIZE ->
+  when is_integer(Pos) andalso 0 =< Pos andalso Pos < ?SSH_FILEXFER_LARGEFILESIZE ->
     {ok,Pos};
 lseek_pos(bof, _CurOffset, _CurSize) ->
     {ok,0};
@@ -1067,10 +1078,10 @@ lseek_pos(cur, CurOffset, _CurSize) ->
 lseek_pos(eof, _CurOffset, CurSize) ->
     {ok,CurSize};
 lseek_pos({bof, Offset}, _CurOffset, _CurSize)
-  when integer(Offset), 0 =< Offset, Offset < ?SSH_FILEXFER_LARGEFILESIZE ->
+  when is_integer(Offset) andalso 0 =< Offset andalso Offset < ?SSH_FILEXFER_LARGEFILESIZE ->
     {ok, Offset};
 lseek_pos({cur, Offset}, CurOffset, _CurSize)
-  when integer(Offset), -(?SSH_FILEXFER_LARGEFILESIZE) =< Offset, 
+  when is_integer(Offset) andalso -(?SSH_FILEXFER_LARGEFILESIZE) =< Offset andalso
        Offset < ?SSH_FILEXFER_LARGEFILESIZE ->
     NewOffset = CurOffset + Offset,
     if NewOffset < 0 ->
@@ -1079,7 +1090,7 @@ lseek_pos({cur, Offset}, CurOffset, _CurSize)
 	    {ok, NewOffset}
     end;
 lseek_pos({eof, Offset}, _CurOffset, CurSize) 
-  when integer(Offset), -(?SSH_FILEXFER_LARGEFILESIZE) =< Offset, 
+  when is_integer(Offset) andalso -(?SSH_FILEXFER_LARGEFILESIZE) =< Offset andalso
        Offset < ?SSH_FILEXFER_LARGEFILESIZE ->
     NewOffset = CurSize + Offset,
     if NewOffset < 0 ->

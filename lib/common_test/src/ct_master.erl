@@ -68,7 +68,7 @@ run_test(Node,Opts) ->
 %%% @hidden
 run_test({Node,Opts}) ->
     run_test([{Node,Opts}]);
-run_test(NodeOptsList) when list(NodeOptsList) ->
+run_test(NodeOptsList) when is_list(NodeOptsList) ->
     start_master(NodeOptsList).
 
 %%%-----------------------------------------------------------------

@@ -37,6 +37,13 @@
 -include("ssl_int.hrl").
 -include("ssl_internal.hrl").
 
+-record(config, {ssl,               %% SSL parameters
+		 inet_user,         %% User set inet options
+		 emulated,          %% #socket_option{} emulated
+		 inet_ssl,          %% inet options for internal ssl socket 
+		 cb                 %% Callback info
+		}).
+
 %%--------------------------------------------------------------------
 %% Function: start([, Type]) -> ok
 %%
@@ -68,20 +75,17 @@ stop() ->
 connect(Socket, SslOptions) when is_port(Socket) ->
     connect(Socket, SslOptions, infinity).
 
-connect(Socket, SslOptions, Timeout) when is_port(Socket) ->
+connect(Socket, SslOptions0, Timeout) when is_port(Socket) ->
     EmulatedOptions = emulated_options(),
-    {ok, Inetvalues} = inet:getopts(Socket, EmulatedOptions),
+    {ok, InetValues} = inet:getopts(Socket, EmulatedOptions),
     inet:setopts(Socket, internal_inet_values()), 
-    try handle_options(Inetvalues ++ SslOptions, client) of
-	{ok, Options0} ->
-	    {CbInfo, Options} =
-		handle_transport_protocol(Options0),
+    try handle_options(SslOptions0 ++ InetValues, client) of
+	{ok, #config{cb=CbInfo, ssl=SslOptions, emulated=EmOpts}} ->
 	    case inet:peername(Socket) of
 		{ok, {Address, Port}} ->
 		    ssl_connection:connect(Address, Port, Socket, 
-					   ssl_connection_options(Options), 
-					   self(), 
-					   CbInfo, Timeout);
+					   {SslOptions, EmOpts},
+					   self(), CbInfo, Timeout);
 		{error, Error} ->
 		    {error, Error}
 	    end
@@ -102,7 +106,8 @@ connect(Address, Port, Options0, Timeout) ->
 	    %% so that new and old ssl can be run by the same
 	    %% code, however the option will be ignored by old ssl
 	    %% that hardcodes reuseaddr to true in its portprogram.
-	    Options =  proplists:delete(reuseaddr, Options0),
+	    Options1 = proplists:delete(reuseaddr, Options0),
+	    Options  = proplists:delete(ssl_imp, Options1),
             old_connect(Address, Port, Options, Timeout);
 	Value ->
 	    {error, {eoptions, {ssl_imp, Value}}}
@@ -138,14 +143,19 @@ listen(Port, Options0) ->
 transport_accept(ListenSocket) ->
     transport_accept(ListenSocket, infinity).
 
-transport_accept(#sslsocket{pid = {ListenSocket, Options0},
+transport_accept(#sslsocket{pid = {ListenSocket, #config{cb=CbInfo, ssl=SslOpts}},
                             fd = new_ssl} = SslSocket, Timeout) ->
-    {{CbModule, _, _} = CbInfo, {SSlOpts, EmOpts, _}} =
-        handle_transport_protocol(Options0),
+    
+    %% The setopt could have been invoked on the listen socket
+    %% and options should be inherited.
+    EmOptions = emulated_options(),
+    {ok, InetValues} = inet:getopts(ListenSocket, EmOptions),
+    {CbModule,_,_} = CbInfo,
     {ok, Socket} = CbModule:accept(ListenSocket, Timeout),
+    inet:setopts(Socket, internal_inet_values()),
     {ok, Port} = inet:port(Socket),
     case ssl_connection_sup:start_child([server, "localhost", Port, Socket,
-                                         {SSlOpts, EmOpts}, self(),
+                                         {SslOpts, socket_options(InetValues)}, self(),
                                          CbInfo]) of
         {ok, Pid} ->
             CbModule:controlling_process(Socket, Pid),
@@ -193,20 +203,18 @@ ssl_accept(#sslsocket{} = Socket, Timeout)  ->
     ensure_old_ssl_started(),
     ssl_broker:ssl_accept(Socket, Timeout).
 
-ssl_accept(ListenSocket, SslOptions, Timeout) when is_port(ListenSocket) -> 
-     EmulatedOptions = emulated_options(),
-    {ok, Inetvalues} = inet:getopts(ListenSocket, EmulatedOptions),
-    inet:setopts(ListenSocket, internal_inet_values()), 
-    try handle_options(Inetvalues ++ SslOptions, server) of
-	{ok, Options} ->
-	    {{_, _, _} = CbInfo, {SSlOpts, EmOpts, _}} =
-		handle_transport_protocol(Options),
-	    {ok, Port} = inet:port(ListenSocket),
-	    ssl_connection:accept(Port, ListenSocket, 
-				  {SSlOpts, EmOpts}, self(), CbInfo, Timeout)
+ssl_accept(Socket, SslOptions, Timeout) when is_port(Socket) -> 
+    EmulatedOptions = emulated_options(),
+    {ok, InetValues} = inet:getopts(Socket, EmulatedOptions),
+    inet:setopts(Socket, internal_inet_values()), 
+    try handle_options(SslOptions ++ InetValues, server) of
+	{ok, #config{cb=CbInfo,ssl=SslOpts, emulated=EmOpts}} ->
+	    {ok, Port} = inet:port(Socket),
+	    ssl_connection:accept(Port, Socket,
+				  {SslOpts, EmOpts},
+				  self(), CbInfo, Timeout)
     catch 
-	{error, Reason} ->
-            {error, Reason}
+	Error = {error, _Reason} -> Error
     end.
 
 %%--------------------------------------------------------------------
@@ -214,9 +222,8 @@ ssl_accept(ListenSocket, SslOptions, Timeout) when is_port(ListenSocket) ->
 %%
 %% Description: Close a ssl connection
 %%--------------------------------------------------------------------  
-close(#sslsocket{pid = {ListenSocket, {_,_, Options}}, fd = new_ssl}) ->
-    {CbModule, _, _} = proplists:get_value(cb_info, Options),
-    CbModule:close(ListenSocket);
+close(#sslsocket{pid = {ListenSocket, #config{cb={CbMod,_, _}}}, fd = new_ssl}) ->
+    CbMod:close(ListenSocket);
 close(#sslsocket{pid = Pid, fd = new_ssl}) ->
     ssl_connection:close(Pid);
 close(Socket = #sslsocket{}) ->
@@ -348,9 +355,8 @@ cipher_suites(openssl) ->
 %%--------------------------------------------------------------------
 getopts(#sslsocket{fd = new_ssl, pid = Pid}, OptTags) when is_pid(Pid) ->
     ssl_connection:get_opts(Pid, OptTags);
-getopts(#sslsocket{fd = new_ssl, 
-		   pid = {ListenSocket, {_, EmOpts, _}}}, OptTags) ->
-    getopts(ListenSocket, EmOpts, OptTags, []);
+getopts(#sslsocket{fd = new_ssl, pid = {ListenSocket, _}}, OptTags) ->
+    inet:getopts(ListenSocket, OptTags);
 getopts(#sslsocket{} = Socket, Options) ->
     ensure_old_ssl_started(),
     ssl_broker:getopts(Socket, Options).
@@ -360,8 +366,10 @@ getopts(#sslsocket{} = Socket, Options) ->
 %% 
 %% Description:
 %%--------------------------------------------------------------------
-setopts(#sslsocket{fd = new_ssl, pid = Pid}, Options) ->
+setopts(#sslsocket{fd = new_ssl, pid = Pid}, Options) when is_pid(Pid) ->
     ssl_connection:set_opts(Pid, Options);
+setopts(#sslsocket{fd = new_ssl, pid = {ListenSocket, _}}, OptTags) ->
+    inet:setopts(ListenSocket, OptTags);
 setopts(#sslsocket{} = Socket, Options) ->
     ensure_old_ssl_started(),
     ssl_broker:setopts(Socket, Options).
@@ -371,9 +379,8 @@ setopts(#sslsocket{} = Socket, Options) ->
 %% 
 %% Description: Same as gen_tcp:shutdown/2
 %%--------------------------------------------------------------------
-shutdown(#sslsocket{pid = {ListenSocket, Opts}, fd = new_ssl}, How) ->
-    {{CbModule, _,_}, _} = handle_transport_protocol(Opts),
-    CbModule:shutdown(ListenSocket, How);
+shutdown(#sslsocket{pid = {ListenSocket, #config{cb={CbMod,_, _}}}, fd = new_ssl}, How) ->
+    CbMod:shutdown(ListenSocket, How);
 shutdown(#sslsocket{pid = Pid, fd = new_ssl}, How) ->
     ssl_connection:shutdown(Pid, How).
 
@@ -434,37 +441,30 @@ versions() ->
 %%%--------------------------------------------------------------------
 new_connect(Address, Port, Options, Timeout) when is_list(Options) ->
     try handle_options(Options, client) of
-	{ok, NewOptions} ->
-            do_new_connect(Address, Port, NewOptions, Timeout)
+	{ok, Config} ->
+	    do_new_connect(Address,Port,Config,Timeout)
     catch 
-         {error, Reason} ->
-            {error, Reason}
+	throw:Error ->
+	    Error
     end.
 
-do_new_connect(Address, Port, Options0, Timeout) ->
-    {{CbModule, _, _} = CbInfo, Options} =
-	handle_transport_protocol(Options0),
-    try CbModule:connect(Address, Port, 
-			 connect_options(Options), Timeout) of
+do_new_connect(Address, Port,
+	       #config{cb=CbInfo, inet_user=UserOpts, ssl=SslOpts,
+		       emulated=EmOpts,inet_ssl=SocketOpts},
+	       Timeout) ->
+    {CbModule, _, _} = CbInfo,    
+    try CbModule:connect(Address, Port,  SocketOpts, Timeout) of
 	{ok, Socket} ->
-	    ssl_connection:connect(Address, Port, Socket, 
-				   ssl_connection_options(Options), self(), 
-				   CbInfo, Timeout);
+	    ssl_connection:connect(Address, Port, Socket, {SslOpts,EmOpts},
+				   self(), CbInfo, Timeout);
 	{error, Reason} ->
 	    {error, Reason}
     catch
 	exit:{function_clause, _} ->
-	    {error, {}};
-	  exit:{badarg, _} ->
-	    {error,{eoptions, {inet_options, connect_options(Options)}}}
-
+	    {error, {eoptions, {cb_info, CbInfo}}};
+	exit:{badarg, _} ->
+	    {error,{eoptions, {inet_options, UserOpts}}}
     end.
-
-handle_transport_protocol({SSL, Emulated, Options0}) ->
-    CbInfo = 
-	proplists:get_value(cb_info, Options0, {gen_tcp, tcp, tcp_closed}),
-    Options = proplists:delete(cb_info, Options0),
-    {CbInfo, {SSL, Emulated, Options}}.
 
 old_connect(Address, Port, Options, Timeout) ->
     ensure_old_ssl_started(),
@@ -472,25 +472,18 @@ old_connect(Address, Port, Options, Timeout) ->
     ssl_broker:connect(Pid, Address, Port, Options, Timeout).
 
 new_listen(Port, Options0) ->
-    try handle_options(Options0, server) of
-	{ok, Options1} ->
-	    {CbInfo, Options} =
-		handle_transport_protocol(Options1),
-	    new_listen(CbInfo, Port, Options)
+    try 
+	{ok, Config} = handle_options(Options0, server),
+	#config{cb={CbModule, _, _},inet_user=Options} = Config,
+	case CbModule:listen(Port, Options) of
+	    {ok, ListenSocket} ->
+		{ok, #sslsocket{pid = {ListenSocket, Config}, fd = new_ssl}};
+	    Err = {error, _} ->
+		Err
+	end
     catch 
-	{error, Reason} ->
-	    {error, Reason}
-    end.
-
-new_listen({CbModule, _, _} = CbInfo, Port, Options) ->
-    case CbModule:listen(Port, listen_options(Options)) of
-	{ok, ListenSocket} ->
-	    {SslOpts, EmOpts} = ssl_listen_options(Options),
-	    {ok, #sslsocket{pid = {ListenSocket, {SslOpts, EmOpts, 
-						  [{cb_info, CbInfo}]}},
-				   fd = new_ssl}};
-	{error, Reason} ->
-	    {error, Reason} 
+	Error = {error, _} ->
+	    Error
     end.
 	    
 old_listen(Port, Options) ->
@@ -502,38 +495,35 @@ handle_options(Opts0, Role) ->
     Opts = proplists:expand([{binary, [{mode, binary}]},
 			     {list, [{mode, list}]}], Opts0),
     
-    ReuseSessionFun = fun(_, _, _, _) ->
-			      true
-		      end,
-    
-    VerifyFun =  fun(ErrorList) ->
-			 case lists:foldl(fun({bad_cert,unknown_ca}, Acc) ->
-						  Acc;
-					     (Other, Acc) ->
-						  [Other | Acc]
-					  end, [], ErrorList) of
-			     [] ->
-				 true;
-			     [_|_] ->
-				 false
-			 end
-		 end,
+    ReuseSessionFun = fun(_, _, _, _) -> true end,
 
-    {Verify, FailIfNoPeerCert, CaCertDefalut} = 
+    AcceptBadCa = fun({bad_cert,unknown_ca}, Acc) ->  Acc;
+		     (Other, Acc) -> [Other | Acc]
+		  end,
+    
+    VerifyFun =
+	fun(ErrorList) ->
+		case lists:foldl(AcceptBadCa, [], ErrorList) of
+		    [] ->    true;
+		    [_|_] -> false
+		end
+	end,
+
+    {Verify, FailIfNoPeerCert, CaCertDefault} = 
 	%% Handle 0, 1, 2 for backwards compatibility
 	case proplists:get_value(verify, Opts, verify_none) of
 	    0 ->
-		{verify_none, false, ca_cert_defalut(verify_none, Role)};
+		{verify_none, false, ca_cert_default(verify_none, Role)};
 	    1  ->
-		{verify_peer, false, ca_cert_defalut(verify_peer, Role)};
+		{verify_peer, false, ca_cert_default(verify_peer, Role)};
 	    2 ->
-		{verify_peer, true,  ca_cert_defalut(verify_peer, Role)};
+		{verify_peer, true,  ca_cert_default(verify_peer, Role)};
 	    verify_none ->
-		{verify_none, false, ca_cert_defalut(verify_none, Role)};
+		{verify_none, false, ca_cert_default(verify_none, Role)};
 	    verify_peer ->
 		{verify_peer, proplists:get_value(fail_if_no_peer_cert,
 						  Opts, false),
-		 ca_cert_defalut(verify_peer, Role)};
+		 ca_cert_default(verify_peer, Role)};
 	    Value ->
 		throw({error, {eoptions, {verify, Value}}})
 	end,   
@@ -552,31 +542,28 @@ handle_options(Opts0, Role) ->
       keyfile    = handle_option(keyfile,  Opts, CertFile),
       key        = handle_option(key, Opts, undefined),
       password   = handle_option(password, Opts, ""),
-      cacertfile = handle_option(cacertfile, Opts, CaCertDefalut),
+      cacertfile = handle_option(cacertfile, Opts, CaCertDefault),
       ciphers    = handle_option(ciphers, Opts, []),
       %% Server side option
       reuse_session = handle_option(reuse_session, Opts, ReuseSessionFun),
       reuse_sessions = handle_option(reuse_sessions, Opts, true),
       debug      = handle_option(debug, Opts, [])
      },
-    EmulatedSockOpts = #socket_options{
-      mode    = handle_option(mode, Opts, list),
-      packet  = handle_option(packet, Opts, 0),
-      header  = handle_option(header, Opts, 0),
-      active  = handle_option(active, Opts, true)
-     },
-    
-    SslOREmulated = [versions, verify, verify_fun, 
-		     depth, certfile, keyfile,
-		     key, password, cacertfile, ciphers,
-		     debug, mode, packet, header, active,
-		     reuse_session, reuse_sessions, ssl_imp],
 
-    SockOpts = lists:foldl(fun(Key, PropList) -> 
-				    proplists:delete(Key, PropList)
-			    end, Opts, SslOREmulated),
+    CbInfo  = proplists:get_value(cb_info, Opts, {gen_tcp, tcp, tcp_closed}),    
+    SslOptions = [versions, verify, verify_fun, 
+		  depth, certfile, keyfile,
+		  key, password, cacertfile, ciphers,
+		  debug, reuse_session, reuse_sessions, ssl_imp,
+		  cd_info],
     
-    {ok, {SSLOptions, EmulatedSockOpts, SockOpts}}.
+    SockOpts = lists:foldl(fun(Key, PropList) -> 
+				   proplists:delete(Key, PropList)
+			   end, Opts, SslOptions),
+    
+    {SSLsock, Emulated} = emulated_options(SockOpts),
+    {ok, #config{ssl=SSLOptions, emulated=Emulated, inet_ssl=SSLsock,
+		 inet_user=SockOpts, cb=CbInfo}}.
 
 handle_option(OptionName, Opts, Default) ->
     validate_option(OptionName, 
@@ -634,31 +621,6 @@ validate_option(reuse_session, Value) when is_function(Value) ->
 validate_option(reuse_sessions, Value) when Value == true; 
 					    Value == false ->
     Value;
-validate_option(mode, Value) when Value == list;
-                                  Value == binary ->
-    Value;
-
-validate_option(packet, Value) when Value == raw;
-                                    Value == 0;
-				    Value == 1;
-				    Value == 2;
-				    Value == 4;
-				    Value == asn1;
-				    Value == fcgi;
-				    Value == sunrm;
-				    Value == http;
-				    Value == httph;
-				    Value == cdr;
-				    Value == tpkt;
-				    Value == line  ->
-    Value;
-validate_option(header, Value)  when is_integer(Value) ->
-    Value;
-validate_option(active, Value) when Value == true;
-                                    Value == false;
-                                    Value == once ->
-    
-    Value;
 validate_option(debug, Value) when is_list(Value); Value == true ->
     Value;
 validate_option(Opt, Value) ->
@@ -673,38 +635,72 @@ validate_versions([Version | Rest], Versions) when Version == 'tlsv1.1';
 validate_versions(Ver, Versions) ->
     throw({error, {eoptions, {Ver, {versions, Versions}}}}).
 
-ca_cert_defalut(verify_none, _) ->
+validate_inet_option(mode, Value)
+  when Value =/= list, Value =/= binary ->
+    throw({error, {eoptions, {mode,Value}}});
+validate_inet_option(packet, Value)
+  when not (is_atom(Value) or is_integer(Value)) ->
+    throw({error, {eoptions, {packet,Value}}});
+validate_inet_option(packet_size, Value)
+  when not is_integer(Value) ->
+    throw({error, {eoptions, {packet_size,Value}}});
+validate_inet_option(header, Value)
+  when not is_integer(Value) ->
+    throw({error, {eoptions, {header,Value}}});
+validate_inet_option(active, Value)
+  when Value =/= true, Value =/= false, Value =/= once ->
+    throw({error, {eoptions, {active,Value}}});
+validate_inet_option(_, _) ->
+    ok.
+
+ca_cert_default(verify_none, _) ->
     undefined;
 %% Client may leave verification up to the user
-ca_cert_defalut(verify_peer, client) ->
+ca_cert_default(verify_peer, client) ->
     undefined;
 %% Server that wants to verify_peer must have
 %% some trusted certs.
-ca_cert_defalut(verify_peer, server) ->
+ca_cert_default(verify_peer, server) ->
     "".
 
-listen_options({_, _, InetOpts}) ->
-    %% Packet, mode, active and header must be  
-    %% emulated. 
-    internal_inet_values() ++ InetOpts.
-
-ssl_listen_options({SslOpts, SocketOpts, _}) ->
-    {SslOpts, SocketOpts}.
-
-connect_options({_, _, InetOpts}) ->
-    %% Packet, mode, active and header must be  
-    %% emulated. 
-    internal_inet_values() ++ InetOpts.
-
 emulated_options() ->
-    [mode, packet, active, header].
+    [mode, packet, active, header, packet_size].
 
 internal_inet_values() ->
-    [{packet, 0},{header, 0},{active, false},{mode,binary}].
+    [{packet_size,0},{packet, 0},{header, 0},{active, false},{mode,binary}].
     %%[{packet, ssl},{header, 0},{active, false},{mode,binary}].
 
-ssl_connection_options({SslOpts, SocketOpts, _}) ->
-    {SslOpts, SocketOpts}.
+socket_options(InetValues) ->
+    #socket_options{
+		mode   = proplists:get_value(mode, InetValues),
+		header = proplists:get_value(header, InetValues),
+		active = proplists:get_value(active, InetValues),
+		packet = proplists:get_value(packet, InetValues),
+		packet_size = proplists:get_value(packet_size, InetValues)	     
+	       }.
+
+emulated_options(Opts) ->
+    emulated_options(Opts, internal_inet_values(), #socket_options{}).
+
+emulated_options([{mode,Opt}|Opts], Inet, Emulated) ->
+    validate_inet_option(mode,Opt),
+    emulated_options(Opts, Inet, Emulated#socket_options{mode=Opt});
+emulated_options([{header,Opt}|Opts], Inet, Emulated) ->
+    validate_inet_option(header,Opt),
+    emulated_options(Opts, Inet, Emulated#socket_options{header=Opt});
+emulated_options([{active,Opt}|Opts], Inet, Emulated) ->
+    validate_inet_option(active,Opt),
+    emulated_options(Opts, Inet, Emulated#socket_options{active=Opt});
+emulated_options([{packet,Opt}|Opts], Inet, Emulated) ->
+    validate_inet_option(packet,Opt),
+    emulated_options(Opts, Inet, Emulated#socket_options{packet=Opt});
+emulated_options([{packet_size,Opt}|Opts], Inet, Emulated) ->
+    validate_inet_option(packet_size,Opt),
+    emulated_options(Opts, Inet, Emulated#socket_options{packet_size=Opt});
+emulated_options([Opt|Opts], Inet, Emulated) ->
+    emulated_options(Opts, [Opt|Inet], Emulated);
+emulated_options([], Inet,Emulated) ->
+    {Inet, Emulated}.
 
 cipher_suites(Version, []) ->
     ssl_cipher:suites(Version);
@@ -808,24 +804,6 @@ format_error(Error) ->
 
 no_format(Error) ->    
     io_lib:format("No format string for error: \"~p\" available.", [Error]).
-
-getopts(_, _, [], Acc) ->
-    {ok, Acc};
-getopts(Socket, Options, [mode | Rest], Acc) ->
-    Value = {mode, Options#socket_options.mode},
-    getopts(Socket, Options, Rest, [Value | Acc]);
-getopts(Socket, Options, [packet | Rest], Acc) ->
-    Value =  {packet, Options#socket_options.packet},
-    getopts(Socket, Options, Rest, [Value | Acc]);
-getopts(Socket, Options, [header | Rest], Acc) ->
-    Value = {header, Options#socket_options.header},
-    getopts(Socket, Options, Rest, [Value | Acc]);
-getopts(Socket, Options, [active | Rest], Acc) ->
-    Value = {active, Options#socket_options.active},
-    getopts(Socket, Options, Rest, [Value | Acc]);
-getopts(Socket, Options, [Tag | Rest], Acc) ->
-    {ok, [Value]} = inet:getopts(Socket, Tag),
-    getopts(Socket, Options, Rest, [Value | Acc]).
 
 %% Start old ssl port program if needed.
 ensure_old_ssl_started() ->

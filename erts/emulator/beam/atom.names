@@ -81,6 +81,8 @@ atom andalso
 atom andthen
 atom any
 atom anycrlf
+atom args
+atom arg0
 atom arity
 atom asn1
 atom asynchronous
@@ -184,6 +186,7 @@ atom ERROR='ERROR'
 atom error_handler
 atom error_logger
 atom ets
+atom ETS_TRANSFER='ETS-TRANSFER'
 atom event
 atom exact_reductions
 atom exclusive
@@ -226,6 +229,7 @@ atom heap_block_size
 atom heap_size
 atom heap_sizes
 atom heap_type
+atom heir
 atom hidden
 atom hide
 atom high
@@ -456,6 +460,8 @@ atom shared
 atom silent
 atom size
 atom sl_alloc
+atom spawn_executable
+atom spawn_driver
 atom ssl_tls
 atom stack_size
 atom start
@@ -519,6 +525,7 @@ atom wall_clock
 atom warning
 atom warning_msg
 atom wordsize
+atom write_concurrency
 atom xor
 atom yes
 atom yield

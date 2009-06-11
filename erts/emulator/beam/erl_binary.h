@@ -168,6 +168,7 @@ byte* erts_get_aligned_binary_bytes(Eterm, byte**);
 
 ERTS_GLB_INLINE void erts_free_aligned_binary_bytes(byte* buf);
 ERTS_GLB_INLINE Binary *erts_bin_drv_alloc_fnf(Uint size);
+ERTS_GLB_INLINE Binary *erts_bin_drv_alloc(Uint size);
 ERTS_GLB_INLINE Binary *erts_bin_nrml_alloc(Uint size);
 ERTS_GLB_INLINE Binary *erts_bin_realloc_fnf(Binary *bp, Uint size);
 ERTS_GLB_INLINE Binary *erts_bin_realloc(Binary *bp, Uint size);
@@ -196,13 +197,22 @@ erts_bin_drv_alloc_fnf(Uint size)
 }
 
 ERTS_GLB_INLINE Binary *
+erts_bin_drv_alloc(Uint size)
+{
+    Uint bsize = sizeof(Binary) - 1 + size;
+    void *res;
+    res = erts_alloc(ERTS_ALC_T_DRV_BINARY, bsize);
+    ERTS_CHK_BIN_ALIGNMENT(res);
+    return (Binary *) res;
+}
+
+
+ERTS_GLB_INLINE Binary *
 erts_bin_nrml_alloc(Uint size)
 {
     Uint bsize = sizeof(Binary) - 1 + size;
     void *res;
-    res = erts_alloc_fnf(ERTS_ALC_T_BINARY, bsize);
-    if (!res)
-	erts_alloc_n_enomem(ERTS_ALC_T2N(ERTS_ALC_T_BINARY), bsize);
+    res = erts_alloc(ERTS_ALC_T_BINARY, bsize);
     ERTS_CHK_BIN_ALIGNMENT(res);
     return (Binary *) res;
 }

@@ -92,62 +92,104 @@
 
     <p>Events:</p>
     <pre>
+    %% Indication that the test run is starting.
     #event.name = test_start
     #event.data = {StartTime,LogDir}
-    StartTime = {date(), time()}
+    StartTime = {date(),time()}
     LogDir = string()
   
+    %% Initial information about the test run; the number of
+    %% tests, suites and test cases. Note that if a test case
+    %% group with a repeat property exists, the total number
+    %% of test cases can not be calculated (unknown).
+    #event.name = start_info
+    #event.data = {Tests,Suites,Cases}
+    Tests = Suites = integer()
+    Cases = integer() | unknown
+
+    %% Indication that the test run is finished.
     #event.name = test_done
     #event.data = EndTime
-    EndTime = {date(), time()}
+    EndTime = {date(),time()}
   
+    %% Common Test is compiling files in specified directory.
     #event.name = start_make
     #event.data = Dir
     Dir = string()
   
+    %% Common Test is finished with compilation.
     #event.name = finished_make
     #event.data = Dir
     Dir = string()
   
+    %% A test case is starting. In case of a test case group
+    %% configuration function, the group name and properties
+    %% are also given.
     #event.name = tc_start
-    #event.data = {Suite,Case}
+    #event.data = {Suite,CaseOrGroup}
     Suite = atom()
+    CaseOrGroup = Case | {Conf,GroupName,GroupProperties}
     Case = atom()
-  
+    Conf = init_per_group | end_per_group
+    GroupName = atom()
+    GroupProperties = list()
+
+    %% A test case is finished and this event reports the
+    %% result. In case of a test case group configuration 
+    %% function, the group name and properties are also given.
     #event.name = tc_done
-    #event.data = {Suite,Case,Result}
+    #event.data = {Suite,CaseOrGroup,Result}
     Suite = atom()
+    CaseOrGroup = Case | {Conf,GroupName,GroupProperties}
     Case = atom()
+    Conf = init_per_group | end_per_group
+    GroupName = atom()
+    GroupProperties = list()
     Result = ok | {skipped,Reason} | {failed,Reason}
     Reason = term()
   
+    %% A test case has been skipped by the user.
     #event.name = tc_user_skip
     #event.data = {Suite,Case,Comment}
     Suite = atom()
     Case = atom()
     Comment = string()
   
+    %% A test case has been automatically skipped by
+    %% Common Test (e.g. because of a failing configuration 
+    %% function or an unsuccessful require operation).
     #event.name = tc_auto_skip
     #event.data = {Suite,Case,Comment}
     Suite = atom()
     Case = atom()
     Comment = string()
   
+    %% A statistics event with the current count of 
+    %% successful, skipped and failed test cases so far.
+    %% This event gets sent after the end of each test case.
     #event.name = test_stats
     #event.data = {Ok,Failed,Skipped}
     Ok = Failed = Skipped = integer()
   
+    %% Indication that the logging process of Common Test
+    %% has been started successfully and is ready for IO.
     #event.name = start_logging
     #event.data = CtRunDir
     CtRunDir = string()
   
+    %% Indication that the logging process of Common Test
+    %% has been shut down at the end of the test run.
     #event.name = stop_logging
     #event.data = []
   
+    %% Internal event used by the Common Test Master
+    %% process to synchronize particular file operations.
     #event.name = start_write_file
     #event.data = FullNameFile
     FullNameFile = string()
-  
+
+    %% Internal event used by the Common Test Master
+    %% process to synchronize particular file operations.  
     #event.name = finished_write_file
     #event.data = FullNameFile
     FullNameFile = string()

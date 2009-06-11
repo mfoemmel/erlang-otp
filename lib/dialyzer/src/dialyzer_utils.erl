@@ -93,8 +93,8 @@ get_core_from_src(File, Opts) ->
 get_abstract_code_from_beam(File) ->
   case beam_lib:chunks(File, [abstract_code]) of
     {ok, {_, List}} ->
-      case lists:keysearch(abstract_code, 1, List) of
-	{value, {abstract_code, {raw_abstract_v1, Abstr}}} -> {ok, Abstr};
+      case lists:keyfind(abstract_code, 1, List) of
+	{abstract_code, {raw_abstract_v1, Abstr}} -> {ok, Abstr};
 	_ -> error
       end;
     _ ->
@@ -235,8 +235,7 @@ get_record_fields([], _RecDict, Acc) ->
 -spec get_spec_info(abstract_code(), dict()) -> {'ok', dict()} | {'error', string()}.
 
 get_spec_info(AbstractCode, RecordsDict) ->
-  {value, {attribute, _, module, ModName}} =
-    lists:keysearch(module, 3, AbstractCode),
+  {attribute, _, module, ModName} = lists:keyfind(module, 3, AbstractCode),
   get_spec_info(AbstractCode, dict:new(), RecordsDict, ModName, "nofile").
 
 %% TypeSpec is a list of conditional contracts for a function. 

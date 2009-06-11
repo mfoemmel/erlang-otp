@@ -127,11 +127,12 @@ get_warnings_from_modules([M|Ms], State, DocPlt, Acc) when is_atom(M) ->
   %% Check if there are contracts for functions that do not exist
   Warnings1 = 
     dialyzer_contracts:contracts_without_fun(Contracts, AllFuns, Callgraph),
-  {Warnings2, FunTypes, InterModuleCalls, ModLocalCalls} =
+  {Warnings2, FunTypes, RaceVarMap, RaceCode, PublicTables, NamedTables} =
     dialyzer_dataflow:get_warnings(Tree, Plt, Callgraph, Records, NoWarnUnused),
   NewDocPlt = insert_into_doc_plt(FunTypes, Callgraph, DocPlt),
   NewCallgraph =
-    callgraph__renew_module_calls(InterModuleCalls, ModLocalCalls, Callgraph),
+    callgraph__renew_race_stuff(RaceVarMap, RaceCode, PublicTables,
+    NamedTables, Callgraph),
   State1 = st__renew_state_calls(NewCallgraph, State),
   get_warnings_from_modules(Ms, State1, NewDocPlt, [Warnings1,Warnings2|Acc]);
 get_warnings_from_modules([], #st{plt = Plt}, DocPlt, Acc) ->
@@ -166,10 +167,11 @@ refine_one_module(M, State) ->
   AllFuns = collect_fun_info([Tree]),
   FunTypes = get_fun_types_from_plt(AllFuns, State),
   Records = dialyzer_codeserver:lookup_records(M, CodeServer),
-  {NewFunTypes, InterModCalls, ModLocalCalls} =
+  {NewFunTypes, RaceVarMap, RaceCode, PublicTables, NamedTables} =
     dialyzer_dataflow:get_fun_types(Tree, PLT, Callgraph, Records),
   NewCallgraph =
-    callgraph__renew_module_calls(InterModCalls, ModLocalCalls, Callgraph),
+    callgraph__renew_race_stuff(RaceVarMap, RaceCode, PublicTables,
+    NamedTables, Callgraph),
   case reached_fixpoint(FunTypes, NewFunTypes) of
     true ->
       State1 = st__renew_state_calls(NewCallgraph, State),
@@ -181,9 +183,12 @@ refine_one_module(M, State) ->
       {NewState1, ordsets:from_list([FunLbl || {FunLbl,_Type} <- NotFixpoint])}
   end.
 
-callgraph__renew_module_calls(InterModuleCalls, ModuleLocalCalls, Callgraph) ->
-  Callgraph#dialyzer_callgraph{inter_module_calls = InterModuleCalls,
-                               module_local_calls = ModuleLocalCalls}.
+callgraph__renew_race_stuff(RaceVarMap, RaceCode, PublicTables,
+                            NamedTables, Callgraph) ->
+  Callgraph#dialyzer_callgraph{race_var_map = RaceVarMap,
+                               race_code = RaceCode,
+                               public_tables = PublicTables,
+                               named_tables = NamedTables}.
 
 st__renew_state_calls(Callgraph, State) ->
   State#st{callgraph = Callgraph}.
@@ -498,7 +503,7 @@ pp_signatures([], _Records) ->
   ok.
 
 -ifdef(DEBUG_PP).
-debug_pp(Tree, Map) -> 
+debug_pp(Tree, _Map) -> 
   Tree1 = strip_annotations(Tree),
   io:put_chars(cerl_prettypr:format(Tree1)),
   io:nl().  

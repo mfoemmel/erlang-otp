@@ -35,5 +35,6 @@
       contains modules with support for unit testing.</p>
   </description>
   <include file="eunit"></include>
-</application>
+  <include file="eunit_surefire"></include>
+ </application>
 

@@ -265,17 +265,17 @@ do_gen(G, _File, Form) ->
     gen(G, [], Form).
 
 
-gen(G, N, [X|Xs]) when record(X, preproc) ->
+gen(G, N, [X|Xs]) when is_record(X, preproc) ->
     NewG = ic:handle_preproc(G, N, X#preproc.cat, X),
     gen(NewG, N, Xs);
-gen(G, N, [X|Xs]) when record(X, module) ->
+gen(G, N, [X|Xs]) when is_record(X, module) ->
     G2 = ic_file:filename_push(G, N, X, erlang_template_no_gen),
     N2 = [ic_forms:get_id2(X) | N],
     gen_head(G2, N2, X),
     gen(G2, N2, ic_forms:get_body(X)),
     G3 = ic_file:filename_pop(G2, erlang_template_no_gen),
     gen(G3, N, Xs);
-gen(G, N, [X|Xs]) when record(X, interface) ->
+gen(G, N, [X|Xs]) when is_record(X, interface) ->
     G2 = ic_file:filename_push(G, N, X, erlang_template),
     N2 = [ic_forms:get_id2(X) | N],
     gen_head(G2, N2, X),
@@ -291,12 +291,12 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     end,
     G3 = ic_file:filename_pop(G2, erlang_template),
     gen(G3, N, Xs);
-gen(G, N, [X|Xs]) when record(X, op) ->
+gen(G, N, [X|Xs]) when is_record(X, op) ->
     {Name, InArgNames, OutArgNames, Reply} = extract_info(X),
     emit_function(G, N, X, ic_genobj:is_stubfile_open(G), 
 		   ic_forms:is_oneway(X), Name, InArgNames, OutArgNames, Reply),
     gen(G, N, Xs);
-gen(G, N, [X|Xs]) when record(X, attr) ->
+gen(G, N, [X|Xs]) when is_record(X, attr) ->
     emit_attr(G, N, X, ic_genobj:is_stubfile_open(G), fun emit_function/9),
     gen(G, N, Xs);
 gen(G, N, [_X|Xs]) ->
@@ -342,7 +342,7 @@ mk_attr_func_names(_Scope, Name) ->
     {"_get_" ++ Name, "_set_" ++ Name}.
 
 
-extract_info(X) when record(X, op) ->
+extract_info(X) when is_record(X, op) ->
     Name	= ic_forms:get_id2(X),
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),
@@ -362,7 +362,7 @@ extract_info(X) when record(X, op) ->
 
 get_template_version(G) ->
     case ic_options:get_opt(G, flags) of
-	Flags when integer(Flags) ->
+	Flags when is_integer(Flags) ->
 	    case ?IC_FLAG_TEST(Flags, ?IC_FLAG_TEMPLATE_2) of
 		true ->
 		    ?IC_FLAG_TEMPLATE_2;
@@ -397,7 +397,7 @@ get_date() ->
 %%
 
 
-gen_head_special(G, N, X) when record(X, interface) ->
+gen_head_special(G, N, X) when is_record(X, interface) ->
     Fd = ic_genobj:stubfiled(G),
     lists:foreach(fun({_Name, Body}) ->
 			  ic_codegen:export(Fd, exp_top(G, N, Body, []))
@@ -427,21 +427,21 @@ gen_head(G, N, X) ->
 
 exp_top(_G, _N, X, Acc)  when element(1, X) == preproc -> 
     Acc;
-exp_top(G, N, L, Acc) when list(L) ->
+exp_top(G, N, L, Acc) when is_list(L) ->
     exp_list(G, N, L, Acc);
-exp_top(G, N, M, Acc)  when record(M, module) ->
+exp_top(G, N, M, Acc)  when is_record(M, module) ->
     exp_list(G, N, ic_forms:get_body(M), Acc);
-exp_top(G, N, I, Acc)  when record(I, interface) ->
+exp_top(G, N, I, Acc)  when is_record(I, interface) ->
     exp_list(G, N, ic_forms:get_body(I), Acc);
 exp_top(G, N, X, Acc) ->
     exp3(G, N, X, Acc).
 
-exp3(G, N, Op, Acc)  when record(Op, op) ->
+exp3(G, N, Op, Acc)  when is_record(Op, op) ->
     FuncName = ic_forms:get_id(Op#op.id),
     Arity = length(ic:filter_params([in, inout], Op#op.params)) + 1 +
 	count_extras(G, N, Op),
     [{FuncName, Arity} | Acc];
-exp3(G, N, A, Acc)  when record(A, attr) ->
+exp3(G, N, A, Acc)  when is_record(A, attr) ->
     Extra = count_extras(G, N, A),
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], ic_forms:get_id(Id)),

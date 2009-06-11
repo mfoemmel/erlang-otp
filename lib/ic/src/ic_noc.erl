@@ -74,11 +74,11 @@ do_gen(G, File, Form) ->
     ok.
 
 
-gen(G, N, [X|Xs]) when record(X, preproc) ->
+gen(G, N, [X|Xs]) when is_record(X, preproc) ->
     NewG = ic:handle_preproc(G, N, X#preproc.cat, X),
     gen(NewG, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, module) ->
+gen(G, N, [X|Xs]) when is_record(X, module) ->
     CD = ic_code:codeDirective(G,X),
     G2 = ic_file:filename_push(G, N, X, CD),
     N2 = [get_id2(X) | N],
@@ -87,7 +87,7 @@ gen(G, N, [X|Xs]) when record(X, module) ->
     G3 = ic_file:filename_pop(G2, CD),
     gen(G3, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, interface) ->
+gen(G, N, [X|Xs]) when is_record(X, interface) ->
     G2 = ic_file:filename_push(G, N, X, erlang),
     N2 = [get_id2(X) | N],
     gen_head(G2, N2, X),
@@ -98,12 +98,12 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     G3 = ic_file:filename_pop(G2, erlang),
     gen(G3, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, const) ->
+gen(G, N, [X|Xs]) when is_record(X, const) ->
 %    N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
     gen(G, N, Xs); %% N2 or N?
 
-gen(G, N, [X|Xs]) when record(X, op) ->
+gen(G, N, [X|Xs]) when is_record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
 
     case getNocType(G,X,N) of
@@ -120,11 +120,11 @@ gen(G, N, [X|Xs]) when record(X, op) ->
     gen(G, N, Xs);
 	
 
-gen(G, N, [X|Xs]) when record(X, attr) ->
+gen(G, N, [X|Xs]) when is_record(X, attr) ->
     emit_attr(G, N, X, fun emit_stub_func/7),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, except) ->
+gen(G, N, [X|Xs]) when is_record(X, except) ->
     icstruct:except_gen(G, N, X, erlang),
     gen(G, N, Xs);
 
@@ -138,9 +138,9 @@ gen(G, N, [X|Xs]) ->
 gen(_G, _N, []) -> ok.
 
 
-may_contain_structs(X) when record(X, typedef) -> true;
-may_contain_structs(X) when record(X, struct) -> true;
-may_contain_structs(X) when record(X, union) -> true;
+may_contain_structs(X) when is_record(X, typedef) -> true;
+may_contain_structs(X) when is_record(X, struct) -> true;
+may_contain_structs(X) when is_record(X, union) -> true;
 may_contain_structs(_X) -> false.
 
 
@@ -172,7 +172,7 @@ gen_serv(G, N, X) ->
 	    ok
     end.
 
-gen_calls(G, N, [X|Xs]) when record(X, op) ->
+gen_calls(G, N, [X|Xs]) when is_record(X, op) ->
     case is_oneway(X) of
 	false ->
 	    {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
@@ -182,14 +182,14 @@ gen_calls(G, N, [X|Xs]) when record(X, op) ->
 	    gen_calls(G, N, Xs)
     end;
 
-gen_calls(G, N, [X|Xs]) when record(X, attr) ->
+gen_calls(G, N, [X|Xs]) when is_record(X, attr) ->
     emit_attr(G, N, X, fun emit_skel_func/7),
     gen_calls(G, N, Xs);
 
 gen_calls(G, N, [_X|Xs]) -> gen_calls(G, N, Xs);
 gen_calls(_G, _N, []) -> ok.
 
-gen_casts(G, N, [X|Xs]) when record(X, op) ->
+gen_casts(G, N, [X|Xs]) when is_record(X, op) ->
     case is_oneway(X) of
 	true ->
 	    {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
@@ -217,7 +217,7 @@ emit_attr(G, N, X, F) ->
 			  end end, ic_forms:get_idlist(X)).
 
 
-extract_info(G, _N, X) when record(X, op) ->
+extract_info(G, _N, X) when is_record(X, op) ->
     Name	= get_id2(X),
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),
@@ -414,7 +414,7 @@ get_if_gen(G, N, X) ->
     end.
 
 
-get_if(G,N,[X|Rest]) when record(X, op) ->
+get_if(G,N,[X|Rest]) when is_record(X, op) ->
     R = ic_forms:get_tk(X),
     IN = lists:map(fun(P) -> ic_forms:get_tk(P) end,
 		   ic:filter_params([in, inout], X#op.params)),
@@ -427,7 +427,7 @@ get_if(G,N,[X|Rest]) when record(X, op) ->
 	    get_if(G,N,Rest)
     end;
 
-get_if(G,N,[X|Rest]) when record(X, attr) -> %% Attributes not handled so far <<<<<<<<<<<<<<<<<<<<<<<<
+get_if(G,N,[X|Rest]) when is_record(X, attr) -> %% Attributes not handled so far <<<<<<<<<<<<<<<<<<<<<<<<
     {GetT, SetT} = mk_attr_func_types([], X),
     AList = lists:map(fun(Id) -> 
 			      {Get, Set} = mk_attr_func_names([], get_id(Id)),
@@ -454,7 +454,7 @@ get_if(_,_,[]) -> [].
 %%
 
 
-gen_head_special(G, N, X) when record(X, interface) ->
+gen_head_special(G, N, X) when is_record(X, interface) ->
     Fd = ic_genobj:stubfiled(G),
     NocType = getNocType(G,X,N),
 
@@ -506,19 +506,19 @@ gen_head(G, N, X) ->
 
 exp_top(_G, _N, X, _NT, Acc)  when element(1, X) == preproc -> 
     Acc;
-exp_top(G, N, L, NT, Acc)  when list(L) ->
+exp_top(G, N, L, NT, Acc)  when is_list(L) ->
     exp_list(G, N, L, NT, Acc);
-exp_top(G, N, M, NT, Acc)  when record(M, module) ->
+exp_top(G, N, M, NT, Acc)  when is_record(M, module) ->
     exp_list(G, N, get_body(M), NT, Acc);
-exp_top(G, N, I, NT, Acc)  when record(I, interface) ->
+exp_top(G, N, I, NT, Acc)  when is_record(I, interface) ->
     exp_list(G, N, get_body(I), NT, Acc);
 exp_top(G, N, X, NT, Acc) ->
     exp3(G, N, X, NT, Acc).
 
-exp3(_G, _N, C, _NT, Acc)  when record(C, const) -> 
+exp3(_G, _N, C, _NT, Acc)  when is_record(C, const) -> 
     [{get_id(C#const.id), 0} | Acc];
 
-exp3(G, N, Op, NocType, Acc)  when record(Op, op) ->
+exp3(G, N, Op, NocType, Acc)  when is_record(Op, op) ->
     FuncName = get_id(Op#op.id),
     
     TA = case use_timeout(G,N,Op) of
@@ -551,7 +551,7 @@ exp3(G, N, Op, NocType, Acc)  when record(Op, op) ->
 	    Arity = length(ic:filter_params([in, inout], Op#op.params)) + TA + 1,
 	    [{FuncName, Arity} | Acc]
     end;
-exp3(_G, _N, A, _NT, Acc)  when record(A, attr) ->
+exp3(_G, _N, A, _NT, Acc)  when is_record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -756,17 +756,17 @@ mk_list2([]) -> [].
 %% Unfold identifier lists or nested lists. Note that many records
 %% contain an entry named id that is a list before unfold and a single
 %% id afterwards.
-unfold(L) when list(L) ->
+unfold(L) when is_list(L) ->
     lists:flatten(map(fun(X) -> unfold2(X) end, L));
 unfold(X) -> unfold2(X).
     
-unfold2(A) when record(A, attr) ->
+unfold2(A) when is_record(A, attr) ->
     map(fun(Id) -> A#attr{id=Id} end, A#attr.id);
-unfold2(M) when record(M, member) ->
+unfold2(M) when is_record(M, member) ->
     map(fun(Id) -> M#member{id=Id} end, M#member.id);
-unfold2(M) when record(M, case_dcl) ->
+unfold2(M) when is_record(M, case_dcl) ->
     map(fun(Id) -> M#case_dcl{label=Id} end, M#case_dcl.label);
-unfold2(T) when record(T, typedef) ->
+unfold2(T) when is_record(T, typedef) ->
     map(fun(Id) -> T#typedef{id=Id} end, T#typedef.id   ).
 
 
@@ -810,7 +810,7 @@ getImplMod(G,X,Scope) -> %% to_atom(ic_genobj:impl(G)) | ChoicedModuleName
     end.
 
 
-getNocType(G,X,Scope) when record(X, interface) -> %% default | specified 
+getNocType(G,X,Scope) when is_record(X, interface) -> %% default | specified 
     OpList = getAllOperationScopes(G,Scope),
     getNocType2(G,X,OpList);
 getNocType(G,X,Scope) -> %% transparent | {extraarg1,....,extraargN}
@@ -930,7 +930,7 @@ getInhOpScopes2(G,[SC|SCs],Found) ->
 %%   * if the operation has a specific pragma, apply the real
 %%     scope, otherwise return the including scope 
 %%
-getActualScope(G, X, Scope) when record(X, op) ->
+getActualScope(G, X, Scope) when is_record(X, op) ->
     OpScope = getRealOpScope(G,X,Scope),
     case ets:match(ic_genobj:pragmatab(G),{codeopt_specific,OpScope}) of
 	[[]] ->
@@ -945,7 +945,7 @@ getActualScope(_G, _X, N) ->
 %%  Just seek and return the scope for the operation
 %%  where it were originaly defined
 %%
-getRealOpScope(G,X,N) when record(X, op) ->
+getRealOpScope(G,X,N) when is_record(X, op) ->
     Ptab = ic_genobj:pragmatab(G),
     Id = get_id2(X),
     
@@ -1019,7 +1019,7 @@ tk_interface_data(G, N, X) ->
     end.
 
 
-print_tk(G, N, X) when record(X, op)-> %% operation
+print_tk(G, N, X) when is_record(X, op)-> %% operation
     case getNocType(G,X,N) of
 	transparent ->
 	    false;

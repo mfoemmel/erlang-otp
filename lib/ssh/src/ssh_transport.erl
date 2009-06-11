@@ -685,7 +685,7 @@ ssh_packet(Msg, Ssh) ->
 pack(Data0, #ssh{encrypt_block_size = BlockSize, 
 		 send_sequence = SeqNum, send_mac = MacAlg,
 		 send_mac_key = MacKey} 
-     = Ssh0) when binary(Data0) ->
+     = Ssh0) when is_binary(Data0) ->
     {Ssh1, Data} = compress(Ssh0, Data0),
     PL = (BlockSize - ((4 + 1 + size(Data)) rem BlockSize)) rem BlockSize,
     PaddingLen = if PL <  4 -> PL + BlockSize;

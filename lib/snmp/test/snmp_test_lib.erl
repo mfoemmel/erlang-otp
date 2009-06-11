@@ -321,6 +321,8 @@ crypto_start() ->
             ok;
         {error, {already_started,crypto}} ->
             ok;
+	{'EXIT', Reason} ->
+	    {error, {exit, Reason}};
         Else ->
             Else
     end.

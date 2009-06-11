@@ -23,7 +23,7 @@
 %%  See "An efficient and portable pseudo-random number generator",
 %%  Journal of Applied Statistics. AS183. 1982. Also Byte March 1987.
 
--export([seed/0, seed/3, uniform/0, uniform/1,
+-export([seed/0, seed/1, seed/3, uniform/0, uniform/1,
 	 uniform_s/1, uniform_s/2, seed0/0]).
 
 %%-----------------------------------------------------------------------
@@ -44,15 +44,15 @@ seed0() ->
 -spec seed() -> ran().
 
 seed() ->
-    seed(seed0()).
+    reseed(seed0()).
 
--spec seed(ran()) -> ran().
+%% seed({A1, A2, A3}) 
+%%  Seed random number generation 
+
+-spec seed({integer(), integer(), integer()}) -> 'undefined' | ran().
 
 seed({A1, A2, A3}) ->
-    case seed(A1, A2, A3) of
-	undefined -> seed0();
-	{_,_,_} = Tuple -> Tuple
-    end.	
+    seed(A1, A2, A3).
 
 %% seed(A1, A2, A3) 
 %%  Seed random number generation 
@@ -62,6 +62,15 @@ seed({A1, A2, A3}) ->
 seed(A1, A2, A3) ->
     put(random_seed, 
 	{abs(A1) rem 30269, abs(A2) rem 30307, abs(A3) rem 30323}).
+
+
+-spec reseed(ran()) -> ran().
+
+reseed({A1, A2, A3}) ->
+    case seed(A1, A2, A3) of
+	undefined -> seed0();
+	{_,_,_} = Tuple -> Tuple
+    end.	
 
 %% uniform()
 %%  Returns a random float between 0 and 1.

@@ -56,34 +56,26 @@ start({ssl, _}) ->
 	    Error
     end.
 
+
 %%-------------------------------------------------------------------------
-%% connect(SocketType, Address, IPV6, Timeout) ->
+%% connect(SocketType, Address, Options, Timeout) ->
 %%                                            {ok, Socket} | {error, Reason}
 %%      SocketType = ip_comm | {ssl, SslConfig}  
 %%      Address = {Host, Port}
-%%      IPV6 = disabled | enabled
+%%      Options = [option()]
 %%      Socket = socket()
+%%      option() = ipfamily() | {ip, ip_address()} | {port, integer()}
+%%      ipfamily() = inet | inet6 
 %%                                   
 %% Description: Connects to the Host and Port specified in HTTPRequest.
-%%		uses ipv6 if possible.
 %%-------------------------------------------------------------------------
-connect(SocketType, Address, IPV6) ->
-    connect(SocketType, Address, IPV6, infinity).
 
-connect(ip_comm, {Host, Port}, enabled, Timeout) ->
-    Opts = [inet6, binary, {packet, 0}, {active, false},{reuseaddr,true}],
-    
-    case gen_tcp:connect(Host, Port, Opts, Timeout) of
-	{error, nxdomain} -> 
-	    gen_tcp:connect(Host, Port, lists:delete(inet6, Opts), Timeout);
-	{error,eafnosupport}  ->
-	    gen_tcp:connect(Host, Port, lists:delete(inet6, Opts), Timeout);
-	Other ->
-	    Other
-    end;
+connect(SocketType, Address, Opts) ->
+    connect(SocketType, Address, Opts, infinity).
 
-connect(ip_comm, {Host, Port}, disabled, Timeout) ->
-    Opts = [binary, {packet, 0}, {active, false}, {reuseaddr,true}],
+connect(ip_comm = _SocketType, {Host, Port}, Opts0, Timeout) 
+  when is_list(Opts0) ->
+    Opts = [binary, {packet, 0}, {active, false}, {reuseaddr, true} | Opts0],
     gen_tcp:connect(Host, Port, Opts, Timeout);
 
 connect({ssl, SslConfig}, {Host, Port}, _, Timeout) ->
@@ -93,6 +85,7 @@ connect({ssl, SslConfig}, {Host, Port}, _, Timeout) ->
 connect({erl_ssl, SslConfig}, {Host, Port}, _, Timeout) ->
     Opts = [binary, {active, false}, {ssl_imp, new}] ++ SslConfig,
     ssl:connect(Host, Port, Opts, Timeout).
+
 
 %%-------------------------------------------------------------------------
 %% listen(SocketType, Port) -> {ok, Socket} | {error, Reason}
@@ -104,7 +97,7 @@ connect({erl_ssl, SslConfig}, {Host, Port}, _, Timeout) ->
 %% host using either gen_tcp or ssl. In the gen_tcp case the port
 %% might allready have been initiated by a wrapper-program and is
 %% given as an Fd that can be retrieved by init:get_argument. The
-%% reason for this to enable a HTTP-server not runnig as root to use
+%% reason for this to enable a HTTP-server not running as root to use
 %% port 80.
 %%-------------------------------------------------------------------------
 listen(SocketType, Port) ->
@@ -138,6 +131,7 @@ listen({ssl, SSLConfig} = Ssl, Addr, Port) ->
 listen({erl_ssl, SSLConfig} = Ssl, Addr, Port) ->
     Opt = sock_opt(Ssl, Addr, SSLConfig),
     ssl:listen(Port, [{ssl_imp, new} | Opt]).
+
 
 %%-------------------------------------------------------------------------
 %% accept(SocketType, ListenSocket) -> {ok, Socket} | {error, Reason}

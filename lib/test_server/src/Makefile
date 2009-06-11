@@ -73,11 +73,21 @@ COVER_FILES = cross.cover
 PROGRAMS = configure config.sub config.guess install-sh 
 CONFIG = ts.config ts.unix.config ts.win32.config ts.vxworks.config
 
-TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
+	       $(APP_TARGET) $(APPUP_TARGET)
 TS_TARGET_FILES = $(TS_MODULES:%=$(EBIN)/%.$(EMULATOR))
 
-TARGETS = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(PROGRAMS)
+TARGETS = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(PROGRAMS) \
+	  $(APP_TARGET) $(APPUP_TARGET)
 TS_TARGETS = $(TS_MODULES:%=$(EBIN)/%.$(EMULATOR))
+
+APP_FILE= test_server.app
+APP_SRC= $(APP_FILE).src
+APP_TARGET= $(EBIN)/$(APP_FILE)
+
+APPUP_FILE= test_server.appup
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS
@@ -98,6 +108,15 @@ doc:
 
 configure: configure.in
 	autoconf configure.in > configure
+
+# ----------------------------------------------------
+# Special Build Targets
+# ----------------------------------------------------
+$(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target

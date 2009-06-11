@@ -60,11 +60,10 @@
         <v>DataString = string()</v>
       </type>
       <desc>
-        <p>Decodes a base64 encoded string to plain ASCII. The string
-          should only consist of characters in the base64 set, see RFC4648.
+        <p>Decodes a base64 encoded string to plain ASCII. See RFC4648.
           <c>mime_decode/1</c> and <c>mime_decode_to_string/1</c>
           strips away illegal characters, while <c>decode/1</c> and
-          <c>decode_to_string/1</c> fails if an illegal charactrer is found.</p>
+          <c>decode_to_string/1</c> only strips away whitespace characters.</p>
       </desc>
     </func>
   </funcs>

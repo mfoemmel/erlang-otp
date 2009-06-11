@@ -32,6 +32,21 @@
   </header>
 
   <section>
+    <title>cosTransactions 1.2.7</title>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Obsolete guards, e.g. record vs is_record, has been changed
+             to avoid compiler warnings.</p>
+          <p>Own id: OTP-7987</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
     <title>cosTransactions 1.2.6</title>
 
     <section>

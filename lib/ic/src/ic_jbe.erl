@@ -54,54 +54,54 @@ do_gen(G, _File, Form) ->
 %%
 %%------------------------------------------------------------
 
-gen(G, N, [X|Xs]) when record(X, preproc) ->
+gen(G, N, [X|Xs]) when is_record(X, preproc) ->
     NewG = handle_preproc(G, N, X#preproc.cat, X),
     gen(NewG, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, module) ->
+gen(G, N, [X|Xs]) when is_record(X, module) ->
     gen_module(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, interface) ->
+gen(G, N, [X|Xs]) when is_record(X, interface) ->
     gen_interface(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, const) ->
+gen(G, N, [X|Xs]) when is_record(X, const) ->
     ic_constant_java:gen(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, op) ->
+gen(G, N, [X|Xs]) when is_record(X, op) ->
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, attr) ->
+gen(G, N, [X|Xs]) when is_record(X, attr) ->
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, except) ->
+gen(G, N, [X|Xs]) when is_record(X, except) ->
     gen_exception(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, enum) ->
+gen(G, N, [X|Xs]) when is_record(X, enum) ->
     ic_enum_java:gen(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, struct) ->
+gen(G, N, [X|Xs]) when is_record(X, struct) ->
     ic_struct_java:gen(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, union) ->
+gen(G, N, [X|Xs]) when is_record(X, union) ->
     ic_union_java:gen(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, typedef) ->
+gen(G, N, [X|Xs]) when is_record(X, typedef) ->
     gen_typedef(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, member) ->
+gen(G, N, [X|Xs]) when is_record(X, member) ->
     %%?PRINTDEBUG2("gen member: ~p\n",[ic_forms:get_type(X)]),
     gen_member(G, N, X),
     gen(G, N, Xs);
 
-gen(G, N, [X|Xs]) when record(X, case_dcl) ->
+gen(G, N, [X|Xs]) when is_record(X, case_dcl) ->
     %%?PRINTDEBUG2("gen case decl: ~p\n",[ic_forms:get_type(X)]),
     gen(G, N, [ic_forms:get_type(X)]),
     gen(G, N, Xs);
@@ -134,13 +134,13 @@ gen_module(G, N, X) ->
 	    reg(G, N1, ic_forms:get_body(X))
     end.
 
-reg(G, N, [X|_Xs]) when record(X, module) ->
+reg(G, N, [X|_Xs]) when is_record(X, module) ->
     reg(G, [ic_forms:get_id2(X) | N], ic_forms:get_body(X));
 
-reg(G, N, [X|_Xs]) when record(X, interface) ->
+reg(G, N, [X|_Xs]) when is_record(X, interface) ->
     reg(G, [ic_forms:get_id2(X) | N], ic_forms:get_body(X));
 
-reg(G, N, [X|Xs]) when record(X, typedef) ->
+reg(G, N, [X|Xs]) when is_record(X, typedef) ->
     Name = ic_util:to_dot(G,[ic_forms:get_java_id(X) | N]),
     case X#typedef.type of 
 	{scoped_id,_,_,_} ->
@@ -220,17 +220,17 @@ gen_typedef(G, N, X) ->
     end,
     gen_typedef_1(G, N, X, ic_forms:get_body(X)).
 
-gen_typedef_1(G, N, X, Type) when record(Type, sequence) ->
+gen_typedef_1(G, N, X, Type) when is_record(Type, sequence) ->
     ic_sequence_java:gen(G, N, Type, ic_forms:get_java_id(X));
-gen_typedef_1(G, N, X, Type) when record(Type, array) ->
+gen_typedef_1(G, N, X, Type) when is_record(Type, array) ->
     ic_array_java:gen(G, N, X, Type);
 gen_typedef_1(G, N, X, _Type) ->
     gen_typedef_2(G, N, X, X#typedef.id), 
     ok.
 
-gen_typedef_2(G, N, X, Type) when record(Type, array) ->
+gen_typedef_2(G, N, X, Type) when is_record(Type, array) ->
     gen_typedef_1(G, N, X, Type);
-gen_typedef_2(G, N, X, Type) when list(Type) ->
+gen_typedef_2(G, N, X, Type) when is_list(Type) ->
     case Type of
 	[] ->
 	    ok;
@@ -274,7 +274,7 @@ gen_member(G, N, X) ->
 gen_member_1(_G, _N, _X, []) ->
     ok;
 
-gen_member_1(G, N, X, [T|Ts]) when record(T, sequence) ->
+gen_member_1(G, N, X, [T|Ts]) when is_record(T, sequence) ->
     ic_sequence_java:gen(G, N, T, ic_forms:get_java_id(X)),
     gen_member_1(G, N, X, Ts);
 
@@ -286,7 +286,7 @@ gen_member_1(G, N, X, [T|Ts]) ->
 gen_member_2(_G, _N, _X, []) ->
     ok;
 
-gen_member_2(G, N, X, [T|Ts]) when record(T, array) -> %% BUG !
+gen_member_2(G, N, X, [T|Ts]) when is_record(T, array) -> %% BUG !
     ic_array_java:gen(G, N, X, T),
     gen_member_2(G, N, X, Ts);
 
@@ -325,7 +325,7 @@ emit_interface(G, N, X, Fd) ->
     ic_codegen:emit(Fd, "}\n\n").
 
 
-emit_interface_prototypes(G, N, [X |Xs], Fd) when record(X, op) ->
+emit_interface_prototypes(G, N, [X |Xs], Fd) when is_record(X, op) ->
 
     {_, ArgNames, TypeList} = extract_info(G, N, X),
     {R, ParameterTypes, _} = TypeList,
@@ -342,7 +342,7 @@ emit_interface_prototypes(G, N, [X |Xs], Fd) when record(X, op) ->
     ic_codegen:emit(Fd, "     throws java.lang.Exception;\n\n\n"),
 
     emit_interface_prototypes(G, N, Xs, Fd);
-emit_interface_prototypes(G, N, [X |Xs], Fd) when record(X, attr) ->
+emit_interface_prototypes(G, N, [X |Xs], Fd) when is_record(X, attr) ->
     ic_attribute_java:emit_attribute_prototype(G, N, X, Fd),
     emit_interface_prototypes(G, N, Xs, Fd);
 emit_interface_prototypes(G, N, [_X|Xs], Fd) ->
@@ -482,7 +482,7 @@ emit_stub(G, N, X, Fd) ->
     ic_codegen:emit(Fd, "}\n\n").
 
 
-emit_op_implementation(G, N, [X |Xs], Fd) when record(X, op) ->
+emit_op_implementation(G, N, [X |Xs], Fd) when is_record(X, op) ->
 
     WireOpName = ic_forms:get_id2(X),
     OpName = ic_forms:get_java_id(WireOpName),
@@ -554,7 +554,7 @@ emit_op_implementation(G, N, [X |Xs], Fd) when record(X, op) ->
     ic_codegen:emit(Fd, "\n"),
 
     emit_op_implementation(G, N, Xs, Fd);
-emit_op_implementation(G, N, [X |Xs], Fd) when record(X, attr) ->
+emit_op_implementation(G, N, [X |Xs], Fd) when is_record(X, attr) ->
     ic_attribute_java:emit_attribute_stub_code(G, N, X, Fd),
     emit_op_implementation(G, N, Xs, Fd);
 emit_op_implementation(G, N, [_X|Xs], Fd) ->
@@ -927,7 +927,7 @@ emit_server_op_switch_loop(G, N, [{_,X}|Xs], C, Fd) ->
     emit_server_op_switch_loop(G, N, Xs, C1, Fd).
 
 
-emit_server_op_switch(G, N, [X|Xs], C, Fd) when record(X, op) ->
+emit_server_op_switch(G, N, [X|Xs], C, Fd) when is_record(X, op) ->
 
     OpName = ic_forms:get_java_id(X),
 
@@ -938,7 +938,7 @@ emit_server_op_switch(G, N, [X|Xs], C, Fd) when record(X, op) ->
     ic_codegen:emit(Fd, "       } break;\n\n"),
 
     emit_server_op_switch(G, N, Xs, C+1, Fd);
-emit_server_op_switch(G, N, [X |Xs], C, Fd) when record(X, attr) -> 
+emit_server_op_switch(G, N, [X |Xs], C, Fd) when is_record(X, attr) -> 
     C1 = ic_attribute_java:emit_attribute_switch_case(G,N,X,Fd,C),
     emit_server_op_switch(G, N, Xs, C1, Fd);
 emit_server_op_switch(G, N, [_X|Xs], C, Fd) ->
@@ -1003,7 +1003,7 @@ emit_dictionary_loop(G, N, [{_,X}|Xs], C, Fd) ->
     emit_dictionary_loop(G, N, Xs, C1, Fd).
 
 
-emit_dictionary(G, N, [X|Xs], C, Fd) when record(X, op) ->
+emit_dictionary(G, N, [X|Xs], C, Fd) when is_record(X, op) ->
 
     OpName = case ic_options:get_opt(G, scoped_op_calls) of 
 		 true -> 
@@ -1016,7 +1016,7 @@ emit_dictionary(G, N, [X|Xs], C, Fd) when record(X, op) ->
 		    [OpName,C]),
     emit_dictionary(G, N, Xs, C+1, Fd);
 
-emit_dictionary(G, N, [X |Xs], C, Fd) when record(X, attr) ->
+emit_dictionary(G, N, [X |Xs], C, Fd) when is_record(X, attr) ->
     C1 = ic_attribute_java:emit_atrribute_on_dictionary(G, N, X, Fd, C),
     emit_dictionary(G, N, Xs, C1, Fd);
 
@@ -1183,7 +1183,7 @@ emit_server_marshal_loop(G, N, X, [Type|Types],[{_, Arg}|Args], Counter, Fd) ->
 %%%
 %%%----------------------------------------------------
 
-extract_info(_G, N, X) when record(X, op) ->
+extract_info(_G, N, X) when is_record(X, op) ->
     Name	=  ic_util:to_undersc([ic_forms:get_id2(X) | N]),
     Args	= X#op.params,
     ArgNames	= mk_c_vars(Args),
@@ -1454,7 +1454,7 @@ emit_union_labels([{L, LN, LT}|Rest], BTCtr, DT, TCtr, I, Fd) ->
 		tk_boolean ->
 		    ic_codegen:emit(Fd, "     _any~p.insert_boolean(~p);\n",[TCtr,L]);
 		tk_char ->
-		    Default = if integer(L) ->
+		    Default = if is_integer(L) ->
 				      [L];
 				 true ->
 				      L

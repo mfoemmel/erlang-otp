@@ -39,14 +39,14 @@
 
 -import(erl_types, 
 	[any_none/1, t_any/0, t_atom/0, t_atom/1, t_atom_vals/1,
-	 t_binary/0, t_bool/0,
+	 t_binary/0, t_boolean/0,
 	 t_bitstr/0, t_bitstr/2, t_bitstr_concat/1, t_bitstr_match/2,
 	 t_cons/0, t_cons/2, t_cons_hd/1, t_cons_tl/1, t_contains_opaque/1,
 	 t_find_opaque_mismatch/2, t_float/0, t_from_range/2, t_from_term/1,
 	 t_fun/0, t_fun/2, t_fun_args/1, t_fun_range/1,
 	 t_inf/2, t_inf/3, t_inf_lists/2, t_inf_lists/3,
 	 t_integer/0, t_integers/1,
-	 t_is_any/1, t_is_atom/1, t_is_atom/2, t_is_bool/1, t_is_equal/2,
+	 t_is_any/1, t_is_atom/1, t_is_atom/2, t_is_boolean/1, t_is_equal/2,
 	 t_is_integer/1, t_is_nil/1, t_is_none/1, t_is_none_or_unit/1,
 	 t_is_number/1, t_is_reference/1, t_is_pid/1, t_is_port/1,
 	 t_is_subtype/2, t_is_unit/1,
@@ -76,47 +76,38 @@
 
 %%--------------------------------------------------------------------
 
--define(no_arg, no_arg).
-
-%%--------------------------------------------------------------------
-
 -define(TYPE_LIMIT, 3).
 
 %%--------------------------------------------------------------------
 
 -spec get_warnings(core_module(), #dialyzer_plt{}, #dialyzer_callgraph{},
                    dict(), set()) ->
-                   {[dial_warning()], dict(),
-                    inter_module_calls(), module_local_calls()}.
+                   {[dial_warning()], dict(), dict(), dict(), [label()], str()}.
 
 get_warnings(Tree, Plt, Callgraph, Records, NoWarnUnused) ->
   State1 = analyze_module(Tree, Plt, Callgraph, Records, true),
   State2 = find_mismatched_record_patterns(Tree, State1),
-  Callgraph1 =
-    races__renew_module_local_calls(State2#state.callgraph,
-      State2#state.races),
   State3 =
     state__renew_warnings(state__get_warnings(State2, NoWarnUnused), State2),
-  State4 =
-    case get(dialyzer_race_analysis) of
-      true -> state__get_race_warnings(State3);
-      _ -> State3
-    end,
+  State4 = state__get_race_warnings(State3),
+  Callgraph1 = State2#state.callgraph,
   {State4#state.warnings, state__all_fun_types(State4),
-   Callgraph1#dialyzer_callgraph.inter_module_calls,
-   Callgraph1#dialyzer_callgraph.module_local_calls}.
+   Callgraph1#dialyzer_callgraph.race_var_map,
+   Callgraph1#dialyzer_callgraph.race_code,
+   Callgraph1#dialyzer_callgraph.public_tables,
+   Callgraph1#dialyzer_callgraph.named_tables}.
 
 -spec get_fun_types(core_module(), #dialyzer_plt{}, #dialyzer_callgraph{},
-                    dict()) ->
-                    {dict(), inter_module_calls(), module_local_calls()}.
+                    dict()) -> {dict(), dict(), dict(), [label()], str()}.
 
 get_fun_types(Tree, Plt, Callgraph, Records) ->
   State = analyze_module(Tree, Plt, Callgraph, Records, false),
-  Callgraph1 =
-    races__renew_module_local_calls(State#state.callgraph, State#state.races),
+  Callgraph1 = State#state.callgraph,
   {state__all_fun_types(State),
-    Callgraph1#dialyzer_callgraph.inter_module_calls,
-    Callgraph1#dialyzer_callgraph.module_local_calls}.
+    Callgraph1#dialyzer_callgraph.race_var_map,
+    Callgraph1#dialyzer_callgraph.race_code,
+    Callgraph1#dialyzer_callgraph.public_tables,
+    Callgraph1#dialyzer_callgraph.named_tables}.
 
 %%--------------------------------------------------------------------
 
@@ -253,16 +244,17 @@ analyze_module(Tree, Plt, Callgraph, Records, GetWarnings) ->
   Module = cerl:atom_val(cerl:module_name(Tree)),
   TopFun = cerl:ann_c_fun([{label, top}], [], Tree),
   State = state__new(Callgraph, TopFun, Plt, Module, Records),
-  State1 = analyze_loop(State),
+  State1 = state__race_analysis(not GetWarnings, State),
+  State2 = analyze_loop(State1),
   case GetWarnings of
     true ->
-      State2 = state__set_warning_mode(State1),
-      analyze_loop(State2);
+      State3 = state__set_warning_mode(State2),
+      analyze_loop(State3);
     false ->
-      State1
+      State2
   end.
 
-analyze_loop(State) ->
+analyze_loop(#state{callgraph = Callgraph, races = Races} = State) ->
   case state__get_work(State) of
     none -> state__clean_not_called(State);
     {Fun, NewState} ->
@@ -288,39 +280,42 @@ analyze_loop(State) ->
 	      Vars = cerl:fun_vars(Fun),
 	      Map1 = enter_type_lists(Vars, ArgTypes, Map),
 	      Body = cerl:fun_body(Fun),
-              NewState5 =
-                case get(dialyzer_race_analysis) of
+              FunLabel = get_label(Fun),
+              RaceDetection = Callgraph#dialyzer_callgraph.race_detection,
+              RaceAnalysis = Races#dialyzer_races.race_analysis,
+              NewState3 =
+                case RaceDetection andalso RaceAnalysis of
                   true ->             
-                    Races = NewState1#state.races,
-                    Callgraph = NewState1#state.callgraph,
-                    NewState2 =
-                      state__renew_inter_module_calls(
-                        dialyzer_races:end_of_code_storing(
-                        Races#dialyzer_races.curr_fun,
-                        Callgraph#dialyzer_callgraph.inter_module_calls),
-                        NewState1),
-                    NewState3 = state__renew_curr_fun(
-                      state__lookup_name(get_label(Fun), NewState2), get_label(Fun), NewState2),
-                    NewState4 = state__renew_race_list([], NewState3),
-                    state__renew_local_calls(NewState4, start);
-		  _ -> NewState1
+                    NewState2 = state__renew_curr_fun(
+                      state__lookup_name(FunLabel, NewState1), FunLabel,
+                      NewState1),
+                    state__renew_race_list([], NewState2);
+		  false -> NewState1
                 end,
-	      {NewState6, _Map2, BodyType} = 
-		traverse(Body, Map1, NewState5),
+	      {NewState4, _Map2, BodyType} = 
+		traverse(Body, Map1, NewState3),
 	      ?debug("Done analyzing: ~w:~s\n", 
 		     [state__lookup_name(get_label(Fun), State),
 		      t_to_string(t_fun(ArgTypes, BodyType))]),
-              NewState7 = 
-                case get(dialyzer_race_analysis) of
+              NewState5 = 
+                case RaceDetection andalso RaceAnalysis of
                   true ->
-                    state__renew_local_calls(NewState6, done);
-                  _ -> NewState6
+		    Races1 = NewState4#state.races,
+                    Code = lists:reverse(Races1#dialyzer_races.race_list),
+                    Callgraph1 =
+                      callgraph__renew_code(
+                      Races1#dialyzer_races.curr_fun,
+                      Races1#dialyzer_races.curr_fun_args, Code,
+                      state__warning_mode(NewState4),
+                      NewState4#state.callgraph),
+                    NewState4#state{callgraph = Callgraph1};
+                  false -> NewState4
                 end,
-              NewState8 =
-                state__update_fun_entry(Fun, ArgTypes, BodyType, NewState7),
+              NewState6 =
+                state__update_fun_entry(Fun, ArgTypes, BodyType, NewState5),
               ?debug("done adding stuff for ~w\n",
                      [state__lookup_name(get_label(Fun), State)]),
-              analyze_loop(NewState8)
+              analyze_loop(NewState6)
 	  end
       end
   end.
@@ -520,7 +515,9 @@ handle_apply_or_call([{local, external}|Left], Args, ArgTypes, Map, Tree, State,
   handle_apply_or_call(Left, Args, ArgTypes, Map, Tree, 
 		       State, ArgTypes, t_any());
 handle_apply_or_call([{TypeOfApply, {Fun, Sig, Contr, LocalRet}}|Left],
-		     Args, ArgTypes, Map, Tree, State, AccArgTypes, AccRet) ->
+		     Args, ArgTypes, Map, Tree,
+                     #state{callgraph = Callgraph, races = Races} = State,
+                     AccArgTypes, AccRet) ->
   AnyArgs = lists:duplicate(length(Args), t_any()),
   GenSig = {AnyArgs, fun(_) -> t_any() end},
   {CArgs, CRange} = 
@@ -596,36 +593,28 @@ handle_apply_or_call([{TypeOfApply, {Fun, Sig, Contr, LocalRet}}|Left],
   ?debug("BifRet: ~s\n", [erl_types:t_to_string(BifRange(NewArgTypes))]),
   ?debug("ContrRet: ~s\n", [erl_types:t_to_string(CRange(NewArgTypes))]),
   ?debug("SigRet: ~s\n", [erl_types:t_to_string(SigRange)]),
-  State5 =
-    case get(dialyzer_race_analysis) of
+  State3 =
+    case Callgraph#dialyzer_callgraph.race_detection andalso
+         Races#dialyzer_races.race_analysis of
       true ->
         Ann = cerl:get_ann(Tree),
         File = get_file(Ann),
         Line = abs(get_line(Ann)),
-        State1 =
-          dialyzer_races:inter_module_race(Fun, ArgTypes, Args, {File, Line},
-            State),
-        {State2, RaceWarnTag, DependencyList} =
-	  dialyzer_races:race(Fun, ArgTypes, Args, {File, Line}, State1),
-        State3 =
-          case is_integer(Fun) of
-            true -> state__renew_module_local_call_label(Fun, State2);
-            false -> State2
-          end,
+        {State1, RaceWarnTag, DependencyList} =
+	  dialyzer_races:race(Fun, ArgTypes, Args, {File, Line}, State),
         case RaceWarnTag of
-          ?WARN_NO_WARN -> State3;
+          ?WARN_NO_WARN -> State1;
           _ ->
-            {State4, RaceWarn} =
-              races__get_race_warn(Fun, Args, ArgTypes, DependencyList,
-              State3),
-            state__add_race_warning(State4, RaceWarn, RaceWarnTag, File, Line)
+            {State2, RaceWarn} =
+              get_race_warn(Fun, Args, ArgTypes, DependencyList, State1),
+            state__add_race_warning(State2, RaceWarn, RaceWarnTag, File, Line)
         end;
-      _ -> State
+      false -> State
     end,
   FailedConj = any_none([RetWithoutLocal|NewArgTypes]),
   IsFailBif = t_is_none(BifRange(BifArgs)),
   IsFailSig = t_is_none(SigRange),
-  State6 =
+  State4 =
     case FailedConj andalso not (IsFailBif orelse IsFailSig) of
       true ->
 	FailedSig = any_none(NewArgsSig),
@@ -635,7 +624,7 @@ handle_apply_or_call([{TypeOfApply, {Fun, Sig, Contr, LocalRet}}|Left],
 		       t_fun(BifArgs, BifRange(BifArgs))),
 	FailReason = apply_fail_reason(FailedSig, FailedBif, FailedContract),
         Msg = get_apply_fail_msg(Fun, Args, ArgTypes, NewArgTypes, InfSig, 
-				 Contr, CArgs, State5, FailReason),
+				 Contr, CArgs, State3, FailReason),
 	WarnType = case Msg of
 		     {call, _} -> ?WARN_FAILING_CALL;
 		     {apply, _} -> ?WARN_FAILING_CALL;
@@ -643,20 +632,20 @@ handle_apply_or_call([{TypeOfApply, {Fun, Sig, Contr, LocalRet}}|Left],
 		     {call_without_opaque, _} -> ?WARN_OPAQUE;
 		     {opaque_type_test, _} -> ?WARN_OPAQUE
 		   end,
-	state__add_warning(State5, WarnType, Tree, Msg);
-      false -> State5
+	state__add_warning(State3, WarnType, Tree, Msg);
+      false -> State3
     end,
-  State7 =
+  State5 =
     case TypeOfApply of
       local ->
-        case state__is_escaping(Fun, State6) of
-          true -> State6;
+        case state__is_escaping(Fun, State4) of
+          true -> State4;
           false ->
             ForwardArgs = [t_limit(X, ?TYPE_LIMIT) || X <- ArgTypes],
-            forward_args(Fun, ForwardArgs, State6)
+            forward_args(Fun, ForwardArgs, State4)
         end;
       remote ->
-        add_bif_warnings(Fun, NewArgTypes, Tree, State6)
+        add_bif_warnings(Fun, NewArgTypes, Tree, State4)
     end,
   NewAccArgTypes = 
     case FailedConj of
@@ -665,7 +654,7 @@ handle_apply_or_call([{TypeOfApply, {Fun, Sig, Contr, LocalRet}}|Left],
     end,
   NewAccRet = t_sup(AccRet, t_inf(RetWithoutLocal, LocalRet, opaque)),
   handle_apply_or_call(Left, Args, ArgTypes, Map, Tree, 
-		       State7, NewAccArgTypes, NewAccRet);
+		       State5, NewAccArgTypes, NewAccRet);
 handle_apply_or_call([], Args, _ArgTypes, Map, _Tree, State, 
 		     AccArgTypes, AccRet) ->
   NewMap = enter_type_lists(Args, AccArgTypes, Map),
@@ -935,7 +924,7 @@ handle_call(Tree, Map, State) ->
 
 %%----------------------------------------
 
-handle_case(Tree, Map, State) ->
+handle_case(Tree, Map, #state{callgraph = Callgraph} = State) ->
   Arg = cerl:case_arg(Tree),
   Clauses = filter_match_fail(cerl:case_clauses(Tree)),
   {State1, Map1, ArgType} = SMA = traverse(Arg, Map, State),
@@ -943,22 +932,20 @@ handle_case(Tree, Map, State) ->
     true -> SMA;
     false ->
       Races = State1#state.races,
-      Callgraph = State1#state.callgraph,
       State2 =
-        case get(dialyzer_race_analysis) of
+        case Callgraph#dialyzer_callgraph.race_detection andalso
+             Races#dialyzer_races.race_analysis of
           true ->
             state__renew_race_list(
-              [beg_case|Races#dialyzer_races.race_list],
-              state__renew_processing_local_call(beg_case,
-              state__renew_inter_module_calls(
-              dialyzer_races:store_code(beg_case,
-              Races#dialyzer_races.curr_fun,
-              Callgraph#dialyzer_callgraph.inter_module_calls), State1)));
-          _ -> State1
+              [beg_case|Races#dialyzer_races.race_list], State1);
+          false -> State1
         end,
+      Callgraph1 = State1#state.callgraph,
       {MapList, State3, Type} =
 	handle_clauses(Clauses, Arg, ArgType, ArgType, State2,
-		       [], Map1, []),
+		       [], Map1, [],
+                       Callgraph1#dialyzer_callgraph.race_var_map,
+                       Callgraph1#dialyzer_callgraph.race_var_map),
       Map2 = join_maps(MapList, Map1),
       debug_pp_map(Map2),
       {State3, Map2, Type}
@@ -984,24 +971,47 @@ handle_cons(Tree, Map, State) ->
 
 %%----------------------------------------
 
-handle_let(Tree, Map, State) ->
+handle_let(Tree, Map, #state{callgraph = Callgraph} = State) ->
+  RaceDetection = Callgraph#dialyzer_callgraph.race_detection,
   Arg = cerl:let_arg(Tree),
   Vars = cerl:let_vars(Tree),
-  Map0 =
+  {Map0, State0} =
     case cerl:is_c_var(Arg) of
       true ->
 	[Var] = Vars,
-	enter_subst(Var, Arg, Map);
-      false ->
-	Map
+	{enter_subst(Var, Arg, Map),
+         case RaceDetection andalso state__warning_mode(State) of
+           true ->
+             state__race_var_map(Var, Arg, no_guard, State, bind);
+           false -> State
+         end};
+      false -> {Map, State}
     end,
   Body = cerl:let_body(Tree),
-  {State1, Map1, ArgTypes} = SMA = traverse(Arg, Map0, State),
+  {State1, Map1, ArgTypes} = SMA = traverse(Arg, Map0, State0),
+  Callgraph1 = State1#state.callgraph,
+  Callgraph2 =
+    case RaceDetection andalso state__warning_mode(State1) andalso
+         cerl:is_c_call(Arg) of
+      true ->
+        Mod = cerl:call_module(Arg),
+        Name = cerl:call_name(Arg),
+        case cerl:is_literal(Mod) andalso
+             cerl:concrete(Mod) =:= ets andalso
+             cerl:is_literal(Name) andalso
+             cerl:concrete(Name) =:= new of            
+          true ->
+            callgraph__renew_public_tables(Vars, State1#state.races, Callgraph1);
+          false -> Callgraph1
+        end;
+      false -> Callgraph1
+    end,
+  State2 = State1#state{callgraph = Callgraph2},
   case t_is_none_or_unit(ArgTypes) of
     true -> SMA;
     false ->
       Map2 = enter_type_lists(Vars, t_to_tlist(ArgTypes), Map1),
-      traverse(Body, Map2, State1)
+      traverse(Body, Map2, State2)
   end.
 
 %%----------------------------------------
@@ -1027,23 +1037,22 @@ handle_module(Tree, Map, State) ->
 
 %%----------------------------------------
 
-handle_receive(Tree, Map, #state{callgraph=Callgraph, races=Races} = State) ->
+handle_receive(Tree, Map,
+               #state{callgraph = Callgraph, races = Races} = State) ->
   Clauses = filter_match_fail(cerl:receive_clauses(Tree)),
   Timeout = cerl:receive_timeout(Tree),
   State1 =
-    case get(dialyzer_race_analysis) of
+    case Callgraph#dialyzer_callgraph.race_detection andalso
+         Races#dialyzer_races.race_analysis of
       true ->
         state__renew_race_list(
-          [beg_case|Races#dialyzer_races.race_list],
-          state__renew_processing_local_call(beg_case,
-          state__renew_inter_module_calls(
-          dialyzer_races:store_code(beg_case,
-          Races#dialyzer_races.curr_fun,
-          Callgraph#dialyzer_callgraph.inter_module_calls), State)));
-      _ -> State
+          [beg_case|Races#dialyzer_races.race_list], State);
+      false -> State
     end,
   {MapList, State2, ReceiveType} = 
-    handle_clauses(Clauses, ?no_arg, t_any(), t_any(), State1, [], Map, []),
+    handle_clauses(Clauses, ?no_arg, t_any(), t_any(), State1, [], Map, [],
+                   Callgraph#dialyzer_callgraph.race_var_map,
+                   Callgraph#dialyzer_callgraph.race_var_map),
   Map1 = join_maps(MapList, Map),
   {State3, Map2, TimeoutType} = traverse(Timeout, Map1, State2),
   case (t_is_atom(TimeoutType) andalso 
@@ -1161,39 +1170,40 @@ handle_tuple(Tree, Map, State) ->
 %%----------------------------------------
 %% Clauses
 %%
-
 handle_clauses([C|Left], Arg, ArgType, OrigArgType,
                #state{callgraph = Callgraph, races = Races} = State,
-               CaseTypes, MapIn, Acc) ->
+               CaseTypes, MapIn, Acc, InitRaceVarMap, RaceVarMapAcc) ->
+  RaceDetection = Callgraph#dialyzer_callgraph.race_detection,
+  RaceAnalysis = Races#dialyzer_races.race_analysis,
   State1 =
-    case get(dialyzer_race_analysis) of
+    case RaceDetection andalso RaceAnalysis of
       true ->
+        St =
+          case state__warning_mode(State) of
+            true ->
+              state__renew_race_var_map(InitRaceVarMap, State);
+            false -> State
+          end,
         state__renew_race_list(
-          [beg_clause|Races#dialyzer_races.race_list],
-          state__renew_processing_local_call(beg_clause,
-          state__renew_inter_module_calls(
-          dialyzer_races:store_code(beg_clause,
-          Races#dialyzer_races.curr_fun,
-          Callgraph#dialyzer_callgraph.inter_module_calls), State)));
-      _ -> State
+          [beg_clause|Races#dialyzer_races.race_list], St);
+      false -> State
     end,
   Races1 = State1#state.races,
   {State2, ClauseMap, BodyType, NewArgType, ClauseRaceList} =
     do_clause(C, Arg, ArgType, OrigArgType, MapIn, State1,
     Races1#dialyzer_races.race_list),
-  Races2 = State2#state.races,
-  Callgraph1 = State2#state.callgraph,
-  State3 = 
-    case get(dialyzer_race_analysis) of
+  {NewRaceVarMapAcc, State3} =
+    case RaceDetection andalso RaceAnalysis of
       true ->
-        state__renew_race_list(
-          [end_clause|ClauseRaceList],
-          state__renew_processing_local_call(end_clause,
-          state__renew_inter_module_calls(
-          dialyzer_races:store_code(end_clause,
-          Races2#dialyzer_races.curr_fun,
-          Callgraph1#dialyzer_callgraph.inter_module_calls), State2)));
-      _ -> State2
+        {case state__warning_mode(State2) of
+           true ->
+             Callgraph1 = State2#state.callgraph,
+             accumulate_race_var_map(
+               Callgraph1#dialyzer_callgraph.race_var_map, RaceVarMapAcc);
+           false -> InitRaceVarMap
+         end,
+         state__renew_race_list([end_clause|ClauseRaceList], State2)};
+      false -> {InitRaceVarMap, State2}
     end,
   {NewCaseTypes, NewAcc} =
     case t_is_none(BodyType) of
@@ -1201,33 +1211,77 @@ handle_clauses([C|Left], Arg, ArgType, OrigArgType,
       false -> {[BodyType|CaseTypes], [ClauseMap|Acc]}
     end,
   handle_clauses(Left, Arg, NewArgType, OrigArgType, State3,
-                 NewCaseTypes, MapIn, NewAcc);
+                 NewCaseTypes, MapIn, NewAcc, InitRaceVarMap,
+                 NewRaceVarMapAcc);
 handle_clauses([], _Arg, _ArgType, _OrigArgType,
-	       #state{callgraph = Callgraph, races = Races} = State, CaseTypes,
-               _MapIn, Acc) ->
+	       #state{callgraph = Callgraph, races = Races} = State,
+               CaseTypes, _MapIn, Acc, _InitRaceVarMap, RaceVarMapAcc) ->
   State1 = 
-    case get(dialyzer_race_analysis) of
+    case Callgraph#dialyzer_callgraph.race_detection andalso
+         Races#dialyzer_races.race_analysis of
       true ->
+        St =
+          case state__warning_mode(State) of
+            true ->
+              state__renew_race_var_map(RaceVarMapAcc, State);
+            false -> State
+          end,
         state__renew_race_list(
-          [end_case|Races#dialyzer_races.race_list],
-          state__renew_processing_local_call(end_case,
-          state__renew_inter_module_calls(
-          dialyzer_races:store_code(end_case,
-          Races#dialyzer_races.curr_fun,
-          Callgraph#dialyzer_callgraph.inter_module_calls), State)));
-      _ -> State 
+          [end_case|Races#dialyzer_races.race_list], St);
+      false -> State 
     end,
   {lists:reverse(Acc), State1, t_sup(CaseTypes)}.
 
-do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
-          RaceList) ->
+do_clause(C, Arg, ArgType0, OrigArgType, Map,
+          #state{callgraph = Callgraph, races = Races} = State, RaceList) ->
   Pats = cerl:clause_pats(C),
   Guard = cerl:clause_guard(C),
   Body = cerl:clause_body(C),
-  State1 =
-    case get(dialyzer_race_analysis) of
-      true -> state__renew_fun_args(Pats, State);
-      _ -> State
+  RaceDetection = Callgraph#dialyzer_callgraph.race_detection,
+  RaceAnalysis = Races#dialyzer_races.race_analysis,
+  State2 = 
+    case RaceDetection andalso RaceAnalysis of
+      true ->
+        State0 = state__renew_fun_args(Pats, State),
+        case state__warning_mode(State) of
+          true ->
+            State1 =
+              state__race_var_map(Arg, Pats, Guard, State0, bind),
+            case Arg =:= ?no_arg of
+              true -> State1;
+              false ->
+                case cerl:type(Arg) of
+                  call ->
+                    case Pats of
+                      [NewPat] ->
+                        ModName = cerl:call_module(Arg),
+                        CallName = cerl:call_name(Arg),
+                        case cerl:is_literal(ModName) andalso
+                             cerl:is_literal(CallName) of
+                          true ->
+                            case {cerl:concrete(ModName),
+                                   cerl:concrete(CallName)} of
+                              {erlang, '=:='} ->
+                                state__check_race_var_map(Arg, NewPat, true,
+                                  State1);
+                              {erlang, '=='} ->
+                                state__check_race_var_map(Arg, NewPat, true,
+                                  State1);
+                              {erlang, '=/='} ->
+                                state__check_race_var_map(Arg, NewPat, false,
+                                  State1);
+                              _Else -> State1
+                            end;
+                          false -> State1
+                       end;                   
+                      _Other -> State1
+                    end;
+                  _Other -> State1
+                end
+            end;
+          false -> State0
+        end;
+      false -> State
     end,
   Map0 = mark_as_fresh(Pats, Map),
   Map1 = if Arg =:= ?no_arg -> Map0;
@@ -1243,15 +1297,15 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 	    true -> lists:duplicate(length(Pats), ArgType0);
 	    false -> t_to_tlist(ArgType0)
 	  end,
-	bind_pat_vars(Pats, ArgTypes, [], Map1, State1)
+	bind_pat_vars(Pats, ArgTypes, [], Map1, State2)
     end,
   case BindRes of
     {error, BindOrOpaque, NewPats, Type, OpaqueTerm} ->
       ?debug("Failed binding pattern: ~s\nto ~s\n", 
-	     [cerl_prettypr:format(C), format_type(ArgType0, State1)]),
-      case state__warning_mode(State1) of
+	     [cerl_prettypr:format(C), format_type(ArgType0, State2)]),
+      case state__warning_mode(State2) of
         false ->
-          {State1, Map, t_none(), ArgType0, Races#dialyzer_races.race_list};
+          {State2, Map, t_none(), ArgType0, Races#dialyzer_races.race_list};
 	true ->
 	  PatString =
 	    case BindOrOpaque of
@@ -1261,7 +1315,7 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 	  {Msg, Force} = 
 	    case t_is_none(ArgType0) of
 	      true ->
-		PatTypes = [PatString, format_type(OrigArgType, State1)],
+		PatTypes = [PatString, format_type(OrigArgType, State2)],
 		%% See if this is covered by an earlier clause or if it
 		%% simply cannot match
 		OrigArgTypes =
@@ -1269,7 +1323,7 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 		    true -> lists:duplicate(length(Pats), t_any());
 		    false -> t_to_tlist(OrigArgType)
 		  end,
-		case bind_pat_vars(Pats, OrigArgTypes, [], Map1, State1) of
+		case bind_pat_vars(Pats, OrigArgTypes, [], Map1, State2) of
 		  {error, bind, _, _, _} -> {{pattern_match, PatTypes}, false};
 		  {_, _} -> {{pattern_match_cov, PatTypes}, false}
 		end;
@@ -1296,9 +1350,9 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 		      true
 		  end,
 		PatTypes = case BindOrOpaque of
-			     bind -> [PatString, format_type(ArgType0, State1)];
-			     opaque -> [PatString, format_type(Type, State1), 
-					format_type(OpaqueTerm, State1)]
+			     bind -> [PatString, format_type(ArgType0, State2)];
+			     opaque -> [PatString, format_type(Type, State2), 
+					format_type(OpaqueTerm, State2)]
 			      end,					
 		FailedMsg = case BindOrOpaque of
 			      bind  -> {pattern_match, PatTypes};
@@ -1311,7 +1365,7 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 		       {pattern_match, _} -> ?WARN_MATCHING;
 		       {pattern_match_cov, _} -> ?WARN_MATCHING
 		     end,
-          {state__add_warning(State1, WarnType, C, Msg, Force),
+          {state__add_warning(State2, WarnType, C, Msg, Force),
            Map, t_none(), ArgType0, Races#dialyzer_races.race_list}
       end;
     {Map2, PatTypes} ->
@@ -1322,7 +1376,7 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 	    %% Try to bind the argument. Will only succeed if 
 	    %% it is a simple structured term.
 	    case bind_pat_vars_reverse([Arg], [t_product(PatTypes)], 
-				       [], Map2, State1) of
+				       [], Map2, State2) of
 	      {error, _, _, _, _} -> Map2;
 	      {NewMap, _} -> NewMap
 	    end
@@ -1334,7 +1388,7 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 	    GenType = dialyzer_typesig:get_safe_underapprox(Pats, Guard),
 	    t_subtract(t_product(t_to_tlist(ArgType0)), GenType)
 	end,
-      case bind_guard(Guard, Map3, State1) of
+      case bind_guard(Guard, Map3, State2) of
 	{error, Reason} -> 
 	  ?debug("Failed guard: ~s\n", 
 		 [cerl_prettypr:format(C, [{hook, cerl_typean:pp_hook()}])]),
@@ -1343,11 +1397,11 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 	    case Pats =:= [] of
 	      true -> {guard_fail, []};
 	      false ->
-		{guard_fail_pat, [PatString, format_type(ArgType0, State1)]}
+		{guard_fail_pat, [PatString, format_type(ArgType0, State2)]}
 	    end,
-	  State2 =
+	  State3 =
 	    case Reason of
-	      none -> state__add_warning(State1, ?WARN_MATCHING, C, DefaultMsg);
+	      none -> state__add_warning(State2, ?WARN_MATCHING, C, DefaultMsg);
 	      {FailGuard, Msg} ->
 		case is_compiler_generated(cerl:get_ann(FailGuard)) of
 		  false ->
@@ -1355,22 +1409,22 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, #state{races = Races} = State,
 				 {guard_fail, _} -> ?WARN_MATCHING;
 				 {opaque_guard, _} -> ?WARN_OPAQUE
 			       end,
-		    state__add_warning(State1, WarnType, FailGuard, Msg);
+		    state__add_warning(State2, WarnType, FailGuard, Msg);
 		  true ->
-		    state__add_warning(State1, ?WARN_MATCHING, C, Msg)
+		    state__add_warning(State2, ?WARN_MATCHING, C, Msg)
 		end
 	    end,
-          Races1 = State2#state.races,
-          {State2, Map, t_none(), NewArgType, Races1#dialyzer_races.race_list};
+          Races1 = State3#state.races,
+          {State3, Map, t_none(), NewArgType, Races1#dialyzer_races.race_list};
         Map4 ->
-          State2 = state__renew_race_list(RaceList, State1),
-          {RetState, RetMap, BodyType} = traverse(Body, Map4, State2),
+          State3 = state__renew_race_list(RaceList, State2),
+          {RetState, RetMap, BodyType} = traverse(Body, Map4, State3),
           RetRaceList =
-            case get(dialyzer_race_analysis) of
+            case RaceDetection andalso RaceAnalysis of
               true ->
                  Races1 = RetState#state.races,
                  Races1#dialyzer_races.race_list;
-	      _ -> []
+	      false -> []
             end,
           {RetState, RetMap, BodyType, NewArgType, RetRaceList}
       end
@@ -1528,8 +1582,8 @@ bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map, State, Rev) ->
 		  [bind_pat_vars(Es, t_tuple_args(SubTuple), [], Map, State)
 		   || SubTuple <- SubTuples]
 	      end,
-	    case lists:keysearch(opaque, 2, Results) of
-	      {value, {error, opaque, _PatList, _Type, Opaque}} ->
+	    case lists:keyfind(opaque, 2, Results) of
+	      {error, opaque, _PatList, _Type, Opaque} ->
 		bind_error([Pat], Tuple, Opaque, opaque);
 	      false ->
 		case [M || {M, _} <- Results, M =/= error] of
@@ -1826,7 +1880,7 @@ handle_guard_type_test(Guard, F, Map, Env, Eval, State) ->
 bind_type_test(Eval, TypeTest, ArgType, State) ->
   Type = case TypeTest of
 	   is_atom -> t_atom();
-	   is_boolean -> t_bool();
+	   is_boolean -> t_boolean();
 	   is_binary -> t_binary();
 	   is_bitstring -> t_bitstr();
 	   is_float -> t_float();
@@ -1863,7 +1917,7 @@ bind_type_test(Eval, TypeTest, ArgType, State) ->
 	  end
 	end;
     dont_know ->
-      {ok, ArgType, t_bool()}
+      {ok, ArgType, t_boolean()}
   end.
 
 handle_guard_comp(Guard, Comp, Map, Env, Eval, State) ->
@@ -1951,7 +2005,7 @@ handle_guard_is_function(Guard, Map, Env, Eval, State) ->
 	    pos -> {enter_type_lists(Args, [FunType, ArityType], Map1),
 		    t_atom(true)};
 	    neg -> {Map1, t_atom(false)};
-	    dont_know -> {Map1, t_bool()}
+	    dont_know -> {Map1, t_boolean()}
 	  end
       end
   end.
@@ -1989,7 +2043,7 @@ handle_guard_is_record(Guard, Map, Env, Eval, State) ->
       case Eval of
 	pos -> {enter_type(Rec, Type, Map1), t_atom(true)};
 	neg -> {Map1, t_atom(false)};
-	dont_know -> {Map1, t_bool()}
+	dont_know -> {Map1, t_boolean()}
       end
   end.
 
@@ -2046,7 +2100,7 @@ bind_eq_guard(Guard, Arg1, Arg2, Map, Env, Eval, State) ->
       case Eval of
 	pos -> {Map2, t_atom(true)};
 	neg -> {Map2, t_atom(false)};
-	dont_know -> {Map2, t_bool()}
+	dont_know -> {Map2, t_boolean()}
       end
   end.
 
@@ -2110,7 +2164,7 @@ bind_eqeq_guard(Guard, Arg1, Arg2, Map, Env, Eval, State) ->
 	neg ->
 	  {Map2, t_atom(false)};
 	dont_know ->
-	  {Map2, t_bool()}
+	  {Map2, t_boolean()}
       end
   end.
 
@@ -2176,11 +2230,11 @@ handle_guard_and(Guard, Map, Env, Eval, State) ->
     dont_know ->
       True = t_atom(true),
       {Map1, Type1} = bind_guard(Arg1, Map, Env, dont_know, State),
-      case t_is_none(t_inf(Type1, t_bool())) of
+      case t_is_none(t_inf(Type1, t_boolean())) of
 	true -> throw({fail, none});
 	false ->
 	  {Map2, Type2} = bind_guard(Arg2, Map1, Env, Eval, State),
-	  case t_is_none(t_inf(Type2, t_bool())) of
+	  case t_is_none(t_inf(Type2, t_boolean())) of
 	    true -> throw({fail, none});
 	    false -> {Map2, True}
 	  end
@@ -2201,9 +2255,9 @@ handle_guard_or(Guard, Map, Env, Eval, State) ->
 	catch 
 	  throw:{fail,_} -> bind_guard(Arg2, Map, Env, dont_know, State)
 	end,
-      case ((t_is_atom(true, Bool1) andalso t_is_bool(Bool2))
+      case ((t_is_atom(true, Bool1) andalso t_is_boolean(Bool2))
 	    orelse 
-	    (t_is_atom(true, Bool2) andalso t_is_bool(Bool1))) of
+	    (t_is_atom(true, Bool2) andalso t_is_boolean(Bool1))) of
 	true -> {join_maps([Map1, Map2], Map), t_atom(true)};
 	false -> throw({fail, none})
       end;
@@ -2221,7 +2275,7 @@ handle_guard_or(Guard, Map, Env, Eval, State) ->
     dont_know ->
       {Map1, Bool1} = bind_guard(Arg1, Map, Env, dont_know, State),
       {Map2, Bool2} = bind_guard(Arg2, Map, Env, dont_know, State),
-      case t_is_bool(Bool1) andalso t_is_bool(Bool2) of
+      case t_is_boolean(Bool1) andalso t_is_boolean(Bool2) of
 	true -> {join_maps([Map1, Map2], Map), t_sup(Bool1, Bool2)};
 	false -> throw({fail, none})
       end
@@ -2244,7 +2298,7 @@ handle_guard_not(Guard, Map, Env, Eval, State) ->
       end;
     dont_know -> 
       {Map1, Type} = bind_guard(Arg, Map, Env, dont_know, State),
-      Bool = t_inf(Type, t_bool()),
+      Bool = t_inf(Type, t_boolean()),
       case t_is_none(Bool) of
 	true -> throw({fatal_fail, none});
 	false ->
@@ -2671,45 +2725,52 @@ state__mark_fun_as_handled(#state{fun_tab = FunTab} = State, Fun0) ->
 state__warning_mode(#state{warning_mode = WM}) ->
   WM.
 
-state__set_warning_mode(#state{tree_map = TreeMap, fun_tab = FunTab} = State) ->
+state__set_warning_mode(#state{tree_map = TreeMap, fun_tab = FunTab,
+                               races = Races} = State) ->
   ?debug("Starting warning pass\n", []),
   Funs = dict:fetch_keys(TreeMap),
   State#state{work = init_work([top|Funs--[top]]),
-	      fun_tab = FunTab, warning_mode = true}.
+	      fun_tab = FunTab, warning_mode = true,
+              races = races__race_analysis(true, Races)}.
+
+state__race_analysis(Analysis, #state{races = Races} = State) ->
+  State#state{races = races__race_analysis(Analysis, Races)}.
 
 state__renew_curr_fun(CurrFun, CurrFunLabel,
-                      #state{callgraph = Callgraph, races = Races} = State) ->
-  State#state{callgraph =
-    races__renew_local_fun_label(CurrFun, CurrFunLabel, Callgraph),
-    races = races__renew_curr_fun(CurrFun, CurrFunLabel, Races)}.
+                      #state{races = Races} = State) ->
+  State#state{races = races__renew_curr_fun(CurrFun, CurrFunLabel, Races)}.
 
-state__renew_fun_args(Args,
-                      #state{callgraph = Callgraph, races = Races} = State) ->
-  State#state{callgraph =
-    races__renew_fun_args_1(Args, Races#dialyzer_races.curr_fun, Callgraph),
-    races = races__renew_fun_args_2(Args, Races)}.
-
-state__renew_inter_module_calls(InterModuleCalls, 
-                                #state{callgraph = Callgraph} = State) ->
-  State#state{callgraph =
-    races__renew_inter_module_calls(InterModuleCalls, Callgraph)}.
-
-state__renew_local_calls(#state{callgraph = Callgraph, races = Races} = State,
-                         Operation) ->
-  State#state{races = races__renew_local_calls(Races, Callgraph, Operation)}.
-
-state__renew_module_local_call_label(Fun, #state{callgraph = Callgraph,
-						 races = Races} = State) ->
-  State#state{callgraph =
-    races__renew_module_local_call_label(Fun, Races#dialyzer_races.curr_fun,
-    Callgraph)}.
-
-state__renew_processing_local_call(CaseCode, #state{races = Races} = State) ->
-  State#state{races =
-    races__renew_processing_local_call(CaseCode, Races)}.
+state__renew_fun_args(Args, #state{races = Races} = State) ->
+  case state__warning_mode(State) of
+    true -> State;
+    false ->
+      State#state{races = races__renew_fun_args(Args, Races)}
+  end.
 
 state__renew_race_list(RaceList, #state{races = Races} = State) ->
   State#state{races = races__renew_race_list(RaceList, Races)}.
+
+state__renew_race_var_map(RaceVarMap, #state{callgraph = Callgraph} = State) ->
+  State#state{callgraph =
+    callgraph__renew_race_var_map(RaceVarMap, Callgraph)}.
+
+state__race_var_map(Arg, Pats, Guard,
+                    #state{callgraph = Callgraph} = State, Op) ->
+  State#state{callgraph =
+    callgraph__race_var_map(Arg, Pats, Guard, Callgraph, Op)}.
+
+state__check_race_var_map(Arg, Pat, Bool, State) ->
+  case cerl:type(Pat) of
+    literal ->
+      [Arg1, Arg2] = cerl:call_args(Arg),
+      case cerl:concrete(Pat) of
+        Bool ->
+          state__race_var_map(Arg1, Arg2, no_guard, State, bind);
+        _Else ->
+          state__race_var_map(Arg1, Arg2, no_guard, State, unbind)
+      end;
+    _Else -> State
+  end.
 
 state__renew_warnings(Warnings, State) ->
   State#state{warnings = Warnings}.
@@ -2741,35 +2802,10 @@ state__add_warning(#state{warnings = Warnings, warning_mode = true} = State,
 state__add_race_warning(#state{races = Races} = State, RaceWarn, RaceWarnTag,
                         File, Line) ->
   Warn = {RaceWarnTag, {File, Line}, RaceWarn},
-  Warnings = Races#dialyzer_races.race_warnings,
-  {AlreadyAdded, NewWarnings} = state__filter_race_warnings(Warn, Warnings),
-  RetRaces =
-    case AlreadyAdded of
-      true -> races__renew_race_warnings(NewWarnings, Races);
-      false -> races__add_race_warning(Warn, Races)
-    end,
-  State#state{races = RetRaces}.
-
-state__filter_race_warnings({Tag, FileLine,
-                            {possible_race, [_M, _F, _A, DependencyList]}} =
-                              Warn,
-                            Warnings) ->
-  case Warnings of
-    [] -> {false, []};
-    [H|T] ->
-      case H of
-        {Tag, FileLine, {possible_race, [M, F, A, DepList]}} ->
-          {true, [{Tag, FileLine,
-  	    {possible_race,
-            [M, F, A, races__merge_dep_lists(DepList, DependencyList)]}}|T]};
-        _ ->
-          {RetBool, RetWarnings} = state__filter_race_warnings(Warn, T),
-          {RetBool, [H|RetWarnings]}
-      end
- end.
+  State#state{races = races__add_race_warning(Warn, Races)}.
 
 state__get_race_warnings(#state{races = Races} = State) ->
-  {Races1, State1} = races__get_race_warnings(Races, State),
+  {Races1, State1} = get_race_warnings(Races, State),
   State1#state{races = Races1}.
 
 state__get_warnings(#state{tree_map = TreeMap, fun_tab = FunTab,
@@ -3091,304 +3127,187 @@ forward_args(Fun, ArgTypes, #state{work = Work, fun_tab = FunTab} = State) ->
 
 %%% ===========================================================================
 %%%
-%%%  Races
+%%%  Callgraph and Races
 %%%
 %%% ===========================================================================
 
+races__race_analysis(Analysis, Races) ->
+  Races#dialyzer_races{race_analysis = Analysis}.
+
 races__renew_curr_fun(CurrFun, CurrFunLabel, Races) ->
-  Races#dialyzer_races{curr_fun = CurrFun, curr_fun_label = CurrFunLabel}.
+  Races#dialyzer_races{curr_fun = CurrFun,
+                       curr_fun_label = CurrFunLabel,
+                       curr_fun_args = empty}.
 
-races__renew_fun_args_1(Args, CurrFun, Callgraph = #dialyzer_callgraph{
-                        module_local_calls = ModuleLocalCalls,
-                        inter_module_calls = InterModuleCalls}) ->
-  Callgraph#dialyzer_callgraph{module_local_calls = 
-    races__renew_fun_args_1_helper1(Args, CurrFun, ModuleLocalCalls),
-    inter_module_calls =
-    races__renew_fun_args_1_helper2(Args, CurrFun, InterModuleCalls)}.
-
-races__renew_fun_args_1_helper1(Args, CurrFun, ModuleLocalCalls) ->
-  case ModuleLocalCalls of
-    [] -> [];
-    [Head|Tail] ->
-      NewHead =
-        case Head of
-          {TupleA, IntA, CurrFun, IntB, empty, CodeA, CodeB, Bool} ->
-            {TupleA, IntA, CurrFun, IntB, Args, CodeA, CodeB, Bool};
-           _Other -> Head
-        end,
-      [NewHead|races__renew_fun_args_1_helper1(Args, CurrFun, Tail)]
+races__renew_fun_args(Args,
+                      #dialyzer_races{curr_fun_args = CurrFunArgs} = Races) ->
+  case CurrFunArgs of
+    empty -> Races#dialyzer_races{curr_fun_args = Args};
+    _Other -> Races
   end.
 
-races__renew_fun_args_1_helper2(Args, CurrFun, InterModuleCalls) ->
-  case InterModuleCalls of
-    [] -> [];
-    [Head|Tail] ->
-      NewHead =
-        case Head of
-          {TupleA, CurrFun, empty, ListA, ListB, BoolA, BoolB} ->
-            {TupleA, CurrFun, Args, ListA, ListB, BoolA, BoolB};
-           _Other -> Head
-        end,
-      [NewHead|races__renew_fun_args_1_helper2(Args, CurrFun, Tail)]
-  end.
-
-races__renew_fun_args_2(Args,
-                        #dialyzer_races{local_calls = LocalCalls} = Races) ->
-  Races#dialyzer_races{local_calls = 
-    races__renew_fun_args_2_helper(Args, LocalCalls)}.
-
-races__renew_fun_args_2_helper(Args, LocalCalls) ->
-  case LocalCalls of
-    [] -> [];
-    [Head|Tail] ->
-      case Head of
-        {Int, empty, RaceList, processing} ->
-          [{Int, Args, RaceList, processing}|Tail];
-        _Other ->
-          [Head|races__renew_fun_args_2_helper(Args, Tail)]
-      end
-  end.
-
-races__renew_inter_module_calls(InterModuleCalls, Callgraph) ->
-  Callgraph#dialyzer_callgraph{inter_module_calls = InterModuleCalls}.
- 
-races__renew_local_calls(Races =
-                         #dialyzer_races{local_calls = LocalCalls,
-                                         curr_fun = CurrFun,
-                                         curr_fun_label=CurrFunLabel},
-                         #dialyzer_callgraph{module_local_calls = 
-                         ModuleLocalCalls},
-                         Operation) ->
-  Races#dialyzer_races{local_calls = 
-    races__renew_local_calls_helper2(CurrFunLabel,
-    races__renew_local_calls_helper1(CurrFunLabel, LocalCalls, CurrFun,
-    ModuleLocalCalls, Operation), none, Operation)}.
-
-races__renew_local_calls_helper1(CurrFunLabel, LocalCalls, CurrFun,
-                                 ModuleLocalCalls, Operation) ->
-  case Operation of
-    start ->
-      races__check_module_local_calls(CurrFunLabel, CurrFun, ModuleLocalCalls)
-      ++ LocalCalls;
-    done ->
-      case LocalCalls of
-        [] -> [];
-        [Head|Tail] ->
-          case Head of     
-            {CurrFunLabel, Args, RaceList, processing} ->
-              [{CurrFunLabel, Args, RaceList, true}|Tail];
-            {_Fun, _Args, _RaceList, _Bool} ->
-              [Head|
-                races__renew_local_calls_helper1(CurrFunLabel, Tail, CurrFun,
-                ModuleLocalCalls, Operation)]
-          end
-      end
-  end.
-
-races__renew_local_calls_helper2(CurrFunLabel, LocalCalls, Tuple, Operation) ->
-  case Operation of
-    start -> LocalCalls;
-    done ->
-      case LocalCalls of
-        [] ->
-          case Tuple of
-            none -> [];
-            _Other -> [Tuple]
-          end;
-        [Head|Tail] ->
-          case Head of
-            {CurrFunLabel, _Args1, RaceList, true} ->
-              case Tuple of
-                none ->
-                  races__renew_local_calls_helper2(CurrFunLabel, Tail, Head,
-                    Operation);
-                {CurrFunLabel, _Args2, FunRaceList, true} ->
-                  case length(FunRaceList) > length(RaceList) of
-                    true -> [Tuple|Tail];
-                    false -> [Head|Tail]
-                  end
-              end;
-            _Other -> 
-	      [Head|races__renew_local_calls_helper2(CurrFunLabel, Tail, Tuple,
-                 Operation)]
-          end
-      end
-  end.
-
-races__renew_local_fun_label(CurrFun, CurrFunLabel,
-                             Callgraph =
-                             #dialyzer_callgraph{module_local_calls =
-                             ModuleLocalCalls}) ->
-  Callgraph#dialyzer_callgraph{module_local_calls =
-    races__renew_local_fun_label_helper(CurrFun, CurrFunLabel,
-    ModuleLocalCalls)}.
-  
-races__renew_local_fun_label_helper(CurrFun, CurrFunLabel, ModuleLocalCalls) ->
-  case ModuleLocalCalls of
-    [] -> [];
-    [Head|Tail] ->
-      NewHead =
-        case Head of
-          {CurrFun, _IntA, CurrFun, _IntB, ArgsB, CodeA, CodeB, Bool} ->
-            {CurrFun, CurrFunLabel, CurrFun, CurrFunLabel, ArgsB, CodeA, CodeB,
-               Bool};
-          {CurrFun, _IntA, TupleB, IntB, ArgsB, CodeA, CodeB, Bool} ->
-            {CurrFun, CurrFunLabel, TupleB, IntB, ArgsB, CodeA, CodeB, Bool};
-          {TupleA, IntA, CurrFun, _IntB, ArgsB, CodeA, CodeB, Bool} ->
-            {TupleA, IntA, CurrFun, CurrFunLabel, ArgsB, CodeA, CodeB, Bool};
-          {_TupleA, _IntA, _TupleB, _IntB, _ArgsB, _CodeA, _CodeB, _Bool} ->
-            Head
-        end,
-      [NewHead|
-        races__renew_local_fun_label_helper(CurrFun, CurrFunLabel, Tail)]
-  end.
- 
-races__renew_module_local_call_label(Fun, CurrFun,
-                                     Callgraph =
-                                     #dialyzer_callgraph{module_local_calls =
-                                     ModuleLocalCalls}) ->
-  Callgraph#dialyzer_callgraph{module_local_calls =
-    races__renew_module_local_call_label_helper(Fun, CurrFun,
-    ModuleLocalCalls)}.
-
-races__renew_module_local_call_label_helper(Fun, CurrFun, ModuleLocalCalls) ->
-  case ModuleLocalCalls of
-    [] -> [];
-    [Head|Tail] ->
-      case Head of
-        {CurrFun, IntA, TupleB, Fun, ArgsB, CodeA, CodeB, _Bool} ->
-          [{CurrFun, IntA, TupleB, Fun, ArgsB, CodeA, CodeB, true}|Tail];
-        _Other ->
-          [Head|
-            races__renew_module_local_call_label_helper(Fun, CurrFun, Tail)]
-      end
-  end.
-
-races__renew_module_local_calls(Callgraph =
-                                #dialyzer_callgraph{module_local_calls =
-                                ModuleLocalCalls},
-                                #dialyzer_races{local_calls = LocalCalls}) ->
-  Callgraph#dialyzer_callgraph{module_local_calls =
-    races__renew_module_local_calls_helper1(ModuleLocalCalls, LocalCalls)}.
-
-races__renew_module_local_calls_helper1(ModuleLocalCalls, LocalCalls) ->
-  case LocalCalls of
-    [] -> ModuleLocalCalls;
-    [{Int, _Args, RaceList, _Bool}|Tail] ->
-      NewModuleLocalCalls =
-        races__renew_module_local_calls_helper2(Int, ModuleLocalCalls,
-        lists:reverse(RaceList)),
-      races__renew_module_local_calls_helper1(NewModuleLocalCalls, Tail)
-  end.
-
-races__renew_module_local_calls_helper2(Int, ModuleLocalCalls, Code) ->
-  case ModuleLocalCalls of
-    [] -> [];
-    [Head|Tail] ->
-      NewHead =
-        case Head of
-          {TupleA, Int, TupleB, Int, ArgsB, empty, empty, true} ->
-            [{TupleA, Int, TupleB, Int, ArgsB, Code, Code, true}];
-          {TupleA, Int, TupleB, IntB, ArgsB, empty, CodeB, true} ->
-            [{TupleA, Int, TupleB, IntB, ArgsB, Code, CodeB, true}];
-          {TupleA, IntA, TupleB, Int, ArgsB, CodeA, empty, true} ->
-            [{TupleA, IntA, TupleB, Int, ArgsB, CodeA, Code, true}];
-          {_TupleA, Int, _TupleB, _IntB, _ArgsB, empty, _CodeB, false} ->
-            [];
-          {_TupleA, _IntA, _TupleB, Int, _ArgsB, _CodeA, empty, false} ->
-            [];
-          {_TupleA, Int, _TupleB, Int, _ArgsB, empty, empty, false} ->
-            [];
-          _Other -> [Head]
-        end,
-      NewHead ++ races__renew_module_local_calls_helper2(Int, Tail, Code)
-  end.
-
-races__renew_processing_local_call(CaseCode, Races =
-                                   #dialyzer_races{local_calls = LocalCalls}) ->
-  Races#dialyzer_races{local_calls =
-    races__renew_processing_local_call_helper(CaseCode, LocalCalls)}.
-
-races__renew_processing_local_call_helper(CaseCode, LocalCalls) ->
-  case LocalCalls of
-    [] -> [];
-    [Head|Tail] ->
-      case Head of
-        {Int, Args, RaceList, processing} ->
-          [{Int, Args, [CaseCode|RaceList], processing}|Tail];
-        _Other ->
-          [Head|races__renew_processing_local_call_helper(CaseCode, Tail)]
-      end
+callgraph__renew_code(Fun, FunArgs, Code, WarningMode,
+  #dialyzer_callgraph{race_code = RaceCode} = Callgraph) ->
+  case WarningMode of
+    true -> Callgraph;
+    false ->
+      Callgraph#dialyzer_callgraph{race_code =
+        dict:store(Fun, [FunArgs, Code], RaceCode)}
   end.
 
 races__renew_race_list(RaceList, Races) ->
   Races#dialyzer_races{race_list = RaceList}.
 
-races__renew_race_warnings(Warnings, Races) ->
-  Races#dialyzer_races{race_warnings = Warnings}.
+accumulate_race_var_map(Ret, Acc) ->
+  KeysToAdd = dict:fetch_keys(Ret),
+  accumulate_race_var_map_helper1(KeysToAdd, Ret, Acc).
+
+accumulate_race_var_map_helper1(KeysToAdd, Ret, Acc) ->
+  case KeysToAdd of
+    [] -> Acc;
+    [Head|Tail] ->
+      accumulate_race_var_map_helper1(Tail, Ret,
+        accumulate_race_var_map_helper2(Head, dict:fetch(Head, Ret), Acc))
+  end.
+
+accumulate_race_var_map_helper2(Key, Values, Acc) ->
+  case Values of
+    [] -> Acc;
+    [Head|Tail] ->
+      accumulate_race_var_map_helper2(Key, Tail,
+        dialyzer_races:bind_dict_vars(Key, Head, Acc))
+  end.
+
+callgraph__renew_race_var_map(RaceVarMap, Callgraph) ->
+  Callgraph#dialyzer_callgraph{race_var_map = RaceVarMap}.
+
+callgraph__race_var_map(Arg, Pats, Guard,
+  #dialyzer_callgraph{race_var_map = RaceVarMap} = Callgraph, Op) ->
+  NewRaceVarMap =
+    case Guard of
+      no_guard -> RaceVarMap;
+      _Thing ->
+        case cerl:type(Guard) of
+          call ->
+            CallName = cerl:call_name(Guard),
+              case cerl:is_literal(CallName) of
+                true ->
+                  case cerl:concrete(CallName) of
+                    '=:=' ->
+                      [Arg1, Arg2] = cerl:call_args(Guard),
+                      dialyzer_races:race_var_map(Arg1, Arg2, RaceVarMap,
+                        bind);
+                    '==' ->
+                      [Arg1, Arg2] = cerl:call_args(Guard),
+                      dialyzer_races:race_var_map(Arg1, Arg2, RaceVarMap,
+                        bind);
+                    '=/=' ->
+                      [Arg1, Arg2] = cerl:call_args(Guard),
+                      dialyzer_races:race_var_map(Arg1, Arg2, RaceVarMap,
+                        unbind);
+                    _Other -> RaceVarMap
+                  end;
+                false -> RaceVarMap
+              end;
+          _Other -> RaceVarMap
+        end
+    end,
+  Callgraph#dialyzer_callgraph{race_var_map =
+    dialyzer_races:race_var_map(Arg, Pats, NewRaceVarMap, Op)}.
+
+callgraph__renew_public_tables([Var], #dialyzer_races{new_table = Table},
+           #dialyzer_callgraph{public_tables = PTables,
+                               named_tables = NTables} = Callgraph) ->
+  case Table of
+    no_t -> Callgraph;
+    other ->
+      VarLabel = get_label(Var),
+      Callgraph#dialyzer_callgraph{public_tables = [VarLabel|PTables]};
+    {named, NameLabel, Names} ->
+      VarLabel = get_label(Var),
+      PTablesToAdd = 
+        case NameLabel of
+          ?no_label -> [VarLabel];
+          _Other -> [VarLabel, NameLabel]
+        end,
+      NamesToAdd = filter_named_tables(Names),
+      Callgraph#dialyzer_callgraph{
+        public_tables = lists:usort(PTablesToAdd ++ PTables),
+        named_tables = lists:usort(NamesToAdd ++ NTables)}
+  end.
+
+filter_named_tables(List) ->
+  case List of
+    [] -> [];
+    [Head|Tail] ->
+      NewHead =
+        case string:rstr(Head, "()") of
+          0 -> [Head];
+          _Other -> []
+        end,
+      NewHead ++ filter_named_tables(Tail)
+  end.
 
 races__add_race_warning(Warn, #dialyzer_races{race_warnings = Warns} = Races) ->
   Races#dialyzer_races{race_warnings = [Warn|Warns]}.
 
-races__check_module_local_calls(CurrFunLabel, CurrFun, ModuleLocalCalls) ->
-  case races__check_module_local_calls_helper(CurrFunLabel, CurrFun,
-                                              ModuleLocalCalls) of
-    false -> [];
-    true -> [{CurrFunLabel, empty, [], processing}]
-  end.
-
-races__check_module_local_calls_helper(CurrFunLabel, CurrFun,
-                                       ModuleLocalCalls) ->
-  case ModuleLocalCalls of
-    [] -> false;
-    [Head|Tail] ->
-      case Head of
-        {CurrFun, _IntA, _TupleB, _IntB, _ArgsB, _CodeA, _CodeB, _Bool} ->
-          true;
-        {_TupleA, _IntA, CurrFun, _IntB, _ArgsB, _CodeA, _CodeB, _Bool} ->
-          true;
-        _Other ->
-          races__check_module_local_calls_helper(CurrFunLabel, CurrFun, Tail)
-      end
-  end.
-
-races__get_race_warn(Fun, Args, ArgTypes, DependencyList, State) ->
+get_race_warn(Fun, Args, ArgTypes, DependencyList, State) ->
   case state__lookup_name(Fun, State) of
     {M, F, _A} ->
-      {State, {possible_race, [M, F, format_args(Args, ArgTypes, State),
-        DependencyList]}};
+      {State, {possible_race, [M, F, Args, ArgTypes, State, DependencyList]}};
     Label when is_integer(Label) ->
       {State, []}
   end.
 
-races__get_race_warnings(#dialyzer_races{race_warnings = RaceWarnings},
-                         State) ->
-  races__get_race_warnings_helper(RaceWarnings, State).
+get_race_warnings(#dialyzer_races{race_warnings = RaceWarnings}, State) ->
+  get_race_warnings_helper(RaceWarnings, State).
 
-races__get_race_warnings_helper(Warnings, #state{races = Races} = State) ->
+get_race_warnings_helper(Warnings, #state{callgraph = Callgraph,
+                                          races = Races} = State) ->
   case Warnings of
     [] -> {Races, State};
     [H|T] ->
-      {RaceWarnTag, FileLine, {possible_race, [M, F, A, DepList]}} = H,
-      Reason =
+      {RaceWarnTag, FileLine, {possible_race, [M, F, A, AT, S, DepList]}} = H,
+      {Reason, Add} =
         case RaceWarnTag of
           ?WARN_WHEREIS_REGISTER ->
-            races__get_reason(lists:keysort(6, DepList),
+            {get_reason(lists:keysort(6, DepList),
               "might fail due to a possible race condition "
-              "caused by its combination with ");
+              "caused by its combination with "), true};
           ?WARN_ETS_LOOKUP_INSERT ->
-            races__get_reason(lists:keysort(6, DepList),
-              "might have an unintended effect due to a possible race condition"              " caused by its combination with ")
+            InsertList = dialyzer_races:format_args(A, AT, S, ets_insert),
+            Var = lists:nth(1, InsertList),
+            Names = lists:nth(2, InsertList),
+            case dialyzer_races:compare_var_list(Var,
+              Callgraph#dialyzer_callgraph.public_tables,
+              Callgraph#dialyzer_callgraph.race_var_map) orelse
+              length(Names -- Callgraph#dialyzer_callgraph.named_tables) <
+                length(Names) of
+              true ->
+                {get_reason(lists:keysort(6, DepList),
+                  "might have an unintended effect due to " ++
+                  "a possible race condition " ++
+                  "caused by its combination with "), true};
+              false -> {"", false}
+            end
         end,
-      W = {?WARN_POSSIBLE_RACE, FileLine, {possible_race, [M, F, A, Reason]}},
-      State1 = state__add_warning(W, State),
-      races__get_race_warnings_helper(T, State1)
+      State1 = 
+        case Add of
+          true ->
+            W =
+              {?WARN_POSSIBLE_RACE, FileLine,
+              {possible_race, [M, F, format_args(A, AT, S), Reason]}},
+            state__add_warning(W, State);
+          false -> State
+        end,
+      get_race_warnings_helper(T, State1)
   end.
 
-races__get_reason(DependencyList, Reason) ->
+get_reason(DependencyList, Reason) ->
   case DependencyList of
     [] -> "";
-    [{Call, _List, ArgTypes, Args, State, {File, Line}}|T] ->
+    [#dep_call{call_name = Call, arg_types = ArgTypes, vars = Args,
+               state = State, file_line = {File, Line}}|T] ->
       R =
         Reason ++
         case Call of
@@ -3402,29 +3321,7 @@ races__get_reason(DependencyList, Reason) ->
         lists:flatten(io_lib:write(Line)),
       case T of
         [] -> R;
-        _ -> races__get_reason(T, R ++ ", ")
-      end
-  end.
-
-races__merge_dep_lists(OldDepList, NewDepList) ->
-  case NewDepList of
-    [] -> OldDepList;
-    [Head|Tail] ->
-      case races__merge_dep_lists_helper(Head, OldDepList) of
-        true -> races__merge_dep_lists(OldDepList, Tail);
-        false -> [Head|races__merge_dep_lists(OldDepList, Tail)]
-      end
-  end.
-
-races__merge_dep_lists_helper(DepListElem =
-                              {Call, _List, _ArgTypes, _Args, _State,
-                              FileLine}, List) ->
-  case List of
-    [] -> false;
-    [Head|Tail] ->
-      case Head of
-        {Call, _L, _AT, _A, _S, FileLine} -> true;
-        _Other -> races__merge_dep_lists_helper(DepListElem, Tail)
+        _ -> get_reason(T, R ++ ", ")
       end
   end.
 

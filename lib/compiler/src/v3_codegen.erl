@@ -42,7 +42,7 @@
 %% The main interface.
 -export([module/2]).
 
--import(lists, [member/2,keymember/3,keysort/2,keysearch/3,keydelete/3,
+-import(lists, [member/2,keymember/3,keysort/2,keydelete/3,
 		append/1,map/2,flatmap/2,filter/2,foldl/3,foldr/3,mapfoldl/3,
 		sort/1,reverse/1,reverse/2]).
 -import(v3_life, [vdb_find/2]).
@@ -1799,11 +1799,11 @@ collect_chain(Ms, Path, ScrReg) ->
     collect_chain(Ms, Path, [], ScrReg).
 
 collect_chain([{move,Src,Same}=M|Ms0], [{move,Same,_}|_]=Path, Others, ScrReg) ->
-    case keysearch(Src, 3, Path) of
-	{value,_} ->				%We have a cycle.
-	    {break_up_cycle(M, Path, ScrReg),reverse(Others, Ms0)};
+    case lists:keyfind(Src, 3, Path) of
 	false ->
-	    collect_chain(reverse(Others, Ms0), [M|Path], [], ScrReg)
+	    collect_chain(reverse(Others, Ms0), [M|Path], [], ScrReg);
+	_ ->	% We have a cycle.
+	    {break_up_cycle(M, Path, ScrReg),reverse(Others, Ms0)}
     end;
 collect_chain([M|Ms], Path, Others, ScrReg) ->
     collect_chain(Ms, Path, [M|Others], ScrReg);

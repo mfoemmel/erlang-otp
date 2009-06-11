@@ -19,6 +19,7 @@
 
 BEHAVIOUR_MODULES = \
 	snmpa_authentication_service \
+	snmpa_discovery_handler \
 	snmpa_error_report \
 	snmpa_network_interface \
 	snmpa_network_interface_filter \
@@ -34,6 +35,7 @@ MODULES = \
 	snmpa_agent_sup \
 	snmpa_app \
 	snmpa_conf \
+	snmpa_discovery_handler_default \
 	snmpa_error \
 	snmpa_error_io \
 	snmpa_error_logger \

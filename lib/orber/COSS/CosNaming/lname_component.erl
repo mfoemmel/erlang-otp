@@ -43,28 +43,28 @@
 create() ->
     #'CosNaming_NameComponent'{id="", kind=""}.
 
-get_id(NC) when record(NC, 'CosNaming_NameComponent'),
+get_id(NC) when is_record(NC, 'CosNaming_NameComponent'),
                 NC#'CosNaming_NameComponent'.id == undefined ->
     corba:raise(#'LNameComponent_NotSet'{});
-get_id(NC) when record(NC, 'CosNaming_NameComponent'),
+get_id(NC) when is_record(NC, 'CosNaming_NameComponent'),
                 NC#'CosNaming_NameComponent'.id == "" ->
     corba:raise(#'LNameComponent_NotSet'{});
-get_id(NC) when record(NC, 'CosNaming_NameComponent') ->
+get_id(NC) when is_record(NC, 'CosNaming_NameComponent') ->
     NC#'CosNaming_NameComponent'.id.
 
-set_id(NC, Id) when record(NC, 'CosNaming_NameComponent'), list(Id)->
+set_id(NC, Id) when is_record(NC, 'CosNaming_NameComponent') andalso is_list(Id)->
     NC#'CosNaming_NameComponent'{id=Id}.
 
-get_kind(NC) when record(NC, 'CosNaming_NameComponent'),
-                NC#'CosNaming_NameComponent'.kind == undefined ->
+get_kind(NC) when is_record(NC, 'CosNaming_NameComponent') andalso
+		  NC#'CosNaming_NameComponent'.kind == undefined ->
     corba:raise(#'LNameComponent_NotSet'{});
-get_kind(NC) when record(NC, 'CosNaming_NameComponent'),
-                NC#'CosNaming_NameComponent'.kind == "" ->
+get_kind(NC) when is_record(NC, 'CosNaming_NameComponent') andalso
+		  NC#'CosNaming_NameComponent'.kind == "" ->
     corba:raise(#'LNameComponent_NotSet'{});
-get_kind(NC) when record(NC, 'CosNaming_NameComponent') ->
+get_kind(NC) when is_record(NC, 'CosNaming_NameComponent') ->
     NC#'CosNaming_NameComponent'.kind.
 
-set_kind(NC, Kind) when record(NC, 'CosNaming_NameComponent'), list(Kind) ->
+set_kind(NC, Kind) when is_record(NC, 'CosNaming_NameComponent') andalso is_list(Kind) ->
     NC#'CosNaming_NameComponent'{kind=Kind}.
 
 %%destroy() -> % not needed in erlang
@@ -73,12 +73,11 @@ set_kind(NC, Kind) when record(NC, 'CosNaming_NameComponent'), list(Kind) ->
 %%-----------------------------------------------------------------
 %% External Functions not in the CosNaming standard
 %%-----------------------------------------------------------------
-new(Id) when list(Id) ->
+new(Id) when is_list(Id) ->
     #'CosNaming_NameComponent'{id=Id, kind=""}.
-new(Id, Kind) when list(Id), list(Kind) ->
+new(Id, Kind) when is_list(Id) andalso is_list(Kind) ->
     #'CosNaming_NameComponent'{id=Id, kind=Kind}.
 
 %%-----------------------------------------------------------------
 %% Internal Functions
 %%-----------------------------------------------------------------
-

@@ -27,8 +27,8 @@
 
 %% API
 -export([start_flex_scanner/0, stop_flex_scanner/1,
-	 read_messages/1,
-	 expand_dirs/2,
+	 expanded_messages/2, expanded_messages/3, 
+	 set_default_sched_bind/0,
 	 display_os_info/0, 
 	 display_system_info/0, 
 	 display_alloc_info/0, 
@@ -68,6 +68,16 @@ detect_version(Codec, Conf, Bin) ->
 
 %%----------------------------------------------------------------------
 %% 
+%% S c h e d u l e r   b i n d   t y p e
+%% 
+%%----------------------------------------------------------------------
+
+set_default_sched_bind() ->
+    (catch erlang:system_flag(scheduler_bind_type, default_bind)).
+
+
+%%----------------------------------------------------------------------
+%% 
 %% D i s p l a y   O s   I n f o 
 %% 
 %%----------------------------------------------------------------------
@@ -95,36 +105,84 @@ display_os_info() ->
 %%----------------------------------------------------------------------
 
 display_system_info() ->
-    SysArch = string:strip(erlang:system_info(system_architecture),right,$\n),
-    OtpRel  = otp_release(),
-    SysVer  = string:strip(erlang:system_info(system_version),right,$\n),
-    SysHT   = erlang:system_info(heap_type),
-    SysGHSz = erlang:system_info(global_heaps_size),
-    SysSMP  = erlang:system_info(smp_support),
-    SysNumSched  = erlang:system_info(schedulers),
-    SysProcLimit = erlang:system_info(process_limit),
-    SysThreads   = erlang:system_info(threads),
-    SysTPSz      = erlang:system_info(thread_pool_size),
+    SysArch       = system_architecture(),
+    OtpRel        = otp_release(),
+    SysVer        = system_version(),
+    SysHT         = heap_type(),
+    SysGHSz       = global_heaps_size(),
+    SysSMP        = smp_support(),
+    SysNumSched   = schedulers(),
+    SysProcLimit  = process_limit(),
+    SysThreads    = threads(),
+    SysTPSz       = thread_pool_size(),
+    SchedBindings = scheduler_bindings(),
+    SchedBindType = scheduler_bind_type(),
+    CpuTopology   = cpu_topology(), 
     io:format("System architecture: ~s~n", [SysArch]),
     io:format("OTP release:         ~s~n", [OtpRel]),
     io:format("System version:      ~s~n", [SysVer]),
-    io:format("Heap type:           ~w~n", [SysHT]),
-    io:format("Global heap size:    ~w~n", [SysGHSz]),
-    io:format("Thread support:      ~w~n", [SysThreads]),
-    io:format("Thread pool size:    ~w~n", [SysTPSz]),
-    io:format("SMP support:         ~w~n", [SysSMP]),
-    io:format("Num schedulers:      ~w~n", [SysNumSched]),
-    io:format("Process limit:       ~w~n", [SysProcLimit]),
+    io:format("Heap type:           ~s~n", [SysHT]),
+    io:format("Global heap size:    ~s~n", [SysGHSz]),
+    io:format("Thread support:      ~s~n", [SysThreads]),
+    io:format("Thread pool size:    ~s~n", [SysTPSz]),
+    io:format("Process limit:       ~s~n", [SysProcLimit]),
+    io:format("SMP support:         ~s~n", [SysSMP]),
+    io:format("Num schedulers:      ~s~n", [SysNumSched]),
+    io:format("Scheduler bindings:  ~s~n", [SchedBindings]),
+    io:format("Scheduler bind type: ~s~n", [SchedBindType]),
+    io:format("Cpu topology:        ~s~n", [CpuTopology]),
     ok.
 
 
+system_architecture() ->
+    string:strip(system_info(system_architecture, string),right,$\n).
+
 otp_release() ->
-    case (catch erlang:system_info(otp_release)) of
-	R when is_list(R) ->
-	    R;
-	_ ->
-	    "-"
+    system_info(otp_release, string).
+
+system_version() ->
+    string:strip(system_info(system_version, string),right,$\n).
+
+heap_type() ->
+    system_info(heap_type, any).
+
+global_heaps_size() ->
+    system_info(global_heaps_size, any).
+
+smp_support() ->
+    system_info(smp_support, any).
+
+schedulers() ->
+    system_info(schedulers, any).
+
+process_limit() ->
+    system_info(process_limit, any).
+
+threads() ->
+    system_info(threads, any).
+
+thread_pool_size() ->
+    system_info(thread_pool_size, any).
+
+scheduler_bindings() ->
+    system_info(scheduler_bindings, any).
+
+scheduler_bind_type() ->
+    system_info(scheduler_bind_type, any).
+
+cpu_topology() ->
+    system_info(cpu_topology, any).
+
+system_info(Tag, Type) ->
+    case (catch erlang:system_info(Tag)) of
+	{'EXIT', _} ->
+	    "-";
+	Info when is_list(Info) andalso (Type =:= string) ->
+	    Info;
+	Info ->
+	    lists:flatten(io_lib:format("~w", [Info]))
     end.
+
 
 
 %%----------------------------------------------------------------------
@@ -239,181 +297,161 @@ display_asn1_info() ->
 
 %%----------------------------------------------------------------------
 %% 
-%% E x p a n d   D i r s
+%% E x p a n d   M e s s a g e s
 %% 
 %%----------------------------------------------------------------------
 
-expand_dirs(Dirs, DrvInclude) ->
-    expand_dirs(Dirs, DrvInclude, []).
+expanded_messages(Codecs, DrvInclude) ->
+    MessagePackage = time_test, 
+    expanded_messages(MessagePackage, Codecs, DrvInclude).
 
-expand_dirs([], _, EDirs) ->
-    lists:reverse(lists:flatten(EDirs));
-expand_dirs([Dir|Dirs], DrvInclude, EDirs) when is_atom(Dir) ->
-    EDir = expand_dir(atom_to_list(Dir), DrvInclude),
-    expand_dirs(Dirs, DrvInclude, [EDir|EDirs]);
-expand_dirs([Dir|Dirs], DrvInclude, EDirs) when is_list(Dir) ->
-    EDir = expand_dir(Dir, DrvInclude),
-    expand_dirs(Dirs, DrvInclude, [EDir|EDirs]).
+expanded_messages(MessagePackage, Codecs, DrvInclude) ->
+    ECodecs  = expand_codecs(Codecs, DrvInclude), 
+    Messages = megaco_codec_transform:messages(MessagePackage), 
+    expanded_messages2(ECodecs, Messages, []).
 
-expand_dir(Dir, flex) ->
-    case Dir of
-	"pretty" ->
-	    [{Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]}];
-	"compact" ->
-	    [{Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]}];
-	"ber" ->
-	    [];
-	"per" ->
-	    [];
-	"erlang" ->
-	    [];
-	Else ->
-	    error({invalid_codec, Else})
-    end;
-expand_dir(Dir, only_drv) ->
-    case Dir of
-	"pretty" ->
-	    [{Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, [flex_scanner]}];
-	"compact" ->
-	    [{Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, [flex_scanner]}];
-	"ber" ->
-	    [{Dir, megaco_ber_bin_encoder, [driver,native]},
-	     {Dir, megaco_ber_bin_encoder, [driver]},
-	     {Dir, megaco_ber_bin_encoder, [driver,native]},
-	     {Dir, megaco_ber_bin_encoder, [driver]}];
-	"per" ->
-	    [{Dir, megaco_per_bin_encoder, [driver,native]},
-	     {Dir, megaco_per_bin_encoder, [native]},
-	     {Dir, megaco_per_bin_encoder, [driver,native]},
-	     {Dir, megaco_per_bin_encoder, [native]}];
-	"erlang" ->
-	    Encoder = megaco_erl_dist_encoder,
-	    [
-	     {Dir, Encoder, [megaco_compressed,compressed]},
-	     {Dir, Encoder, [compressed]},
-	     {Dir, Encoder, [megaco_compressed,compressed]},
-	     {Dir, Encoder, [compressed]}
-	    ];
-	Else ->
-	    error({invalid_codec, Else})
-    end;
-expand_dir(Dir, no_drv) ->
-    case Dir of
-	"pretty" ->
-	    [{Dir, megaco_pretty_text_encoder, []},
-	     {Dir, megaco_pretty_text_encoder, []}];
-	"compact" ->
-	    [{Dir, megaco_compact_text_encoder, []},
-	     {Dir, megaco_compact_text_encoder, []}];
-	"ber" ->
-	    [{Dir, megaco_ber_bin_encoder, [native]},
-	     {Dir, megaco_ber_bin_encoder, []},
-	     {Dir, megaco_ber_bin_encoder, [native]},
-	     {Dir, megaco_ber_bin_encoder, []}];
-	"per" ->
-	    [{Dir, megaco_per_bin_encoder, [native]},
-	     {Dir, megaco_per_bin_encoder, []},
-	     {Dir, megaco_per_bin_encoder, [native]},
-	     {Dir, megaco_per_bin_encoder, []}];
-	"erlang" ->
-	    Encoder = megaco_erl_dist_encoder,
-	    [
-	     {Dir, Encoder, [megaco_compressed]},
- 	     {Dir, Encoder, []},
-	     {Dir, Encoder, [megaco_compressed]},
- 	     {Dir, Encoder, []}
-	    ];
-	Else ->
-	    error({invalid_codec, Else})
-    end;
-expand_dir(Dir, _) ->
-    case Dir of
-	"pretty" ->
-	    [{Dir, megaco_pretty_text_encoder, [flex_scanner]},
-	     {Dir, megaco_pretty_text_encoder, []}];
-	"compact" ->
-	    [{Dir, megaco_compact_text_encoder, [flex_scanner]},
-	     {Dir, megaco_compact_text_encoder, []}];
-	"ber" ->
-	    [{Dir, megaco_ber_bin_encoder, [driver,native]},
-	     {Dir, megaco_ber_bin_encoder, [native]},
-	     {Dir, megaco_ber_bin_encoder, [driver]},
-	     {Dir, megaco_ber_bin_encoder, []}];
-	"per" ->
-	    [{Dir, megaco_per_bin_encoder, [driver,native]},
-	     {Dir, megaco_per_bin_encoder, [native]},
-	     {Dir, megaco_per_bin_encoder, [driver]},
-	     {Dir, megaco_per_bin_encoder, []}];
-	"erlang" ->
-	    Encoder = megaco_erl_dist_encoder,
-	    [
-	     {Dir, Encoder, [megaco_compressed,compressed]},
-	     {Dir, Encoder, [compressed]},
-	     {Dir, Encoder, [megaco_compressed]},
- 	     {Dir, Encoder, []}
-	    ];
-	Else ->
-	    error({invalid_codec, Else})
+expanded_messages2([], _Messages, EMessages) ->
+    lists:reverse(EMessages);
+expanded_messages2([{Codec, Mod, Conf}|ECodecs], Messages, EMessages) ->
+    case lists:keysearch(Codec, 1, Messages) of
+	{value, {Codec, Msgs}} ->
+	    expanded_messages2(ECodecs, Messages, 
+			       [{Codec, Mod, Conf, Msgs}|EMessages]);
+	false ->
+	    exit({error, {no_such_codec_data, Codec}})
     end.
 
 
 %%----------------------------------------------------------------------
 %% 
-%% R e a d   M e s s a g e s
+%% E x p a n d   C o d e c s
 %% 
 %%----------------------------------------------------------------------
 
-read_messages(Dir) ->
-    [read_message(Dir, File) || File <- read_files(Dir)].
+expand_codecs(Codecs, DrvInclude) ->
+    expand_codecs(Codecs, DrvInclude, []).
 
-read_message(Dir, FileName) ->
-    File = filename:join([Dir, FileName]),
-    case file:read_file_info(File) of
-        {ok, #file_info{size = Sz, type = regular}} when Sz > 0 ->
-            case file:read_file(File) of
-		{ok, Msg} ->
-		    Msg;
-		Error ->
-		    error({failed_reading_file, Error})
-	    end;
+expand_codecs([], _, ECodecs) ->
+    lists:reverse(lists:flatten(ECodecs));
+expand_codecs([Codec|Codecs], DrvInclude, ECodecs) when is_atom(Codec) ->
+    ECodec = expand_codec(Codec, DrvInclude),
+    expand_codecs(Codecs, DrvInclude, [ECodec|ECodecs]).
 
-        {ok, #file_info{type = regular}} ->
-            error({file_empty, FileName});
-
-        {ok, #file_info{type = Type}} ->
-            error({invalid_type, FileName, Type});
-
-        {ok, Info} ->
-            error({unexpected_file_info, FileName, Info});
-
-        Error ->
-            error({failed_reading_file_info, File, Error})
-
-    end.
-
-
-read_files(Dir) ->
-    case file:list_dir(Dir) of
-        {ok, Files} ->
-            lists:sort(Files);
-        Error ->
-            error({failed_listing_dir, Dir, Error})
+expand_codec(Codec, flex) ->
+    case Codec of
+	pretty ->
+	    [{Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]}];
+	compact ->
+	    [{Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]}];
+	ber ->
+	    [];
+	per ->
+	    [];
+	erlang ->
+	    [];
+	Else ->
+	    error({invalid_codec, Else})
+    end;
+expand_codec(Codec, only_drv) ->
+    case Codec of
+	pretty ->
+	    [{Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, [flex_scanner]}];
+	compact ->
+	    [{Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, [flex_scanner]}];
+	ber ->
+	    [{Codec, megaco_ber_bin_encoder, [driver,native]},
+	     {Codec, megaco_ber_bin_encoder, [driver]},
+	     {Codec, megaco_ber_bin_encoder, [driver,native]},
+	     {Codec, megaco_ber_bin_encoder, [driver]}];
+	per ->
+	    [{Codec, megaco_per_bin_encoder, [driver,native]},
+	     {Codec, megaco_per_bin_encoder, [native]},
+	     {Codec, megaco_per_bin_encoder, [driver,native]},
+	     {Codec, megaco_per_bin_encoder, [native]}];
+	erlang ->
+	    Encoder = megaco_erl_dist_encoder,
+	    [
+	     {Codec, Encoder, [megaco_compressed,compressed]},
+	     {Codec, Encoder, [compressed]},
+	     {Codec, Encoder, [megaco_compressed,compressed]},
+	     {Codec, Encoder, [compressed]}
+	    ];
+	Else ->
+	    error({invalid_codec, Else})
+    end;
+expand_codec(Codec, no_drv) ->
+    case Codec of
+	pretty ->
+	    [{Codec, megaco_pretty_text_encoder, []},
+	     {Codec, megaco_pretty_text_encoder, []}];
+	compact ->
+	    [{Codec, megaco_compact_text_encoder, []},
+	     {Codec, megaco_compact_text_encoder, []}];
+	ber ->
+	    [{Codec, megaco_ber_bin_encoder, [native]},
+	     {Codec, megaco_ber_bin_encoder, []},
+	     {Codec, megaco_ber_bin_encoder, [native]},
+	     {Codec, megaco_ber_bin_encoder, []}];
+	per ->
+	    [{Codec, megaco_per_bin_encoder, [native]},
+	     {Codec, megaco_per_bin_encoder, []},
+	     {Codec, megaco_per_bin_encoder, [native]},
+	     {Codec, megaco_per_bin_encoder, []}];
+	erlang ->
+	    Encoder = megaco_erl_dist_encoder,
+	    [
+	     {Codec, Encoder, [megaco_compressed]},
+ 	     {Codec, Encoder, []},
+	     {Codec, Encoder, [megaco_compressed]},
+ 	     {Codec, Encoder, []}
+	    ];
+	Else ->
+	    error({invalid_codec, Else})
+    end;
+expand_codec(Codec, _) ->
+    case Codec of
+	pretty ->
+	    [{Codec, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Codec, megaco_pretty_text_encoder, []}];
+	compact ->
+	    [{Codec, megaco_compact_text_encoder, [flex_scanner]},
+	     {Codec, megaco_compact_text_encoder, []}];
+	ber ->
+	    [{Codec, megaco_ber_bin_encoder, [driver,native]},
+	     {Codec, megaco_ber_bin_encoder, [native]},
+	     {Codec, megaco_ber_bin_encoder, [driver]},
+	     {Codec, megaco_ber_bin_encoder, []}];
+	per ->
+	    [{Codec, megaco_per_bin_encoder, [driver,native]},
+	     {Codec, megaco_per_bin_encoder, [native]},
+	     {Codec, megaco_per_bin_encoder, [driver]},
+	     {Codec, megaco_per_bin_encoder, []}];
+	erlang ->
+	    Encoder = megaco_erl_dist_encoder,
+	    [
+	     {Codec, Encoder, [megaco_compressed,compressed]},
+	     {Codec, Encoder, [compressed]},
+	     {Codec, Encoder, [megaco_compressed]},
+ 	     {Codec, Encoder, []}
+	    ];
+	Else ->
+	    error({invalid_codec, Else})
     end.
 
 
@@ -451,9 +489,9 @@ stop_flex_scanner(Pid) ->
 
 flex_scanner_handler(Pid) ->
     case (catch megaco_flex_scanner:start()) of
-        {ok, Port} when is_port(Port) ->
-            Pid ! {flex_scanner_started, self(), {flex, Port}},
-            flex_scanner_handler(Pid, Port);
+        {ok, PortOrPorts} ->
+            Pid ! {flex_scanner_started, self(), {flex, PortOrPorts}},
+            flex_scanner_handler_loop(Pid, PortOrPorts);
         {error, {load_driver, {open_error, Reason}}} ->
             Error = {failed_loading_flex_scanner_driver, Reason},
             Pid ! {flex_scanner_error, Error},
@@ -464,19 +502,28 @@ flex_scanner_handler(Pid) ->
             exit(Error)
     end.
 
-flex_scanner_handler(Pid, Port) ->
+flex_scanner_handler_loop(Pid, PortOrPorts) ->
     receive
         {ping, Pinger} ->
             Pinger ! {pong, self()},
-            flex_scanner_handler(Pid, Port);
-        {'EXIT', Port, Reason} ->
+            flex_scanner_handler_loop(Pid, PortOrPorts);
+        {'EXIT', Port, Reason} when (Port =:= PortOrPorts) ->
             Pid ! {flex_scanner_exit, Reason},
             exit({flex_scanner_exit, Reason});
+        {'EXIT', Port, Reason} when is_port(Port) ->
+	    case megaco_flex_scanner:is_scanner_port(Port, PortOrPorts) of
+		true ->
+		    Pid ! {flex_scanner_exit, Reason},
+		    exit({flex_scanner_exit, Reason});
+		false ->
+		    %% Just ignore this crap
+		    flex_scanner_handler_loop(Pid, PortOrPorts)
+	    end;
         stop_flex_scanner ->
-            megaco_flex_scanner:stop(Port),
+            megaco_flex_scanner:stop(PortOrPorts),
             exit(normal);
         _Other ->
-            flex_scanner_handler(Pid, Port)
+            flex_scanner_handler_loop(Pid, PortOrPorts)
     end.
 
 

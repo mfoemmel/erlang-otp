@@ -31,6 +31,8 @@
 #include "dist.h"
 #include "beam_catches.h"
 #include "erl_binary.h"
+#define ERTS_WANT_EXTERNAL_TAGS
+#include "external.h"
 
 #define WORD_FMT "%X"
 #define ADDR_FMT "%X"
@@ -39,6 +41,7 @@
 
 static void dump_process_info(int to, void *to_arg, Process *p);
 static void dump_element(int to, void *to_arg, Eterm x);
+static void dump_dist_ext(int to, void *to_arg, ErtsDistExternal *edep);
 static void dump_element_nl(int to, void *to_arg, Eterm x);
 static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
 			      int yreg);
@@ -89,7 +92,10 @@ dump_process_info(int to, void *to_arg, Process *p)
 	erts_print(to, to_arg, "=proc_messages:%T\n", p->id);
 	for (mp = p->msg.first; mp != NULL; mp = mp->next) {
 	    Eterm mesg = ERL_MESSAGE_TERM(mp);
-	    dump_element(to, to_arg, mesg);
+	    if (is_value(mesg))
+		dump_element(to, to_arg, mesg);
+	    else
+		dump_dist_ext(to, to_arg, mp->data.dist_ext);
 	    mesg = ERL_MESSAGE_TOKEN(mp);
 	    erts_print(to, to_arg, ":");
 	    dump_element(to, to_arg, mesg);
@@ -121,13 +127,48 @@ dump_process_info(int to, void *to_arg, Process *p)
 	}
 	for (mp = p->msg.first; mp != NULL; mp = mp->next) {
 	    Eterm mesg = ERL_MESSAGE_TERM(mp);
-	    heap_dump(to, to_arg, mesg);
+	    if (is_value(mesg))
+		heap_dump(to, to_arg, mesg);
 	    mesg = ERL_MESSAGE_TOKEN(mp);
 	    heap_dump(to, to_arg, mesg);
 	}
 	if (p->dictionary) {
 	    erts_deep_dictionary_dump(to, to_arg, p->dictionary, heap_dump);
 	}
+    }
+}
+
+static void
+dump_dist_ext(int to, void *to_arg, ErtsDistExternal *edep)
+{
+    if (!edep)
+	erts_print(to, to_arg, "D0:E0:");
+    else {
+	byte *e;
+	size_t sz;
+	if (!(edep->flags & ERTS_DIST_EXT_ATOM_TRANS_TAB))
+	    erts_print(to, to_arg, "D0:");
+	else {
+	    int i;
+	    erts_print(to, to_arg, "D%X:", edep->attab.size);
+	    for (i = 0; i < edep->attab.size; i++)
+		dump_element(to, to_arg, edep->attab.atom[i]);
+	}
+	sz = edep->ext_endp - edep->extp;
+	e = edep->extp;
+	if (edep->flags & ERTS_DIST_EXT_DFLAG_HDR) {
+	    ASSERT(*e != VERSION_MAGIC);
+	    sz++;
+	}
+	else {
+	    ASSERT(*e == VERSION_MAGIC);
+	}
+
+	erts_print(to, to_arg, "E%X:", sz);
+	if (edep->flags & ERTS_DIST_EXT_DFLAG_HDR)
+	    erts_print(to, to_arg, "%02X", VERSION_MAGIC);
+	while (e < edep->ext_endp)
+	    erts_print(to, to_arg, "%02X", *e++);
     }
 }
 
@@ -405,7 +446,7 @@ dump_externally(int to, void *to_arg, Eterm term)
     }
 
     s = p = sbuf;
-    erts_to_external_format(NULL, term, &p, NULL, NULL);
+    erts_encode_ext(term, &p);
     erts_print(to, to_arg, "E%X:", p-s);
     while (s < p) {
 	erts_print(to, to_arg, "%02X", *s++);

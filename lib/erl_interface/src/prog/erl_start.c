@@ -728,7 +728,7 @@ static struct in_addr *get_addr(const char *hostname, struct in_addr *oaddr)
 #endif
 
   if (hp) {
-    memmove(oaddr,hp->h_addr_list[0],sizeof(oaddr));
+    memmove(oaddr,hp->h_addr_list[0],sizeof(*oaddr));
     return oaddr;
   }
   return NULL;

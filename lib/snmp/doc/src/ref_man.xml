@@ -38,6 +38,7 @@
   <include file="snmp_app"></include>
   <include file="snmpa"></include>
   <include file="snmpa_conf"></include>
+  <include file="snmpa_discovery_handler"></include>
   <include file="snmpa_error_report"></include>
   <include file="snmpa_error"></include>
   <include file="snmpa_error_io"></include>

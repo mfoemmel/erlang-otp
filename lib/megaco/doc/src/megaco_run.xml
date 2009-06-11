@@ -33,6 +33,7 @@
   </header>
 
   <section>
+    <marker id="starting"></marker>
     <title>Starting</title>
     <p>A user may have a number of "virtual" connections to other
       users. An MG is connected to at most one MGC, while an MGC may
@@ -118,6 +119,7 @@
   </section>
 
   <section>
+    <marker id="mgc_startup_call_flow"></marker>
     <title>MGC startup call flow</title>
     <p>In order to prepare the MGC for the reception of the initial
       message, hopefully a Service Change Request, the following needs
@@ -147,6 +149,7 @@
   </section>
 
   <section>
+    <marker id="mg_startup_call_flow"></marker>
     <title>MG startup call flow</title>
     <p>In order to prepare the MG for the sending of the initial
       message, hopefully a Service Change Request, the following needs
@@ -185,6 +188,7 @@
   </section>
 
   <section>
+    <marker id="config_megaco"></marker>
     <title>Configuring the Megaco stack</title>
     <p>There are three kinds of configuration:</p>
     <list type="bulleted">
@@ -208,6 +212,7 @@
   </section>
 
   <section>
+    <marker id="initial_config"></marker>
     <title>Initial configuration</title>
     <p>The initial configuration of the Megaco should be defined in the
       Erlang system configuration file. The following configured parameters
@@ -221,16 +226,39 @@
       </item>
       <item>
         <p><c><![CDATA[scanner = flex | {Module, Function, Arguments, Modules}]]></c></p>
-        <p><c><![CDATA[flex]]></c> will result in the start of the flex scanner.</p>
-        <p>The other alternative makes it possible for Megaco to start and
-          supervise a scanner written by the user (see 
-          <c><![CDATA[supervisor:start_child]]></c> for an explanation of the 
-          parameters).</p>
+<!--
+  For future use
+        <p><c><![CDATA[scanner = flex | {flex, Opts} | {Module, Function, Arguments, Modules}]]></c></p>
+-->
+        <list type="bulleted">
+          <item>
+            <p><c><![CDATA[flex]]></c> will result in the start of the flex scanner with default 
+              options.</p>
+          </item>
+<!--
+  For future use
+          <item>
+            <p><c><![CDATA[{flex, Opts}]]></c> will result in the start of the flex scanner with the 
+              specified options. <c>Opts</c> is two-tuple list where the only allowed option is
+              <c>{smp, boolean()}</c>, with default value beeing <c>false</c> and the value of 
+              <c>true</c> resulting in a start of an smp-optimized scanner. </p>
+          </item>
+-->
+          <item>
+            <p>The MFA alternative makes it possible for Megaco to start and
+              supervise a scanner written by the user (see 
+            <c><![CDATA[supervisor:start_child]]></c> for an explanation of the 
+              parameters).</p>
+          </item>
+        </list>
       </item>
     </list>
+    <p>See also <seealso marker="megaco_encode#text_config">Configuration of text encoding module(s)</seealso> 
+      for more info. </p>
   </section>
 
   <section>
+    <marker id="changing_config"></marker>
     <title>Changing the configuration</title>
     <p>The configuration can be changed during runtime. This is done with
       the functions <seealso marker="megaco#update_user_info">megaco:update_user_info</seealso> and 

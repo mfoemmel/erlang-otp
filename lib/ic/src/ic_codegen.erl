@@ -75,7 +75,7 @@ comment(Fd, C, A, erl) ->
 comment(Fd, C, A, java) -> 
     comment_prefixed(Fd, C, A, "//");
 %% Should be removed after a check if it's used !!!!! (LTH)
-comment(Fd, C, A, CommentSequence) when list(CommentSequence) ->
+comment(Fd, C, A, CommentSequence) when is_list(CommentSequence) ->
     comment_prefixed(Fd, C, A, CommentSequence).
 
 comment_inlined(Fd, C, A, Start, End) ->
@@ -131,7 +131,7 @@ mcomment_light(Fd, List, erl) ->
 mcomment_light(Fd, List, java) ->
     mcomment_light_prefixed(Fd, List, "//");
 %% Should be removed after a check if it's used !!!!! (LTH)
-mcomment_light(Fd, List, Prefix) when list(Prefix) ->
+mcomment_light(Fd, List, Prefix) when is_list(Prefix) ->
     mcomment_light_prefixed(Fd, List, Prefix).
     
 mcomment_light_inlined(Fd, List, Start, End, Intermediate) ->
@@ -159,12 +159,12 @@ nl(Fd) ->
 %%--------------------------------------------------------------------
 %% Emit record definitions for erlang
 %%--------------------------------------------------------------------
-record(G, X, Name, _IFRID, Recs) when record(X, struct) ->
+record(G, X, Name, _IFRID, Recs) when is_record(X, struct) ->
     F = ic_genobj:hrlfiled(G),
     emit(F, "-record(~p, {~p", [ic_util:to_atom(Name),hd(Recs)]),
     lists:foreach(fun(Y) -> emit(F, ", ~p", [Y]) end, tl(Recs)),
     emit(F, "}).\n");
-record(G, X, Name, _IFRID, _Recs) when record(X, union) ->
+record(G, X, Name, _IFRID, _Recs) when is_record(X, union) ->
     F = ic_genobj:hrlfiled(G),
     emit(F, "-record(~p, {label, value}).\n",[ic_util:to_atom(Name)]);
 record(G, _X, Name, IFRID, Recs) when length(Recs) > 3 ->

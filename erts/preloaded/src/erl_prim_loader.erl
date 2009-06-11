@@ -868,7 +868,7 @@ prim_get_file(PS, File) ->
                 {Res, PS};
             {archive, ArchiveFile, FileInArchive} ->
                 debug(PS, {archive_get_file, ArchiveFile, FileInArchive}),
-                FunnyFile = funny_split(FileInArchive, $/),
+                FunnyFile = funny_split(FileInArchive),
                 Fun =
                     fun({Funny, _GetInfo, GetBin}, Acc) ->
                             if
@@ -893,7 +893,7 @@ prim_list_dir(PS, Dir) ->
                 {Res, PS};
             {archive, ArchiveFile, FileInArchive} ->
                 debug(PS, {archive_list_dir, ArchiveFile, FileInArchive}),
-                FunnyDir = funny_split(FileInArchive, $/),
+                FunnyDir = funny_split(FileInArchive),
                 Fun =
                     fun({Funny, _GetInfo, _GetBin}, {Status, Names} = Acc) ->
                             case Funny of
@@ -953,7 +953,7 @@ prim_read_file_info(PS, File) ->
                 end;
             {archive, ArchiveFile, FileInArchive} ->
                 debug(PS, {archive_read_file_info, File}),
-                FunnyFile = funny_split(FileInArchive, $/),
+                FunnyFile = funny_split(FileInArchive),
                 Fun =
                     fun({Funny, GetInfo, _GetBin}, Acc)  ->
 			    if
@@ -1044,7 +1044,7 @@ open_archive(Archive, Acc, Fun) ->
     Wrapper =
         fun({N, GI, GB}, A) ->
                 %% Ensure full iteration at open
-                Funny = funny_split(N, $/),
+                Funny = funny_split(N),
                 {_Continue, A2} = Fun({Funny, GI, GB}, A),
                 {true, {true, Funny}, A2}
         end,
@@ -1147,14 +1147,14 @@ reverse([A, B | L]) ->
     lists:reverse(L, [B, A]). % BIF
                         
 %% Returns all lists in reverse order
-funny_split(List, Sep) ->
-   funny_split(List, Sep, [], []).
+funny_split(List) ->
+   funny_split(List, [], []).
 
-funny_split([Sep | Tail], Sep, Path, Paths) ->
-    funny_split(Tail, Sep, [], [Path | Paths]);
-funny_split([Head | Tail], Sep, Path, Paths) ->
-    funny_split(Tail, Sep, [Head | Path], Paths);
-funny_split([], _Sep, Path, Paths) ->
+funny_split([Sep | Tail], Path, Paths) when Sep =:= $/; Sep =:= $\\->
+    funny_split(Tail, [], [Path | Paths]);
+funny_split([Head | Tail], Path, Paths) ->
+    funny_split(Tail, [Head | Path], Paths);
+funny_split([], Path, Paths) ->
     [Path | Paths].
 
 name_split(ArchiveFile, File0) ->
@@ -1171,7 +1171,8 @@ do_name_split(undefined, File) ->
             %% Top dir in archive
             ArchiveFile = reverse(RevArchiveFile),
             {archive, ArchiveFile, []};
-        {split, _RevArchiveBase, RevArchiveFile, [$/ | FileInArchive]} ->
+        {split, _RevArchiveBase, RevArchiveFile, [Sep | FileInArchive]} 
+	when Sep =:= $/; Sep =:= $\\ ->
             %% File in archive
             ArchiveFile = reverse(RevArchiveFile),
             {archive, ArchiveFile, FileInArchive};
@@ -1189,7 +1190,7 @@ do_name_split(ArchiveFile0, File) ->
         {match, _RevPrimArchiveFile, FileInArchive} ->
             %% Primary archive
             case FileInArchive of
-                [$/ | FileInArchive2] ->
+                [Sep | FileInArchive2] when Sep =:= $/; Sep =:= $\\ ->
                     {archive, ArchiveFile, FileInArchive2};
                 _ ->
                     {archive, ArchiveFile, FileInArchive}

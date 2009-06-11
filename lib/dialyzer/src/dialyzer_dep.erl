@@ -532,13 +532,13 @@ test(Mod) ->
 			 [[{Caller, Callee} || Callee <- Set]|Acc]
 		     end, [], Deps),
   Edges1 = lists:flatten(Edges0),
-  Edges = [{X,Y} || {X,Y} <- Edges1, X =/= top],
+  Edges = [Edge || {X,_Y} = Edge <- Edges1, X =/= top],
   Fun = fun(SubTree, Acc) ->
 	    case cerl:type(SubTree) of
 	      'fun' ->
-		case lists:keysearch(id, 1, cerl:get_ann(SubTree)) of
+		case lists:keyfind(id, 1, cerl:get_ann(SubTree)) of
 		  false -> Acc;
-		  {value, {id, ID}} -> 
+		  {id, ID} -> 
 		    dict:store(cerl_trees:get_label(SubTree), ID, Acc)
 		end;
 	      module ->

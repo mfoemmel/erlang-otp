@@ -79,7 +79,8 @@ typedef struct {
     DbTerm* dbterm;
     void** bp;         /* {Hash|Tree}DbTerm** */
     Uint new_size;
-    int mustFinalize;  /* Need to call db_finalize_update_element? */
+    int mustResize;
+    void* lck;
 } DbUpdateHandle;
 
 
@@ -100,10 +101,9 @@ typedef struct db_table_method
 		   DbTable* tb, /* [in out] */
 		   Eterm key, 
 		   Eterm* ret);
-    int (*db_put)(Process* p, 
-		  DbTable* tb, /* [in out] */ 
-		  Eterm obj, 
-		  Eterm* ret);
+    int (*db_put)(DbTable* tb, /* [in out] */ 
+		  Eterm obj,
+		  int key_clash_fail); /* DB_ERROR_BADKEY if key exists */ 
     int (*db_get)(Process* p, 
 		  DbTable* tb, /* [in out] */ 
 		  Eterm key, 
@@ -113,16 +113,13 @@ typedef struct db_table_method
 			  Eterm key, 
 			  int index, 
 			  Eterm* ret);
-    int (*db_member)(Process* p, 
-		     DbTable* tb, /* [in out] */ 
+    int (*db_member)(DbTable* tb, /* [in out] */ 
 		     Eterm key, 
 		     Eterm* ret);
-    int (*db_erase)(Process* p,
-		    DbTable* tb,  /* [in out] */ 
+    int (*db_erase)(DbTable* tb,  /* [in out] */ 
 		    Eterm key, 
 		    Eterm* ret);
-    int (*db_erase_object)(Process* p,
-			   DbTable* tb, /* [in out] */ 
+    int (*db_erase_object)(DbTable* tb, /* [in out] */ 
 			   Eterm obj,
 			   Eterm* ret);
     int (*db_slot)(Process* p, 
@@ -133,12 +130,12 @@ typedef struct db_table_method
 			   DbTable* tb, /* [in out] */ 
 			   Eterm pattern,
 			   Sint chunk_size,
-			   int reverse, 
+			   int reverse,
 			   Eterm* ret);
     int (*db_select)(Process* p, 
 		     DbTable* tb, /* [in out] */ 
 		     Eterm pattern,
-		     int reverse, 
+		     int reverse,
 		     Eterm* ret);
     int (*db_select_delete)(Process* p, 
 			    DbTable* tb, /* [in out] */ 
@@ -165,8 +162,7 @@ typedef struct db_table_method
 				 DbTable* db /* [in out] */ );
 
     int (*db_free_table)(DbTable* db /* [in out] */ );
-    int (*db_free_table_continue)(DbTable* db, /* [in out] */  
-				  int first);
+    int (*db_free_table_continue)(DbTable* db); /* [in out] */  
     
     void (*db_print)(int to, 
 		     void* to_arg, 
@@ -178,21 +174,15 @@ typedef struct db_table_method
 			       void *arg);
     void (*db_check_table)(DbTable* tb);
 
-    /* Allocate and replace a dbterm with a new size.
-     * The new DbTerm must be initialized by caller (from the old).
-    */
-    DbTerm* (*db_alloc_newsize)(DbTable* tb,
-				void** bp,  /* XxxDbTerm** */
-				Uint new_tpl_sz);
-
-    /* Free a dbterm not in table.
-    */
-    void (*db_free_dbterm)(DbTable* tb, DbTerm* bp);
-
-    /* Lookup a dbterm by key. Return false if not found.
+    /* Lookup a dbterm for updating. Return false if not found.
     */
     int (*db_lookup_dbterm)(DbTable*, Eterm key, 
 			    DbUpdateHandle* handle); /* [out] */
+
+    /* Must be called for each db_lookup_dbterm that returned true,
+    ** even if dbterm was not updated.
+    */
+    void (*db_finalize_dbterm)(DbUpdateHandle* handle);
 
 } DbTableMethod;
 
@@ -212,26 +202,30 @@ typedef struct db_fixation {
 
 
 typedef struct db_table_common {
-    erts_refc_t ref;    /* ref count ro prevent table deletion */
+    erts_refc_t ref;
+    erts_refc_t fixref;       /* fixation counter */
 #ifdef ERTS_SMP
     erts_smp_rwmtx_t rwlock;  /* rw lock on table */
-    Uint32 type;              /* hash or tree; *read only* after creation */
+    erts_smp_mtx_t fixlock;   /* Protects fixations,megasec,sec,microsec */
+    int is_thread_safe;       /* No fine locking inside table needed */
+    Uint32 type;              /* hash or tree, private or not; *read only* after creation */
 #endif
     Eterm owner;              /* Pid of the creator */
-    Eterm the_name;           /* an atom   */
+    Eterm heir;               /* Pid of the heir */
+    Eterm heir_data;          /* To send in ETS-TRANSFER (is_immed or (DbTerm*) */
+    SysTimeval heir_started;  /* To further identify the heir */
+    Eterm the_name;           /* an atom */
     Eterm id;                 /* atom | integer */
     DbTableMethod* meth;      /* table methods */
-    Uint nitems;               /* Total number of items */
+    erts_smp_atomic_t nitems; /* Total number of items in table */
     erts_smp_atomic_t memory_size;/* Total memory size. NOTE: in bytes! */
     Uint megasec,sec,microsec; /* Last fixation time */
-    DbFixation *fixations;   /* List of processes who have fixed 
-				 the table */
-
+    DbFixation* fixations;    /* List of processes who have done safe_fixtable,
+                                 "local" fixations not included. */ 
     /* All 32-bit fields */
     Uint32 status;            /* bit masks defined  below */
     int slot;                 /* slot index in meta_main_tab */
     int keypos;               /* defaults to 1 */
-    int kept_items;           /* Number of kept elements due to fixation */
 } DbTableCommon;
 
 /* These are status bit patterns */
@@ -241,19 +235,20 @@ typedef struct db_table_common {
 #define DB_PUBLIC        (1 << 3)
 #define DB_BAG           (1 << 4)
 #define DB_SET           (1 << 5)
-#define DB_LHASH         (1 << 6)  /* not really used!!! */
-#define DB_FIXED         (1 << 7)
+/*#define DB_LHASH         (1 << 6)*/
+#define DB_FINE_LOCKED   (1 << 7)  /* fine grained locking enabled */
 #define DB_DUPLICATE_BAG (1 << 8)
 #define DB_ORDERED_SET   (1 << 9)
 #define DB_DELETE        (1 << 10) /* table is being deleted */
 
-#define ERTS_ETS_TABLE_TYPES (DB_BAG|DB_SET|DB_DUPLICATE_BAG|DB_ORDERED_SET)
+#define ERTS_ETS_TABLE_TYPES (DB_BAG|DB_SET|DB_DUPLICATE_BAG|DB_ORDERED_SET|DB_PRIVATE|DB_FINE_LOCKED)
 
 #define IS_HASH_TABLE(Status) (!!((Status) & \
 				  (DB_BAG | DB_SET | DB_DUPLICATE_BAG)))
 #define IS_TREE_TABLE(Status) (!!((Status) & \
 				  DB_ORDERED_SET))
-     /*TT*/
+#define NFIXED(T) (erts_refc_read(&(T)->common.fixref,0))
+#define IS_FIXED(T) (NFIXED(T) != 0) 
 
 Eterm erts_ets_copy_object(Eterm, Process*);
 
@@ -269,15 +264,11 @@ Eterm erts_ets_copy_object(Eterm, Process*);
 /* tb is an DbTableCommon and obj is an Eterm (tagged) */
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
 
-#define ONLY_WRITER(P,T) (((T)->common.status & DB_PRIVATE) || \
-(((T)->common.status & DB_PROTECTED) && (T)->common.owner == (P)->id))
+#define ONLY_WRITER(P,T) (((T)->common.status & (DB_PRIVATE|DB_PROTECTED)) \
+			  && (T)->common.owner == (P)->id)
 
 #define ONLY_READER(P,T) (((T)->common.status & DB_PRIVATE) && \
 (T)->common.owner == (P)->id)
-
-#define SOLE_LOCKER(P,Fixations) ((Fixations) != NULL && \
-(Fixations)->next == NULL && (Fixations)->pid == (P)->id && \
-(Fixations)->counter == 1)
 
 /* Function prototypes */
 Eterm db_get_trace_control_word_0(Process *p);

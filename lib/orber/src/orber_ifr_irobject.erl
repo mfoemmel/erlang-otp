@@ -50,7 +50,7 @@
 %%% Don't type check the object reference. We need to be able to
 %%% handle several types of objects that inherit from IRObject.
 
-destroy(L) when list(L) ->
+destroy(L) when is_list(L) ->
     destroy2(lists:reverse(L)).
 
 destroy2([Things_HD | Things_TL]) ->
@@ -59,9 +59,9 @@ destroy2([Things_HD | Things_TL]) ->
 
 destroy2([]) -> 
     ok;
-destroy2(F) when function(F) ->
+destroy2(F) when is_function(F) ->
     F();
-destroy2(Thing) when tuple(Thing) ->
+destroy2(Thing) when is_tuple(Thing) ->
     mnesia:delete(Thing),
     ok;
 destroy2(Thing) ->

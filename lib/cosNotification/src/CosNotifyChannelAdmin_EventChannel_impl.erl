@@ -419,7 +419,7 @@ get_consumeradmin(OE_THIS, _OE_FROM, State, 0) when ?is_UndefDefConsAdm(State) -
     end;	    
 get_consumeradmin(_OE_THIS, _OE_FROM, State, 0) ->
     {reply, ?get_defConsumerAdm(State), State};
-get_consumeradmin(_OE_THIS, _OE_FROM, State, AdminId) when integer(AdminId) ->
+get_consumeradmin(_OE_THIS, _OE_FROM, State, AdminId) when is_integer(AdminId) ->
     {reply, ?get_consumerAdmin(State, AdminId), State};
 get_consumeradmin(_, _, _, What) ->
     orber:dbg("[~p] CosNotifyChannelAdmin_EventChannel:get_consumeradmin(~p);~n"
@@ -452,7 +452,7 @@ get_supplieradmin(OE_THIS, _OE_FROM, State, 0) when ?is_UndefDefSuppAdm(State) -
     end;
 get_supplieradmin(_OE_THIS, _OE_FROM, State, 0) ->
     {reply, ?get_defSupplierAdm(State), State};
-get_supplieradmin(_OE_THIS, _OE_FROM, State, AdminId) when integer(AdminId) ->
+get_supplieradmin(_OE_THIS, _OE_FROM, State, AdminId) when is_integer(AdminId) ->
     {reply, ?get_supplierAdmin(State, AdminId), State};
 get_supplieradmin(_, _, _, What) ->
     orber:dbg("[~p] CosNotifyChannelAdmin_EventChannel:get_supplieradmin(~p);~n"
@@ -674,7 +674,7 @@ forward(any, [{_,H,_}|T], State, Event, Status) ->
 	ok ->
 	    ?DBG("CHANNEL FORWARD ANY: ~p~n",[Event]),
 	    forward(any, T, State, Event, Status);
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    orber:dbg("[~p] CosNotifyChannelAdmin_EventChannel:forward();~n"
 		      "Admin no longer exists; dropping it: ~p", 
 		      [?LINE, H], ?DEBUG_LEVEL),
@@ -697,7 +697,7 @@ forward(seq, [{_,H,_}|T], State, Event, Status) ->
 	ok ->
 	    ?DBG("CHANNEL FORWARD SEQUENCE: ~p~n",[Event]),
 	    forward(seq, T, State, Event, Status);
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    orber:dbg("[~p] CosNotifyChannelAdmin_EventChannel:forward();~n"
 		      "Admin no longer exists; dropping it: ~p", 
 		      [?LINE, H], ?DEBUG_LEVEL),

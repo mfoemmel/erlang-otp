@@ -32,6 +32,7 @@ XML_MISC_REF3_FILES = \
 XML_AGENT_REF3_FILES = \
 	snmpa.xml \
 	snmpa_conf.xml \
+	snmpa_discovery_handler.xml \
 	snmpa_error_report.xml \
 	snmpa_error.xml \
 	snmpa_error_io.xml \

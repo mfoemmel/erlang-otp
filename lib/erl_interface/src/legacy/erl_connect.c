@@ -250,7 +250,7 @@ int erl_send(int fd, ETERM *to ,ETERM *msg)
 	return -1;
     }
     
-    strcpy(topid.node, ERL_PID_NODE(to));
+    strcpy(topid.node, (char *)ERL_PID_NODE(to));
     topid.num = ERL_PID_NUMBER(to);
     topid.serial = ERL_PID_SERIAL(to);
     topid.creation = ERL_PID_CREATION(to);

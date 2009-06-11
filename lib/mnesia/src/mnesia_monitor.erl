@@ -254,6 +254,7 @@ terminate_proc(Who, Reason, _State) ->
 init([Parent]) ->
     process_flag(trap_exit, true),
     ?ets_new_table(mnesia_gvar, [set, public, named_table]), 
+    ?ets_new_table(mnesia_stats, [set, public, named_table]), 
     set(subscribers, []),
     mnesia_lib:verbose("~p starting: ~p~n", [?MODULE, self()]),
     Version = mnesia:system_info(version),
@@ -276,12 +277,6 @@ init([Parent]) ->
 	    mnesia_lib:create_counter(trans_log_writes_prev),
 	    mnesia_lib:create_counter(trans_restarts),
 	    mnesia_lib:create_counter(trans_failures),
-	    ?ets_new_table(mnesia_held_locks, [bag, public, named_table]), 
-	    ?ets_new_table(mnesia_tid_locks, [bag, public, named_table]),
-	    ?ets_new_table(mnesia_sticky_locks, [set, public, named_table]),
-	    ?ets_new_table(mnesia_lock_queue, 
-			   [bag, public, named_table, {keypos, 2}]),
-	    ?ets_new_table(mnesia_lock_counter, [set, public, named_table]),
 	    set(checkpoints, []),
 	    set(pending_checkpoints, []),
 	    set(pending_checkpoint_pids, []),
@@ -511,7 +506,7 @@ handle_cast({disconnect, Node}, State) ->
 	    ignore;
 	undefined ->
 	    ignore;
-	RemoteMon when pid(RemoteMon) -> 
+	RemoteMon when is_pid(RemoteMon) -> 
 	    unlink(RemoteMon)
     end,
     {noreply, State};
@@ -732,9 +727,9 @@ check_type(Env, Val) ->
 	    NewVal
     end.
 				      
-do_check_type(access_module, A) when atom(A) -> A;
+do_check_type(access_module, A) when is_atom(A) -> A;
 do_check_type(auto_repair, B) -> bool(B);
-do_check_type(backup_module, B) when atom(B) -> B;
+do_check_type(backup_module, B) when is_atom(B) -> B;
 do_check_type(debug, debug) -> debug;
 do_check_type(debug, false) -> none;
 do_check_type(debug, none) -> none;
@@ -743,25 +738,25 @@ do_check_type(debug, true) -> debug;
 do_check_type(debug, verbose) -> verbose;
 do_check_type(dir, V) -> filename:absname(V);
 do_check_type(dump_log_load_regulation, B) -> bool(B);
-do_check_type(dump_log_time_threshold, I) when integer(I), I > 0 -> I;
+do_check_type(dump_log_time_threshold, I) when is_integer(I), I > 0 -> I;
 do_check_type(dump_log_update_in_place, B) -> bool(B);
-do_check_type(dump_log_write_threshold, I) when integer(I), I > 0 -> I;
-do_check_type(event_module, A) when atom(A) -> A;
+do_check_type(dump_log_write_threshold, I) when is_integer(I), I > 0 -> I;
+do_check_type(event_module, A) when is_atom(A) -> A;
 do_check_type(ignore_fallback_at_startup, B) -> bool(B);
 do_check_type(fallback_error_function, {Mod, Func}) 
-  when atom(Mod), atom(Func) -> {Mod, Func};
+  when is_atom(Mod), is_atom(Func) -> {Mod, Func};
 do_check_type(embedded_mnemosyne, B) -> bool(B);
-do_check_type(extra_db_nodes, L) when list(L) ->
+do_check_type(extra_db_nodes, L) when is_list(L) ->
     Fun = fun(N) when N == node() -> false;
-	     (A) when atom(A) -> true
+	     (A) when is_atom(A) -> true
 	  end,
     lists:filter(Fun, L);
 do_check_type(max_wait_for_decision, infinity) -> infinity;
-do_check_type(max_wait_for_decision, I) when integer(I), I > 0 -> I;
+do_check_type(max_wait_for_decision, I) when is_integer(I), I > 0 -> I;
 do_check_type(schema_location, M) -> media(M);
 do_check_type(core_dir, "false") -> false;
 do_check_type(core_dir, false) -> false;
-do_check_type(core_dir, Dir) when list(Dir) -> Dir;
+do_check_type(core_dir, Dir) when is_list(Dir) -> Dir;
 do_check_type(pid_sort_order, r9b_plain) -> r9b_plain;
 do_check_type(pid_sort_order, "r9b_plain") -> r9b_plain;
 do_check_type(pid_sort_order, standard) -> standard;

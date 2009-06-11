@@ -36,7 +36,7 @@
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
-gen(G, N, X) when record(X, struct) ->
+gen(G, N, X) when is_record(X, struct) ->
     StructName = ic_forms:get_java_id(X),
     WireStructName = ic_forms:get_id2(X),
     emit_struct_class(G, N, X, StructName),

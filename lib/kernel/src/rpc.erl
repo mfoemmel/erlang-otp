@@ -229,13 +229,13 @@ proxy_user_flush() ->
 
 %% THE rpc client interface
 
--spec call(node(), atom(), atom(), [_]) -> any().
+-spec call(node(), atom(), atom(), [term()]) -> term().
 call(N,M,F,A) when node() =:= N ->  %% Optimize local call
     local_call(M, F, A);
 call(N,M,F,A) ->
     do_call(N, {call,M,F,A,group_leader()}, infinity).
 
--spec call(node(), atom(), atom(), [_], timeout()) -> any().
+-spec call(node(), atom(), atom(), [term()], timeout()) -> term().
 call(N,M,F,A,_Timeout) when node() =:= N ->  %% Optimize local call
     local_call(M,F,A);
 call(N,M,F,A,infinity) ->
@@ -243,13 +243,13 @@ call(N,M,F,A,infinity) ->
 call(N,M,F,A,Timeout) when is_integer(Timeout), Timeout >= 0 ->
     do_call(N, {call,M,F,A,group_leader()}, Timeout).
 
--spec block_call(node(), atom(), atom(), [_]) -> any().
+-spec block_call(node(), atom(), atom(), [term()]) -> term().
 block_call(N,M,F,A) when node() =:= N -> %% Optimize local call
     local_call(M,F,A);
 block_call(N,M,F,A) ->
     do_call(N, {block_call,M,F,A,group_leader()}, infinity).
 
--spec block_call(node(), atom(), atom(), [_], timeout()) -> any().
+-spec block_call(node(), atom(), atom(), [term()], timeout()) -> term().
 block_call(N,M,F,A,_Timeout) when node() =:= N ->  %% Optimize local call
     local_call(M, F, A);
 block_call(N,M,F,A,infinity) ->
@@ -301,7 +301,7 @@ rpc_check(X) -> X.
 %% The entire call is packed into an atomic transaction which 
 %% either succeeds or fails, i.e. never hangs (unless the server itself hangs).
 
--spec server_call(node(), atom(), _, _) -> _ | {'error', _}.
+-spec server_call(node(), atom(), term(), term()) -> term() | {'error', 'nodedown'}.
 server_call(Node, Name, ReplyWrapper, Msg) 
   when is_atom(Node), is_atom(Name) ->
     if node() =:= nonode@nohost, Node =/= nonode@nohost ->
@@ -322,9 +322,9 @@ server_call(Node, Name, ReplyWrapper, Msg)
 		    end
 	    end
     end.
-				    
 
--spec cast(node(), atom(), atom(), [_]) -> 'true'.
+
+-spec cast(node(), atom(), atom(), [term()]) -> 'true'.
 cast(Node, Mod, Fun, Args) when Node =:= node() ->
     catch spawn(Mod, Fun, Args),
     true;
@@ -334,11 +334,11 @@ cast(Node, Mod, Fun, Args) ->
 
 
 %% Asynchronous broadcast, returns nothing, it's just send'n prey
--spec abcast(atom(), _) -> 'abcast'.
+-spec abcast(atom(), term()) -> 'abcast'.
 abcast(Name, Mess) ->
     abcast([node() | nodes()], Name, Mess).
 
--spec abcast([node()], atom(), _) -> 'abcast'.
+-spec abcast([node()], atom(), term()) -> 'abcast'.
 abcast([Node|Tail], Name, Mess) ->
     Dest = {Name,Node},
     case catch erlang:send(Dest, Mess, [noconnect]) of
@@ -355,27 +355,25 @@ abcast([], _,_) -> abcast.
 %% message when we return from the call, we can't know that they have
 %% processed the message though.
 
--spec sbcast(atom(), _) -> {[node()], [node()]}.
+-spec sbcast(atom(), term()) -> {[node()], [node()]}.
 sbcast(Name, Mess) ->
     sbcast([node() | nodes()], Name, Mess).
 
--spec sbcast([node()], atom(), _) -> {[node()], [node()]}.
+-spec sbcast([node()], atom(), term()) -> {[node()], [node()]}.
 sbcast(Nodes, Name, Mess) ->
     Monitors = send_nodes(Nodes, ?NAME, {sbcast, Name, Mess}, []),
     rec_nodes(?NAME, Monitors).
 
--spec eval_everywhere(atom(), atom(), [_]) -> 'abcast'.
+-spec eval_everywhere(atom(), atom(), [term()]) -> 'abcast'.
 eval_everywhere(Mod, Fun, Args) ->
     eval_everywhere([node() | nodes()] , Mod, Fun, Args).
 
--spec eval_everywhere([node()], atom(), atom(), [_]) -> 'abcast'.
+-spec eval_everywhere([node()], atom(), atom(), [term()]) -> 'abcast'.
 eval_everywhere(Nodes, Mod, Fun, Args) ->
-    gen_server:abcast(Nodes, ?NAME,
-		      {cast,Mod,Fun,Args,group_leader()}).
+    gen_server:abcast(Nodes, ?NAME, {cast,Mod,Fun,Args,group_leader()}).
 
 
-send_nodes([Node|Tail], Name, Msg, Monitors) 
-  when is_atom(Node) ->
+send_nodes([Node|Tail], Name, Msg, Monitors) when is_atom(Node) ->
     Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
     catch {Name, Node} ! {self(), Msg},
@@ -410,18 +408,18 @@ unmonitor(Ref) when is_reference(Ref) ->
 
 
 %% Call apply(M,F,A) on all nodes in parallel
--spec multicall(atom(), atom(), [_]) -> {[_], [node()]}.
+-spec multicall(atom(), atom(), [term()]) -> {[_], [node()]}.
 multicall(M, F, A) -> 
     multicall(M, F, A, infinity).
 
--spec multicall([node()], atom(), atom(),  [_]) -> {[_], [node()]}
-	     ; (atom(), atom(), [_], timeout()) -> {[_], [node()]}.
+-spec multicall([node()], atom(), atom(), [term()])  -> {[_], [node()]}
+	     ; (atom(), atom(), [term()], timeout()) -> {[_], [node()]}.
 multicall(Nodes, M, F, A) when is_list(Nodes) ->
     multicall(Nodes, M, F, A, infinity);
 multicall(M, F, A, Timeout) ->
     multicall([node() | nodes()], M, F, A, Timeout).
 
--spec multicall([node()], atom(), atom(), [_], timeout()) -> {[_], [node()]}.
+-spec multicall([node()], atom(), atom(), [term()], timeout()) -> {[_], [node()]}.
 multicall(Nodes, M, F, A, infinity)
   when is_list(Nodes), is_atom(M), is_atom(F), is_list(A) ->
     do_multicall(Nodes, M, F, A, infinity);
@@ -449,11 +447,11 @@ do_multicall(Nodes, M, F, A, Timeout) ->
 %%
 %% There is no apparent order among the replies.
 
--spec multi_server_call(atom(), _) -> {[_], [node()]}.
+-spec multi_server_call(atom(), term()) -> {[_], [node()]}.
 multi_server_call(Name, Msg) ->
     multi_server_call([node() | nodes()], Name, Msg).
 
--spec multi_server_call([node()], atom(), _) -> {[_], [node()]}.
+-spec multi_server_call([node()], atom(), term()) -> {[_], [node()]}.
 multi_server_call(Nodes, Name, Msg) 
   when is_list(Nodes), is_atom(Name) ->
     Monitors = send_nodes(Nodes, Name, Msg, []),
@@ -469,8 +467,7 @@ safe_multi_server_call(Nodes, Name, Msg) ->
 
 
 rec_nodes(Name, Nodes) -> 
-    rec_nodes(Name, Nodes, [],[]).
-
+    rec_nodes(Name, Nodes, [], []).
 
 rec_nodes(_Name, [],  Badnodes, Replies) ->
     {Replies, Badnodes};
@@ -492,7 +489,7 @@ rec_nodes(Name, [{N,R} | Tail], Badnodes, Replies) ->
 %% rpc's towards the same node. I.e. it returns immediately and 
 %% it returns a Key that can be used in a subsequent yield(Key).
 
--spec async_call(node(), atom(), atom(), [_]) -> pid().
+-spec async_call(node(), atom(), atom(), [term()]) -> pid().
 async_call(Node, Mod, Fun, Args) ->
     ReplyTo = self(),
     spawn(
@@ -501,7 +498,7 @@ async_call(Node, Mod, Fun, Args) ->
 	      ReplyTo ! {self(), {promise_reply, R}}  %% self() is key
       end).
 
--spec yield(pid()) -> any().
+-spec yield(pid()) -> term().
 yield(Key) when is_pid(Key) ->
     {value,R} = do_yield(Key, infinity),
     R.
@@ -546,7 +543,7 @@ map_nodes([{M,F,A}|Tail],[Node|MoreNodes], Original) ->
 %% Parallel version of lists:map/3 with exactly the same 
 %% arguments and return value as lists:map/3,
 %% except that it calls exit/1 if a network error occurs.
--spec pmap({atom(),atom()}, [_], [_]) -> [_].
+-spec pmap({atom(),atom()}, [term()], [term()]) -> [term()].
 pmap({M,F}, As, List) ->
     check(parallel_eval(build_args(M,F,As, List, [])), []).
 

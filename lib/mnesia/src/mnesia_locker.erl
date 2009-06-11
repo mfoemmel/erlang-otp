@@ -80,6 +80,11 @@ start() ->
 init(Parent) ->
     register(?MODULE, self()),
     process_flag(trap_exit, true),
+    ?ets_new_table(mnesia_held_locks, [bag, private, named_table]), 
+    ?ets_new_table(mnesia_tid_locks, [bag, private, named_table]),
+    ?ets_new_table(mnesia_sticky_locks, [set, private, named_table]),
+    ?ets_new_table(mnesia_lock_queue, [bag, private, named_table, {keypos, 2}]),
+    
     proc_lib:init_ack(Parent, {ok, self()}),
     case ?catch_val(pid_sort_order) of
 	r9b_plain -> put(pid_sort_order, r9b_plain);
@@ -227,6 +232,10 @@ loop(State) ->
 	    verbose("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
 	    Parent = State#state.supervisor,
 	    sys:handle_system_msg(Msg, From, Parent, ?MODULE, [], State);
+
+	{get_table, From, LockTable} ->
+	    From ! {LockTable, ?ets_match_object(LockTable, '_')},
+	    loop(State);
 	
 	Msg ->
 	    error("~p got unexpected message: ~p~n", [?MODULE, Msg]),
@@ -454,7 +463,7 @@ set_read_lock_on_all_keys(Tid, From, Tab, [RealKey | Tail], Orig, Ack) ->
 	yes ->
 	    {granted, Val} = grant_lock(Tid, read, read, Oid),
 	    case opt_lookup_in_client(Val, Oid, read) of  % Ought to be invoked
-		C when record(C, cyclic) ->               % in the client
+		C = #cyclic{} ->               % in the client
 		    reply(From, {not_granted, C});
 		Val2 -> 
 		    Ack2 = lists:append(Val2, Ack),
@@ -710,7 +719,7 @@ do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
 	    granted;
 	{?MODULE, N, {granted, Val}} -> %% for rwlocks
 	    case opt_lookup_in_client(Val, Oid, write) of
-		C when record(C, cyclic) ->
+		C = #cyclic{} ->
 		    exit({aborted, C});
 		Val2 ->
 		    ?ets_insert(Store, {{locks, Tab, Key}, write}),
@@ -878,7 +887,7 @@ receive_wlocks(Nodes = [This|Ns], Res, Store, Oid) ->
 	    receive_wlocks(lists:delete(Node,Nodes), Res, Store, Oid);
 	{?MODULE, Node, {granted, Val}} -> %% for rwlocks
 	    case opt_lookup_in_client(Val, Oid, write) of
-		C when record(C, cyclic) ->
+		C = #cyclic{} ->
 		    flush_remaining(Nodes, Node, {aborted, C});
 		Val2 ->
 		    receive_wlocks(lists:delete(Node,Nodes), Val2, Store, Oid)
@@ -1005,7 +1014,7 @@ rlock_get_reply(Node, Store, Oid, {granted, V}) ->
     ?ets_insert(Store, {{locks, Tab, Key}, read}),
     ?ets_insert(Store, {nodes, Node}),
     case opt_lookup_in_client(V, Oid, read) of
-	C when record(C, cyclic) -> 
+	C = #cyclic{} -> 
 	    mnesia:abort(C);
 	Val -> 
 	    Val
@@ -1069,10 +1078,12 @@ rec_requests([], _Oid, _Store) ->
     ok.
 
 get_held_locks() ->
-    ?ets_match_object(mnesia_held_locks, '_').
+    ?MODULE ! {get_table, self(), mnesia_held_locks},
+    receive {mnesia_held_locks, Locks} -> Locks  end.
 
 get_lock_queue() ->
-    Q = ?ets_match_object(mnesia_lock_queue, '_'),
+    ?MODULE ! {get_table, self(), mnesia_lock_queue},
+    Q = receive {mnesia_lock_queue, Locks} -> Locks  end,
     [{Oid, Op, Pid, Tid, WFT} || {queue, Oid, Tid, Op, Pid, WFT} <- Q].
 
 do_stop() ->
@@ -1153,7 +1164,7 @@ cmp(X, X) -> 0;
 cmp(X1, X2) when X1 < X2 -> -1;
 cmp(_X1, _X2) -> 1.
 
-pid_to_pid_info(Pid) when pid(Pid) ->
+pid_to_pid_info(Pid) when is_pid(Pid) ->
     [?VERSION_MAGIC, ?PID_EXT, ?ATOM_EXT, NNL1, NNL0 | Rest]
 	= binary_to_list(term_to_binary(Pid)),
     [N3, N2, N1, N0, S3, S2, S1, S0, Creation] = drop(bytes2int(NNL1, NNL0),
@@ -1164,8 +1175,8 @@ pid_to_pid_info(Pid) when pid(Pid) ->
 	      creation = Creation}.
 
 drop(0, L) -> L;
-drop(N, [_|L]) when integer(N), N > 0 -> drop(N-1, L);
-drop(N, []) when integer(N), N > 0 -> [].
+drop(N, [_|L]) when is_integer(N), N > 0 -> drop(N-1, L);
+drop(N, []) when is_integer(N), N > 0 -> [].
 
 bytes2int(N1, N0) when 0 =< N1, N1 =< 255,
 		       0 =< N0, N0 =< 255 ->

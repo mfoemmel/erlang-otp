@@ -91,10 +91,11 @@ lookup_name(Label, #dialyzer_callgraph{name_map = NameMap})
   when is_integer(Label) ->
   dict:find(Label, NameMap).
 
--spec lookup_label(mfa_or_funlbl(), #dialyzer_callgraph{}) -> {'ok', integer()}.
+-spec lookup_label(mfa_or_funlbl(), #dialyzer_callgraph{}) ->
+                   'error' | {'ok', integer()}.
 
 lookup_label({_,_,_} = MFA, #dialyzer_callgraph{rev_name_map = RevNameMap}) ->
-  {ok, _Lbl} = dict:find(MFA, RevNameMap);
+  dict:find(MFA, RevNameMap);
 lookup_label(Label, #dialyzer_callgraph{}) when is_integer(Label) ->
   {ok, Label}.
 
@@ -314,23 +315,18 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
 
   %% Get rid of the 'top' function from nodes and edges.
   Names3 = ordsets:del_element(top, Names2),
-  AllEdges = NamedEdges2 ++ NamedEdges1,
-  NamedEdges3 = [E || {From, To} = E <- AllEdges, From =/= top, To =/= top],
-
+  NewNamedEdges2 =
+    [E || {From, To} = E <- NamedEdges2, From =/= top, To =/= top],
+  NewNamedEdges1 =
+    [E || {From, To} = E <- NamedEdges1, From =/= top, To =/= top],
+  NamedEdges3 = NewNamedEdges1 ++ NewNamedEdges2,
   CG1 = add_edges(NamedEdges3, Names3, CG),
-  {ModuleLocalCalls, InterModuleCalls} =
-    case get(dialyzer_race_analysis) of
-      true -> {remove_top_elements(NamedEdges1), NamedEdges2};
-      _ -> {[], []}
-    end,
   CG1#dialyzer_callgraph{calls=NewCalls,
 			 esc=NewEsc,
 			 name_map=NewNameMap,
 			 rec_var_map=NewRecVarMap, 
 			 rev_name_map=NewRevNameMap,
-			 self_rec=SelfRecs,
-			 module_local_calls=ModuleLocalCalls,
-			 inter_module_calls=InterModuleCalls}.
+			 self_rec=SelfRecs}.
 
 build_maps(Tree, RecVarMap, NameMap, RevNameMap) ->
   %% We only care about the named (top level) functions. The anonymous
@@ -581,10 +577,3 @@ to_ps(CG = #dialyzer_callgraph{}, File, Args) ->
   Command = io_lib:format("dot -Tps ~s -o ~s ~s", [Args, File, Dot_File]),
   _ = os:cmd(Command),
   ok.
-
-%%=============================================================================
-%% Race Utilities
-%%=============================================================================
-
-remove_top_elements(Calls) ->
-  [C || {From,_To} = C <- Calls, From =/= top].

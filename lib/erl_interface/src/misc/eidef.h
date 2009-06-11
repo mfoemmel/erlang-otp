@@ -37,6 +37,10 @@
 
 #define EISMALLBUF 2048
 
+#ifndef HAVE_SOCKLEN_T
+typedef int socklen_t;
+#endif
+
 typedef unsigned char  uint8;	/* FIXME use configure */
 typedef unsigned short uint16;
 typedef unsigned int   uint32;

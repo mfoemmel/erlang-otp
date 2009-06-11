@@ -100,6 +100,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef UNIX
+#include <unistd.h>
+#endif 
+
 #if defined WIN32
 #include <winsock2.h> 
 /*  #include <ws2tcpip.h >  When we can support a newer c-compiler*/
@@ -280,6 +284,8 @@ int main(void)
 
     spawn_sup(supervisor_port);
     database_handler(odbc_port);
+
+    return 0;
 }
 
 #ifdef WIN32

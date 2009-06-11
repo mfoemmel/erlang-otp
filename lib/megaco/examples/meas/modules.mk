@@ -19,8 +19,10 @@
 
 SCRIPT_SKELETONS = \
 	meas.sh.skel \
-	trans.sh.skel \
 	mstone1.sh.skel
+
+MESSAGE_PACKAGES = \
+	time_test.msgs
 
 MODULES = \
         megaco_codec_transform  \

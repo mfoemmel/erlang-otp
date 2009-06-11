@@ -139,7 +139,7 @@ stop(_) ->
 start_factory() ->
     start_factory(?DEFAULT_OPTIONS).
 
-start_factory(Options) when list(Options) ->
+start_factory(Options) when is_list(Options) ->
     'CosEventDomainAdmin_EventDomainFactory':oe_create(Options);
 start_factory(Options) ->
     orber:dbg("[~p] cosEventDomainApp:start_factory(~p);~n"
@@ -156,7 +156,7 @@ start_factory(Options) ->
 start_factory_link() ->
     start_factory_link(?DEFAULT_OPTIONS).
 
-start_factory_link(Options) when list(Options) ->
+start_factory_link(Options) when is_list(Options) ->
     'CosEventDomainAdmin_EventDomainFactory':oe_create_link(Options);
 start_factory_link(Options) ->
     orber:dbg("[~p] cosEventDomainApp:start_factory_link(~p);~n"

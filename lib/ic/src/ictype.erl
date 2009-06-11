@@ -69,7 +69,7 @@ scoped_lookup(G, S, N, X) ->
 %%	the type, therefore the declarator decides if the array type
 %%	kind is added or not.
 %%
-maybe_array(G, S, N, X, TK) when record(X, array) ->
+maybe_array(G, S, N, X, TK) when is_record(X, array) ->
     mk_array(G, S, N, X#array.size, TK);
 maybe_array(_G, _S, _N, _, TK) -> TK.
 
@@ -84,7 +84,7 @@ name2type(G, Name) ->
 
 %% This is en overloaded function,
 %% differs in input on unions
-member2type(_G, X, I) when record(X, union)->
+member2type(_G, X, I) when is_record(X, union)->
     Name = ic_forms:get_id2(I),
     case lists:keysearch(Name,2,element(6,X#union.tk)) of
 	false ->
@@ -182,7 +182,7 @@ isString(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isString(_G, _N, T)  when record(T, string) ->
+isString(_G, _N, T)  when is_record(T, string) ->
     true;
 isString(_G, _N, _Other) ->
     false. 
@@ -195,7 +195,7 @@ isWString(G, N, T) when element(1, T) == scoped_id ->  %% WSTRING
 	_ ->
 	    false
     end; 
-isWString(_G, _N, T)  when record(T, wstring) ->
+isWString(_G, _N, T)  when is_record(T, wstring) ->
     true;
 isWString(_G, _N, _Other) ->
     false. 
@@ -208,7 +208,7 @@ isArray(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isArray(_G, _N, T)  when record(T, array) ->
+isArray(_G, _N, T)  when is_record(T, array) ->
     true;
 isArray(_G, _N, _Other) ->
     false. 
@@ -221,7 +221,7 @@ isSequence(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isSequence(_G, _N, T)  when record(T, sequence) ->
+isSequence(_G, _N, T)  when is_record(T, sequence) ->
     true;
 isSequence(_G, _N, _Other) ->
     false. 
@@ -234,7 +234,7 @@ isStruct(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isStruct(_G, _N, T)  when record(T, struct) ->
+isStruct(_G, _N, T)  when is_record(T, struct) ->
     true;
 isStruct(_G, _N, _Other) ->
     false.
@@ -247,7 +247,7 @@ isUnion(G, N, T) when element(1, T) == scoped_id ->
         _Other ->
             false
     end; 
-isUnion(_G, _N, T)  when record(T, union) ->
+isUnion(_G, _N, T)  when is_record(T, union) ->
     true;
 isUnion(_G, _N, _Other) ->
     false.
@@ -261,7 +261,7 @@ isEnum(G, N, T) when element(1, T) == scoped_id ->
         _Other ->
             false
     end; 
-isEnum(_G, _N, T)  when record(T, enum) ->
+isEnum(_G, _N, T)  when is_record(T, enum) ->
     true;
 isEnum(_G, _N, _Other) ->
     false.
@@ -352,11 +352,11 @@ isBasicType( Type ) ->
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
-check(G, _S, N, X) when record(X, preproc) ->
+check(G, _S, N, X) when is_record(X, preproc) ->
     handle_preproc(G, N, X#preproc.cat, X),
     X;
 
-check(G, S, N, X) when record(X, op) ->
+check(G, S, N, X) when is_record(X, op) ->
     ?STDDBG,
     TK = tk_base(G, S, N, ic_forms:get_type(X)),
     tktab_add(G, S, N, X),
@@ -389,7 +389,7 @@ check(G, S, N, X) when record(X, op) ->
     end,
     X#op{params=Ps, tk=TK, raises=Raises};
 
-check(G, S, N, X) when record(X, interface) ->
+check(G, S, N, X) when is_record(X, interface) ->
     ?STDDBG,
     N2 = [ic_forms:get_id2(X) | N],
     TK = {tk_objref, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X)},
@@ -402,13 +402,13 @@ check(G, S, N, X) when record(X, interface) ->
     ic_symtab:store(G, N, X2),
     X2;
 
-check(G, S, N, X) when record(X, forward) ->
+check(G, S, N, X) when is_record(X, forward) ->
     ?STDDBG,
     tktab_add(G, S, N, X, {tk_objref, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X)}),
     X;
 
 
-check(G, S, N, X) when record(X, const) ->
+check(G, S, N, X) when is_record(X, const) ->
     ?STDDBG,
     case tk_base(G, S, N, ic_forms:get_type(X)) of
 	Err when element(1, Err) == error -> X;
@@ -427,7 +427,7 @@ check(G, S, N, X) when record(X, const) ->
 	    end
     end;
 
-check(G, S, N, X) when record(X, const) ->
+check(G, S, N, X) when is_record(X, const) ->
     ?STDDBG,
     case tk_base(G, S, N, ic_forms:get_type(X)) of
 	Err when element(1, Err) == error -> X;
@@ -442,27 +442,27 @@ check(G, S, N, X) when record(X, const) ->
 	    end
     end;
 
-check(G, S, N, X) when record(X, except) ->
+check(G, S, N, X) when is_record(X, except) ->
     ?STDDBG,
     TK = tk(G, S, N, X),
     X#except{tk=TK};
 
-check(G, S, N, X) when record(X, struct) ->
+check(G, S, N, X) when is_record(X, struct) ->
     ?STDDBG,
     TK = tk(G, S, N, X),
     X#struct{tk=TK};
 
-check(G, S, N, X) when record(X, enum) ->
+check(G, S, N, X) when is_record(X, enum) ->
     ?STDDBG,
     TK = tk(G, S, N, X),
     X#enum{tk=TK};
 
-check(G, S, N, X) when record(X, union) ->
+check(G, S, N, X) when is_record(X, union) ->
     ?STDDBG,
     TK = tk(G, S, N, X),
     X#union{tk=TK};
 
-check(G, S, N, X) when record(X, attr) ->
+check(G, S, N, X) when is_record(X, attr) ->
     ?STDDBG,
     TK = tk_base(G, S, N, ic_forms:get_type(X)),
     XX = #id_of{type=X},
@@ -470,12 +470,12 @@ check(G, S, N, X) when record(X, attr) ->
 		  ic_forms:get_idlist(X)),
     X#attr{tk=TK};
 
-check(G, S, N, X) when record(X, module) -> 
+check(G, S, N, X) when is_record(X, module) -> 
     ?STDDBG,
     tktab_add(G, S, N, X),
     X#module{body=check_list(G, S, [ic_forms:get_id2(X) | N], ic_forms:get_body(X))};
 
-check(G, S, N, X) when record(X, typedef) ->
+check(G, S, N, X) when is_record(X, typedef) ->
     ?STDDBG,
     TKbase = tk(G, S, N, X),
     X#typedef{tk=TKbase};
@@ -494,7 +494,7 @@ handle_preproc(_G, _N, _C, _X) -> ok.
 %%
 %%--------------------------------------------------------------------
 
-tk(G, S, N, X) when record(X, union) ->
+tk(G, S, N, X) when is_record(X, union) ->
     N2 = [ic_forms:get_id2(X) | N],
     DisrcTK = tk(G, S, N, ic_forms:get_type(X)),
     case check_switch_tk(G, S, N, X, DisrcTK) of
@@ -509,7 +509,7 @@ tk(G, S, N, X) when record(X, union) ->
 	    tk_void
     end;
 
-tk(G, S, N, X) when record(X, enum) ->
+tk(G, S, N, X) when is_record(X, enum) ->
     N2 = [ic_forms:get_id2(X) | N],
     tktab_add(G, S, N, X,
 	      {tk_enum, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X), 
@@ -519,7 +519,7 @@ tk(G, S, N, X) when record(X, enum) ->
 %% Note that the TK returned from this function is the base TK. It
 %% must be modified for each of the identifiers in the idlist (for
 %% array reasons).
-tk(G, S, N, X) when record(X, typedef) ->
+tk(G, S, N, X) when is_record(X, typedef) ->
     case X of
 	%% Special case only for term and java backend !
 	{typedef,{any,_},[{'<identifier>',_,"term"}],undefined} ->
@@ -546,12 +546,12 @@ tk(G, S, N, X) when record(X, typedef) ->
 	    TK
     end;
 
-tk(G, S, N, X) when record(X, struct) ->
+tk(G, S, N, X) when is_record(X, struct) ->
     N2 = [ic_forms:get_id2(X) | N],
     tktab_add(G, S, N, X, {tk_struct, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X), 
 			   tk_memberlist(G, S, N2, ic_forms:get_body(X))});
 
-tk(G, S, N, X) when record(X, except) ->
+tk(G, S, N, X) when is_record(X, except) ->
     N2 = [ic_forms:get_id2(X) | N],
     tktab_add(G, S, N, X, {tk_except, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X), 
 			   tk_memberlist(G, S, N2, ic_forms:get_body(X))});
@@ -559,21 +559,21 @@ tk(G, S, N, X) when record(X, except) ->
 tk(G, S, N, X) -> tk_base(G, S, N, X).
 
 
-tk_base(G, S, N, X) when record(X, sequence) ->
+tk_base(G, S, N, X) when is_record(X, sequence) ->
     {tk_sequence, tk(G, S, N, X#sequence.type), 
      len_eval(G, S, N, X#sequence.length)};
 
-tk_base(G, S, N, X) when record(X, string) ->
+tk_base(G, S, N, X) when is_record(X, string) ->
     {tk_string, len_eval(G, S, N, X#string.length)};
 
-tk_base(G, S, N, X) when record(X, wstring) ->  %% WSTRING
+tk_base(G, S, N, X) when is_record(X, wstring) ->  %% WSTRING
     {tk_wstring, len_eval(G, S, N, X#wstring.length)};
 
 %% Fixed constants can be declared as:
 %% (1)  const fixed pi = 3.14D; or
 %% (2)  typedef fixed<3,2> f32;
 %%      const f32 pi = 3.14D;
-tk_base(G, S, N, X) when record(X, fixed) -> 
+tk_base(G, S, N, X) when is_record(X, fixed) -> 
     %% Case 2
     {tk_fixed, len_eval(G, S, N, X#fixed.digits), len_eval(G, S, N, X#fixed.scale)};
 tk_base(_G, _S, _N, {fixed, _}) -> 
@@ -594,14 +594,14 @@ tk_base(G, S, N, {scoped_id,V1,V2,["TypeCode","CORBA"]}) ->
 	_ ->
 	    case scoped_lookup(G, S, N, {scoped_id,V1,V2,["TypeCode","CORBA"]}) of
 		T when element(1, T) == error -> T;
-		T when tuple(T) -> element(3, T)
+		T when is_tuple(T) -> element(3, T)
 	    end 
     end;
 
 tk_base(G, S, N, X) when element(1, X) == scoped_id ->
     case scoped_lookup(G, S, N, X) of
 	T when element(1, T) == error -> T;
-	T when tuple(T) -> element(3, T)
+	T when is_tuple(T) -> element(3, T)
     end;
 tk_base(_G, _S, _N, {long, _})			-> tk_long;
 tk_base(_G, _S, _N, {'long long', _})		-> tk_longlong;  %% LLONG
@@ -702,7 +702,7 @@ tktab_add(G, S, N, X, TK, Aux) ->
     tktab_add_id(G, S, N, X, ic_forms:get_id2(X), TK, Aux).
 
 
-tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,enumerator) ->
+tktab_add_id(G, S, N, X, Id, TK, Aux) when is_record(X,enumerator) ->
 
     %% Check if the "scl" flag is set to true
     %% if so, allow old semantics ( errornous )
@@ -731,7 +731,7 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,enumerator) ->
 %% Fixes the multiple file module definition check 
 %% but ONLY for Corba backend
 %%				
-tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,module) ->
+tktab_add_id(G, S, N, X, Id, TK, Aux) when is_record(X,module) ->
     case ic_options:get_opt(G, be) of
 	erl_template ->
 	    Name = [Id | N],
@@ -795,8 +795,8 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) ->
     Name = [Id | N],
     UName = mk_uppercase(Name),
     case ets:lookup(S, Name) of
-	[{_, forward, _, _}] when record(X, interface) -> ok;
-	[XX] when record(X, forward), element(2, XX)==interface -> ok;
+	[{_, forward, _, _}] when is_record(X, interface) -> ok;
+	[XX] when is_record(X, forward) andalso element(2, XX)==interface -> ok;
 	[_] -> ic_error:error(G, {multiply_defined, X});
 	[] ->
 	    case ets:lookup(S, UName) of
@@ -875,7 +875,7 @@ case_eval(G, S, N, DiscrTK, X) ->
 
 
 %% The enum declarator is in the union scope.
-do_special_enum(G, S, N, X) when record(X, enum) ->
+do_special_enum(G, S, N, X) when is_record(X, enum) ->
     tktab_add(G, S, N, #id_of{id=X#enum.id, type=X});
 do_special_enum(_G, _S, _N, _X) ->
     ok.
@@ -959,7 +959,7 @@ check_switch_tk(G, _S, _N, X, TK) -> ic_error:error(G, {illegal_switch_t, X, TK}
 %% Lookup a name
 name_lookup(G, S, N, X) ->
     case scoped_lookup(G, S, N, X) of
-	T when tuple(T) -> element(1, T)
+	T when is_tuple(T) -> element(1, T)
     end.
 
 
@@ -1021,7 +1021,7 @@ look_for_interface(G, S, Hd, Tl) ->
 	[{_, interface, _TK, Inh}] -> 
 	    case look_in_inherit(G, S, Hd, Inh) of
 		%% gather_inherit(G, S, Inh, [])) of
-		[X] when tuple(X) -> 
+		[X] when is_tuple(X) -> 
 		    [X];
 		_ -> 
 		    look_for_interface(G, S, Hd ++ [hd(Tl)], tl(Tl))
@@ -1032,7 +1032,7 @@ look_for_interface(G, S, Hd, Tl) ->
 
 look_in_inherit(G, S, Id, [I | Is]) ->
     case ets:lookup(S, Id ++ I) of
-	[X] when tuple(X) -> 
+	[X] when is_tuple(X) -> 
 	    [X];
 	[] ->  
 	    look_in_inherit(G, S, Id, Is)
@@ -1058,7 +1058,7 @@ mk_uppercase(L) ->
 
 calc_inherit_body(G, N, OrigBody, [X|Xs], InhBody) ->
     case ic_symtab:retrieve(G, X) of
-	Intf when record(Intf, interface) ->
+	Intf when is_record(Intf, interface) ->
 	    Body = filter_body(G, X, ic_forms:get_body(Intf), N, OrigBody, InhBody),
 	    calc_inherit_body(G, N, OrigBody, Xs, [{X, Body} | InhBody]);
 	XXX ->
@@ -1166,10 +1166,10 @@ is_equal(G, XPath, X, YPath, Y) ->
 collision(G, XPath, X, YPath, Y) ->
     I1 = get_beef(X),
 						%    I2 = get_beef(Y),
-    if record(I1, op) -> %%, record(I2, op) ->
+    if is_record(I1, op) -> %%, record(I2, op) ->
 	    ic_error:error(G, {inherit_name_collision, 
 			       {YPath, Y}, {XPath, X}});
-       record(I1, attr) -> %%, record(I2, attr) ->
+       is_record(I1, attr) -> %%, record(I2, attr) ->
 	    ic_error:error(G, {inherit_name_collision, 
 			       {YPath, Y}, {XPath, X}});
        true ->
@@ -1178,16 +1178,16 @@ collision(G, XPath, X, YPath, Y) ->
 				     {YPath, Y}, {XPath, X}}))
     end.
 
-has_idlist(X) when record(X, typedef) -> true;
-has_idlist(X) when record(X, member) -> true;
-has_idlist(X) when record(X, case_dcl) -> true;
-has_idlist(X) when record(X, attr) -> true;
+has_idlist(X) when is_record(X, typedef) -> true;
+has_idlist(X) when is_record(X, member) -> true;
+has_idlist(X) when is_record(X, case_dcl) -> true;
+has_idlist(X) when is_record(X, attr) -> true;
 has_idlist(_) -> false.
 
-replace_idlist(X, IdList) when record(X, typedef) -> X#typedef{id=IdList};
-replace_idlist(X, IdList) when record(X, attr) -> X#attr{id=IdList}.
+replace_idlist(X, IdList) when is_record(X, typedef) -> X#typedef{id=IdList};
+replace_idlist(X, IdList) when is_record(X, attr) -> X#attr{id=IdList}.
 
-get_beef(X) when record(X, id_of) -> X#id_of.type;
+get_beef(X) when is_record(X, id_of) -> X#id_of.type;
 get_beef(X) -> X.
 
 
@@ -1401,7 +1401,7 @@ searchIncludedTk({tk_array,TK,_},IR_ID) ->
     searchIncludedTk(TK,IR_ID);
 searchIncludedTk({tk_sequence,TK,_},IR_ID) ->
     searchIncludedTk(TK,IR_ID);
-searchIncludedTk(TK, _IR_ID) when atom(TK) ->
+searchIncludedTk(TK, _IR_ID) when is_atom(TK) ->
     false;
 searchIncludedTk(TK,IR_ID) ->
     case element(2,TK) == IR_ID of

@@ -105,3 +105,5 @@ dialog(?wxID_ABOUT,  Frame) ->
 
     wxDialog:showModal(MD),
     wxDialog:destroy(MD).
+
+

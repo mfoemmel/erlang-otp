@@ -392,6 +392,30 @@ class EwxNotebook : public wxNotebook {
  EwxNotebook() : wxNotebook() {};
 }; 
 
+class EwxChoicebook : public wxChoicebook { 
+ public: ~EwxChoicebook() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ EwxChoicebook(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style) : wxChoicebook(parent,id,pos,size,style) {};
+ EwxChoicebook() : wxChoicebook() {};
+}; 
+
+class EwxToolbook : public wxToolbook { 
+ public: ~EwxToolbook() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ EwxToolbook(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style) : wxToolbook(parent,id,pos,size,style) {};
+ EwxToolbook() : wxToolbook() {};
+}; 
+
+class EwxListbook : public wxListbook { 
+ public: ~EwxListbook() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ EwxListbook(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style) : wxListbook(parent,id,pos,size,style) {};
+ EwxListbook() : wxListbook() {};
+}; 
+
+class EwxTreebook : public wxTreebook { 
+ public: ~EwxTreebook() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ EwxTreebook(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style) : wxTreebook(parent,id,pos,size,style) {};
+ EwxTreebook() : wxTreebook() {};
+}; 
+
 class EwxTreeCtrl : public wxTreeCtrl { 
  public: ~EwxTreeCtrl() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
  EwxTreeCtrl(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style,const wxValidator& validator) : wxTreeCtrl(parent,id,pos,size,style,validator) {};
@@ -693,9 +717,9 @@ void WxeApp::delete_object(void *ptr, wxeRefData *refd) {
   case 63: delete (wxSizerFlags *) ptr; break;
   case 79: /* delete (wxCalendarDateAttr *) ptr;These objects must be deleted by owner object */ break;
   case 93: delete (wxTextAttr *) ptr; break;
-  case 198: /* delete (wxFileDataObject *) ptr;These objects must be deleted by owner object */ break;
-  case 199: /* delete (wxTextDataObject *) ptr;These objects must be deleted by owner object */ break;
-  case 200: /* delete (wxBitmapDataObject *) ptr;These objects must be deleted by owner object */ break;
+  case 202: /* delete (wxFileDataObject *) ptr;These objects must be deleted by owner object */ break;
+  case 203: /* delete (wxTextDataObject *) ptr;These objects must be deleted by owner object */ break;
+  case 204: /* delete (wxBitmapDataObject *) ptr;These objects must be deleted by owner object */ break;
   default: delete (wxObject *) ptr;
 }}
 

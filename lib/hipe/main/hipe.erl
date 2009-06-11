@@ -580,7 +580,7 @@ file(File) ->
 file(File, Options) when is_atom(File) ->
   case beam_lib:info(File) of
     L when is_list(L) ->
-      {value, {module, Mod}} = lists:keysearch(module, 1, L),
+      {module, Mod} = lists:keyfind(module, 1, L),
       case compile(Mod, File, Options) of
 	{ok, CompRet} ->
 	  {ok, Mod, CompRet};
@@ -603,10 +603,10 @@ file(File, Options) when is_atom(File) ->
 disasm(File) ->
   case beam_disasm:file(File) of
     #beam_file{exports=BeamExports, comp_info=CompInfo, code=BeamCode} ->
-      {value,{options,CompOpts}} = lists:keysearch(options,1,CompInfo),
-      HCompOpts = case lists:keysearch(hipe, 1, CompOpts) of
-		    {value, {hipe, L}} when is_list(L) -> L;
-		    {value, {hipe, X}} -> [X];
+      {options, CompOpts} = lists:keyfind(options, 1, CompInfo),
+      HCompOpts = case lists:keyfind(hipe, 1, CompOpts) of
+		    {hipe, L} when is_list(L) -> L;
+		    {hipe, X} -> [X];
 		    _ -> []
 		  end,
       Exports = fix_beam_exports(BeamExports),

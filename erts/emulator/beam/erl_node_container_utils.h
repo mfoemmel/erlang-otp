@@ -254,20 +254,20 @@ extern int erts_use_r9_pids_ports;
 #ifdef ARCH_64
 
 #define internal_ref_no_of_numbers(x)					\
-  (((Uint32 *) internal_ref_data((x)))[0])
+  (internal_ref_data((x))[0])
 #define internal_ref_numbers(x)						\
-  (&(((Uint32 *) internal_ref_data((x)))[1]))
+  (&internal_ref_data((x))[1])
 #define external_ref_no_of_numbers(x)					\
-  (((Uint32 *) external_ref_data((x)))[0])
+  (external_ref_data((x))[0])
 #define external_ref_numbers(x)						\
-  (&(((Uint32 *) external_ref_data((x)))[1]))
+  (&external_ref_data((x))[1])
 
 #else
 
 #define internal_ref_no_of_numbers(x)	(internal_ref_data_words((x)))
-#define internal_ref_numbers(x)		((Uint32 *) internal_ref_data((x)))
+#define internal_ref_numbers(x)		(internal_ref_data((x)))
 #define external_ref_no_of_numbers(x)	(external_ref_data_words((x)))
-#define external_ref_numbers(x)		((Uint32 *) external_ref_data((x)))
+#define external_ref_numbers(x)		(external_ref_data((x)))
 
 #endif
 

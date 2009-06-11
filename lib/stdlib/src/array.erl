@@ -886,7 +886,7 @@ from_list(List) ->
 -spec from_list(list(), term()) -> array().
 
 from_list([], Default) ->
-    new(0, {default,Default});
+    new({default,Default});
 from_list(List, Default) when is_list(List) ->
     {E, N, M} = from_list_1(?LEAFSIZE, List, Default, 0, [], []),
     #array{size = N, max = M, default = Default, elements = E};
@@ -960,7 +960,9 @@ from_list_test_() ->
     N3 = ?NODESIZE*N2,
     N4 = ?NODESIZE*N3,
     [?_assert(array:size(from_list([])) =:= 0),
+     ?_assert(array:is_fix(from_list([])) =:= false),
      ?_assert(array:size(from_list([undefined])) =:= 1),
+     ?_assert(array:is_fix(from_list([undefined])) =:= false),
      ?_assert(array:size(from_list(lists:seq(1,N1))) =:= N1),
      ?_assert(to_list(from_list(lists:seq(1,N0))) =:= lists:seq(1,N0)),
      ?_assert(to_list(from_list(lists:seq(1,N0+1))) =:= lists:seq(1,N0+1)),
@@ -1173,7 +1175,7 @@ from_orddict(Orddict) ->
 -spec from_orddict(indx_pairs(), term()) -> array().
 
 from_orddict([], Default) ->
-    new(0, {default,Default});
+    new({default,Default});
 from_orddict(List, Default) when is_list(List) ->
     {E, N, M} = from_orddict_1(?LEAFSIZE, List, 0, Default, 0, [], []),
     #array{size = N, max = M, default = Default, elements = E};
@@ -1221,7 +1223,9 @@ from_orddict_test_() ->
     N3 = ?NODESIZE*N2,
     N4 = ?NODESIZE*N3,
     [?_assert(array:size(from_orddict([])) =:= 0),
+     ?_assert(array:is_fix(from_orddict([])) =:= false),
      ?_assert(array:size(from_orddict([{0,undefined}])) =:= 1),
+     ?_assert(array:is_fix(from_orddict([{0,undefined}])) =:= false),
      ?_assert(array:size(from_orddict([{N0-1,undefined}])) =:= N0),
      ?_assert(array:size(from_orddict([{N,0}||N<-lists:seq(0,N1-1)]))
 	      =:= N1),

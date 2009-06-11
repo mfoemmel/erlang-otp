@@ -57,13 +57,57 @@
     <title>COMMON DATA TYPES </title>
     <p>Type definitions that are used more than once in
       this module:</p>
-    <p><c>boolean() = true | false </c></p>
-    <p><c>string() = list of ASCII characters</c></p>
-    <p><c>request_id() = ref() </c></p>
-    <p><c>profile() = atom()</c></p>
-    <p><c>path()  = string() representing a file path or directory path </c></p>  
+    <code type="none"><![CDATA[
+boolean()    = true | false 
+string()     = list of ASCII characters 
+request_id() = ref() 
+profile()    = atom()
+path()       = string() representing a file path or directory path 
+ip_address() = See inet(3)
+    ]]></code>
+
   </section>
   
+  <section>
+    <title>HTTP DATA TYPES </title>
+    <p>Type definitions that are related to HTTP:</p>
+    <p>For more information about HTTP see rfc 2616</p>
+
+    <code type="none"><![CDATA[
+method()        = head | get | put | post | trace | options | delete
+request()       = {url(), headers()} | 
+                  {url(), headers(), content_type(), body()}
+url()           = string() - Syntax according to the URI definition in rfc 2396, ex: "http://www.erlang.org"
+status_line()   = {http_version(), status_code(), reason_phrase()}
+http_version()  = string() ex: "HTTP/1.1"
+status_code()   = integer()
+reason_phrase() = string()
+content_type()  = string()
+headers()       = [header()]
+header()        = {field(), value()}
+field()         = string() 
+value()         = string() 
+body()          = string() | binary() 
+filename()      = string() 
+    ]]></code>
+
+  </section>
+  
+  <section>
+    <title>SSL DATA TYPES </title>
+    <p>Some type definitions relevant when using https,
+      for details <seealso marker="ssl:ssl">ssl(3)</seealso>: </p>
+    <code type="none"><![CDATA[
+ssl_options() = {verify,     code()}   | 
+                {depth,      depth()}  | 
+                {certfile,   path()}   | 
+                {keyfile,    path()}   | 
+                {password,   string()} | 
+                {cacertfile, path()}   | 
+                {ciphers,    string()} 
+    ]]></code>
+  </section>
+
   <section>
     <title>HTTP CLIENT SERVICE START/STOP </title>
     
@@ -86,42 +130,9 @@
     <p>The client can be stopped using inets:stop(httpc, Pid) or
     inets:stop(httpc, Profile).</p>
     
+    <marker id="cancel_request"></marker>
   </section>
   
-  <section>
-    <title>HTTP DATA TYPES </title>
-    <p>Type definitions that are related to HTTP:</p>
-    <p>For more information about HTTP see rfc 2616</p>
-
-    <p><c>method() = head | get | put | post | trace | options | delete </c></p>
-    <p><c>request() - {url(), headers()} |
-      {url(), headers(), content_type(), body()}
-    </c></p>
-    <p><c>url() = string() - Syntax according to the URI definition in rfc 2396, ex: "http://www.erlang.org"</c></p>
-    <p><c>status_line() =
-	{http_version(), status_code(), reason_phrase()}</c></p>
-    <p><c>http_version() = string() ex: "HTTP/1.1" </c></p>
-    <p><c>status_code() = integer()</c></p>
-    <p><c>reason_phrase() = string()</c></p>
-    <p><c>content_type() = string()</c></p>
-    <p><c>headers() = [{field(), value()}]</c></p>
-    <p><c>field() = string() </c></p>
-    <p><c>value() = string() </c></p> 
-    <p><c>body() = string() | binary() </c></p>
-    <p><c>filename = string() </c></p>
-
-  </section>
-  
-  <section>
-    <title>SSL DATA TYPES </title>
-    <p>Some type definitions relevant when using https,
-      for details <seealso marker="ssl:ssl">ssl(3)</seealso>: </p>
-    <p><c>
-      ssl_options() =
-      {verify, code()} | {depth, depth()} | {certfile, path()}
-      | {keyfile, path()} | {password, string()} | {cacertfile, path()}
-      | {ciphers, string()}     </c></p>
-  </section>
   <funcs>
     <func>
       <name>cancel_request(RequestId) -> </name>
@@ -134,8 +145,11 @@
       </type>
       <desc>
         <p>Cancels an asynchronous HTTP-request. </p>
+
+        <marker id="request1"></marker>
       </desc>
     </func>
+
     <func>
       <name>request(Url) -> </name>
       <name>request(Url, Profile) -> {ok, Result} | {error, Reason}</name>
@@ -148,8 +162,11 @@
       </type>
       <desc>
         <p>Equivalent to http:request(get, {Url, []}, [], []).</p>
+
+        <marker id="request2"></marker>
       </desc>
     </func>
+
     <func>
       <name>request(Method, Request, HTTPOptions, Options) -> </name>
       <name>request(Method, Request, HTTPOptions, Options, Profile) -> {ok, Result} | {ok, saved_to_file} | {error, Reason}</name>
@@ -215,17 +232,23 @@
           {http, {RequestId, stream, BinBodyPart},
           {http, {RequestId, stream_end, Headers} or
           {http, {RequestId, saved_to_file}}.</p>
+
+        <marker id="set_options"></marker>
       </desc>
     </func>
+
     <func>
       <name>set_options(Options) -> </name>
       <name>set_options(Options, Profile) -> ok | {error, Reason}</name>
       <fsummary>Sets options to be used for subsequent requests.</fsummary>
       <type>
         <v>Options = [Option]</v>
-        <v>Option = {proxy, {Proxy, NoProxy}} | {max_sessions, MaxSessions}
-	| {max_keep_alive_length, MaxKeepAlive} | {keep_alive_timeout, KeepAliveTimeout} |
-	{max_pipeline_length, MaxPipeline} |  {pipeline_timeout, PipelineTimeout} | {cookies | CookieMode} | {ipv6, Ipv6Mode} | {verbose, VerboseMode}</v>
+        <v>Option = {proxy, {Proxy, NoProxy}} | {max_sessions, MaxSessions} |
+	  {max_keep_alive_length, MaxKeepAlive} | {keep_alive_timeout, KeepAliveTimeout} |
+	  {max_pipeline_length, MaxPipeline} |  {pipeline_timeout, PipelineTimeout} | 
+          {cookies | CookieMode} | 
+          {ipfamily, IpFamily} | {ip, IpAddress} | {port, Port} | 
+          {verbose, VerboseMode} </v>
         <v>Proxy = {Hostname, Port}</v>
         <v>Hostname = string() </v>
         <d>ex: "localhost" or "foo.bar.se"</d>
@@ -238,23 +261,49 @@
         <v>IpDesc = string()</v>
         <d>ex: "134.138" or "[FEDC:BA98" (all IP-adresses starting with 134.138 or FEDC:BA98), "66.35.250.150" or "[2010:836B:4179::836B:4179]" (a complete IP-address).</d>
         <v>MaxSessions = integer() </v>
-        <d>Maximum number of persistent connections to a host.Default is 2. </d>
+        <d>Default is <em>2</em>. 
+          Maximum number of persistent connections to a host.</d>
 	<v>MaxKeepAlive = integer() </v>
-        <d>Maximum number of outstanding requests on the same connection to a host. Default is 2.</d>
+        <d>Default is <em>5</em>. 
+          Maximum number of outstanding requests on the same connection to 
+          a host.</d>
         <v>KeepAliveTimeout = integer() </v>
-        <d>If a persistent connection is idle longer than the keep_alive_timeout the client will close the connection. Default is 2 min. The server may also have a such a time out but you should not count on it!</d>
-
+        <d>Default is <em>120000</em> (= 2 min). 
+          If a persistent connection is idle longer than the 
+          keep_alive_timeout the client will close the connection. 
+          The server may also have a such a time out but you should 
+          not count on it!</d>
 	<v>MaxPipeline = integer() </v>
-        <d>Maximum number of outstanding requests on a piplined connection to a host. Default is 2.</d>
+        <d>Default is <em>2</em>. 
+          Maximum number of outstanding requests on a piplined connection to a host.</d>
         <v>PipelineTimeout = integer() </v>
-        <d>If a persistent connection is idle longer than the pipeline_timeout the client will close the connection. Default is 0 which will result in
-	that pipeling will not be used.</d>
+        <d>Default is <em>0</em>, 
+          which will result in pipeling not being used. 
+          If a persistent connection is idle longer than the 
+          pipeline_timeout the client will close the connection. </d>
         <v>CookieMode = enabled | disabled | verify </v>
-        <d>Default is disabled. If Cookies are enabled all valid cookies will automatically be saved in the client manager's cookie database. If the option verify is used the function http:verify_cookie/2 has to be called for the cookie to be saved.</d>
-        <v>ipv6Mode = enabled | disabled </v>
-        <d>By default enabled. This should normally be what you want. When it is enabled you can use both ipv4 and ipv6. The option is here to provide a workaround for buggy ipv6 stacks to ensure that ipv4 will always work.</d>
-        <v>VerboseMode = false | verbose |debug | trace </v>
-        <d>By default false. This option unless it is set to false switches on different levels of erlang trace on the client. It is a debug feature.</d>
+        <d>Default is <em>disabled</em>. 
+          If Cookies are enabled all valid cookies will automatically be 
+          saved in the client manager's cookie database. 
+          If the option verify is used the function http:verify_cookie/2 
+          has to be called for the cookie to be saved.</d>
+        <v>IpFamily = inet | inet6 | inet6fb4 </v>
+        <d>By default <em>inet</em>. 
+          When it is set to <c>inet6fb4</c> you can use both ipv4 and ipv6. 
+          It first tries <c>inet6</c> and if that does not works falls back to <c>inet</c>. 
+          The option is here to provide a workaround for buggy ipv6 stacks to ensure that 
+          ipv4 will always work.</d>
+	<v>IpAddress = ip_address() </v>
+        <d>If the host has several network interfaces, this option specifies which one to use. 
+          See gen_tcp:connect/3,4 for more info. </d>
+	<v>Port = integer() </v>
+        <d>Specify which local port number to use. 
+          See gen_tcp:connect/3,4 for more info. </d>
+        <v>VerboseMode = false | verbose | debug | trace </v>
+        <d>Default is <em>false</em>. 
+          This option is used to switch on (or off) 
+          different levels of erlang trace on the client. 
+          It is a debug feature.</d>
 	<v>Profile = profile()</v>
       </type>
       <desc>
@@ -274,6 +323,8 @@
             limit of 2 persistent connections per server, which is the
             default value of the max_sessions option. </p>
         </note>
+
+        <marker id="stream_next"></marker>
       </desc>
     </func>
     
@@ -287,7 +338,9 @@
       </type>
       <desc>
         <p>Triggers the next message to be streamed, e.i.
-	same behavior as active once for sockets.</p>
+	  same behavior as active once for sockets.</p>
+
+        <marker id="verify_cookie"></marker>
       </desc>
     </func>
     
@@ -306,8 +359,11 @@
           call this function if you set the option cookies to verify.
 	  If no profile is specifed the default profile will be used.
 	</p>
+
+        <marker id="cookie_header"></marker>
       </desc>
     </func>
+
     <func>
       <name>cookie_header(Url) -> </name>
       <name>cookie_header(Url, Profile) -> header() | {error, Rason}</name>

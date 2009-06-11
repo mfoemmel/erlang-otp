@@ -41,7 +41,7 @@
 %%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
-pre(M, F, [State, I]) when integer(I) ->
+pre(M, F, [State, I]) when is_integer(I) ->
     io:format("Precond called in process ~p: ~s:~s() ~p\n", [self(), M, F,  [State, I]]),
     ok;
 pre(_M, _F, _A) -> %% Just an silly example to get an exception case

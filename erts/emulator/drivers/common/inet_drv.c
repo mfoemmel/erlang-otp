@@ -1133,6 +1133,12 @@ static void *realloc_wrapper(void *current, size_t size){
   ((vec)[(i)+1] = (ErlDrvTermData)(val)), \
   ((i)+LOAD_INT_CNT))
 
+#define LOAD_UINT_CNT 2
+#define LOAD_UINT(vec, i, val) \
+  (((vec)[(i)] = ERL_DRV_UINT), \
+  ((vec)[(i)+1] = (ErlDrvTermData)(val)), \
+  ((i)+LOAD_UINT_CNT))
+
 #define LOAD_PORT_CNT 2
 #define LOAD_PORT(vec, i, port) \
   (((vec)[(i)] = ERL_DRV_PORT), \
@@ -2425,8 +2431,8 @@ static ErlDrvTermData   am_sctp_rtoinfo, /* Option names */
 ** by "sctp_parse_async_event" in case of SCTP_SEND_FAILED:
 */
 #define SCTP_PARSE_SNDRCVINFO_CNT                            \
-        (5*LOAD_ATOM_CNT + 7*LOAD_INT_CNT + LOAD_NIL_CNT +   \
-	 LOAD_LIST_CNT + LOAD_ASSOC_ID_CNT + LOAD_TUPLE_CNT)
+        (5*LOAD_ATOM_CNT + 5*LOAD_INT_CNT + 2*LOAD_UINT_CNT + \
+	 LOAD_NIL_CNT + LOAD_LIST_CNT + LOAD_ASSOC_ID_CNT + LOAD_TUPLE_CNT)
 static int sctp_parse_sndrcvinfo
 	   (ErlDrvTermData * spec, int i, struct sctp_sndrcvinfo * sri)
 {
@@ -2457,8 +2463,8 @@ static int sctp_parse_sndrcvinfo
     i = LOAD_INT	(spec, i, sock_ntohl(sri->sinfo_ppid));
     i = LOAD_INT	(spec, i, sri->sinfo_context);
     i = LOAD_INT	(spec, i, sri->sinfo_timetolive);
-    i = LOAD_INT	(spec, i, sri->sinfo_tsn);
-    i = LOAD_INT	(spec, i, sri->sinfo_cumtsn);
+    i = LOAD_UINT	(spec, i, sri->sinfo_tsn);
+    i = LOAD_UINT	(spec, i, sri->sinfo_cumtsn);
     i = LOAD_ASSOC_ID	(spec, i, sri->sinfo_assoc_id);
 
     /* Close up the record: */

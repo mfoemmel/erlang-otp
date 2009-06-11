@@ -34,9 +34,9 @@
 %%-----------------------------------------------------------------
 
 -type linkage()   :: 'link' | 'nolink'.
--type emgr_name() :: {'local', atom()} | {'global', atom()}.
-%%-type emgr_ref()  :: atom() | {atom(), atom()} |  {'global', atom()} | pid().
--type start_ret() :: {'ok', pid()} | {'error', term()}.
+-type emgr_name() :: {'local', atom()} | {'global', term()}.
+
+-type start_ret() :: {'ok', pid()} | 'ignore' | {'error', term()}.
 
 -type opts_flag() :: 'trace' | 'log' | 'statistics' | 'debug'
                    | {'logfile', string()}.
@@ -48,13 +48,13 @@
 %% start(GenMod, LinkP, Name, Mod, Args, Options)
 %%    GenMod = atom(), callback module implementing the 'real' fsm
 %%    LinkP = link | nolink
-%%    Name = {local, atom()} | {global, atom()}
+%%    Name = {local, atom()} | {global, term()}
 %%    Args = term(), init arguments (to Mod:init/1)
 %%    Options = [{timeout, Timeout} | {debug, [Flag]}]
 %%      Flag = trace | log | {logfile, File} | statistics | debug
 %%          (debug == log && statistics)
-%% Returns: {ok, Pid} | {error, Reason} |
-%%          {error, {already_started, Pid}}
+%% Returns: {ok, Pid} | ignore |{error, Reason} |
+%%          {error, {already_started, Pid}} |
 %%    The 'already_started' is returned only if Name is given 
 %%-----------------------------------------------------------------
 
@@ -198,15 +198,18 @@ do_call(Process, Label, Request, Timeout) ->
 	   end,
     try erlang:monitor(process, Process) of
 	Mref ->
-	    receive
-		{'DOWN', Mref, _, _, noconnection} ->
-		    exit({nodedown, Node});
-		{'DOWN', Mref, _, _, _} ->
-		    exit(noproc)
-	    after 0 ->
-		    Process ! {Label, {self(), Mref}, Request},
-		    wait_resp_mon(Node, Mref, Timeout)
-	    end
+	    %% If the monitor/2 call failed to set up a connection to a
+	    %% remote node, we don't want the '!' operator to attempt
+	    %% to set up the connection again. (If the monitor/2 call
+	    %% failed due to an expired timeout, '!' too would probably
+	    %% have to wait for the timeout to expire.) Therefore,
+	    %% use erlang:send/3 with the 'noconnect' option so that it
+	    %% will fail immediately if there is no connection to the
+	    %% remote node.
+
+	    catch erlang:send(Process, {Label, {self(), Mref}, Request},
+		  [noconnect]),
+	    wait_resp_mon(Node, Mref, Timeout)
     catch
 	error:_ ->
 	    %% Node (C/Java?) is not supporting the monitor.
@@ -230,13 +233,8 @@ do_call(Process, Label, Request, Timeout) ->
 wait_resp_mon(Node, Mref, Timeout) ->
     receive
 	{Mref, Reply} ->
-	    erlang:demonitor(Mref),
-	    receive 
-		{'DOWN', Mref, _, _, _} -> 
-		    {ok, Reply}
-	    after 0 -> 
-		    {ok, Reply}
-	    end;
+	    erlang:demonitor(Mref, [flush]),
+	    {ok, Reply};
 	{'DOWN', Mref, _, _, noconnection} ->
 	    exit({nodedown, Node});
 	{'DOWN', Mref, _, _, Reason} ->

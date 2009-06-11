@@ -137,7 +137,7 @@ try_timeout(TimeoutAt) ->
 %%            'EXIT', 'COMM_FAILURE' or 'OBJECT_NOT_EXIST'
 %%------------------------------------------------------------
 
-send_stubborn(M, F, A, MaxR, Wait) when list(A) ->
+send_stubborn(M, F, A, MaxR, Wait) when is_list(A) ->
     send_stubborn(M, F, A, MaxR, Wait, 0);
 send_stubborn(M, F, A, MaxR, Wait) ->
     send_stubborn(M, F, [A], MaxR, Wait, 0).
@@ -147,15 +147,15 @@ send_stubborn(M, F, A, MaxR, _Wait, MaxR) ->
 send_stubborn(M, F, A, MaxR, Wait, Times) ->
     ?debug_print("~p:~p(~p)  # of retries: ~p~n", [M,F,A, Times]),    
     case catch apply(M,F,A) of
-	{'EXCEPTION', E} when record(E, 'COMM_FAILURE')->
+	{'EXCEPTION', E} when is_record(E, 'COMM_FAILURE')->
 	    NewTimes = Times +1,
 	    timer:sleep(Wait),
 	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);
-	{'EXCEPTION', E} when record(E, 'TRANSIENT')->
+	{'EXCEPTION', E} when is_record(E, 'TRANSIENT')->
 	    NewTimes = Times +1,
 	    timer:sleep(Wait),
 	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);
-	{'EXCEPTION', E} when record(E, 'TIMEOUT')->
+	{'EXCEPTION', E} when is_record(E, 'TIMEOUT')->
 	    NewTimes = Times +1,
 	    timer:sleep(Wait),
 	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);

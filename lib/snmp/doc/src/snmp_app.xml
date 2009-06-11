@@ -88,6 +88,7 @@
       agent_option() = {restart_type,     restart_type()}     | 
                        {agent_type,       agent_type()}       |  
                        {agent_verbosity,  verbosity()}        |  
+                       {discovery,        agent_discovery()}  |  
                        {versions,         versions()}         |  
                        {priority,         priority()}         |  
                        {multi_threaded,   multi_threaded()}   |  
@@ -126,6 +127,46 @@
         <p>If <c>master</c>, one master agent is
           started. Otherwise, no agents are started. </p>
         <p>Default is <c>master</c>.</p>
+      </item>
+
+      <tag><c><![CDATA[agent_discovery() = [agent_discovery_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>agent_discovery_opt() = 
+          {terminating, agent_terminating_discovery_opts()} | 
+          {originating, agent_originating_discovery_opts()}</c></p>
+        <p>The <c>terminating</c> options effects discovery initiated by 
+          a manager. </p>
+        <p>The <c>originating</c> options effects discovery initiated 
+          by this agent. </p>
+        <p>For defaults see the options in <c>agent_discovery_opt()</c>.</p>
+      </item>
+
+      <tag><c><![CDATA[agent_terminating_discovery_opts() = [agent_terminating_discovery_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>agent_terminating_discovery_opt() = 
+          {enable, boolean()} | 
+          {stage2, discovery | plain}</c></p>
+        <p>These are options effecting discovery <c>terminating</c> in this
+          agent (i.e. initiated by a manager). </p>
+        <p>The default values for the <c>terminating</c> 
+          discovery options are: </p>
+        <list type="bulleted">
+          <item>enable: <c>true</c></item>
+          <item>stage2: <c>discovery</c></item>
+        </list>
+      </item>
+
+      <tag><c><![CDATA[agent_originating_discovery_opts() = [agent_originating_discovery_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>agent_originating_discovery_opt() = 
+          {enable, boolean()}</c></p>
+        <p>These are options effecting discovery <c>originating</c> in this
+          agent. </p>
+        <p>The default values for the <c>originating</c> 
+          discovery options are: </p>
+        <list type="bulleted">
+          <item>enable: <c>true</c></item>
+        </list>
       </item>
 
       <tag><c><![CDATA[multi_threaded() = bool() <optional>]]></c></tag>

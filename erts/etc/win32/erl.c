@@ -80,6 +80,7 @@ int main(int argc, char **argv)
   
 } 
 
+
 static char *replace_filename(char *path, char *new_base) 
 {
     int plen = strlen(path);
@@ -106,6 +107,122 @@ static char *do_lookup_in_section(InitSection *inis, char *name,
     return _strdup(p);
 }
 
+static void copy_latest_vsn(char *latest_vsn, char *next_vsn) 
+{
+    /* Copy */
+    char *lp;
+    char *np;
+    /* Find vsn */
+    for (lp = next_vsn+strlen(next_vsn)-1 ;lp >= next_vsn && *lp != '\\'; --lp)
+        ;
+    /* lp =+ length("erts-"); */
+    for (np = next_vsn+strlen(next_vsn)-1 ;np >= next_vsn && *np != '\\'; --np)
+        ;
+    /* np =+ length("erts-"); */
+    
+    for (; lp && np; ++lp, ++np) {
+	if (*lp == *np) {
+	    continue;
+	}	
+	if (*np == '.' || *np == '\0' || *np <= *lp) {
+	/* */
+	    return;
+	}
+	if (*lp == '.' || *lp == '\0') {
+	    strcpy(latest_vsn, next_vsn);
+	    return;
+	}
+    }
+    return;
+}
+
+static char *find_erlexec_dir2(char *install_dir) 
+{
+    /* List install dir and look for latest erts-vsn */
+
+    HANDLE dir_handle;	        /* Handle to directory. */
+    char wildcard[MAX_PATH];	/* Wildcard to search for. */
+    WIN32_FIND_DATA find_data;	/* Data found by FindFirstFile() or FindNext(). */
+    char latest_vsn[MAX_PATH];
+
+    /* Setup wildcard */
+    int length = strlen(install_dir);
+    char *p;
+
+    if (length+3 >= MAX_PATH) {
+	error("Cannot find erlexec.exe");
+    }
+
+    strcpy(wildcard, install_dir);
+    p = wildcard+length-1;
+    if (*p != '/' && *p != '\\')
+	*++p = '\\';
+    strcpy(++p, "erts-*");
+
+    /* Find first dir */
+    dir_handle = FindFirstFile(wildcard, &find_data);
+    if (dir_handle == INVALID_HANDLE_VALUE) {
+	/* No erts-vsn found*/
+	return NULL;
+    }	
+    strcpy(latest_vsn, find_data.cFileName);
+
+    /* Find the rest */
+    while(FindNextFile(dir_handle, &find_data)) {
+	copy_latest_vsn(latest_vsn, find_data.cFileName);
+    }
+    
+    FindClose(dir_handle);
+
+    p = malloc((strlen(install_dir)+1+strlen(latest_vsn)+4+1)*sizeof(char));
+
+    strcpy(p,install_dir);
+    strcat(p,"\\");
+    strcat(p,latest_vsn);
+    strcat(p,"\\bin");
+    return p;
+}
+
+static char *find_erlexec_dir(char *erlpath) 
+{
+    /* Assume that the path to erl is absolute and
+     * that it is not a symbolic link*/
+    
+    char *dir =_strdup(erlpath);
+    char *p;
+    char *p2;
+    
+    /* Chop of base name*/
+    for (p = dir+strlen(dir)-1 ;p >= dir && *p != '\\'; --p)
+        ;
+    *p ='\0';
+    p--;
+
+    /* Check if dir path is like ...\install_dir\erts-vsn\bin */
+    for (;p >= dir && *p != '\\'; --p)
+        ;
+    p--;
+    for (p2 = p;p2 >= dir && *p2 != '\\'; --p2)
+        ;
+    p2++;
+    if (strncmp(p2, "erts-", strlen("erts-")) == 0) {
+	p = _strdup(dir);
+	free(dir);
+	return p;
+    }
+
+    /* Assume that dir path is like ...\install_dir\bin */
+    *++p ='\0'; /* chop off bin dir */
+
+    p = find_erlexec_dir2(dir);
+    free(dir);
+    if (p == NULL) {
+	error("Cannot find erlexec.exe");
+    } else {
+	return p;
+    }
+}
+
 static void get_parameters(void)
 {
     char buffer[MAX_PATH];
@@ -126,21 +243,23 @@ static void get_parameters(void)
     ini_filename = replace_filename(buffer,INI_FILENAME);
 
     if ((inif = load_init_file(ini_filename)) == NULL) {
-	error("Could not load init file %s",ini_filename);
-    }
+	erlexec_dir = find_erlexec_dir(ini_filename);
+	SetEnvironmentVariable("ERLEXEC_DIR", erlexec_dir);
+    } else {
 
-    if ((inis = lookup_init_section(inif,INI_SECTION)) == NULL) {
+      if ((inis = lookup_init_section(inif,INI_SECTION)) == NULL) {
 	error("Could not find section %s in init file %s",
 	      INI_SECTION, ini_filename);
+      }
+      
+      erlexec_dir = do_lookup_in_section(inis, "Bindir", INI_SECTION, ini_filename);
+      free_init_file(inif);      
     }
-
-    erlexec_dir = do_lookup_in_section(inis, "Bindir", INI_SECTION, ini_filename);
-
+    
     erlexec_name = malloc(strlen(erlexec_dir) + strlen(ERLEXEC_BASENAME) + 2);
     strcpy(erlexec_name,erlexec_dir);
     strcat(erlexec_name, "\\" ERLEXEC_BASENAME);
     
-    free_init_file(inif);
     free(ini_filename);
 }
 

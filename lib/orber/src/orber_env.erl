@@ -157,7 +157,7 @@ get_keys() ->
 %% Exception: 
 %% Effect   : 
 %%-----------------------------------------------------------------
-get_env(Key) when atom(Key) ->
+get_env(Key) when is_atom(Key) ->
     case catch ets:lookup(?ENV_DB, Key) of
 	[#parameters{value = Val}] ->
 	    {ok, Val};
@@ -172,7 +172,7 @@ get_env(Key) when atom(Key) ->
 %% Exception: 
 %% Effect   : 
 %%-----------------------------------------------------------------
-set_env(Key, Value) when atom(Key) ->
+set_env(Key, Value) when is_atom(Key) ->
     case catch ets:insert(?ENV_DB, #parameters{key = Key, value = Value}) of
 	true ->
 	    ok;
@@ -336,7 +336,7 @@ create_security_info(ssl, Info) ->
 %%-----------------------------------------------------------------
 iiop_acl() ->
     case application:get_env(orber, iiop_acl) of
-	{ok, ACL} when list(ACL) ->
+	{ok, ACL} when is_list(ACL) ->
 	    ACL;
 	_ ->
 	    []
@@ -344,7 +344,7 @@ iiop_acl() ->
 
 iiop_packet_size() ->
     case application:get_env(orber, iiop_packet_size) of
-	{ok, Max} when integer(Max), Max > 0 ->
+	{ok, Max} when is_integer(Max) andalso Max > 0 ->
 	    Max;
 	_ ->
 	    infinity
@@ -353,7 +353,7 @@ iiop_packet_size() ->
 
 iiop_port() ->
     case application:get_env(orber, iiop_port) of
-	{ok, Port} when integer(Port), Port >= 0 ->
+	{ok, Port} when is_integer(Port) andalso Port >= 0 ->
 	    Port;
 	_ ->
 	    4001
@@ -361,7 +361,7 @@ iiop_port() ->
 
 nat_iiop_port() ->
     case application:get_env(orber, nat_iiop_port) of
-	{ok, Port} when integer(Port), Port > 0 ->
+	{ok, Port} when is_integer(Port) andalso Port > 0 ->
 	    Port;
 	{ok, {local, Default, _NATList}} ->
 	    Default;
@@ -371,7 +371,7 @@ nat_iiop_port() ->
 
 nat_iiop_port(LocalPort) ->
     case application:get_env(orber, nat_iiop_port) of
-	{ok, Port} when integer(Port), Port > 0 ->
+	{ok, Port} when is_integer(Port) andalso Port > 0 ->
 	    Port;
 	{ok, {local, Default, NATList}} ->
 	    orber_tb:keysearch(LocalPort, NATList, Default);
@@ -381,9 +381,9 @@ nat_iiop_port(LocalPort) ->
 
 iiop_out_ports() ->
     case application:get_env(orber, iiop_out_ports) of
-	{ok, {Min, Max}} when integer(Min), integer(Max), Min =< Max ->
+	{ok, {Min, Max}} when is_integer(Min) andalso is_integer(Max) andalso Min =< Max ->
 	    {Min, Max};
-	{ok, {Max, Min}} when integer(Min), integer(Max), Min < Max ->
+	{ok, {Max, Min}} when is_integer(Min) andalso is_integer(Max) andalso Min < Max ->
 	    {Min, Max};
 	_ ->
 	    0
@@ -391,9 +391,9 @@ iiop_out_ports() ->
 
 domain() -> 
     case application:get_env(orber, domain) of
-	{ok, Domain} when list(Domain) ->
+	{ok, Domain} when is_list(Domain) ->
 	    Domain;
-	{ok, Domain} when atom(Domain) ->
+	{ok, Domain} when is_atom(Domain) ->
 	    atom_to_list(Domain);
 	_ ->
 	    "ORBER"
@@ -412,9 +412,9 @@ ip_address_variable_defined() ->
 
 nat_host() ->
     case application:get_env(orber, nat_ip_address) of
-	{ok,I} when list(I) ->
+	{ok,I} when is_list(I) ->
 	    [I];
-	{ok,{multiple, [I|_] = IList}} when list(I) ->
+	{ok,{multiple, [I|_] = IList}} when is_list(I) ->
 	    IList;
 	{ok,{local, Default, _NATList}} ->
 	    [Default];
@@ -424,9 +424,9 @@ nat_host() ->
 
 nat_host([Host]) ->
     case application:get_env(orber, nat_ip_address) of
-	{ok,I} when list(I) ->
+	{ok,I} when is_list(I) ->
 	    [I];
-	{ok,{multiple, [I|_] = IList}} when list(I) ->
+	{ok,{multiple, [I|_] = IList}} when is_list(I) ->
 	    IList;
 	{ok,{local, Default, NATList}} ->
 	    [orber_tb:keysearch(Host, NATList, Default)]; 
@@ -437,13 +437,13 @@ nat_host([Host]) ->
 
 host() ->
     case application:get_env(orber, ip_address) of
-	{ok,I} when list(I) ->
+	{ok,I} when is_list(I) ->
 	    [I];
-	{ok,{multiple, [I|_] = IList}} when list(I) ->
+	{ok,{multiple, [I|_] = IList}} when is_list(I) ->
 	    IList;
 	%% IPv4. For IPv6 we only accept a string, but we must support this format
 	%% for IPv4 
-	{ok, {A1, A2, A3, A4}} when integer(A1+A2+A3+A4) ->
+	{ok, {A1, A2, A3, A4}} when is_integer(A1+A2+A3+A4) ->
 	    [integer_to_list(A1) ++ "." ++ integer_to_list(A2) ++ "." ++ integer_to_list(A3)
 	     ++ "." ++ integer_to_list(A4)];
 	_ ->
@@ -464,7 +464,7 @@ host() ->
 
 ip_address_local() ->
     case application:get_env(orber, ip_address_local) of
-	{ok,I} when list(I) ->
+	{ok,I} when is_list(I) ->
 	    [I];
 	_ ->
 	    []
@@ -531,7 +531,7 @@ giop_version() ->
 
 iiop_timeout() ->
     case application:get_env(orber, iiop_timeout) of
-	{ok, Int} when integer(Int) ->
+	{ok, Int} when is_integer(Int) ->
 	    if
 		Int > 1000000 ->
 		    error_logger:error_msg("Orber 'iiop_timeout' badly configured.~n"
@@ -547,7 +547,7 @@ iiop_timeout() ->
 
 iiop_connection_timeout() ->
     case application:get_env(orber, iiop_connection_timeout) of
-	{ok, Int} when integer(Int) ->
+	{ok, Int} when is_integer(Int) ->
 	    if
 		Int > 1000000 ->
 		    error_logger:error_msg("Orber 'iiop_connection_timeout' badly configured.~n"
@@ -563,7 +563,7 @@ iiop_connection_timeout() ->
 
 iiop_setup_connection_timeout() ->
     case application:get_env(orber, iiop_setup_connection_timeout) of
-	{ok, Int} when integer(Int) ->
+	{ok, Int} when is_integer(Int) ->
             %% Convert to msec.
 	    Int*1000;
 	_ ->
@@ -572,7 +572,7 @@ iiop_setup_connection_timeout() ->
 
 iiop_in_connection_timeout() ->
     case application:get_env(orber, iiop_in_connection_timeout) of
-	{ok, Int} when integer(Int) ->
+	{ok, Int} when is_integer(Int) ->
 	    if
 		Int > 1000000 ->
 		    error_logger:error_msg("Orber 'iiop_connection_timeout' badly configured.~n"
@@ -588,7 +588,7 @@ iiop_in_connection_timeout() ->
 
 iiop_max_fragments() ->
     case application:get_env(orber, iiop_max_fragments) of
-	{ok, Max} when integer(Max), Max > 0 ->
+	{ok, Max} when is_integer(Max) andalso Max > 0 ->
 	    Max;
 	_ ->
 	    infinity
@@ -596,7 +596,7 @@ iiop_max_fragments() ->
     
 iiop_max_in_requests() ->
     case application:get_env(orber, iiop_max_in_requests) of
-	{ok, Max} when integer(Max), Max > 0 ->
+	{ok, Max} when is_integer(Max) andalso Max > 0 ->
 	    Max;
 	_ ->
 	    infinity
@@ -604,7 +604,7 @@ iiop_max_in_requests() ->
 
 iiop_max_in_connections() ->
     case application:get_env(orber, iiop_max_in_connections) of
-	{ok, Max} when integer(Max), Max > 0 ->
+	{ok, Max} when is_integer(Max) andalso Max > 0 ->
 	    Max;
 	_ ->
 	    infinity
@@ -612,7 +612,7 @@ iiop_max_in_connections() ->
 
 iiop_backlog() ->
     case application:get_env(orber, iiop_backlog) of
-	{ok, Int} when integer(Int), Int >= 0 ->
+	{ok, Int} when is_integer(Int) andalso Int >= 0 ->
 	    Int;
 	_ ->
 	    5
@@ -647,7 +647,7 @@ get_flags() ->
 		    put(oe_orber_flags, Flags),
 		    Flags
 	    end;
-	Flags when integer(Flags) ->
+	Flags when is_integer(Flags) ->
 	    Flags
     end.
 
@@ -696,7 +696,7 @@ bidir_context() ->
 
 objectkeys_gc_time() ->
     case application:get_env(orber, objectkeys_gc_time) of
-	{ok, Int} when integer(Int) ->
+	{ok, Int} when is_integer(Int) ->
 	    if
 		Int > 1000000 ->
 		    error_logger:error_msg("Orber 'objectkeys_gc_time' badly configured.~n"
@@ -711,7 +711,7 @@ objectkeys_gc_time() ->
 
 get_ORBInitRef() ->
     case application:get_env(orber, orbInitRef) of
-	{ok, Ref} when list(Ref) ->
+	{ok, Ref} when is_list(Ref) ->
 	    Ref;
 	_ ->
 	    undefined
@@ -719,7 +719,7 @@ get_ORBInitRef() ->
 
 get_ORBDefaultInitRef() ->
     case application:get_env(orber, orbDefaultInitRef) of
-	{ok, Ref} when list(Ref) ->
+	{ok, Ref} when is_list(Ref) ->
 	    Ref;
 	_ ->
 	    undefined
@@ -727,7 +727,7 @@ get_ORBDefaultInitRef() ->
 
 get_debug_level() ->
     case application:get_env(orber, orber_debug_level) of
-	{ok, Level} when integer(Level)  ->
+	{ok, Level} when is_integer(Level)  ->
 	    Level;
 	_ ->
 	    0
@@ -739,9 +739,9 @@ get_debug_level() ->
 %%-----------------------------------------------------------------
 get_interceptors() ->
     case application:get_env(orber, interceptors) of
-	{ok, {native, PIs}} when list(PIs) ->
+	{ok, {native, PIs}} when is_list(PIs) ->
 	    {native, PIs};
-	{ok, {portable, PIs}} when list(PIs) ->
+	{ok, {portable, PIs}} when is_list(PIs) ->
 	    {portable, PIs};
 	_ ->
 	    false
@@ -749,9 +749,9 @@ get_interceptors() ->
 
 get_local_interceptors() ->
     case application:get_env(orber, local_interceptors) of
-	{ok, {native, PIs}} when list(PIs) ->
+	{ok, {native, PIs}} when is_list(PIs) ->
 	    {native, PIs};
-	{ok, {portable, PIs}} when list(PIs) ->
+	{ok, {portable, PIs}} when is_list(PIs) ->
 	    {portable, PIs};
 	_ ->
 	    false
@@ -762,9 +762,9 @@ get_cached_interceptors() ->
     case get(oe_orber_interceptor_cache) of
 	undefined ->
 	    PIs = case application:get_env(orber, local_interceptors) of
-		      {ok, {native, LPIs}} when list(LPIs) ->
+		      {ok, {native, LPIs}} when is_list(LPIs) ->
 			  {native, LPIs};
-		      {ok, {portable, LPIs}} when list(LPIs) ->
+		      {ok, {portable, LPIs}} when is_list(LPIs) ->
 			  {portable, LPIs};
 		      _ ->
 			  get_interceptors()
@@ -776,7 +776,7 @@ get_cached_interceptors() ->
     end.
 
 
-set_interceptors({Type, InterceptorList}) when list(InterceptorList) ->
+set_interceptors({Type, InterceptorList}) when is_list(InterceptorList) ->
     configure(interceptors, {Type, InterceptorList});
 set_interceptors(_) ->
     exit({error, "Usage: {Type, ModuleList}"}).
@@ -787,14 +787,14 @@ set_interceptors(_) ->
 %%-----------------------------------------------------------------
 is_lightweight() ->
     case application:get_env(orber, lightweight) of
-	{ok, L} when list(L) ->
+	{ok, L} when is_list(L) ->
 	    true;
 	_ ->
 	    false
     end.
 get_lightweight_nodes() ->
     case application:get_env(orber, lightweight) of
-	{ok, L} when list(L) ->
+	{ok, L} when is_list(L) ->
 	    L;
 	_ ->
 	    false
@@ -822,7 +822,7 @@ ssl_generation() ->
  
 iiop_ssl_ip_address_local() ->
     case application:get_env(orber, iiop_ssl_ip_address_local) of
-	{ok,I} when list(I) ->
+	{ok,I} when is_list(I) ->
 	    [I];
 	_ ->
 	    []
@@ -830,7 +830,7 @@ iiop_ssl_ip_address_local() ->
 
 iiop_ssl_backlog() ->
     case application:get_env(orber, iiop_ssl_backlog) of
-	{ok, Int} when integer(Int), Int >= 0 ->
+	{ok, Int} when is_integer(Int), Int >= 0 ->
 	    Int;
 	_ ->
 	    5
@@ -854,7 +854,7 @@ iiop_ssl_out_keepalive() ->
 
 iiop_ssl_accept_timeout() ->
     case application:get_env(orber, iiop_ssl_accept_timeout) of
-	{ok, N} when integer(N) ->
+	{ok, N} when is_integer(N) ->
 	    N * 1000;
 	_  -> 
 	    infinity
@@ -864,7 +864,7 @@ iiop_ssl_port() ->
     case application:get_env(orber, secure) of
 	{ok, ssl} ->
 	    case application:get_env(orber, iiop_ssl_port) of
-		{ok, Port} when integer(Port) ->
+		{ok, Port} when is_integer(Port) ->
 		    Port;
 		_ ->
 		    4002
@@ -877,7 +877,7 @@ nat_iiop_ssl_port() ->
     case application:get_env(orber, secure) of
 	{ok, ssl} ->
 	    case application:get_env(orber, nat_iiop_ssl_port) of
-		{ok, Port} when integer(Port), Port > 0 ->
+		{ok, Port} when is_integer(Port) andalso Port > 0 ->
 		    Port;
 		{ok, {local, Default, _NATList}} ->
 		    Default;
@@ -892,7 +892,7 @@ nat_iiop_ssl_port(LocalPort) ->
     case application:get_env(orber, secure) of
 	{ok, ssl} ->
 	    case application:get_env(orber, nat_iiop_ssl_port) of
-		{ok, Port} when integer(Port), Port > 0 ->
+		{ok, Port} when is_integer(Port) andalso Port > 0 ->
 		    Port;
 		{ok, {local, Default, NATList}} ->
 		    orber_tb:keysearch(LocalPort, NATList, Default);
@@ -905,9 +905,9 @@ nat_iiop_ssl_port(LocalPort) ->
 
 ssl_server_certfile() ->
     case application:get_env(orber, ssl_server_certfile) of
-	{ok, V1}  when list(V1) ->
+	{ok, V1}  when is_list(V1) ->
 	    V1;
-	{ok, V2}  when atom(V2) ->
+	{ok, V2}  when is_atom(V2) ->
 	    atom_to_list(V2);
 	_ ->
 	    []
@@ -917,9 +917,9 @@ ssl_client_certfile() ->
     case get(ssl_client_certfile) of
 	undefined ->
 	    case application:get_env(orber, ssl_client_certfile) of
-		{ok, V1}  when list(V1) ->
+		{ok, V1}  when is_list(V1) ->
 		    V1;
-		{ok, V2}  when atom(V2) ->
+		{ok, V2}  when is_atom(V2) ->
 		    atom_to_list(V2);
 		_ ->
 		    []
@@ -928,12 +928,12 @@ ssl_client_certfile() ->
 	    V
     end.
 
-set_ssl_client_certfile(Value) when list(Value) ->
+set_ssl_client_certfile(Value) when is_list(Value) ->
     put(ssl_client_certfile, Value).
     
 ssl_server_verify() ->
     Verify = case application:get_env(orber, ssl_server_verify) of
-	{ok, V} when integer(V) ->
+	{ok, V} when is_integer(V) ->
 	    V;
 	_ ->
 	    0
@@ -949,7 +949,7 @@ ssl_client_verify() ->
     Verify = case get(ssl_client_verify) of
 		 undefined ->
 		     case application:get_env(orber, ssl_client_verify) of
-			 {ok, V1} when integer(V1) ->
+			 {ok, V1} when is_integer(V1) ->
 			     V1;
 			 _ ->
 			     0
@@ -964,12 +964,12 @@ ssl_client_verify() ->
 	   0
     end.
 
-set_ssl_client_verify(Value) when integer(Value), Value =< 2, Value >= 0 ->
+set_ssl_client_verify(Value) when is_integer(Value) andalso Value =< 2 andalso Value >= 0 ->
     put(ssl_client_verify, Value), ok.
     
 ssl_server_depth() ->
     case application:get_env(orber, ssl_server_depth) of
-	{ok, V1} when integer(V1) ->
+	{ok, V1} when is_integer(V1) ->
 	    V1;
 	_ ->
 	    1
@@ -979,7 +979,7 @@ ssl_client_depth() ->
     case get(ssl_client_depth) of
 	undefined ->
 	    case application:get_env(orber, ssl_client_depth) of
-		{ok, V1} when integer(V1) ->
+		{ok, V1} when is_integer(V1) ->
 		    V1;
 		_ ->
 		    1
@@ -988,16 +988,16 @@ ssl_client_depth() ->
 	    V2
     end.
 
-set_ssl_client_depth(Value) when integer(Value) ->
+set_ssl_client_depth(Value) when is_integer(Value) ->
     put(ssl_client_depth, Value), ok.
     
 
 
 ssl_server_cacertfile() ->
     case application:get_env(orber, ssl_server_cacertfile) of
-	{ok, V1}  when list(V1) ->
+	{ok, V1}  when is_list(V1) ->
 	    V1;
-	{ok, V2}  when atom(V2) ->
+	{ok, V2}  when is_atom(V2) ->
 	    atom_to_list(V2);
 	_ ->
 	    []
@@ -1007,9 +1007,9 @@ ssl_client_cacertfile() ->
     case get(ssl_client_cacertfile) of
 	undefined ->
 	    case application:get_env(orber, ssl_client_cacertfile) of
-		{ok, V1}  when list(V1) ->
+		{ok, V1}  when is_list(V1) ->
 		    V1;
-		{ok, V2}  when atom(V2) ->
+		{ok, V2}  when is_atom(V2) ->
 		    atom_to_list(V2);
 		_ ->
 		    []
@@ -1018,13 +1018,13 @@ ssl_client_cacertfile() ->
 	    V3
     end.
 
-set_ssl_client_cacertfile(Value) when list(Value) ->
+set_ssl_client_cacertfile(Value) when is_list(Value) ->
     put(ssl_client_cacertfile, Value), ok.
     
 
 ssl_client_password() ->
     case application:get_env(orber, ssl_client_password) of
-	{ok, V1} when list(V1) ->
+	{ok, V1} when is_list(V1) ->
 	    V1;
 	_ ->
 	    []
@@ -1032,7 +1032,7 @@ ssl_client_password() ->
 
 ssl_server_password() ->
     case application:get_env(orber, ssl_server_password) of
-	{ok, V1} when list(V1) ->
+	{ok, V1} when is_list(V1) ->
 	    V1;
 	_ ->
 	    []
@@ -1040,7 +1040,7 @@ ssl_server_password() ->
 
 ssl_client_keyfile() ->
     case application:get_env(orber, ssl_client_keyfile) of
-	{ok, V1} when list(V1) ->
+	{ok, V1} when is_list(V1) ->
 	    V1;
 	_ ->
 	    []
@@ -1048,7 +1048,7 @@ ssl_client_keyfile() ->
 
 ssl_server_keyfile() ->
     case application:get_env(orber, ssl_server_keyfile) of
-	{ok, V1} when list(V1) ->
+	{ok, V1} when is_list(V1) ->
 	    V1;
 	_ ->
 	    []
@@ -1056,7 +1056,7 @@ ssl_server_keyfile() ->
 
 ssl_client_ciphers() ->
     case application:get_env(orber, ssl_client_ciphers) of
-	{ok, V1} when list(V1) ->
+	{ok, V1} when is_list(V1) ->
 	    V1;
 	_ ->
 	    []
@@ -1064,7 +1064,7 @@ ssl_client_ciphers() ->
 
 ssl_server_ciphers() ->
     case application:get_env(orber, ssl_server_ciphers) of
-	{ok, V1} when list(V1) ->
+	{ok, V1} when is_list(V1) ->
 	    V1;
 	_ ->
 	    []
@@ -1072,7 +1072,7 @@ ssl_server_ciphers() ->
 
 ssl_client_cachetimeout() ->
     case application:get_env(orber, ssl_client_cachetimeout) of
-	{ok, V1} when integer(V1) ->
+	{ok, V1} when is_integer(V1) ->
 	    V1;
 	_ ->
 	    infinity
@@ -1080,7 +1080,7 @@ ssl_client_cachetimeout() ->
 
 ssl_server_cachetimeout() ->
     case application:get_env(orber, ssl_server_cachetimeout) of
-	{ok, V1} when integer(V1) ->
+	{ok, V1} when is_integer(V1) ->
 	    V1;
 	_ ->
 	    infinity
@@ -1093,12 +1093,12 @@ ssl_server_cachetimeout() ->
 %% Exception: 
 %% Effect   : 
 %%-----------------------------------------------------------------
-configure(Key, Value) when atom(Key) ->
+configure(Key, Value) when is_atom(Key) ->
     configure(Key, Value, check);
 configure(Key, _) ->
     ?EFORMAT("Given key (~p) not an atom.", [Key]).
 
-configure_override(Key, Value)  when atom(Key) ->
+configure_override(Key, Value)  when is_atom(Key) ->
     configure(Key, Value, loaded);
 configure_override(Key, _) ->
     ?EFORMAT("Given key (~p) not an atom.", [Key]).
@@ -1110,7 +1110,7 @@ configure_override(Key, _) ->
 %% Exception: 
 %% Effect   : 
 %%-----------------------------------------------------------------
-multi_configure(KeyValueList) when list(KeyValueList) ->
+multi_configure(KeyValueList) when is_list(KeyValueList) ->
     case orber_tb:is_loaded() of
 	false ->
 	    application:load(orber),
@@ -1138,11 +1138,11 @@ multi_configure_helper([What|_], _) ->
 
 %%------ Keys we can update at any time -----
 %% Initial Services References
-configure(orbDefaultInitRef, String, Status) when list(String) ->
+configure(orbDefaultInitRef, String, Status) when is_list(String) ->
     do_configure(orbDefaultInitRef, String, Status);
 configure(orbDefaultInitRef, undefined, Status) ->
     do_configure(orbDefaultInitRef, undefined, Status);
-configure(orbInitRef, String, Status) when list(String) ->
+configure(orbInitRef, String, Status) when is_list(String) ->
     do_configure(orbInitRef, String, Status);
 configure(orbInitRef, undefined, Status) ->
     do_configure(orbInitRef, undefined, Status);
@@ -1156,10 +1156,10 @@ configure(giop_version, {1, 2}, Status) ->
 %% configure 'iiop_timout' will only have effect on new requests.
 configure(iiop_timeout, infinity, Status) ->
     do_configure(iiop_timeout, infinity, Status);
-configure(iiop_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
+configure(iiop_timeout, Value, Status) when is_integer(Value) andalso Value =< 1000000 ->
     do_configure(iiop_timeout, Value, Status);
 %% Backlog
-configure(iiop_backlog, Value, Status) when integer(Value), Value >= 0 ->
+configure(iiop_backlog, Value, Status) when is_integer(Value) andalso Value >= 0 ->
     do_configure(iiop_backlog, Value, Status);
 %% configure 'iiop_in_keepalive' will only have effect on new connections.
 configure(iiop_in_keepalive, true, Status) ->
@@ -1174,91 +1174,91 @@ configure(iiop_out_keepalive, false, Status) ->
 %% configure 'iiop_connection_timout' will only have effect on new connections.
 configure(iiop_connection_timeout, infinity, Status) ->
     do_configure(iiop_connection_timeout, infinity, Status);
-configure(iiop_connection_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
+configure(iiop_connection_timeout, Value, Status) when is_integer(Value) andalso Value =< 1000000 ->
     do_configure(iiop_connection_timeout, Value, Status);
 %% configure 'iiop_in_connection_timout' will only have effect on new connections.
 configure(iiop_in_connection_timeout, infinity, Status) ->
     do_configure(iiop_in_connection_timeout, infinity, Status);
-configure(iiop_in_connection_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
+configure(iiop_in_connection_timeout, Value, Status) when is_integer(Value) andalso Value =< 1000000 ->
     do_configure(iiop_in_connection_timeout, Value, Status);
 %% configure 'iiop_setup_connection_timeout' will only have effect on new connections.
 configure(iiop_setup_connection_timeout, infinity, Status) ->
     do_configure(iiop_setup_connection_timeout, infinity, Status);
-configure(iiop_setup_connection_timeout, Value, Status) when integer(Value) ->
+configure(iiop_setup_connection_timeout, Value, Status) when is_integer(Value) ->
     do_configure(iiop_setup_connection_timeout, Value, Status);
 %% configure 'iiop_max_fragments' will only have effect on new connections.
 configure(iiop_max_fragments, infinity, Status) ->
     do_configure(iiop_max_fragments, infinity, Status);
-configure(iiop_max_fragments, Value, Status) when integer(Value), Value > 0 ->
+configure(iiop_max_fragments, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_configure(iiop_max_fragments, Value, Status);
 %% configure 'iiop_max_in_requests' will only have effect on new connections.
 configure(iiop_max_in_requests, infinity, Status) ->
     do_configure(iiop_max_in_requests, infinity, Status);
-configure(iiop_max_in_requests, Value, Status) when integer(Value), Value > 0 ->
+configure(iiop_max_in_requests, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_configure(iiop_max_in_requests, Value, Status);
 %% configure 'iiop_max_in_connections' will only have effect on new connections.
 configure(iiop_max_in_connections, infinity, Status) ->
     do_configure(iiop_max_in_connections, infinity, Status);
-configure(iiop_max_in_connections, Value, Status) when integer(Value), Value > 0 ->
+configure(iiop_max_in_connections, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_configure(iiop_max_in_connections, Value, Status);
 %% Garbage Collect the object keys DB.
 configure(objectkeys_gc_time, infinity, Status) ->
     do_configure(objectkeys_gc_time, infinity, Status);
-configure(objectkeys_gc_time, Value, Status) when integer(Value), Value =< 1000000 ->
+configure(objectkeys_gc_time, Value, Status) when is_integer(Value) andalso Value =< 1000000 ->
     do_configure(objectkeys_gc_time, Value, Status);
 %% Orber debug printouts
-configure(orber_debug_level, Value, Status) when integer(Value) ->
+configure(orber_debug_level, Value, Status) when is_integer(Value) ->
     do_configure(orber_debug_level, Value, Status);
 
 %%------ Keys we cannot change if Orber is running -----
 %% Set the listen port
-configure(iiop_port, Value, Status) when integer(Value) ->
+configure(iiop_port, Value, Status) when is_integer(Value) ->
     do_safe_configure(iiop_port, Value, Status);
 %% Set the NAT listen port
-configure(nat_iiop_port, Value, Status) when integer(Value), Value > 0 ->
+configure(nat_iiop_port, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_safe_configure(nat_iiop_port, Value, Status);
-configure(nat_iiop_port, {local, Value1, Value2}, Status) when integer(Value1), 
-							       Value1 > 0,
-							       list(Value2) ->
+configure(nat_iiop_port, {local, Value1, Value2}, Status) when is_integer(Value1) andalso 
+							       Value1 > 0 andalso
+							       is_list(Value2) ->
     do_safe_configure(nat_iiop_port, {local, Value1, Value2}, Status);
 %% Set Maximum Packet Size
-configure(iiop_packet_size, Max, Status) when integer(Max), Max > 0 ->
+configure(iiop_packet_size, Max, Status) when is_integer(Max) andalso Max > 0 ->
     do_safe_configure(iiop_packet_size, Max, Status);
 %% IIOP interceptors
-configure(interceptors, Value, Status) when tuple(Value) ->
+configure(interceptors, Value, Status) when is_tuple(Value) ->
     do_safe_configure(interceptors, Value, Status);
 %% Local interceptors
-configure(local_interceptors, Value, Status) when tuple(Value) ->
+configure(local_interceptors, Value, Status) when is_tuple(Value) ->
     do_safe_configure(local_interceptors, Value, Status);
 %% Orber Domain
-configure(domain, Value, Status) when list(Value) ->
+configure(domain, Value, Status) when is_list(Value) ->
     do_safe_configure(domain, Value, Status);
 %% Set the IP-address we should use
-configure(ip_address, Value, Status) when list(Value) ->
+configure(ip_address, Value, Status) when is_list(Value) ->
     do_safe_configure(ip_address, Value, Status);
-configure(ip_address, {multiple, Value}, Status) when list(Value) ->
+configure(ip_address, {multiple, Value}, Status) when is_list(Value) ->
     do_safe_configure(ip_address, {multiple, Value}, Status);
-configure(ip_address_local, Value, Status) when list(Value) ->
+configure(ip_address_local, Value, Status) when is_list(Value) ->
     do_safe_configure(ip_address_local, Value, Status);
 %% Set the NAT IP-address we should use
-configure(nat_ip_address, Value, Status) when list(Value) ->
+configure(nat_ip_address, Value, Status) when is_list(Value) ->
     do_safe_configure(nat_ip_address, Value, Status);
-configure(nat_ip_address, {multiple, Value}, Status) when list(Value) ->
+configure(nat_ip_address, {multiple, Value}, Status) when is_list(Value) ->
     do_safe_configure(nat_ip_address, {multiple, Value}, Status);
-configure(nat_ip_address, {local, Value1, Value2}, Status) when list(Value1),
-								list(Value2) ->
+configure(nat_ip_address, {local, Value1, Value2}, Status) when is_list(Value1) andalso
+								is_list(Value2) ->
     do_safe_configure(nat_ip_address, {local, Value1, Value2}, Status);
 %% Set the range of ports we may use on this machine when connecting to a server.
-configure(iiop_out_ports, {Min, Max}, Status) when integer(Min), integer(Max) ->
+configure(iiop_out_ports, {Min, Max}, Status) when is_integer(Min) andalso is_integer(Max) ->
     do_safe_configure(iiop_out_ports, {Min, Max}, Status);
 %% Set the lightweight option.
-configure(lightweight, Value, Status) when list(Value) ->
+configure(lightweight, Value, Status) when is_list(Value) ->
     do_safe_configure(lightweight, Value, Status);
 %% Configre the System Flags
-configure(flags, Value, Status) when integer(Value) ->
+configure(flags, Value, Status) when is_integer(Value) ->
     do_safe_configure(flags, Value, Status);
 %% Configre the ACL
-configure(iiop_acl, Value, Status) when list(Value) ->
+configure(iiop_acl, Value, Status) when is_list(Value) ->
     do_safe_configure(iiop_acl, Value, Status);
 
 %% SSL settings
@@ -1274,75 +1274,75 @@ configure(iiop_ssl_out_keepalive, false, Status) ->
     do_configure(iiop_ssl_out_keepalive, false, Status);
 configure(iiop_ssl_accept_timeout, infinity, Status) ->
     do_configure(iiop_ssl_accept_timeout, infinity, Status);
-configure(iiop_ssl_accept_timeout, Value, Status) when integer(Value), Value >= 0 ->
+configure(iiop_ssl_accept_timeout, Value, Status) when is_integer(Value) andalso Value >= 0 ->
     do_configure(iiop_ssl_accept_timeout, Value, Status);
-configure(ssl_generation, Generation, Status) when integer(Generation), Generation >= 2 ->
+configure(ssl_generation, Generation, Status) when is_integer(Generation) andalso Generation >= 2 ->
     do_safe_configure(ssl_generation, Generation, Status);
 configure(secure, ssl, Status) ->
     do_safe_configure(secure, ssl, Status);
-configure(iiop_ssl_ip_address_local, Value, Status) when list(Value) ->
+configure(iiop_ssl_ip_address_local, Value, Status) when is_list(Value) ->
     do_safe_configure(iiop_ssl_ip_address_local, Value, Status);
-configure(iiop_ssl_backlog, Value, Status) when integer(Value), Value >= 0 ->
+configure(iiop_ssl_backlog, Value, Status) when is_integer(Value) andalso Value >= 0 ->
     do_safe_configure(iiop_ssl_backlog, Value, Status);
-configure(nat_iiop_ssl_port, Value, Status) when integer(Value), Value > 0 ->
+configure(nat_iiop_ssl_port, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_safe_configure(nat_iiop_ssl_port, Value, Status);
-configure(nat_iiop_ssl_port, {local, Value1, Value2}, Status) when integer(Value1), 
-								   Value1 > 0,
-								   list(Value2) ->
+configure(nat_iiop_ssl_port, {local, Value1, Value2}, Status) when is_integer(Value1) andalso 
+								   Value1 > 0 andalso
+								   is_list(Value2) ->
     do_safe_configure(nat_iiop_ssl_port, {local, Value1, Value2}, Status);
-configure(iiop_ssl_port, Value, Status) when integer(Value) ->
+configure(iiop_ssl_port, Value, Status) when is_integer(Value) ->
     do_safe_configure(iiop_ssl_port, Value, Status);
-configure(ssl_server_certfile, Value, Status) when list(Value) ->
+configure(ssl_server_certfile, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_server_certfile, Value, Status);
-configure(ssl_server_certfile, Value, Status) when atom(Value) ->
+configure(ssl_server_certfile, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_server_certfile, atom_to_list(Value), Status);
-configure(ssl_client_certfile, Value, Status) when list(Value) ->
+configure(ssl_client_certfile, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_client_certfile, Value, Status);
-configure(ssl_client_certfile, Value, Status) when atom(Value) ->
+configure(ssl_client_certfile, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_client_certfile, atom_to_list(Value), Status);
-configure(ssl_server_verify, Value, Status) when integer(Value) ->
+configure(ssl_server_verify, Value, Status) when is_integer(Value) ->
     do_safe_configure(ssl_server_verify, Value, Status);
-configure(ssl_client_verify, Value, Status) when integer(Value) ->
+configure(ssl_client_verify, Value, Status) when is_integer(Value) ->
     do_safe_configure(ssl_client_verify, Value, Status);
-configure(ssl_server_depth, Value, Status) when integer(Value) ->
+configure(ssl_server_depth, Value, Status) when is_integer(Value) ->
     do_safe_configure(ssl_server_depth, Value, Status);
-configure(ssl_client_depth, Value, Status) when integer(Value) ->
+configure(ssl_client_depth, Value, Status) when is_integer(Value) ->
     do_safe_configure(ssl_client_depth, Value, Status);
-configure(ssl_server_cacertfile, Value, Status) when list(Value) ->
+configure(ssl_server_cacertfile, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_server_cacertfile, Value, Status);
-configure(ssl_server_cacertfile, Value, Status) when atom(Value) ->
+configure(ssl_server_cacertfile, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_server_cacertfile, atom_to_list(Value), Status);
-configure(ssl_client_cacertfile, Value, Status) when list(Value) ->
+configure(ssl_client_cacertfile, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_client_cacertfile, Value, Status);
-configure(ssl_client_cacertfile, Value, Status) when atom(Value) ->
+configure(ssl_client_cacertfile, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_client_cacertfile, atom_to_list(Value), Status);
-configure(ssl_client_password, Value, Status) when list(Value) ->
+configure(ssl_client_password, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_client_password, Value, Status);
-configure(ssl_client_password, Value, Status) when atom(Value) ->
+configure(ssl_client_password, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_client_password, atom_to_list(Value), Status);
-configure(ssl_client_keyfile, Value, Status) when list(Value) ->
+configure(ssl_client_keyfile, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_client_keyfile, Value, Status);
-configure(ssl_client_keyfile, Value, Status) when atom(Value) ->
+configure(ssl_client_keyfile, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_client_keyfile, atom_to_list(Value), Status);
-configure(ssl_server_password, Value, Status) when list(Value) ->
+configure(ssl_server_password, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_server_password, Value, Status);
-configure(ssl_client_password, Value, Status) when atom(Value) ->
+configure(ssl_client_password, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_server_password, atom_to_list(Value), Status);
-configure(ssl_server_keyfile, Value, Status) when list(Value) ->
+configure(ssl_server_keyfile, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_server_keyfile, Value, Status);
-configure(ssl_server_keyfile, Value, Status) when atom(Value) ->
+configure(ssl_server_keyfile, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_server_keyfile, atom_to_list(Value), Status);
-configure(ssl_server_ciphers, Value, Status) when list(Value) ->
+configure(ssl_server_ciphers, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_server_ciphers, Value, Status);
-configure(ssl_server_ciphers, Value, Status) when atom(Value) ->
+configure(ssl_server_ciphers, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_server_ciphers, atom_to_list(Value), Status);
-configure(ssl_client_ciphers, Value, Status) when list(Value) ->
+configure(ssl_client_ciphers, Value, Status) when is_list(Value) ->
     do_safe_configure(ssl_client_ciphers, Value, Status);
-configure(ssl_client_ciphers, Value, Status) when atom(Value) ->
+configure(ssl_client_ciphers, Value, Status) when is_atom(Value) ->
     do_safe_configure(ssl_client_ciphers, atom_to_list(Value), Status);
-configure(ssl_client_cachetimeout, Value, Status) when integer(Value), Value > 0 ->
+configure(ssl_client_cachetimeout, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_safe_configure(ssl_client_cachetimeout, Value, Status);
-configure(ssl_server_cachetimeout, Value, Status) when integer(Value), Value > 0 ->
+configure(ssl_server_cachetimeout, Value, Status) when is_integer(Value) andalso Value > 0 ->
     do_safe_configure(ssl_server_cachetimeout, Value, Status);
 
 configure(Key, Value, _) ->

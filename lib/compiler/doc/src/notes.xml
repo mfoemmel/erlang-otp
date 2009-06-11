@@ -30,6 +30,25 @@
   <p>This document describes the changes made to the Compiler
     application.</p>
 
+<section><title>Compiler 4.6.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    The compiler would crash while compiling certain complex
+	    function bodies containing <c>receive after</c> due to a
+	    bug in the jump optimizer (a label that had only had
+	    backward references could still be removed). (Thanks to
+	    Vincent de Phily.)</p>
+          <p>
+	    Own Id: OTP-7980</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Compiler 4.6.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

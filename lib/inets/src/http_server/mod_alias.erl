@@ -96,9 +96,9 @@ real_name(ConfigDB, RequestURI, []) ->
 							    RealName)),
     {ShortPath, Path, AfterPath};
 real_name(ConfigDB, RequestURI, [{FakeName,RealName}|Rest]) ->
-     case regexp:match(RequestURI, "^" ++ FakeName) of
+     case inets_regexp:match(RequestURI, "^" ++ FakeName) of
 	{match, _, _} ->
-	    {ok, ActualName, _} = regexp:sub(RequestURI,
+	    {ok, ActualName, _} = inets_regexp:sub(RequestURI,
 					     "^" ++ FakeName, RealName),
  	    {ShortPath, _AfterPath} = httpd_util:split_path(ActualName),
 	    {Path, AfterPath} =
@@ -113,9 +113,9 @@ real_name(ConfigDB, RequestURI, [{FakeName,RealName}|Rest]) ->
 real_script_name(_ConfigDB, _RequestURI, []) ->
     not_a_script;
 real_script_name(ConfigDB, RequestURI, [{FakeName,RealName} | Rest]) ->
-    case regexp:match(RequestURI,"^"++FakeName) of
+    case inets_regexp:match(RequestURI,"^"++FakeName) of
 	{match,_,_} ->
-	    {ok,ActualName,_}=regexp:sub(RequestURI,"^"++FakeName,RealName),
+	    {ok,ActualName,_}=inets_regexp:sub(RequestURI,"^"++FakeName,RealName),
 	    httpd_util:split_script_path(default_index(ConfigDB,ActualName));
 	nomatch ->
 	    real_script_name(ConfigDB,RequestURI,Rest)
@@ -162,17 +162,17 @@ path(Data, ConfigDB, RequestURI) ->
 %% load
 
 load("DirectoryIndex " ++ DirectoryIndex, []) ->
-    {ok, DirectoryIndexes} = regexp:split(DirectoryIndex," "),
+    {ok, DirectoryIndexes} = inets_regexp:split(DirectoryIndex," "),
     {ok,[], {directory_index, DirectoryIndexes}};
 load("Alias " ++ Alias,[]) ->
-    case regexp:split(Alias," ") of
+    case inets_regexp:split(Alias," ") of
 	{ok, [FakeName, RealName]} ->
 	    {ok,[],{alias,{FakeName,RealName}}};
 	{ok, _} ->
 	    {error,?NICE(httpd_conf:clean(Alias)++" is an invalid Alias")}
     end;
 load("ScriptAlias " ++ ScriptAlias, []) ->
-    case regexp:split(ScriptAlias, " ") of
+    case inets_regexp:split(ScriptAlias, " ") of
 	{ok, [FakeName, RealName]} ->
 	    %% Make sure the path always has a trailing slash..
 	    RealName1 = filename:join(filename:split(RealName)),

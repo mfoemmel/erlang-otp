@@ -26,6 +26,7 @@ typedef struct erts_cpu_info_t_ erts_cpu_info_t;
 typedef struct {
     int node;
     int processor;
+    int processor_node;
     int core;
     int thread;
     int logical;

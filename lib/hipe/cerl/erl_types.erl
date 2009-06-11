@@ -59,7 +59,7 @@
 	 t_bitstr_concat/2,
 	 t_bitstr_match/2,
 	 t_bitstr_unit/1,
-	 t_bool/0,
+	 t_boolean/0,
 	 t_byte/0,
 	 t_char/0,
 	 t_collect_vars/1,
@@ -109,7 +109,7 @@
 	 t_is_binary/1,
 	 t_is_bitstr/1,
 	 t_is_bitwidth/1,
-	 t_is_bool/1,
+	 t_is_boolean/1,
 	 %% t_is_byte/1,
 	 %% t_is_char/1,
 	 t_is_cons/1,
@@ -669,21 +669,21 @@ t_is_atom(Atom, _) when is_atom(Atom) -> false.
 
 %%------------------------------------
 
--spec t_bool() -> erl_type().
+-spec t_boolean() -> erl_type().
 
-t_bool() ->
+t_boolean() ->
   ?atom(set_from_list([false, true])).
 
--spec t_is_bool(erl_type()) -> bool().
+-spec t_is_boolean(erl_type()) -> bool().
 
-t_is_bool(?atom(?any)) -> false;
-t_is_bool(?atom(Set)) ->
+t_is_boolean(?atom(?any)) -> false;
+t_is_boolean(?atom(Set)) ->
   case set_size(Set) of
     1 -> set_is_element(true, Set) orelse set_is_element(false, Set);
     2 -> set_is_element(true, Set) andalso set_is_element(false, Set);
     N when is_integer(N), N > 2 -> false
   end;
-t_is_bool(_) -> false.
+t_is_boolean(_) -> false.
 
 %%-----------------------------------------------------------------------------
 %% Binaries
@@ -697,7 +697,7 @@ t_binary() ->
 -spec t_is_binary(erl_type()) -> bool().
 
 t_is_binary(?bitstr(U, B)) -> 
-  ((U rem 8) =:= 0) and ((B rem 8) =:= 0);
+  ((U rem 8) =:= 0) andalso ((B rem 8) =:= 0);
 t_is_binary(_) -> false.
 
 %%-----------------------------------------------------------------------------
@@ -1388,7 +1388,7 @@ t_digraph() ->
 		    t_sup(t_atom(), t_tid()),
 		    t_sup(t_atom(), t_tid()),
 		    t_sup(t_atom(), t_tid()),
-		    t_bool()])).
+		    t_boolean()])).
 
 -spec t_gb_set() -> erl_type().
 
@@ -3085,7 +3085,8 @@ t_from_form({type, _L, binary, [{integer, _, Base}, {integer, _, Unit}]},
 	    _RecDict, _VarDict) -> 
   t_bitstr(Unit, Base);
 t_from_form({type, _L, bitstring, []}, _RecDict, _VarDict) -> t_bitstr();
-t_from_form({type, _L, bool, []}, _RecDict, _VarDict) -> t_bool();
+t_from_form({type, _L, bool, []}, _RecDict, _VarDict) -> t_boolean();	% XXX: Temporarily
+t_from_form({type, _L, boolean, []}, _RecDict, _VarDict) -> t_boolean();
 t_from_form({type, _L, byte, []}, _RecDict, _VarDict) -> t_byte();
 t_from_form({type, _L, char, []}, _RecDict, _VarDict) -> t_char();
 t_from_form({type, _L, dict, []}, _RecDict, _VarDict) -> t_dict();
@@ -3513,10 +3514,10 @@ test() ->
 
   True   = t_atom(true),
   False  = t_atom(false),
-  Bool   = t_bool(),
-  true   = t_is_bool(True),
-  true   = t_is_bool(Bool),
-  false  = t_is_bool(Atom1),
+  Bool   = t_boolean(),
+  true   = t_is_boolean(True),
+  true   = t_is_boolean(Bool),
+  false  = t_is_boolean(Atom1),
 
   Binary = t_binary(),
   true   = t_is_binary(Binary),
@@ -3568,16 +3569,16 @@ test() ->
   true      = t_is_fun(Function3),  
 
   List1 = t_list(),
-  List2 = t_list(t_bool()),
-  List3 = t_cons(t_bool(), List2),
-  List4 = t_cons(t_bool(), t_atom()),
-  List5 = t_cons(t_bool(), t_nil()),
+  List2 = t_list(t_boolean()),
+  List3 = t_cons(t_boolean(), List2),
+  List4 = t_cons(t_boolean(), t_atom()),
+  List5 = t_cons(t_boolean(), t_nil()),
   List6 = t_cons_tl(List5),
   List7 = t_sup(List4, List5),
   List8 = t_inf(List7, t_list()),
   List9 = t_cons(),
   List10 = t_cons_tl(List9),
-  true  = t_is_bool(t_cons_hd(List5)),
+  true  = t_is_boolean(t_cons_hd(List5)),
   true  = t_is_list(List5),
   false = t_is_list(List4),
 
@@ -3593,7 +3594,7 @@ test() ->
   Union6 = t_sup(Function1, Function2),
   Union7 = t_sup(Function4, Function5),
   Union8 = t_sup(True, False),
-  true   = t_is_bool(Union8),
+  true   = t_is_boolean(Union8),
   Union9 = t_sup(Int2, t_integer(2)),
   true   = t_is_byte(Union9),
   Union10 = t_sup(t_tuple([t_atom(true), ?any]), 

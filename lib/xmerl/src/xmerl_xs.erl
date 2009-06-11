@@ -71,7 +71,7 @@
 %%    "&lt;/h1>"];
 %% </pre>
 
-xslapply(Fun, EList) when list(EList) ->
+xslapply(Fun, EList) when is_list(EList) ->
     lists:map( Fun, EList);
 xslapply(Fun, E = #xmlElement{})->
     lists:map( Fun, E#xmlElement.content).

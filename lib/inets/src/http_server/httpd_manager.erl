@@ -376,7 +376,8 @@ handle_call(get_usage_state, _From, State) ->
     Reply = get_ustate(State),
     {reply,Reply,State};
 
-handle_call({reload, Conf}, _From, State) when State#state.admin_state == blocked ->
+handle_call({reload, Conf}, _From, State) 
+  when State#state.admin_state =:= blocked ->
     case handle_reload(Conf, State) of
 	{stop, Reply,S1} ->
 	    {stop, Reply, S1};
@@ -804,7 +805,7 @@ stop_block_tmr(Ref) ->
 
 
 %% Monitor blocker functions
-monitor_blocker(Pid) when pid(Pid) ->
+monitor_blocker(Pid) when is_pid(Pid) ->
     case (catch erlang:monitor(process,Pid)) of
 	{'EXIT', _Reason} ->
 	    undefined;

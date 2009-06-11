@@ -40,6 +40,19 @@
  * Return the pid for the Erlang process in the host OS.
  */
 
+ /* return a timestamp */
+BIF_RETTYPE os_timestamp_0(BIF_ALIST_0)
+{
+    Uint megasec, sec, microsec;
+    Eterm* hp;
+
+    get_sys_now(&megasec, &sec, &microsec);
+    hp = HAlloc(BIF_P, 4);
+    BIF_RET(TUPLE3(hp, make_small(megasec), make_small(sec),
+		   make_small(microsec)));
+}
+
+
 Eterm
 os_getpid_0(Process* p)
 {

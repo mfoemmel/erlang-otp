@@ -293,8 +293,8 @@ node_varmap_set(Node, Vars) ->
   Node#node{varmap = Vars}.
 
 node_varmap_lookup(#node{varmap = Varmap}, Var) ->
-  case lists:keysearch(Var, 1, Varmap) of
-    {value, {_, NewVar}} -> NewVar;
+  case lists:keyfind(Var, 1, Varmap) of
+    {_, NewVar} -> NewVar;
     false -> Var
   end.
  

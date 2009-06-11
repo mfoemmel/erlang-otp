@@ -167,6 +167,16 @@ Uint   global_heap_min_sz = SH_DEFAULT_SIZE;
 int ignore_break;
 int replace_intr;
 
+static ERTS_INLINE int
+has_prefix(const char *prefix, const char *string)
+{
+    int i;
+    for (i = 0; prefix[i]; i++)
+	if (prefix[i] != string[i])
+	    return 0;
+    return 1;
+}
+
 static char*
 progname(char *fullname) 
 {
@@ -529,7 +539,7 @@ void erts_usage(void)
     erts_fprintf(stderr, "-l         turn on auto load tracing\n");
 
     erts_fprintf(stderr, "-M<X> <Y>  memory allocator switches,\n");
-    erts_fprintf(stderr, "           see the erts_alloc(3) man page for more info.\n");
+    erts_fprintf(stderr, "           see the erts_alloc(3) documentation for more info.\n");
 
     erts_fprintf(stderr, "-P number  set maximum number of processes on this node,\n");
     erts_fprintf(stderr, "           valid range is [%d-%d]\n",
@@ -539,8 +549,10 @@ void erts_usage(void)
 	       ERTS_MIN_COMPAT_REL, this_rel_num());
 
     erts_fprintf(stderr, "-r         force ets memory block to be moved on realloc\n");
-    erts_fprintf(stderr, "-s <opt>   set scheduling option, valid options are:\n");
-    erts_fprintf(stderr, "           [srq|mrq]\n");
+    erts_fprintf(stderr, "-sbt type  set scheduler bind type, valid types are:\n");
+    erts_fprintf(stderr, "           u|ns|ts|ps|nnts|nnps|tnnps|db\n");
+    erts_fprintf(stderr, "-sct cput  set cpu topology,\n");
+    erts_fprintf(stderr, "           see the erl(1) documentation for more info.\n");
     erts_fprintf(stderr, "-S n1:n2   set number of schedulers (n1), and number of\n");
     erts_fprintf(stderr, "           schedulers online (n2), valid range for both\n");
     erts_fprintf(stderr, "           numbers are [1-%d]\n",
@@ -719,6 +731,7 @@ early_init(int *argc, char **argv) /*
     erts_alloc_init(argc, argv, &alloc_opts); /* Handles (and removes)
 						 -M flags. */
 
+    erts_early_init_scheduling(); /* Require allocators */
     erts_init_utils(); /* Require allocators */
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
@@ -969,20 +982,92 @@ erl_start(int argc, char **argv)
 	    (void) get_arg(argv[i]+2, argv[i+1], &i);
 	    break;
 
-	case 's' :
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if (sys_strcmp("mrq", arg) == 0)
+	case 's' : {
+	    char *estr;
+	    int res;
+	    char *sub_param = argv[i]+2;
+	    if (has_prefix("bt", sub_param)) {
+		arg = get_arg(sub_param+2, argv[i+1], &i);
+		res = erts_init_scheduler_bind_type(arg);
+		if (res != ERTS_INIT_SCHED_BIND_TYPE_SUCCESS) {
+		    switch (res) {
+		    case ERTS_INIT_SCHED_BIND_TYPE_NOT_SUPPORTED:
+			estr = "not supported";
+			break;
+		    case ERTS_INIT_SCHED_BIND_TYPE_ERROR_NO_CPU_TOPOLOGY:
+			estr = "no cpu topology available";
+			break;
+		    case ERTS_INIT_SCHED_BIND_TYPE_ERROR_NO_BAD_TYPE:
+			estr = "invalid type";
+			break;
+		    default:
+			estr = "undefined error";
+			break;
+		    }
+		    erts_fprintf(stderr,
+				 "setting scheduler bind type '%s' failed: %s\n",
+				 arg,
+				 estr);
+		    erts_usage();
+		}
+	    }
+	    else if (has_prefix("ct", sub_param)) {
+		arg = get_arg(sub_param+2, argv[i+1], &i);
+		res = erts_init_cpu_topology(arg);
+		if (res != ERTS_INIT_CPU_TOPOLOGY_OK) {
+		    switch (res) {
+		    case ERTS_INIT_CPU_TOPOLOGY_INVALID_ID:
+			estr = "invalid identifier";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_INVALID_ID_RANGE:
+			estr = "invalid identifier range";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_INVALID_HIERARCHY:
+			estr = "invalid hierarchy";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_INVALID_ID_TYPE:
+			estr = "invalid identifier type";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES:
+			estr = "invalid nodes declaration";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_MISSING_LID:
+			estr = "missing logical identifier";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_LIDS:
+			estr = "not unique logical identifiers";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_ENTITIES:
+			estr = "not unique entities";
+			break;
+		    case ERTS_INIT_CPU_TOPOLOGY_MISSING:
+			estr = "missing cpu topology";
+			break;
+		    default:
+			estr = "undefined error";
+			break;
+		    }
+		    erts_fprintf(stderr,
+				 "bad cpu topology '%s': %s\n",
+				 arg,
+				 estr);
+		    erts_usage();
+		}
+	    }
+	    else if (sys_strcmp("pnt", sub_param) == 0)
+		erts_init_enable_processor_node_topology();
+	    else if (sys_strcmp("mrq", sub_param) == 0)
 		use_multi_run_queue = 1;
-	    else if (sys_strcmp("srq", arg) == 0)
+	    else if (sys_strcmp("srq", sub_param) == 0)
 		use_multi_run_queue = 0;
-	    else if (sys_strcmp("nsp", arg) == 0)
+	    else if (sys_strcmp("nsp", sub_param) == 0)
 		erts_use_sender_punish = 0;
 	    else {
-		erts_fprintf(stderr, "bad scheduling option %s\n", arg);
+		erts_fprintf(stderr, "bad scheduling option %s\n", argv[i]);
 		erts_usage();
 	    }
 	    break;
-
+	}
 	case 'T' :
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    errno = 0;

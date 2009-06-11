@@ -583,21 +583,21 @@ create_info_data([{Func,Desc}|Rest], Node, Result) ->
     Data = convert_type(check(rpc:call(Node, orber, Func, []))),
     create_info_data(Rest, Node, [{Desc, Data}|Result]).
 
-convert_type(Data) when integer(Data) ->
+convert_type(Data) when is_integer(Data) ->
     integer_to_list(Data);
-convert_type(Data) when atom(Data) ->
+convert_type(Data) when is_atom(Data) ->
     atom_to_list(Data);
-convert_type(Data) when float(Data) ->
+convert_type(Data) when is_float(Data) ->
     float_to_list(Data);
-convert_type(Data) when pid(Data) ->
+convert_type(Data) when is_pid(Data) ->
     pid_to_list(Data);
-convert_type(Data) when port(Data) ->
+convert_type(Data) when is_port(Data) ->
     erlang:port_to_list(Data);
-convert_type(Data) when tuple(Data) ->
+convert_type(Data) when is_tuple(Data) ->
     io_lib:write(Data);
 convert_type([]) ->
     [];
-convert_type(Data) when list(Data) ->
+convert_type(Data) when is_list(Data) ->
     case io_lib:printable_list(Data) of
 	true->
 	    Data;
@@ -836,19 +836,19 @@ remote_resolve(Node, Ref) ->
     NS = check(rpc:call(Node, corba, resolve_initial_references, ["NameService"]),
 	       "Failed to resolve initial refrence (NameService)"),
     case rpc:call(Node, 'CosNaming_NamingContextExt', resolve_str, [NS, Ref]) of
-	{'EXCEPTION', E} when record(E, 'CosNaming_NamingContext_NotFound') ->
+	{'EXCEPTION', E} when is_record(E, 'CosNaming_NamingContext_NotFound') ->
 	    throw({ok, ["<BODY BGCOLOR=\"#FFFFFF\">Unable to look up the Object: ", Ref,
 			"<BR><BR>Reason: CosNaming_NamingContext_NotFound",
 			"<BR><BR>If You just deleted it, use the 'Go Back' button next time."]});
-	{'EXCEPTION', E} when record(E, 'CosNaming_NamingContext_CannotProceed') ->
+	{'EXCEPTION', E} when is_record(E, 'CosNaming_NamingContext_CannotProceed') ->
 	    throw({ok, ["<BODY BGCOLOR=\"#FFFFFF\">Unable to look up the Object: ", Ref,
 			"<BR><BR>Reason: CosNaming_NamingContext_CannotProceed",
 			"<BR><BR>If You just deleted it, use the 'Go Back' button next time."]});
-	{badrpc, {'EXCEPTION', E}} when record(E, 'CosNaming_NamingContext_NotFound') ->
+	{badrpc, {'EXCEPTION', E}} when is_record(E, 'CosNaming_NamingContext_NotFound') ->
 	    throw({ok, ["<BODY BGCOLOR=\"#FFFFFF\">Unable to look up the Object: ", Ref,
 			"<BR><BR>Reason: CosNaming_NamingContext_NotFound",
 			"<BR><BR>If You just deleted it, use the 'Go Back' button next time."]});
-	{badrpc, {'EXCEPTION', E}} when record(E, 'CosNaming_NamingContext_CannotProceed') ->
+	{badrpc, {'EXCEPTION', E}} when is_record(E, 'CosNaming_NamingContext_CannotProceed') ->
 	    throw({ok, ["<BODY BGCOLOR=\"#FFFFFF\">Unable to look up the Object: ", Ref,
 			"<BR><BR>Reason: CosNaming_NamingContext_CannotProceed",
 			"<BR><BR>If You just deleted it, use the 'Go Back' button next time."]});

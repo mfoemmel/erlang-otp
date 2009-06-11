@@ -459,8 +459,8 @@ annotate_bindings(Tree, Env) ->
 
 annotate_bindings(Tree) ->
     As = erl_syntax:get_ann(Tree),
-    case lists:keysearch(env, 1, As) of
-        {value, {env, InVars}} ->
+    case lists:keyfind(env, 1, As) of
+        {env, InVars} ->
             annotate_bindings(Tree, InVars);
         _ ->
             erlang:error(badarg)
@@ -1114,8 +1114,8 @@ finfo_add_module_import(M, Info) ->
 
 finfo_add_imports(M, L, Info) ->
     Es = Info#forms.imports,
-    case lists:keysearch(M, 1, Es) of
-        {value, {_, L1}} ->
+    case lists:keyfind(M, 1, Es) of
+        {_, L1} ->
             Es1 = lists:keyreplace(M, 1, Es, {M, L ++ L1}),
             Info#forms{imports = Es1};
         false ->

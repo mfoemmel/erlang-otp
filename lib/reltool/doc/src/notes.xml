@@ -36,6 +36,24 @@
     thus constitutes one section in this document. The title of each
     section is the version number of Reltool.</p>
 
+    <section>
+      <title>Reltool 0.2.2</title>
+      
+      <section>
+	<title>Fixed Bugs and Malfunctions</title>
+	<list>
+	  <item>
+	    <p>
+	      The tool crashed when rel, script and boot files were
+	    generated via the. This has been fixed.</p>
+	    <p>
+	    Own Id: OTP-7999</p>
+	  </item>
+	</list>
+      </section>
+      
+    </section>
+
   <section>
     <title>Reltool 0.2.1</title>
 

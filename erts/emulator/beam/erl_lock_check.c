@@ -89,15 +89,16 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"proc_link",				"pid"			},
     {	"proc_msgq",				"pid"			},
     {	"dist_entry",				"address"		},
+    {	"dist_entry_links",			"address"		},
     {	"proc_status",				"pid"			},
     {	"proc_tab",				NULL			},
     {   "ports_snapshot",                       NULL                    },
-    {	"db_tab",				"address"		},
-    {	"meta_pid_to_tab",			NULL 			},
-    {	"meta_pid_to_fixed_tab",		NULL 			},
+    {	"db_tab",				"address"		},    
+    {	"db_tab_fix",				"address"		},
     {	"meta_name_tab",	         	"address"		},
     {	"meta_main_tab_slot",			"address"		},
     {	"meta_main_tab_main",			NULL 			},
+    {	"db_hash_slot",				"address"		},
     {	"node_table",				NULL			},
     {	"dist_table",				NULL			},
     {	"sys_tracers",				NULL			},
@@ -114,6 +115,9 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"efile_drv",				"address"		},
 #if defined(ENABLE_CHILD_WAITER_THREAD) || defined(ERTS_SMP)
     {	"child_status",				NULL			},
+#endif
+#ifdef __WIN32__
+    {	"sys_driver_data_lock",			NULL 			}, 
 #endif
     {	"drv_ev_state_grow",			NULL,   		}, 
     {	"drv_ev_state",				"address"		},
@@ -140,6 +144,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"message_pre_alloc_lock",		"address"		},
     {	"ptimer_pre_alloc_lock",		"address",		},
     {	"btm_pre_alloc_lock",			NULL,			},
+    {	"dist_entry_out_queue",			"address"		},
 #endif
     {	"mtrace_op",				NULL			},
     {	"instr_x",				NULL			},
@@ -150,6 +155,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
 #ifdef ERTS_SMP
     {	"port_task_pre_alloc_lock",		"address"		},
     {	"port_taskq_pre_alloc_lock",		"address"		},
+    {	"proclist_pre_alloc_lock",		"address"		},
     {	"port_tasks_lock",			NULL			},
     {   "get_free_port",                        NULL                    },
     {	"port_state",			        "address"		},
@@ -170,9 +176,6 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"alloc_thr_ix_lock",			NULL			},
 #ifdef ERTS_SMP
     {	"proc_lck_wtr_alloc",			NULL 			},
-#ifdef __WIN32__
-    {	"sys_driver_data_lock",			NULL 			}, 
-#endif
 #endif
 #ifdef __WIN32__
 #ifdef DEBUG

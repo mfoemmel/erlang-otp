@@ -148,9 +148,9 @@ pp([], Acc, _) ->
 pp([H|T], Acc, Format) ->
     pp(T, Acc ++ io_lib:format(Format, [H]), Format).
 
-split(N, List) when integer(N), N >= 0, list(List) ->
+split(N, List) when is_integer(N) andalso N >= 0 andalso is_list(List) ->
     case split(N, List, []) of
-        Fault when atom(Fault) ->
+        Fault when is_atom(Fault) ->
             erlang:error(Fault, [N,List]);
         Result ->
             Result
@@ -260,12 +260,12 @@ add_parts([H|T], Parent, Bits, Mask, DB, Interfaces, Ports) ->
 %% Exception: 
 %% Effect   : 
 %%-----------------------------------------------------------------
-match(IPTuple, Direction) when tuple(IPTuple) ->
+match(IPTuple, Direction) when is_tuple(IPTuple) ->
     match_helper(tuple_to_list(IPTuple), Direction, ?ACL_DB, false, Direction);
 match(IPList, Direction) ->
     match_helper(IPList, Direction, ?ACL_DB, false, Direction).
 
-match(IPTuple, Direction, All) when tuple(IPTuple) ->
+match(IPTuple, Direction, All) when is_tuple(IPTuple) ->
     match_helper(tuple_to_list(IPTuple), Direction, ?ACL_DB, All, Direction);
 match(IPList, Direction, All) ->
     match_helper(IPList, Direction, ?ACL_DB, All, Direction).
@@ -288,11 +288,11 @@ match_helper([H|T], Parent, DB, All, Direction) ->
 	    %% Less than 8/16 significant bits (depends on family). 
 	    %% Should we even allow this?
 	    case ets:lookup(DB, Direction) of
-		[#acl{bits = Bits, mask = Mask}] when integer(Bits),
+		[#acl{bits = Bits, mask = Mask}] when is_integer(Bits) andalso
 						      All == false  ->
 		    Bits == (H band Mask);
 		[#acl{bits = Bits, mask = Mask, 
-		      interfaces = I, ports = Ports}] when integer(Bits) ->
+		      interfaces = I, ports = Ports}] when is_integer(Bits) ->
 		    {Bits == (H band Mask), I, Ports};
 		_ when All == false ->
 		    false;

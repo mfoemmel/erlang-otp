@@ -440,10 +440,10 @@ phi_dst_update(Phi, NewDst) -> Phi#phi{dst = NewDst}.
 phi_id(#phi{id=Id}) -> Id.
 phi_args(Phi) -> [X || {_,X} <- phi_arglist(Phi)].
 phi_arg(Phi, Pred) ->
-  case lists:keysearch(Pred, 1, phi_arglist(Phi)) of
+  case lists:keyfind(Pred, 1, phi_arglist(Phi)) of
     false ->
       exit({?MODULE,phi_arg,{"Uknown Phi predecessor",Phi,{pred,Pred}}});
-    {value,{_,Var}} -> Var
+    {_, Var} -> Var
   end.
 phi_arglist(#phi{arglist=ArgList}) -> ArgList.
 phi_arglist_update(P,NewArgList) ->P#phi{arglist=NewArgList}.

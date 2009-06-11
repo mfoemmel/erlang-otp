@@ -34,7 +34,7 @@
 
 -import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2,reverse/1]).
 
-%% bool_option(OnOpt, OffOpt, Default, Options) -> bool().
+%% bool_option(OnOpt, OffOpt, Default, Options) -> boolean().
 %% value_option(Flag, Default, Options) -> Value.
 %% value_option(Flag, Default, OnOpt, OnVal, OffOpt, OffVal, Options) ->
 %%              Value.
@@ -75,10 +75,10 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 %% Usage of records, functions, and imports. The variable table, which
 %% is passed on as an argument, holds the usage of variables.
 -record(usage, {
-          calls = dict:new(),                   %Who calls who
+          calls = dict:new(),			%Who calls who
           imported = [],                        %Actually imported functions
-          used_records=sets:new(),              %Used record definitions
-	  used_types = sets:new()               %Used type definitions
+          used_records=sets:new() :: set(),	%Used record definitions
+	  used_types = sets:new() :: set()	%Used type definitions
          }).
 
 %% Define the lint state record.
@@ -89,12 +89,12 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                package="",                      %Module package
                extends=[],                      %Extends
                behaviour=[],                    %Behaviour
-               exports=gb_sets:empty(),		%Exports
+               exports=gb_sets:empty()	:: gb_set(),	%Exports
                imports=[],                      %Imports
-               mod_imports=dict:new(),          %Module Imports
+               mod_imports=dict:new()	:: dict(),	%Module Imports
                compile=[],                      %Compile flags
-               records=dict:new(),		%Record definitions
-               defined=gb_sets:empty(),		%Defined fuctions
+               records=dict:new()	:: dict(),	%Record definitions
+               defined=gb_sets:empty()	:: gb_set(),	%Defined fuctions
 	       clashes=[],			%Exported functions named as BIFs
                not_deprecated=[],               %Not considered deprecated
                func=[],                         %Current function
@@ -109,9 +109,9 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                xqlc= false :: bool(),		%true if qlc.hrl included
                new = false :: bool(),		%Has user-defined 'new/N'
                called= [],			%Called functions
-               usage = #usage{} :: #usage{},
-	       specs = dict:new(),		%Type specifications
-	       types = dict:new()		%Type definitions
+               usage = #usage{}		:: #usage{},
+	       specs = dict:new()	:: dict(),	%Type specifications
+	       types = dict:new()	:: dict()	%Type definitions
               }).
 
 -type lint_state() :: #lint{}.
@@ -455,7 +455,7 @@ start(File, Opts) ->
 	  types = default_types()
          }.
 
-%% is_warn_enabled(Category, St) -> true|false.
+%% is_warn_enabled(Category, St) -> boolean().
 %%  Check whether a warning of category Category is enabled.
 is_warn_enabled(Type, #lint{enabled_warnings=Enabled}) ->
     ordsets:is_element(Type, Enabled).
@@ -1328,7 +1328,7 @@ rbia_fields([_|Fs], I, Acc) ->
     rbia_fields(Fs, I+1, Acc);
 rbia_fields([], _, Acc) -> Acc.
 
-%% is_pattern_expr(Expression) -> bool().
+%% is_pattern_expr(Expression) -> boolean().
 %%  Test if a general expression is a valid pattern expression.
 
 is_pattern_expr(Expr) ->
@@ -1688,12 +1688,12 @@ gexpr_list(Es, Vt, St) ->
                   {vtmerge(Evt, Esvt),St1}
           end, {[],St}, Es).
 
-%% is_guard_test(Expression) -> bool().
+%% is_guard_test(Expression) -> boolean().
 %%  Test if a general expression is a guard test.
 is_guard_test(E) ->
     is_guard_test2(E, dict:new()).
 
-%% is_guard_test(Expression, Forms) -> bool()
+%% is_guard_test(Expression, Forms) -> boolean().
 is_guard_test(Expression, Forms) ->
     RecordAttributes = [A || A = {attribute, _, record, _D} <- Forms],
     St0 = foldl(fun(Attr0, St1) -> 
@@ -1702,7 +1702,7 @@ is_guard_test(Expression, Forms) ->
                 end, start(), RecordAttributes),
     is_guard_test2(zip_file_and_line(Expression, "nofile"), St0#lint.records).
 
-%% is_guard_test2(Expression, RecordDefs :: dict()) -> bool().
+%% is_guard_test2(Expression, RecordDefs :: dict()) -> boolean().
 is_guard_test2({call,Line,{atom,Lr,record},[E,A]}, RDs) ->
     is_gexpr({call,Line,{atom,Lr,is_record},[E,A]}, RDs);
 is_guard_test2({call,_Line,{atom,_La,Test},As}=Call, RDs) ->
@@ -1714,7 +1714,7 @@ is_guard_test2(G, RDs) ->
     %%Everything else is a guard expression.
     is_gexpr(G, RDs).
 
-%% is_guard_expr(Expression) -> bool().
+%% is_guard_expr(Expression) -> boolean().
 %%  Test if an expression is a guard expression.
 
 is_guard_expr(E) -> is_gexpr(E, []). 
@@ -1993,7 +1993,7 @@ expr({op,Line,Op,L,R}, Vt, St0) when Op =:= 'orelse'; Op =:= 'andalso' ->
     Vt1 = vtupdate(Evt1, Vt),
     {Evt2,St2} = expr(R, Vt1, St1),
     Vt2 = vtmerge(Evt2, Vt1),
-    {Vt3,St3} = icrt_export([Vt1,Vt2], Vt1, {Op,Line},St2),
+    {Vt3,St3} = icrt_export([Vt1,Vt2], Vt1, {Op,Line}, St2),
     {vtmerge(Evt1, Vt3),St3};
 expr({op,_Line,_Op,L,R}, Vt, St) ->
     expr_list([L,R], Vt, St);                   %They see the same variables
@@ -2025,7 +2025,7 @@ warn_invalid_record(Line, R, St) ->
         false -> add_warning(Line, invalid_record, St)
     end.
 
-%% is_valid_record(Record) -> bool()
+%% is_valid_record(Record) -> boolean().
 
 is_valid_record(Rec) ->
     case Rec of
@@ -2051,7 +2051,7 @@ warn_invalid_call(Line, F, St) ->
         false -> add_warning(Line, invalid_call, St)
     end.
 
-%% is_valid_call(Call) -> boolean()
+%% is_valid_call(Call) -> boolean().
 
 is_valid_call(Call) ->
     case Call of
@@ -2261,7 +2261,7 @@ init_fields(Ifs, Line, Dfs) ->
 update_fields(Ufs, Name, Dfs, Vt, St) ->
     check_fields(Ufs, Name, Dfs, Vt, St, fun expr/3).
 
-%% exist_field(FieldName, [Field]) -> bool().
+%% exist_field(FieldName, [Field]) -> boolean().
 %%  Find a record field in a field list.
 
 exist_field(F, [{record_field,_Lf,{atom,_La,F},_Val}|_Fs]) -> true;
@@ -2293,7 +2293,7 @@ type_def(_Attr, Line, TypeName, ProtoType, Args, St0) ->
 	    case dict:is_key(TypePair, default_types()) of
 		true  ->
 		    case is_newly_introduced_builtin_type(TypePair) of
-			%% allow some types just for bootstrapping R12B-5
+			%% allow some types just for bootstrapping
 			true ->
 			    Warn = {new_builtin_type, TypePair},
 			    St1 = add_warning(Line, Warn, St0),
@@ -2452,6 +2452,7 @@ default_types() ->
 		{binary, 2},
 		{bitstring, 0},
 		{bool, 0},
+		{boolean, 0},
 		{byte, 0},
 		{char, 0},
 		{dict, 0},
@@ -2518,6 +2519,8 @@ is_newly_introduced_builtin_type({iodata, 0}) -> true;
 is_newly_introduced_builtin_type({queue, 0}) -> true; % opaque
 is_newly_introduced_builtin_type({set, 0}) -> true; % opaque
 is_newly_introduced_builtin_type({tid, 0}) -> true; % opaque
+%% R13B-1
+is_newly_introduced_builtin_type({boolean, 0}) -> true;
 is_newly_introduced_builtin_type({Name, _}) when is_atom(Name) -> false.
 
 %% spec_decl(Line, Fun, Types, State) -> State.

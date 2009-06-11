@@ -103,7 +103,7 @@ list_users(DirData) ->
     {Addr, Port, Dir} = lookup_common(DirData),
     PWDB = proplists:get_value(auth_user_file, DirData),
     case dets:traverse(PWDB, fun(X) -> {continue, X} end) of    %% SOOOO Ugly !
-	Records when list(Records) ->
+	Records when is_list(Records) ->
 	    ?DEBUG("list_users -> ~n"
 		   "     Records: ~p", [Records]),
 	    {ok, [UserName || {{UserName, AnyAddr, AnyPort, AnyDir}, 
@@ -174,7 +174,7 @@ list_groups(DirData) ->
     case dets:match(GDB, {'$1', '_'}) of
 	[] ->
 	    {ok, []};
-	List when list(List) ->
+	List when is_list(List) ->
 	    Groups = lists:flatten(List),
 	    {ok, [GroupName || 
 		     {GroupName, AnyAddr, AnyPort, AnyDir} <- Groups,

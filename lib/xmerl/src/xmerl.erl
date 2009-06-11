@@ -99,9 +99,9 @@ export(Data, Callback) ->
 %% @see export/2
 %% @see export_simple/3
 
-export(Data, Callback, RootAttrs) when atom(Callback) ->
+export(Data, Callback, RootAttrs) when is_atom(Callback) ->
     export1(Data, callbacks(Callback), RootAttrs);
-export(Data, Callbacks, RootAttrs) when list(Callbacks) ->
+export(Data, Callbacks, RootAttrs) when is_list(Callbacks) ->
     export1(Data, Callbacks, RootAttrs).
 
 %% @spec export_simple(Content, Callback) -> ExportedFormat
@@ -152,9 +152,9 @@ export_simple(Data, Callback) ->
 %% @see export/3
 %% @see export_simple/2
 
-export_simple(Data, Callback, RootAttrs) when atom(Callback) ->
+export_simple(Data, Callback, RootAttrs) when is_atom(Callback) ->
     export_simple1(Data, callbacks(Callback), RootAttrs);
-export_simple(Data, Callbacks, RootAttrs) when list(Callbacks) ->
+export_simple(Data, Callbacks, RootAttrs) when is_list(Callbacks) ->
     export_simple1(Data, Callbacks, RootAttrs).
 
 export_simple1(Data, Callback, RootAttrs) ->
@@ -174,10 +174,10 @@ export1(Data, Callbacks, RootAttrs) when is_list(Data) ->
 
 %% @doc Exports simple XML content directly, without further context.
 
-export_simple_content(Data, Callback) when atom(Callback) ->
+export_simple_content(Data, Callback) when is_atom(Callback) ->
     export_content(xmerl_lib:expand_content(Data),
 		   callbacks(Callback));
-export_simple_content(Data, Callbacks) when list(Callbacks) ->
+export_simple_content(Data, Callbacks) when is_list(Callbacks) ->
     export_content(xmerl_lib:expand_content(Data), Callbacks).
 
 
@@ -200,17 +200,17 @@ export_content([], _CBs) ->
 
 %% @doc Exports a simple XML element directly, without further context.
 
-export_simple_element(Data, Callback) when atom(Callback) ->
+export_simple_element(Data, Callback) when is_atom(Callback) ->
     export_element(xmerl_lib:expand_element(Data),
 		   callbacks(Callback));
-export_simple_element(Data, Callbacks) when list(Callbacks) ->
+export_simple_element(Data, Callbacks) when is_list(Callbacks) ->
     export_element(xmerl_lib:expand_element(Data), Callbacks).
 
 %% @doc Exports a normal XML element directly, without further context.
 
 %% This is the usual DOM style parsing.
 
-export_element(E, CB) when atom(CB) ->
+export_element(E, CB) when is_atom(CB) ->
     export_element(E, callbacks(CB));
 export_element(#xmlText{value = Text}, CBs) ->
     apply_text_cb(CBs, Text);
@@ -233,7 +233,7 @@ export_element(#xmlDecl{}, _CBs) ->
 %% @spec export_element(E,CBs,UserState) -> ExportedFormat
 %% @doc For on-the-fly exporting during parsing (SAX style) of the XML
 %% document. 
-export_element(E, CB,CBstate) when atom(CB) ->
+export_element(E, CB,CBstate) when is_atom(CB) ->
     export_element(E, callbacks(CB), CBstate);
 export_element(#xmlText{value = Text},CBs,_CBstate) ->
 %%    apply_cb(CBs, '#text#', '#text#', [Text,CBstate]);

@@ -143,7 +143,7 @@
 	 uniq/1,
 	 unlock_table/1,
 	 unset/1,
-	 update_counter/2,
+	 %% update_counter/2,
 	 val/1,
 	 vcore/0,
 	 vcore/1,
@@ -208,7 +208,7 @@ sort_commit2([], Acc) -> Acc.
     
 is_string([H|T]) ->
     if
-	0 =< H, H < 256, integer(H)  -> is_string(T);
+	0 =< H, H < 256, is_integer(H)  -> is_string(T);
 	true -> false
     end;
 is_string([]) -> true.
@@ -235,7 +235,7 @@ uniq1(Old, [H|R], Ack) ->
 uniq1(Old, [], Ack) ->
     [Old| Ack].
 
-to_list(X) when list(X) -> X;
+to_list(X) when is_list(X) -> X;
 to_list(X) -> atom_to_list(X).
 
 all_nodes() ->
@@ -254,7 +254,7 @@ is_running_remote() ->
     IsRunning = is_running(),
     {IsRunning == yes, node()}.
 
-is_running(Node) when atom(Node) ->
+is_running(Node) when is_atom(Node) ->
     case rpc:call(Node, ?MODULE, is_running, []) of
 	{badrpc, _} -> no;
 	X -> X
@@ -479,11 +479,11 @@ active_tables() ->
 	end,
     lists:zf(F, Tabs).
 
-etype(X) when integer(X) -> integer;
+etype(X) when is_integer(X) -> integer;
 etype([]) -> nil;
-etype(X) when list(X) -> list;
-etype(X) when tuple(X) -> tuple;
-etype(X) when atom(X) -> atom;
+etype(X) when is_list(X) -> list;
+etype(X) when is_tuple(X) -> tuple;
+etype(X) when is_atom(X) -> atom;
 etype(_) -> othertype.
 
 remote_copy_holders(Cs) ->
@@ -533,19 +533,19 @@ create_counter(Name) ->
     set_counter(Name, 0).
 
 set_counter(Name, Val) ->
-    ?ets_insert(mnesia_gvar, {Name, Val}).
+    ?ets_insert(mnesia_stats, {Name, Val}).
 
 incr_counter(Name) ->
-    ?ets_update_counter(mnesia_gvar, Name, 1).
+    ?ets_update_counter(mnesia_stats, Name, 1).
 
 incr_counter(Name, I) ->
-    ?ets_update_counter(mnesia_gvar, Name, I).
+    ?ets_update_counter(mnesia_stats, Name, I).
 
-update_counter(Name, Val) ->
-    ?ets_update_counter(mnesia_gvar, Name, Val).
+%% update_counter(Name, Val) ->
+%%     ?ets_update_counter(mnesia_stats, Name, Val).
 
 read_counter(Name) ->
-    ?ets_lookup_element(mnesia_gvar, Name, 2).
+    ?ets_lookup_element(mnesia_stats, Name, 2).
 
 cs_to_nodes(Cs) ->
     Cs#cstruct.disc_only_copies ++
@@ -574,7 +574,7 @@ core_file() ->
 	  end,
     List = lists:append([Fun(I) || I <- Integers]),
     case mnesia_monitor:get_env(core_dir) of
-	Dir when list(Dir) ->
+	Dir when is_list(Dir) ->
 	    filename:absname(lists:concat(["MnesiaCore.", node()] ++ List), Dir);
 	_ ->
 	    filename:absname(lists:concat(["MnesiaCore.", node()] ++ List))
@@ -583,7 +583,8 @@ core_file() ->
 mkcore(CrashInfo) ->
 %   dbg_out("Making a Mnesia core dump...~p~n", [CrashInfo]),
     Nodes = [node() |nodes()],
-    TidLocks = (catch ets:tab2list(mnesia_tid_locks)),
+    %%TidLocks = (catch ets:tab2list(mnesia_tid_locks)),
+    HeldLocks = (catch mnesia:system_info(held_locks)),
     Core = [
 	    CrashInfo,
 	    {time, {date(), time()}},
@@ -603,10 +604,9 @@ mkcore(CrashInfo) ->
 	    {processes, catch procs()},
 	    {relatives, catch relatives()},
 	    {workers, catch workers(mnesia_controller:get_workers(2000))},
-	    {locking_procs, catch locking_procs(TidLocks)},
+	    {locking_procs, catch locking_procs(HeldLocks)},
 
-	    {held_locks, catch mnesia:system_info(held_locks)},
-	    {tid_locks, TidLocks},
+	    {held_locks, HeldLocks},
 	    {lock_queue, catch mnesia:system_info(lock_queue)},
 	    {load_info, catch mnesia_controller:get_info(2000)},
 	    {trans_info, catch mnesia_tm:get_info(2000)},
@@ -680,8 +680,8 @@ workers({workers, Loaders, Senders, Dumper}) ->
     Linfo = lists:zf(Info, Loaders),
     [{senders, SInfo},{loader, Linfo}|lists:zf(Info, [{dumper, Dumper}])].
 
-locking_procs(LockList) when list(LockList) ->
-    Tids = [element(1, Lock) || Lock <- LockList],
+locking_procs(LockList) when is_list(LockList) ->
+    Tids = [element(3, Lock) || Lock <- LockList],
     UT = uniq(Tids),    
     Info = fun(Tid) ->
 		   Pid = Tid#tid.pid,
@@ -743,7 +743,7 @@ vcore() ->
 	    Error
     end.
 
-vcore(Bin) when binary(Bin) ->
+vcore(Bin) when is_binary(Bin) ->
     Core = binary_to_term(Bin),
     Fun = fun({Item, Info}) ->
 		  show("***** ~p *****~n", [Item]),
@@ -800,8 +800,8 @@ fix_error(X) ->
     case X of
 	{aborted, Reason} -> Reason;
 	{abort, Reason} -> Reason;
-	Y when atom(Y) -> Y;
-	{'EXIT', {_Reason, {Mod, _, _}}} when atom(Mod) ->
+	Y when is_atom(Y) -> Y;
+	{'EXIT', {_Reason, {Mod, _, _}}} when is_atom(Mod) ->
 	    save(X),
 	    case atom_to_list(Mod) of
 		[$m, $n, $e|_] -> badarg;
@@ -843,7 +843,7 @@ error_desc({error, Reason}) ->
     error_desc(Reason);
 error_desc({aborted, Reason}) ->
     error_desc(Reason);
-error_desc(Reason) when tuple(Reason), size(Reason) > 0 ->
+error_desc(Reason) when is_tuple(Reason), size(Reason) > 0 ->
     setelement(1, Reason, error_desc(element(1, Reason)));
 error_desc(Reason) ->
     Reason.

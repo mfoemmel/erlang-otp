@@ -46,7 +46,7 @@
 %% Description: Send <Data> (Html page generated sofar) to the server
 %% request handling process so it can forward it to the client.
 %%-------------------------------------------------------------------------
-deliver(SessionID, Data) when pid(SessionID) ->
+deliver(SessionID, Data) when is_pid(SessionID) ->
     SessionID ! {ok, Data},
     ok;
 deliver(_SessionID, _Data) ->
@@ -87,7 +87,7 @@ do(ModData) ->
 %% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
 load("ErlScriptAlias " ++ ErlScriptAlias, []) ->
-    case regexp:split(ErlScriptAlias," ") of
+    case inets_regexp:split(ErlScriptAlias," ") of
 	{ok, [ErlName | StrModules]} ->
 	    Modules = lists:map(fun(Str) -> 
 					list_to_atom(httpd_conf:clean(Str)) 
@@ -98,7 +98,7 @@ load("ErlScriptAlias " ++ ErlScriptAlias, []) ->
 			 " is an invalid ErlScriptAlias")}
     end;
 load("EvalScriptAlias " ++ EvalScriptAlias, []) ->
-    case regexp:split(EvalScriptAlias, " ") of
+    case inets_regexp:split(EvalScriptAlias, " ") of
 	{ok, [EvalName | StrModules]} ->
 	    Modules = lists:map(fun(Str) -> 
 					list_to_atom(httpd_conf:clean(Str)) 
@@ -110,7 +110,7 @@ load("EvalScriptAlias " ++ EvalScriptAlias, []) ->
     end;
 load("ErlScriptTimeout " ++ Timeout, [])->
     case catch list_to_integer(httpd_conf:clean(Timeout)) of
-	TimeoutSec when integer(TimeoutSec)  ->
+	TimeoutSec when is_integer(TimeoutSec)  ->
 	   {ok, [], {erl_script_timeout, TimeoutSec * 1000}};
 	_ ->
 	   {error, ?NICE(httpd_conf:clean(Timeout) ++
@@ -211,7 +211,7 @@ match_esi_script(_, [], _) ->
     no_match;
 match_esi_script(RequestURI, [{Alias,Modules} | Rest], AliasType) ->
     AliasMatchStr = alias_match_str(Alias, AliasType),
-    case regexp:first_match(RequestURI, AliasMatchStr) of
+    case inets_regexp:first_match(RequestURI, AliasMatchStr) of
 	{match, 1, Length} ->
 	    {string:substr(RequestURI, Length + 1), Modules};
 	nomatch ->
@@ -483,7 +483,7 @@ generate_webpage(ESIBody) ->
 is_authorized(_ESIBody, [all]) ->
     true;
 is_authorized(ESIBody, Modules) ->
-    case regexp:match(ESIBody, "^[^\:(%3A)]*") of
+    case inets_regexp:match(ESIBody, "^[^\:(%3A)]*") of
 	{match, Start, Length} ->
 	    lists:member(list_to_atom(string:substr(ESIBody, Start, Length)),
 			 Modules);

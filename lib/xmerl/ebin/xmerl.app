@@ -1,6 +1,6 @@
 {application,xmerl,
  [{description,"XML parser"},
-  {vsn,"1.1.12"},
+  {vsn,"1.2"},
   {modules,[
 	xmerl,
 	xmerl_b64Bin,
@@ -10,6 +10,14 @@
 	xmerl_lib,
 	xmerl_otpsgml,
 	xmerl_regexp,
+	xmerl_sax_parser,
+	xmerl_sax_parser_list,
+	xmerl_sax_parser_latin1,
+	xmerl_sax_parser_utf8,
+	xmerl_sax_parser_utf16be,
+	xmerl_sax_parser_utf16le,
+	xmerl_sax_simple_dom,
+	xmerl_sax_old_dom,
 	xmerl_scan,
 	xmerl_sgml,
 	xmerl_simple,
@@ -28,6 +36,7 @@
 	xmerl_xsd,
 	xmerl_xsd_type
 	]},
+
   {registered, []},
   {env, []},
   {applications, [kernel, stdlib]}

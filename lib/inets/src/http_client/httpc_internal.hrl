@@ -18,42 +18,48 @@
 %%
 %%
 
--define(HTTP_REQUEST_TIMEOUT, infinity).
--define(HTTP_PIPELINE_TIMEOUT, 0).
--define(HTTP_PIPELINE_LENGTH, 2).
--define(HTTP_MAX_TCP_SESSIONS, 2).
--define(HTTP_MAX_REDIRECTS, 4).
+-define(HTTP_REQUEST_TIMEOUT,    infinity).
+-define(HTTP_PIPELINE_TIMEOUT,   0).
+-define(HTTP_PIPELINE_LENGTH,    2).
+-define(HTTP_MAX_TCP_SESSIONS,   2).
+-define(HTTP_MAX_REDIRECTS,      4).
 -define(HTTP_KEEP_ALIVE_TIMEOUT, 120000).
--define(HTTP_KEEP_ALIVE_LENGTH, 5).
+-define(HTTP_KEEP_ALIVE_LENGTH,  5).
 
 %%% HTTP Client per request settings
--record(http_options,{
+-record(http_options,
+	{
 	  version,       % string() - "HTTP/1.1" | "HTTP/1.0" | "HTTP/0.9"
 	  %% Milliseconds before a request times out
 	  timeout = ?HTTP_REQUEST_TIMEOUT,  
-	  %% bool() - True if automatic redirection on 30X responses.
-	  autoredirect = true, 
-	  ssl = [], % Ssl socket options
-	  proxy_auth, % {User, Password} = {strring(), string()} 
-	  relaxed = false % bool() true if not strictly standard compliant
-	 }).
+	  autoredirect = true, % bool() - true if auto redirect on 30x response
+	  ssl = [],            % Ssl socket options
+	  proxy_auth,          % {User, Password} = {strring(), string()} 
+	  relaxed = false      % bool() - true if not strictly std compliant
+	 }
+       ).
 
 %%% HTTP Client per profile setting. 
--record(options, {
-	  proxy =  {undefined, []}, % {{ProxyHost, ProxyPort}, [NoProxy]},
+-record(options, 
+	{
+	  proxy = {undefined, []}, % {{ProxyHost, ProxyPort}, [NoProxy]},
 	  %% 0 means persistent connections are used without pipelining
-	  pipeline_timeout = ?HTTP_PIPELINE_TIMEOUT, 
-	  max_pipeline_length = ?HTTP_PIPELINE_LENGTH,
+	  pipeline_timeout      = ?HTTP_PIPELINE_TIMEOUT, 
+	  max_pipeline_length   = ?HTTP_PIPELINE_LENGTH,
 	  max_keep_alive_length = ?HTTP_KEEP_ALIVE_LENGTH,
-	  keep_alive_timeout = ?HTTP_KEEP_ALIVE_TIMEOUT, % Used when pipeline_timeout = 0
-	  max_sessions =  ?HTTP_MAX_TCP_SESSIONS,
-	  cookies = disabled, % enabled | disabled | verify
-	  ipv6 = enabled, % enabled | disabled
-	  verbose = false
-	 }).
+	  keep_alive_timeout    = ?HTTP_KEEP_ALIVE_TIMEOUT, % Used when pipeline_timeout = 0
+	  max_sessions          = ?HTTP_MAX_TCP_SESSIONS,
+	  cookies               = disabled, % enabled | disabled | verify
+	  verbose               = false,
+	  ipfamily              = inet,    % inet | inet6 | inet6fb4
+	  ip                    = default, % specify local interface
+	  port                  = default  % specify local port
+	 }
+       ).
 
 %%% All data associated to a specific HTTP request
--record(request,{
+-record(request,
+	{
 	  id,            % ref() - Request Id
 	  from,          % pid() - Caller
 	  redircount = 0,% Number of redirects made for this request
@@ -70,7 +76,8 @@
 	  stream,	 % Boolean() - stream async reply?
 	  headers_as_is  % Boolean() - workaround for servers that does
 	  %% not honor the http standard, can also be used for testing purposes.
-	 }).               
+	 }
+       ).               
 
 -record(tcp_session,{
 	  id,           % {{Host, Port}, HandlerPid}

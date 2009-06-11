@@ -88,7 +88,7 @@ emit_encoding_stmt(G, N, Fd, T, LName, OutBuffer) when element(1, T) == scoped_i
     end;
 
 %% XXX T is a string
-emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when list(T) -> 
+emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when is_list(T) -> 
     %% Already a fullscoped name
     Type = ictype:name2type(G,T),
     case ictype:isBasicType(Type) of
@@ -101,14 +101,14 @@ emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when list(T) ->
 	    ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]), % XXX list
 	    emit(Fd, "    return oe_error_code;\n  }\n")
     end;
-emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when record(T, string) ->
+emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer)  when is_record(T, string) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, "
 	 " ~s)) < 0) {\n", 
 	 [LName]),
     ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
     emit(Fd, "    return oe_error_code;\n  }\n");
-emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer) when record(T, wstring) ->
+emit_encoding_stmt(G, N, Fd, T, LName, _OutBuffer) when is_record(T, wstring) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_wstring(oe_env, "
 	 "~s)) < 0) {\n", 
@@ -180,7 +180,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName, OutBuffer) when element(1, T) == scope
     end;
 
 %% XXX T is a string
-emit_encoding_stmt(G, N, X, Fd, T, LName, _OutBuffer) when list(T) -> 
+emit_encoding_stmt(G, N, X, Fd, T, LName, _OutBuffer) when is_list(T) -> 
     %% Already a fullscoped name
     case get_param_tk(LName,X) of
 	error ->
@@ -192,7 +192,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName, _OutBuffer) when list(T) ->
 	ParamTK ->
 	    case is_variable_size(ParamTK) of
 		true ->
-		    if tuple(ParamTK) ->
+		    if is_tuple(ParamTK) ->
 			    case element(1,ParamTK) of
 				tk_array ->
 				    %% Array of dynamic data
@@ -227,7 +227,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName, _OutBuffer) when list(T) ->
 			    emit(Fd, "    return oe_error_code;\n  }\n")
 		    end;
 		false ->
-		    if atom(ParamTK) ->
+		    if is_atom(ParamTK) ->
 			    case normalize_type(ParamTK) of
 				{basic, Type} ->
 				    emit_encoding_stmt_for_basic_type(G, N, T, Fd,
@@ -280,13 +280,13 @@ emit_encoding_stmt(G, N, X, Fd, T, LName, _OutBuffer) when list(T) ->
 		    end
 	    end
     end;
-emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer)  when record(T, string) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer)  when is_record(T, string) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, ~s)) < 0) {\n", 
 	 [LName]),
     ?emit_c_enc_rpt(Fd, "    ", "~s", [LName]),
     emit(Fd, "    return oe_error_code;\n  }\n");
-emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer) when record(T, wstring) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName, _OutBuffer) when is_record(T, wstring) ->
     %% Note prefix: oe_ei 
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_wstring(oe_env, ~s)) < 0) {\n", 
@@ -407,7 +407,7 @@ emit_malloc_size_stmt(G, N, Fd, T, InBuffer,
 
 %% XXX T is a string
 emit_malloc_size_stmt(G, N, Fd, T, InBuffer, 
-		      _Align, CalcType)  when list(T) -> 
+		      _Align, CalcType)  when is_list(T) -> 
     %% Already a fullscoped name
     Type = ictype:name2type(G,T),
     case ictype:isBasicType(Type) of
@@ -430,7 +430,7 @@ emit_malloc_size_stmt(G, N, Fd, T, InBuffer,
 	    end
     end;
 emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align, 
-		      CalcType) when record(T, string) ->
+		      CalcType) when is_record(T, string) ->
     Tname = mk_variable_name(op_variable_count),
     store_tmp_decl("    int ~s = 0;\n",[Tname]),
     case CalcType of
@@ -480,7 +480,7 @@ emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align,
 		 [ic_util:mk_align("oe_malloc_size + oe_temp+1")])
     end;
 emit_malloc_size_stmt(G, N, Fd, T, InBuffer, _Align, 
-		      CalcType) when record(T, wstring) ->
+		      CalcType) when is_record(T, wstring) ->
     Tname = mk_variable_name(op_variable_count),
     store_tmp_decl("    int ~s = 0;\n",[Tname]),
     case CalcType of
@@ -676,7 +676,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 
 %% XXX T is a string
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
-		   DecType, AllocedPars)  when list(T) -> 
+		   DecType, AllocedPars)  when is_list(T) -> 
     %% Already a fullscoped name
     Type = ictype:name2type(G,T),
     case ictype:isBasicType(Type) of
@@ -759,7 +759,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 	    end
     end;
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
-		   DecType, AllocedPars)  when record(T, string) ->
+		   DecType, AllocedPars)  when is_record(T, string) ->
     case DecType of
 	caller_dyn ->
 	    emit(Fd, "  if ((oe_error_code = ei_decode_string(~s, "
@@ -792,7 +792,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
 	    emit(Fd, "  }\n\n")	
     end;
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
-		   DecType, AllocedPars)  when record(T, wstring) ->  
+		   DecType, AllocedPars)  when is_record(T, wstring) ->  
     case DecType of
 	caller_dyn ->
 	    %% Note prefix: oe_ei 
@@ -1025,11 +1025,11 @@ mk_c_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
 	Type ->
 	    Type
     end;
-mk_c_type(_G, _N, S, _) when list(S) ->
+mk_c_type(_G, _N, S, _) when is_list(S) ->
     S;
-mk_c_type(_G, _N, S, _) when record(S, string) ->
+mk_c_type(_G, _N, S, _) when is_record(S, string) ->
     "CORBA_char *";
-mk_c_type(_G, _N, S, _) when record(S, wstring) -> 
+mk_c_type(_G, _N, S, _) when is_record(S, wstring) -> 
     "CORBA_wchar *";
 mk_c_type(_G, _N, {boolean, _}, _) ->
     "CORBA_boolean";
@@ -1050,10 +1050,10 @@ mk_c_type(_G, _N, {unsigned, U}, _) ->
 mk_c_type(_G, _N, {'long long', _}, _) ->
     "CORBA_long_long";
 
-mk_c_type(_G, _N, S, _) when record(S, union)->
+mk_c_type(_G, _N, S, _) when is_record(S, union)->
     ic_forms:get_id2(S);
 
-mk_c_type(_G, N, S, _) when record(S, struct) -> %% Locally defined member
+mk_c_type(_G, N, S, _) when is_record(S, struct) -> %% Locally defined member
     Fullname = [ic_forms:get_id2(S) | N],
     ic_util:to_undersc(Fullname);
 
@@ -1086,11 +1086,11 @@ mk_c_type2(G, N, S) when element(1, S) == scoped_id ->
 	    mk_c_type2(G, N, Type)
     end;
 
-mk_c_type2(_G, _N, S) when list(S) ->
+mk_c_type2(_G, _N, S) when is_list(S) ->
     S;
-mk_c_type2(_G, _N, S) when record(S, string) ->
+mk_c_type2(_G, _N, S) when is_record(S, string) ->
     "CORBA_char *";
-mk_c_type2(_G, _N, S) when record(S, wstring) -> 
+mk_c_type2(_G, _N, S) when is_record(S, wstring) -> 
     "CORBA_wchar *";
 mk_c_type2(_G, _N, {boolean, _}) ->
     "CORBA_boolean";
@@ -1111,14 +1111,14 @@ mk_c_type2(_G, _N, {unsigned, U}) ->
 mk_c_type2(_G, _N, {'long long', _}) ->
     "CORBA_long_long";
 
-mk_c_type2(_G, _N, S) when record(S, union)->
+mk_c_type2(_G, _N, S) when is_record(S, union)->
     ic_forms:get_id2(S);
 
-mk_c_type2(_G, N, S) when record(S, struct) ->
+mk_c_type2(_G, N, S) when is_record(S, struct) ->
     Fullname = [ic_forms:get_id2(S) | N],
     ic_util:to_undersc(Fullname);
 
-mk_c_type2(_G, _N, S) when record(S, sequence) ->
+mk_c_type2(_G, _N, S) when is_record(S, sequence) ->
     mk_c_type2(_G, _N, S#sequence.type);
 
 mk_c_type2(_G, _N, {'any', _}) ->  %% Fix for any type
@@ -1159,16 +1159,16 @@ is_variable_size(_Other) ->
     false.
 
 
-is_variable_size(_G, _N, T)  when record(T, string) ->
+is_variable_size(_G, _N, T)  when is_record(T, string) ->
     true;
-is_variable_size(_G, _N, T)  when record(T, wstring) ->
+is_variable_size(_G, _N, T)  when is_record(T, wstring) ->
     true;
-is_variable_size(_G, _N, T)  when record(T, sequence) ->
+is_variable_size(_G, _N, T)  when is_record(T, sequence) ->
     true;
-is_variable_size(G, N, T)  when record(T, union) ->
+is_variable_size(G, N, T)  when is_record(T, union) ->
     %%io:format("~n~p = ~p~n",[ic_forms:get_id2(T),ictype:fetchTk(G, N, T)]),
     is_variable_size(ictype:fetchTk(G, N, T));
-is_variable_size(G, N, T)  when record(T, struct) ->
+is_variable_size(G, N, T)  when is_record(T, struct) ->
     is_variable_size(ictype:fetchTk(G, N, T));
 is_variable_size(G, N, T) when element(1, T) == scoped_id ->
     case ic_symtab:get_full_scoped_name(G, N, T) of
@@ -1215,7 +1215,7 @@ store_tmp_decl(Format, Args) ->
 %%
 %%------------------------------------------------------------
 
-extract_info(_G, N, X) when record(X, op) ->
+extract_info(_G, N, X) when is_record(X, op) ->
     Name	=  ic_util:to_undersc([ic_forms:get_id2(X) | N]),
     Args	= X#op.params,
     ArgNames	= mk_c_vars(Args),
@@ -1239,7 +1239,7 @@ get_param_tk(Name, Op) ->
 	    ic_forms:get_tk(Param)
     end.
 
-get_param(Name, Op) when record(Op, op) ->
+get_param(Name, Op) when is_record(Op, op) ->
     get_param_loop(Name, Op#op.params);
 get_param(_Name, _Op) ->
     error.

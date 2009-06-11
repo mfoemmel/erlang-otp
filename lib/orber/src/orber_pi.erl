@@ -561,7 +561,7 @@ in_reply([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
 codefactory_create_codec(#'IOP_N_Encoding'{format = 'IOP_N_ENCODING_CDR_ENCAPS', 
 					   major_version = Major, 
 					   minor_version = Minor}) 
-  when integer(Major), integer(Minor) ->
+  when is_integer(Major) andalso is_integer(Minor) ->
     {Major, Minor};
 codefactory_create_codec(_) ->
     corba:raise(#'IOP_N_CodecFactory_UnknownEncoding'{}).
@@ -574,7 +574,7 @@ codefactory_create_codec(_) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-codec_encode(Version, Any) when record(Any, any) ->
+codec_encode(Version, Any) when is_record(Any, any) ->
     %% Encode ByteOrder
     {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
     {Bytes2, _Len2} = cdr_encode:enc_type('tk_any', Version, Any, Bytes, Len),
@@ -606,7 +606,7 @@ codec_encode_value(_Version, _NotAnAny) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-codec_decode(Version, Bytes) when binary(Bytes) ->
+codec_decode(Version, Bytes) when is_binary(Bytes) ->
     {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
     case catch cdr_decode:dec_type('tk_any', Version, Rest, 0, ByteOrder) of
 	{Any, [], _} ->
@@ -626,7 +626,7 @@ codec_decode(_Version, _Any) ->
 %% Exception: 
 %% Effect   : 
 %%------------------------------------------------------------
-codec_decode_value(Version, Bytes, TypeCode) when binary(Bytes) ->
+codec_decode_value(Version, Bytes, TypeCode) when is_binary(Bytes) ->
     {ByteOrder, Rest} = cdr_decode:dec_byte_order(Bytes),
     case catch cdr_decode:dec_type(TypeCode, Version, Rest, 0, ByteOrder) of
 	{Val, [], _} ->

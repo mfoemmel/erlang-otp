@@ -74,7 +74,7 @@
 -export([module/2,format_error/1]).
 
 -import(lists, [reverse/1,reverse/2,map/2,member/2,foldl/3,foldr/3,mapfoldl/3,
-		splitwith/2,keysearch/3,sort/1,foreach/2]).
+		splitwith/2,keyfind/3,sort/1,foreach/2]).
 -import(ordsets, [add_element/2,del_element/2,is_element/2,
 		  union/1,union/2,intersection/2,subtract/2]).
 
@@ -732,7 +732,7 @@ verify_suitable_fields([{bin_element,_,Val,SzTerm,Opts}|Es]) ->
 	true -> ok;
 	false -> throw(error)			%Native endian.
     end,
-    {value,{unit,Unit}} = keysearch(unit, 1, Opts),
+    {unit,Unit} = keyfind(unit, 1, Opts),
     case {SzTerm,Val} of
 	{{atom,_,undefined},{char,_,_}} ->
 	    %% UTF-8/16/32.
@@ -1163,10 +1163,10 @@ bc_elem_size({bin,_,El}, St0) ->
     end.
 
 bc_elem_size_1([{bin_element,_,_,{integer,_,N},Flags}|Es], Bits, Vars) ->
-    {value,{unit,U}} = keysearch(unit, 1, Flags),
+    {unit,U} = keyfind(unit, 1, Flags),
     bc_elem_size_1(Es, Bits+U*N, Vars);
 bc_elem_size_1([{bin_element,_,_,{var,_,Var},Flags}|Es], Bits, Vars) ->
-    {value,{unit,U}} = keysearch(unit, 1, Flags),
+    {unit,U} = keyfind(unit, 1, Flags),
     bc_elem_size_1(Es, Bits, [{U,#c_var{name=Var}}|Vars]);
 bc_elem_size_1([_|_], _, _) ->
     throw(impossible);
@@ -1275,7 +1275,7 @@ bc_bin_size({bin,_,Els}) ->
     bc_bin_size_1(Els, 0).
 
 bc_bin_size_1([{bin_element,_,_,{integer,_,Sz},Flags}|Els], N) ->
-    {value,{unit,U}} = keysearch(unit, 1, Flags),
+    {unit,U} = keyfind(unit, 1, Flags),
     bc_bin_size_1(Els, N+U*Sz);
 bc_bin_size_1([], N) -> N;
 bc_bin_size_1(_, _) -> throw(impossible).

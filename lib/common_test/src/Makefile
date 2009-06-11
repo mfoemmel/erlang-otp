@@ -80,14 +80,6 @@ DTD_FILES = \
 	mp.dtd
 
 # ----------------------------------------------------
-# GENERATED FILES
-# ----------------------------------------------------
-
-#APP_FILE = 
-#APP_SRC = $(APP_FILE).src
-#APP_TARGET = $(EBIN)/$(APP_FILE)
-
-# ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 ERL_COMPILE_FLAGS += -pa ../ebin -I../include -I $(ERL_TOP)/lib/snmp/include/ \
@@ -99,27 +91,33 @@ ERL_COMPILE_FLAGS += -pa ../ebin -I../include -I $(ERL_TOP)/lib/snmp/include/ \
 # ----------------------------------------------------
 TARGET_FILES = \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
-	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
+	$(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
+	$(APP_TARGET) $(APPUP_TARGET)
 
-TARGETS = \
-	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
-	$(MODULES:%=$(EBIN)/%.$(EMULATOR)) 
-#$(APP_TARGET)	
+APP_FILE= common_test.app
+APP_SRC= $(APP_FILE).src
+APP_TARGET= $(EBIN)/$(APP_FILE)
 
+APPUP_FILE= common_test.appup
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
-tests debug opt: $(TARGETS)
+tests debug opt: $(TARGET_FILES)
 
 docs:
 
 clean:
-	rm -f $(TARGET_FILES) $(GEN_FILES) #$(APP_TARGET)
+	rm -f $(TARGET_FILES) $(GEN_FILES)
 	rm -f core
 
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-#$(APP_TARGET): $(APP_SRC)
-#	sed -e 's;%VSN%;$(VSN);' $< > $@
+$(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target
@@ -129,9 +127,8 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/src
-#$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(APP_TARGET) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES)  $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(EXTERNAL_HRL_FILES) $(RELSYSDIR)/include
 

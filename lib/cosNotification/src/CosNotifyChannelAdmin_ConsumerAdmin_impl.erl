@@ -431,7 +431,7 @@ add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -442,7 +442,7 @@ remove_filter(_,_,_,_) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -624,7 +624,7 @@ forward(any, [{_,H,_,_}|T], State, Event, Status) ->
 	ok ->
 	    ?DBG("CONSUMERADM FORWARD ANY: ~p~n",[Event]),
 	    forward(any, T, State, Event, Status);
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
 		      "Proxy no longer exists; dropping it: ~p", 
 		      [?LINE, H], ?DEBUG_LEVEL),
@@ -647,7 +647,7 @@ forward(seq, [{_,H,_,_}|T], State, Event, Status) ->
 	ok ->
 	    ?DBG("CONSUMERADM FORWARD SEQUENCE: ~p~n",[Event]),
 	    forward(seq, T, State, Event, Status);
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') ->
 	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
 		      "Proxy no longer exists; dropping it: ~p", 
 		      [?LINE, H], ?DEBUG_LEVEL),

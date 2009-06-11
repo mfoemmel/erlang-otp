@@ -477,14 +477,14 @@ connect(Host, _, Objkey, Timeout, Index,
 	#host_data{protocol = ssl, 
 		   ssl_data = #'SSLIOP_SSL'{port = Port}, 
 		   csiv2_mech = Mech} = HostData,
-	TaggedProfile, IOR, Ctx) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+	TaggedProfile, IOR, Ctx) when is_record(Mech, 'CSIIOP_CompoundSecMech') ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
 	     TaggedProfile, IOR, Ctx);
 %% CSIv2 over TCP (TAG_NULL_TAG) using the SAS protocol.
 connect(Host, Port, Objkey, Timeout, Index, 
 	#host_data{protocol = normal, 
 		   csiv2_mech = Mech} = HostData,
-	TaggedProfile, IOR, Ctx) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+	TaggedProfile, IOR, Ctx) when is_record(Mech, 'CSIIOP_CompoundSecMech') ->
     connect2([{Host, Port}], Objkey, Timeout, Index, HostData, 
 	     TaggedProfile, IOR, Ctx);
 connect(_Host, _Port, _Objkey, _Timeout, _Index, HostData, _TaggedProfile, 

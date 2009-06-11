@@ -169,6 +169,12 @@ set_config_flags ()
 		    CONFIG_FLAGS="--disable-dynamic-ssl-lib $CONFIG_FLAGS"
 		fi
 	fi
+	if [ "x$OVERRIDE_CONFIG_CACHE" = "x" ]; then
+	    CONFIG_FLAGS="$CONFIG_FLAGS --cache-file=/dev/null"
+	else
+	   CONFIG_FLAGS="$CONFIG_FLAGS --cache-file=$OVERRIDE_CONFIG_CACHE" 
+	fi
+
 	CONFIG_FLAGS="$CONFIG_FLAGS $*"
 	export CONFIG_FLAGS;
 }
@@ -248,7 +254,7 @@ mk_targetdir ()
 	echo "creating  $ERL_TOP/$TARGET"
 	mkdir $ERL_TOP/$TARGET
     else
-	echo "existing $ERL_TOP/$TARGET is used for cache"
+	echo "existing $ERL_TOP/$TARGET is used"
     fi
 }
 
@@ -341,11 +347,11 @@ do_configure ()
 	    if [ -z "$ONLY_ERTS" ]; then
 		for x in $crossdirs; do
 		    if [ -f "$x/configure" ]; then
-			(cd $x;./configure --host=$erl_xcomp_hw --with-xcompconf=$ERL_XCOMP_CONF --cache-file=/dev/null $CONFIG_FLAGS) || exit 1
+			(cd $x;./configure --host=$erl_xcomp_hw --with-xcompconf=$ERL_XCOMP_CONF $CONFIG_FLAGS) || exit 1
 		    fi
 		done
 	    else
-		(cd $ERL_TOP/erts;./configure --host=$erl_xcomp_hw --with-xcompconf=$ERL_XCOMP_CONF --cache-file=/dev/null $CONFIG_FLAGS) || exit 1
+		(cd $ERL_TOP/erts;./configure --host=$erl_xcomp_hw --with-xcompconf=$ERL_XCOMP_CONF $CONFIG_FLAGS) || exit 1
 	    fi
 	    CC="$save_CC"
 	    LD="$save_LD"
@@ -368,10 +374,10 @@ do_configure ()
     fi
     set_config_flags $CONFIG_FLAGS "$@"
     if [ -z "$ONLY_ERTS" ]; then
-	./configure --cache-file=/dev/null $CONFIG_FLAGS || exit 1
+	./configure $CONFIG_FLAGS || exit 1
     else
-	echo "erts/configure --cache-file=/dev/null $CONFIG_FLAGS"
-	(cd $ERL_TOP/erts; ./configure --cache-file=/dev/null $CONFIG_FLAGS) || exit 1
+	echo "erts/configure $CONFIG_FLAGS"
+	(cd $ERL_TOP/erts; ./configure $CONFIG_FLAGS) || exit 1
     fi
     OVERRIDE_TARGET="$save_ot"
     export OVERRIDE_TARGET
@@ -602,6 +608,7 @@ echo_env_win32 ()
     echo_setenv CXX cc.sh ';'
     echo_setenv AR ar.sh ';'
     echo_setenv RANLIB true ';'
+    echo_setenv OVERRIDE_CONFIG_CACHE "$ERL_TOP/erts/autoconf/win32.config.cache"
     echo_setenv PATH "$ERL_TOP/erts/etc/win32/cygwin_tools/vc:$ERL_TOP/erts/etc/win32/cygwin_tools:$P3"
     echo_envinfo
 }

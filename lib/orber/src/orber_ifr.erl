@@ -694,7 +694,7 @@ add_items_helper([ok], _) ->
 %%=================== End Light IFR operations =========================
 
 %% Initialize the database
-init(Nodes, Timeout) when atom(Timeout) ; integer(Timeout) ->
+init(Nodes, Timeout) when is_atom(Timeout) orelse is_integer(Timeout) ->
     orber_ifr_utils:init_DB(Timeout, [{disc_copies, Nodes}]);
 init(Timeout, Nodes) ->
     orber_ifr_utils:init_DB(Timeout, [{disc_copies, Nodes}]).

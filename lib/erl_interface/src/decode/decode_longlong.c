@@ -23,7 +23,7 @@
 #ifdef EI_64BIT
 int ei_decode_long(const char *buf, int *index, long *p)
 {
-    return ei_decode_longlong(buf, index, p);
+    return ei_decode_longlong(buf, index, (EI_LONGLONG *)p);
 }
 #endif
 

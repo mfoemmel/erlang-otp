@@ -27,8 +27,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../../vsn.mk
 
-VSN     = $(INETS_VSN)
-APP_VSN = "inets-$(VSN)"
+VSN = $(INETS_VSN)
 
 # ----------------------------------------------------
 # Release directory specification

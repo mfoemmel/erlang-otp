@@ -134,6 +134,37 @@ DirOut = os:cmd("dir"), % on Win32 platform</code>
       </desc>
     </func>
     <func>
+      <name>timestamp() -> {MegaSecs, Secs, MicroSecs}</name>
+      <fsummary>Returna a timestamp from the OS in the erlang:now/0 format</fsummary>
+      <type>
+        <v>MegaSecs = Secs = MicroSecs = int()</v>
+      </type>
+      <desc>
+      <p>Returns a tuple in the same format as <seealso marker="erts:erlang#now/0">erlang:now/0</seealso>. The difference is that this function returns what the operating system thinks (a.k.a. the wall clock time) without any attemts at time correction. The result of two different calls to this function is <em>not</em> guaranteed to be different.</p>
+      <p>The most obvious use for this function is logging. The tuple can be used together with the function <seealso marker="stdlib:calendar#now_to_universal_time/1">calendar:now_to_universal_time/1</seealso> 
+or <seealso marker="stdlib:calendar#now_to_local_time/1">calendar:now_to_local_time/1</seealso> to get calendar time. Using the calendar time together with the <c>MicroSecs</c> part of the return tuple from this function allows you to log timestams in high resolution and consistent with the time in the rest of the operating system.</p>
+      <p>Example of code formatting a string in the format &quot;DD Mon YYYY HH:MM:SS.mmmmmm&quot;, where DD is the day of month, Mon is the textual month name, YYYY is the year, HH:MM:SS is the time and mmmmmm is the microseconds in six positions:</p>
+<code>
+-module(print_time).
+-export([format_utc_timestamp/0]).
+format_utc_timestamp() ->
+    TS = {_,_,Micro} = os:timestamp(),
+    {{Year,Month,Day},{Hour,Minute,Second}} = 
+	calendar:now_to_universal_time(TS),
+    Mstr = element(Month,{"Jan","Feb","Mar","Apr","May","Jun","Jul",
+			  "Aug","Sep","Oct","Nov","Dec"}),
+    io_lib:format("~2w ~s ~4w ~2w:~2..0w:~2..0w.~6..0w",
+		  [Day,Mstr,Year,Hour,Minute,Second,Micro]).
+</code>
+
+       <p>The module above could be used in the following way:</p>
+<pre>
+1> <input>io:format("~s~n",[print_time:format_utc_timestamp()]).</input>
+29 Apr 2009  9:55:30.051711
+</pre>
+      </desc>
+    </func>
+    <func>
       <name>type() -> {Osfamily, Osname} | Osfamily</name>
       <fsummary>Return the OS family and, in some cases, OS name of the current operating system</fsummary>
       <type>

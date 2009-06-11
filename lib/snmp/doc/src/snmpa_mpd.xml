@@ -39,7 +39,10 @@
       It is supposed to be used from a Network Interface process 
       (<seealso marker="snmp_agent_netif">Definition of Agent Net if</seealso>).
       </p>
+
+    <marker id="init"></marker>
   </description>
+
   <funcs>
     <func>
       <name>init(Vsns) -> mpd_state()</name>
@@ -54,10 +57,13 @@
           </p>
         <p>It also initializes some SNMP counters.
           </p>
+
+        <marker id="process_packet"></marker>
       </desc>
     </func>
+
     <func>
-      <name>process_packet(Packet, TDomain, TAddress, State) -> {ok, Vsn, Pdu, PduMS, ACMData} | {discarded, Reason}</name>
+      <name>process_packet(Packet, TDomain, TAddress, State) -> {ok, Vsn, Pdu, PduMS, ACMData} | {discarded, Reason} | {discovery, DiscoPacket}</name>
       <fsummary>Process a packet received from the network</fsummary>
       <type>
         <v>Packet = binary()</v>
@@ -70,13 +76,18 @@
         <v>Pdu = #pdu</v>
         <v>PduMs = integer()</v>
         <v>ACMData = acm_data()</v>
+        <v>Reason = term()</v>
+        <v>DiscoPacket = binary()</v>
       </type>
       <desc>
         <p>Processes an incoming packet.  Performs authentication and 
           decryption as necessary.  The return values should be passed the
           agent.</p>
+
+        <marker id="generate_response_msg"></marker>
       </desc>
     </func>
+
     <func>
       <name>generate_response_msg(Vsn, RePdu, Type, ACMData) -> {ok, Packet} | {discarded, Reason}</name>
       <fsummary>Generate a response packet to be sent to the network</fsummary>
@@ -91,8 +102,11 @@
         <p>Generates a possibly encrypted response packet to be sent to the
           network. <c>Type</c> is the <c>#pdu.type</c> of the original
           request.</p>
+
+        <marker id="generate_msg"></marker>
       </desc>
     </func>
+
     <func>
       <name>generate_msg(Vsn, Pdu, MsgData, To) -> {ok, PacketsAndAddresses} | {discarded, Reason}</name>
       <fsummary>Generate a request message to be sent to the network</fsummary>
@@ -121,8 +135,11 @@
           their corresponding security parameters.  This value is
           also received from the requests mentioned above.
           </p>
+
+        <marker id="discarded_pdu"></marker>
       </desc>
     </func>
+
     <func>
       <name>discarded_pdu(Variable) -> void()</name>
       <fsummary>Increment the variable associated with a discarded pdu</fsummary>

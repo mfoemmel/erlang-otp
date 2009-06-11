@@ -2363,7 +2363,7 @@ void db_do_update_element(DbUpdateHandle* handle,
 	handle->dbterm->tpl[position] = newval;
 	return;
     }
-    else if (!handle->mustFinalize && is_boxed(newval)) {
+    else if (!handle->mustResize && is_boxed(newval)) {
 	newp = boxed_val(newval);
 	switch (*newp & _TAG_HEADER_MASK) {
 	case _TAG_HEADER_POS_BIG:
@@ -2403,44 +2403,9 @@ both_size_set:
 
     /* write new value in old dbterm, finalize will make a flat copy */	
     handle->dbterm->tpl[position] = newval;
-    handle->mustFinalize = 1;
+    handle->mustResize = 1;
 }
 
-/* Must be called after calls to db_do_update_element
-** if handle->mustFinalize is true.
-*/
-void db_finalize_update_element(DbUpdateHandle* handle)
-{
-    Eterm* top;
-    Eterm copy;
-    DbTerm* newDbTerm;
-
-    ASSERT(handle->mustFinalize);
-    newDbTerm = handle->tb->common.meth->db_alloc_newsize (handle->tb,
-							   handle->bp, 
-							   handle->new_size);
-    newDbTerm->size = handle->new_size;
-    newDbTerm->off_heap.mso = NULL;
-    newDbTerm->off_heap.externals = NULL;
-#ifndef HYBRID /* FIND ME! */
-    newDbTerm->off_heap.funs = NULL;
-#endif
-    newDbTerm->off_heap.overhead = 0;
-    
-    /* make a flat copy */
-    top = DBTERM_BUF(newDbTerm);
-    copy = copy_struct(make_tuple(handle->dbterm->tpl),
-		       handle->new_size,
-		       &top, &newDbTerm->off_heap);
-    DBTERM_SET_TPL(newDbTerm,tuple_val(copy));
-
-    db_free_term_data(handle->dbterm);
-    handle->tb->common.meth->db_free_dbterm(handle->tb,handle->dbterm);
-#ifdef DEBUG
-    handle->dbterm = 0;
-#endif
-    return;
-}   
 
 /*
 ** Copy the object into a possibly new DbTerm, 

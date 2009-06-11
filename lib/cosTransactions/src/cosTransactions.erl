@@ -59,7 +59,7 @@ stop() ->
 start_factory() ->
     ?tr_start_child(?SUP_FAC(?tr_FAC_DEF)).
     
-start_factory(Args) when list(Args) ->
+start_factory(Args) when is_list(Args) ->
     ?tr_start_child(?SUP_FAC(Args));
 start_factory(Args) ->
     ?tr_error_msg("applications:start( ~p ) failed. Bad parameters~n", [Args]),

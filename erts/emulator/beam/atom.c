@@ -30,7 +30,6 @@
 
 
 #define ATOM_SIZE  3000
-#define ATOM_LIMIT (1024*1024)
 
 IndexTable erts_atom_table;	/* The index table */
 
@@ -44,6 +43,12 @@ static erts_smp_rwmtx_t atom_table_lock;
 #define atom_write_unlock()	erts_smp_rwmtx_rwunlock(&atom_table_lock)
 #define atom_init_lock()	erts_smp_rwmtx_init(&atom_table_lock, \
 						    "atom_tab")
+#if 0
+#define ERTS_ATOM_PUT_OPS_STAT
+#endif
+#ifdef ERTS_ATOM_PUT_OPS_STAT
+static erts_smp_atomic_t atom_put_ops;
+#endif
 
 /* Functions for allocating space for the ext of atoms. We do not
  * use malloc for each atom to prevent excessive memory fragmentation
@@ -69,6 +74,11 @@ void atom_info(int to, void *to_arg)
     if (lock)
 	atom_read_lock();
     index_info(to, to_arg, &erts_atom_table);
+#ifdef ERTS_ATOM_PUT_OPS_STAT
+    erts_print(to, to_arg, "atom_put_ops: %ld\n",
+	       erts_smp_atomic_read(&atom_put_ops));
+#endif
+
     if (lock)
 	atom_read_unlock();
 }
@@ -203,6 +213,9 @@ am_atom_put(const char* name, int len)
     if (len > MAX_ATOM_LENGTH) {
 	len = MAX_ATOM_LENGTH;
     }
+#ifdef ERTS_ATOM_PUT_OPS_STAT
+    erts_smp_atomic_inc(&atom_put_ops);
+#endif
     a.len = len;
     a.name = (byte*)name;
     atom_read_lock();
@@ -291,6 +304,10 @@ init_atom_table(void)
     HashFunctions f;
     int i;
     Atom a;
+
+#ifdef ERTS_ATOM_PUT_OPS_STAT
+    erts_smp_atomic_init(&atom_put_ops, 0);
+#endif
 
     atom_init_lock();
     f.hash = (H_FUN) atom_hash;

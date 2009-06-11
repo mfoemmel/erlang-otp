@@ -42,7 +42,7 @@
 %%-----------------------------------------------------------------
 -export([]).
 
-enum_gen(G, N, X, c) when record(X, enum) ->
+enum_gen(G, N, X, c) when is_record(X, enum) ->
     emit_c_enum(G, N, X);
 enum_gen(_G, _N, _X, _L) ->
     ok.

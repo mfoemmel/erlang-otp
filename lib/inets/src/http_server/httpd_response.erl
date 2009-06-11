@@ -158,13 +158,17 @@ send_header(#mod{socket_type = Type, socket = Sock,
     Head = list_to_binary([StatusLine, Headers, ConnectionHeader , ?CRLF]),
     httpd_socket:deliver(Type, Sock, Head).
 
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 2, Code > 204 ->
+map_status_code("HTTP/1.0", Code) 
+  when ((Code div 100) =:= 2) andalso (Code > 204) ->
     403;
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 3, Code > 304 ->
+map_status_code("HTTP/1.0", Code) 
+  when ((Code div 100) =:= 3) andalso (Code > 304) ->
     403;
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 4, Code > 404 ->
+map_status_code("HTTP/1.0", Code) 
+  when ((Code div 100) =:= 4) andalso (Code > 404) ->
     403;
-map_status_code("HTTP/1.0", Code) when (Code div 100) == 5, Code > 503 ->
+map_status_code("HTTP/1.0", Code) 
+  when ((Code div 100) =:= 5) andalso (Code > 503) ->
     403;
 map_status_code(_, Code) ->
     Code.
@@ -174,7 +178,7 @@ send_body(#mod{socket_type = Type, socket = Socket}, _, nobody) ->
     ok;
 
 send_body(#mod{socket_type = Type, socket = Sock}, 
-	  _StatusCode, Body) when list(Body) ->
+	  _StatusCode, Body) when is_list(Body) ->
     ok = httpd_socket:deliver(Type, Sock, Body);
 
 send_body(#mod{socket_type = Type, socket = Sock} = ModData, 
@@ -280,7 +284,7 @@ upify([], Acc) ->
 upify([Key|Rest], Acc) ->
     upify(Rest, [upify2(Key)|Acc]).
 
-upify2([C|Rest]) when C >= $a, C =< $z ->
+upify2([C|Rest]) when (C >= $a) andalso (C =< $z) ->
     [C-($a-$A)|Rest];
 upify2(Str) ->
     Str.

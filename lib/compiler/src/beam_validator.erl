@@ -104,7 +104,7 @@ format_error(Error) ->
 
 s_file(Name) ->
     {ok,Is} = file:consult(Name),
-    {value,{module,Module}} = lists:keysearch(module, 1, Is),
+    {module,Module} = lists:keyfind(module, 1, Is),
     Fs = find_functions(Is),
     validate(Module, Fs).
 

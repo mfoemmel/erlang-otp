@@ -95,7 +95,7 @@ codeDirective(G,X) ->
     end.
 
 %% Checks if X should produce code
-produceCode(X) when record(X, module) ->
+produceCode(X) when is_record(X, module) ->
     case ic_forms:get_body(X) of
         [] ->
             true;
@@ -107,7 +107,7 @@ produceCode(_X) ->
     
 produceModuleCode([]) ->
     false;
-produceModuleCode([X|_Xs]) when record(X, const) ->
+produceModuleCode([X|_Xs]) when is_record(X, const) ->
     true;
 produceModuleCode([_X|Xs]) ->
     produceModuleCode(Xs).
@@ -302,7 +302,7 @@ type_expand_all(G,N,X,Fd,Tabs,[{ArgName,Type}|Rest]) ->
 type_expand_all(G,N,X,Fd,Tabs,[{default,_ArgName,Type}|Rest]) ->
     type_expand(G,N,X,Fd,Tabs,"Def",Type),
     type_expand_all(G,N,X,Fd,Tabs,Rest);
-type_expand_all(G,N,X,Fd,Tabs,[{LabelNr,_ArgName,Type}|Rest]) when integer(LabelNr) ->
+type_expand_all(G,N,X,Fd,Tabs,[{LabelNr,_ArgName,Type}|Rest]) when is_integer(LabelNr) ->
     type_expand(G,N,X,Fd,Tabs,"V" ++ integer_to_list(LabelNr),Type),
     type_expand_all(G,N,X,Fd,Tabs,Rest);
 type_expand_all(G,N,X,Fd,Tabs,[{Label,_ArgName,Type}|Rest]) ->
@@ -511,14 +511,14 @@ type_expand_union_rule(Fd,[]) ->
     ic_codegen:emit(Fd," ????");
 type_expand_union_rule(Fd,[{default,_Name,_TC}]) ->
     ic_codegen:emit(Fd,"Def~n",[]);
-type_expand_union_rule(Fd,[{LNr,_Name,_TC}]) when integer(LNr)->
+type_expand_union_rule(Fd,[{LNr,_Name,_TC}]) when is_integer(LNr)->
     ic_codegen:emit(Fd,"V~p~n",[LNr]);
 type_expand_union_rule(Fd,[{Label,_Name,_TC}]) ->
     ic_codegen:emit(Fd,"~s~n",[Label]);
 type_expand_union_rule(Fd,[{default,_Name,_TC}|Rest]) ->
     ic_codegen:emit(Fd,"Default | "),
     type_expand_union_rule(Fd,Rest);
-type_expand_union_rule(Fd,[{LNr,_Name,_TC}|Rest]) when integer(LNr) ->
+type_expand_union_rule(Fd,[{LNr,_Name,_TC}|Rest]) when is_integer(LNr) ->
     ic_codegen:emit(Fd,"V~p | ",[LNr]),
     type_expand_union_rule(Fd,Rest);
 type_expand_union_rule(Fd,[{Label,_Name,_TC}|Rest]) ->

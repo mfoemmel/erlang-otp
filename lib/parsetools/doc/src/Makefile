@@ -41,7 +41,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/parsetools-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 XML_APPLICATION_FILES = ref_man.xml
-XML_REF3_FILES = yecc.xml
+XML_REF3_FILES = yecc.xml leex.xml
 
 XML_PART_FILES = part_notes.xml
 XML_CHAPTER_FILES = notes.xml

@@ -711,6 +711,9 @@ init_scanner() ->
 	flex ->
 	    start_scanner(megaco_flex_scanner_handler, 
 			  start_link, [], [gen_server]);
+	{flex, Opts} when is_list(Opts) -> % For future use
+	    start_scanner(megaco_flex_scanner_handler, 
+			  start_link, [Opts], [gen_server]);
 	{M, F, A, Mods} when is_atom(M) andalso 
 			     is_atom(F) andalso 
 			     is_list(A) andalso 

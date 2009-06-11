@@ -532,11 +532,11 @@ add_var(V, F, L, Vdb) ->
 vdb_find(V, Vdb) ->
     %% Performance note: Profiling shows that this function accounts for
     %% a lot of the execution time when huge constant terms are built.
-    %% Using the BIF lists:keysearch/3 is a lot faster than the
+    %% Using the BIF lists:keyfind/3 is a lot faster than the
     %% original Erlang version.
-    case lists:keysearch(V, 1, Vdb) of
-	{value,Vd} -> Vd;
-	false -> error
+    case lists:keyfind(V, 1, Vdb) of
+	false -> error;
+	Vd -> Vd
     end.
 
 %vdb_find(V, [{V1,F,L}=Vd|Vdb]) when V < V1 -> error;

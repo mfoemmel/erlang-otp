@@ -538,7 +538,7 @@ add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,What) ->
     orber:dbg("[~p] PullerConsumer:remove_filter(~p); Not an integer", 
@@ -551,7 +551,7 @@ remove_filter(_,_,_,What) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when is_integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,What) ->
     orber:dbg("[~p] PullerConsumer:get_filter(~p); Not an integer", 
@@ -713,9 +713,9 @@ forward(any, State, [Event], SendTo, Status) ->
 	ok ->
 	    ?DBG("PROXY FORWARD ANY: ~p~n",[Event]),
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-			      record(E, 'NO_PERMISSION') ;
-			      record(E, 'CosEventComm_Disconnected') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+			      is_record(E, 'NO_PERMISSION') orelse
+			      is_record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PullerConsumer:forward();~n"
 		      "Admin/Channel no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),
@@ -743,9 +743,9 @@ forward(seq, State, Event, SendTo, Status) ->
 	ok ->
 	    ?DBG("PROXY FORWARD SEQUENCE: ~p~n",[Event]),
 	    {noreply, State};
-	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ;
-			      record(E, 'NO_PERMISSION') ;
-			      record(E, 'CosEventComm_Disconnected') ->
+	{'EXCEPTION', E} when is_record(E, 'OBJECT_NOT_EXIST') orelse
+			      is_record(E, 'NO_PERMISSION') orelse
+			      is_record(E, 'CosEventComm_Disconnected') ->
 	    orber:dbg("[~p] PullerConsumer:forward();~n"
 		      "Admin/Channel no longer exists; terminating and dropping: ~p", 
 		      [?LINE, Event], ?DEBUG_LEVEL),

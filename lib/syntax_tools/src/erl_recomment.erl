@@ -149,35 +149,40 @@ recomment_forms_1([C | Cs], Ns, Insert) ->
 recomment_forms_1([], Ns, _Insert) ->
     Ns.
 
-recomment_forms_2(C, [Node | Ns], Insert) ->
+recomment_forms_2(C, [N | Ns] = Nodes, Insert) ->
     {L, Col, Ind, Text} = C,
-    Min = node_min(Node),
-    Max = node_max(Node),
-    N = comment_delta(Text),
-    if L > Max ->
-	    [Node | recomment_forms_2(C, Ns, Insert)];
-       L + N < Min - 1 ->
+    Min = node_min(N),
+    Max = node_max(N),
+    Delta = comment_delta(Text),
+    Trailing = 
+	case Ns of
+	    [] -> true;
+	    [Next | _] -> L < node_min(Next) - 2
+	end,
+    if L > Max + 1 ; L =:= Max + 1, not Trailing ->
+	    [N | recomment_forms_2(C, Ns, Insert)];
+       L + Delta < Min - 1 ->
 	    %% At least one empty line between the current form
 	    %% and the comment, so we make it a standalone.
-	    [standalone_comment(C), Node | Ns];
+	    [standalone_comment(C) | Nodes];
        L < Min ->
 	    %% The comment line should be above this node.
 	    %% (This duplicates what insert/5 would have done.)
-	    [node_add_precomment(C, Node) | Ns];
-       Col =< 1, L =< Min, L + N >= Min ->
+	    [node_add_precomment(C, N) | Ns];
+       Col =< 1, L =< Min, L + Delta >= Min ->
 	    %% This is a conflict - the "first" token of the node
 	    %% overlaps with some comment line, but the comment
 	    %% started at column 1.
-	    Node1 = standalone_comment(C),
+	    N1 = standalone_comment(C),
 	    if L < Min ->
-		    [Node1, Node | Ns];
+		    [N1 | Nodes];
 	       true ->
-		    [Node, Node1 | Ns]
+		    [N, N1 | Ns]
 	    end;
-       Insert == true ->
-	    [insert(Node, L, Col, Ind, C) | Ns];
+       Insert =:= true ->
+	    [insert(N, L, Col, Ind, C) | Ns];
        true ->
-	    [Node | Ns]    % skipping non-toplevel comment
+	    Nodes    % skipping non-toplevel comment
     end;
 recomment_forms_2(C, [], _Top) ->
     [standalone_comment(C)].
@@ -218,11 +223,11 @@ filter_forms([F | Fs], Kill, S) ->
 		     _ ->
 			 S
 		 end,
-	    if S1#filter.file == A1,
+	    if S1#filter.file =:= A1,
 	       S1#filter.line =< A2 ->
 		    [F | filter_forms(Fs, false,
 				      S1#filter{line = A2})];
-	       Kill == true ->
+	       Kill =:= true ->
 		    [node_kill_range(F)
 		     | filter_forms(Fs, true, S1)];
 	       true ->
@@ -367,7 +372,7 @@ insert(Node, L, Col, Ind, C) ->
 	    if L < Min ->
 		    %% The comment line should be above this node.
 		    node_add_precomment(C, Node);
-	       Min == Max  ->
+	       Min =:= Max  ->
 		    %% The whole node is on a single line (this
 		    %% should usually catch all leaf nodes), so we
 		    %% postfix the comment.

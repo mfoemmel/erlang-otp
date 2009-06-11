@@ -1130,7 +1130,7 @@ get_ifr_node([], _, _) ->
 get_ifr_node(Nodes, N, L) ->
     Node = lists:nth(N, Nodes),
     case catch corba:resolve_initial_references_remote("OrberIFR", [Node]) of
-	IFR when record(IFR, 'IOP_IOR') ->
+	IFR when is_record(IFR, 'IOP_IOR') ->
 	    IFR;
 	_ ->
 	    %% Not able to commincate with the node. Try next one.
@@ -1210,7 +1210,7 @@ get_user_exception_type(TypeId) ->
 		false ->
 		    case mnesia:dirty_index_read(ir_ExceptionDef, TypeId,
 						 #ir_ExceptionDef.id) of
-			[ExcDef] when record(ExcDef, ir_ExceptionDef) ->  
+			[ExcDef] when is_record(ExcDef, ir_ExceptionDef) ->  
 			    ExcDef#ir_ExceptionDef.type;
 			Other ->
 			    orber:dbg("[~p] cdr_decode:get_user_exception_type(~p). IFR Id not found: ~p", 

@@ -28,6 +28,8 @@
 -define(VMODULE,"DISK_LOG").
 
 -include("httpd.hrl").
+
+
 %%%=========================================================================
 %%%  API 
 %%%=========================================================================
@@ -135,7 +137,7 @@ do(Info) ->
 %% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
 load("TransferDiskLogSize " ++ TransferDiskLogSize, []) ->
-    case regexp:split(TransferDiskLogSize," ") of
+    case inets_regexp:split(TransferDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of
 		{ok,MaxBytesInteger} ->
@@ -157,7 +159,7 @@ load("TransferDiskLog " ++ TransferDiskLog,[]) ->
     {ok,[],{transfer_disk_log,httpd_conf:clean(TransferDiskLog)}};
  
 load("ErrorDiskLogSize " ++  ErrorDiskLogSize, []) ->
-    case regexp:split(ErrorDiskLogSize," ") of
+    case inets_regexp:split(ErrorDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of
 		{ok,MaxBytesInteger} ->
@@ -178,7 +180,7 @@ load("ErrorDiskLog " ++ ErrorDiskLog, []) ->
     {ok, [], {error_disk_log, httpd_conf:clean(ErrorDiskLog)}};
 
 load("SecurityDiskLogSize " ++ SecurityDiskLogSize, []) ->
-    case regexp:split(SecurityDiskLogSize, " ") of
+    case inets_regexp:split(SecurityDiskLogSize, " ") of
 	{ok, [MaxBytes, MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of
 		{ok, MaxBytesInteger} ->

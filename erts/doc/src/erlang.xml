@@ -2565,11 +2565,11 @@ os_prompt%</pre>
       <name>open_port(PortName, PortSettings) -> port()</name>
       <fsummary>Open a port</fsummary>
       <type>
-        <v>PortName = {spawn, Command} | {fd, In, Out}</v>
+        <v>PortName = {spawn, Command} | {spawn_driver, Command} | {spawn_executable, Command} | {fd, In, Out}</v>
         <v>&nbsp;Command = string()</v>
         <v>&nbsp;In = Out = int()</v>
         <v>PortSettings = [Opt]</v>
-        <v>&nbsp;Opt = {packet, N} | stream | {line, L} | {cd, Dir} | {env, Env} | exit_status | use_stdio | nouse_stdio | stderr_to_stdout | in | out | binary | eof</v>
+        <v>&nbsp;Opt = {packet, N} | stream | {line, L} | {cd, Dir} | {env, Env} | {args, [ string() ]} | {arg0, string()} | exit_status | use_stdio | nouse_stdio | stderr_to_stdout | in | out | binary | eof</v>
         <v>&nbsp;&nbsp;N = 1 | 2 | 4</v>
         <v>&nbsp;&nbsp;L = int()</v>
         <v>&nbsp;&nbsp;Dir = string()</v>
@@ -2598,6 +2598,51 @@ os_prompt%</pre>
               <c>vfork</c>, setting the environment variable
               <c>ERL_NO_VFORK</c> to any value will cause <c>fork</c>
               to be used instead.</p>
+
+	      <p>For external programs, the <c>PATH</c> is searched
+	      (or an equivalent method is used to find programs,
+	      depending on operating system). This is done by invoking
+	      the shell och certain platforms. The first space
+	      separated token of the command will be considered as the
+	      name of the executable (or driver). This (among other
+	      things) makes this option unsuitable for running
+	      programs having spaces in file or directory names. Use
+	      {spawn_executable, Command} instead if spaces in executable
+	      file names is desired.</p>
+          </item>
+          <tag><c>{spawn_driver, Command}</c></tag>
+          <item>
+	      <p>Works like <c>{spawn, Command}</c>, but demands the 
+	      first (space separated) token of the command to be the name of a
+	      loaded driver. If no driver with that name is loaded, a
+	      <c>badarg</c> error is raised.</p>
+          </item>
+          <tag><c>{spawn_executable, Command}</c></tag>
+          <item>
+
+	      <p>Works like <c>{spawn, Command}</c>, but only runs
+	      external executables. The <c>Command</c> in it's whole
+	      is used as the name of the executable, including any
+	      spaces. If arguments are to be passed, the
+	      <c>args</c> and <c>arg0</c> <c>PortSettings</c> can be used.</p>
+
+	      <p>The shell is not usually invoked to start the
+	      program, it's executed directly. Neither is the
+	      <c>PATH</c> (or equivalent) searched. To find a program
+	      in the PATH to execute, use <seealso
+	      marker="kernel:os#find_executable/1">os:find_executable/1</seealso>.</p>
+	      <p>Only if a shell script or <c>.bat</c> file is
+	      executed, the appropriate command interpreter will
+	      implicitly be invoked, but there will still be no
+	      command argument expansion or implicit PATH search.</p>
+	      
+	      <p>If the <c>Command</c> cannot be run, an error
+	      exception, with the posix error code as the reason, is
+	      raised. The error reason may differ between operating
+	      systems. Typically the error <c>enoent</c> is raised
+	      when one tries to run a program that is not found and
+	      <c>eaccess</c> is raised when the given file is not
+	      executable.</p>
           </item>
           <tag><c>{fd, In, Out}</c></tag>
           <item>
@@ -2646,14 +2691,16 @@ os_prompt%</pre>
           </item>
           <tag><c>{cd, Dir}</c></tag>
           <item>
-            <p>This is only valid for <c>{spawn, Command}</c>.
+            <p>This is only valid for <c>{spawn, Command}</c> and 
+	    <c>{spawn_executable, Command}</c>.
               The external program starts using <c>Dir</c> as its
               working directory. <c>Dir</c> must be a string. Not
               available on VxWorks.</p>
           </item>
           <tag><c>{env, Env}</c></tag>
           <item>
-            <p>This is only valid for <c>{spawn, Command}</c>.
+            <p>This is only valid for <c>{spawn, Command}</c> and 
+	    <c>{spawn_executable, Command}</c>.
               The environment of the started process is extended using
               the environment specifications in <c>Env</c>.</p>
             <p><c>Env</c> should be a list of tuples <c>{Name, Val}</c>,
@@ -2665,10 +2712,54 @@ os_prompt%</pre>
               removes the environment variable. Not available on
               VxWorks.</p>
           </item>
+	  <tag><c>{args, [ string() ]}</c></tag>
+          <item>
+
+	    <p>This option is only valid for <c>{spawn_executable, Command}</c>
+	    and specifies arguments to the executable. Each argument
+	    is given as a separate string and (on Unix) eventually
+	    ends up as one element each in the argument vector. On
+	    other platforms, similar behavior is mimicked.</p>
+
+	    <p>The arguments are not expanded by the shell prior to
+	      being supplied to the executable, most notably this
+	      means that file wildcard expansion will not happen. Use
+	      <seealso
+	      marker="stdlib:filelib#wildcard/1">filelib:wildcard/1</seealso>
+	      to expand wildcards for the arguments. Note that even if
+	      the program is a Unix shell script, meaning that the
+	      shell will ultimately be invoked, wildcard expansion
+	      will not happen and the script will be provided with the
+	      untouched arguments. On Windows&reg;, wildcard expansion
+	      is always up to the program itself, why this isn't an
+	      issue.</p>
+
+	    <p>Note also that the actual executable name (a.k.a. <c>argv[0]</c>)
+	    should not be given in this list. The proper executable name will
+	    automatically be used as argv[0] where applicable.</p>
+
+	    <p>If one, for any reason, wants to explicitly set the
+	    program name in the argument vector, the <c>arg0</c>
+	    option can be used.</p>
+
+          </item>
+	  <tag><c>{arg0, string()}</c></tag>
+          <item>
+
+	    <p>This option is only valid for <c>{spawn_executable, Command}</c>
+	    and explicitly specifies the program name argument when
+	    running an executable. This might in some circumstances,
+	    on some operating systems, be desirable. How the program
+	    responds to this is highly system dependent and no specific 
+	    effect is guaranteed.</p>
+
+	  </item> 
+
           <tag><c>exit_status</c></tag>
           <item>
             <p>This is only valid for <c>{spawn, Command}</c> where
-              <c>Command</c> refers to an external program.</p>
+              <c>Command</c> refers to an external program, and for 
+	      <c>{spawn_executable, Command}</c>.</p>
             <p>When the external process connected to the port exits, a
               message of the form <c>{Port,{exit_status,Status}}</c> is
               sent to the connected process, where <c>Status</c> is the
@@ -2683,7 +2774,8 @@ os_prompt%</pre>
           </item>
           <tag><c>use_stdio</c></tag>
           <item>
-            <p>This is only valid for <c>{spawn, Command}</c>. It
+            <p>This is only valid for <c>{spawn, Command}</c> and 
+	    <c>{spawn_executable, Command}</c>. It
               allows the standard input and output (file descriptors 0
               and 1) of the spawned (UNIX) process for communication
               with Erlang.</p>
@@ -2763,8 +2855,17 @@ os_prompt%</pre>
           <item>
             <p>The file table is full (for the entire operating system).</p>
           </item>
+          <tag><c>eacces</c></tag>
+          <item>
+            <p>The <c>Command</c> given in <c>{spawn_executable, Command}</c> does not point out an executable file.</p>
+          </item>
+          <tag><c>enoent</c></tag>
+          <item>
+            <p>The <c>Command</c> given in <c>{spawn_executable, Command}</c> does not point out an existing file.</p>
+          </item>
         </taglist>
         <p>During use of a port opened using <c>{spawn, Name}</c>,
+          <c>{spawn_driver, Name}</c> or <c>{spawn_executable, Name}</c>,
           errors arising when sending messages to it are reported to
           the owning process using signals of the form
           <c>{'EXIT', Port, PosixCode}</c>. See <c>file(3)</c> for
@@ -4645,10 +4746,15 @@ true</pre>
 	       topology is changed, the schedulers will be sent a request
 	       to rebind according to the new CPU topology.
 	    </p>
+	    <p>The user defined CPU topology can also be set by passing
+	       the <seealso marker="erl#+sct">+sct</seealso> command
+	       line argument to <c>erl</c>.
+	    </p>
 	    <p>For information on the <c>CpuTopology</c> type
 	       and more, see the documentation of
 	       <seealso marker="#system_info_cpu_topology">erlang:system_info(cpu_topology)</seealso>,
-	       and
+	       the <c>erl</c> <seealso marker="erl#+sct">+sct</seealso>
+	       emulator flag, and
 	       <seealso marker="#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, How)</seealso>.
 	    </p>
           </item>
@@ -4826,10 +4932,15 @@ true</pre>
 	        <p>If no CPU topology information is available.</p>
               </item>
             </taglist>
+	    <p>The scheduler bind type can also be set by passing
+	       the <seealso marker="erl#+sbt">+sbt</seealso> command
+	       line argument to <c>erl</c>.
+	    </p>
 	    <p>For more information, see
 	       <seealso marker="#system_info_scheduler_bind_type">erlang:system_info(scheduler_bind_type)</seealso>,
 	       <seealso marker="#system_info_scheduler_bindings">erlang:system_info(scheduler_bindings)</seealso>,
-	       and
+	       the <c>erl</c> <seealso marker="erl#+sbt">+sbt</seealso>
+	       emulator flag, and
 	       <seealso marker="#system_flag_cpu_topology">erlang:system_flag(cpu_topology, CpuTopology)</seealso>.
 	    </p>
           </item>

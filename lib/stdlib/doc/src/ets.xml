@@ -57,6 +57,9 @@
       will not automatically be destroyed unless the owner process
       terminates. It can be destroyed explicitly by using
       <c>delete/1</c>.</p>
+    <p>Since R13B01, table ownership can be transferred at process termination
+      by using the <seealso marker="#heir">heir</seealso> option or explicitly
+      by calling <seealso marker="#give_away/3">give_away/3</seealso>.</p>
     <p>Some implementation details:</p>
     <list type="bulleted">
       <item>In the current implementation, every object insert and
@@ -377,6 +380,27 @@ Error: fun containing local Erlang function calls
       </desc>
     </func>
     <func>
+      <name>give_away(Tab, Pid, GiftData) -> true</name>
+      <fsummary>Change owner of a table.</fsummary>
+      <type>
+        <v>Tab = tid() | atom()</v>
+        <v>Pid = pid()</v>
+        <v>GiftData = term()</v>
+      </type>
+      <desc>
+        <p>Make process <c>Pid</c> the new owner of table <c>Tab</c>.
+          If successful, the message
+          <c>{'ETS-TRANSFER',Tab,FromPid,GiftData}</c> will be sent
+          to the new owner.</p>
+        <p>The process <c>Pid</c> must be alive, local and not already the
+          owner of the table. The calling process must be the table owner.</p>
+        <p>Note that <c>give_away</c> does not at all affect the
+          <seealso marker="#heir">heir</seealso> option of the table. A table
+          owner can for example set the <c>heir</c> to itself, give the table
+          away and then get it back in case the receiver terminates.</p>
+      </desc>
+    </func>
+    <func>
       <name>i() -> ok</name>
       <fsummary>Display information about all ETS tables on tty.</fsummary>
       <desc>
@@ -415,6 +439,9 @@ Error: fun containing local Erlang function calls
           <item><c>Item=owner, Value=pid()</c>          <br></br>
 
            The pid of the owner of the table.</item>
+          <item><c>Item=heir, Value=pid()|none</c>          <br></br>
+
+           The pid of the heir of the table, or <c>none</c> if no heir is set.</item>
           <item><c>Item=name, Value=atom()</c>          <br></br>
 
            The name of the table.</item>
@@ -899,10 +926,11 @@ ets:select(Table,MatchSpec),</code>
       <type>
         <v>Name = atom()</v>
         <v>Options = [Option]</v>
-        <v>&nbsp;Option = Type | Access | named_table | {keypos,Pos}</v>
+        <v>&nbsp;Option = Type | Access | named_table | {keypos,Pos} | {heir,pid(),HeirData} | {heir,none} | {write_concurrency,bool()}</v>
         <v>&nbsp;&nbsp;Type = set | ordered_set | bag | duplicate_bag</v>
         <v>&nbsp;&nbsp;Access = public | protected | private</v>
         <v>&nbsp;&nbsp;Pos = int()</v>
+        <v>&nbsp;&nbsp;HeirData = term()</v>
       </type>
       <desc>
         <p>Creates a new table and returns a table identifier which can
@@ -914,7 +942,7 @@ ets:select(Table,MatchSpec),</code>
           table is named or not. If one or more options are left out,
           the default values are used. This means that not specifying
           any options (<c>[]</c>) is the same as specifying
-          <c>[set,protected,{keypos,1}]</c>.</p>
+          <c>[set,protected,{keypos,1},{heir,none},{write_concurrency,false}]</c>.</p>
         <list type="bulleted">
           <item>
             <p><c>set</c>
@@ -978,6 +1006,29 @@ ets:select(Table,MatchSpec),</code>
               key if we want to store Erlang records in a table.</p>
             <p>Note that any tuple stored in the table must have at
               least <c>Pos</c> number of elements.</p>
+          </item>
+          <item>
+            <marker id="heir"></marker>
+            <p><c>{heir,Pid,HeirData} | {heir,none}</c><br></br>
+              Set a process as heir. The heir will inherit the table if
+              the owner terminates. The message
+              <c>{'ETS-TRANSFER',tid(),FromPid,HeirData}</c> will be sent to
+              the heir when that happens. The heir must be a local process.
+              Default heir is <c>none</c>, which will destroy the table when
+              the owner terminates.</p>
+          </item>
+          <item>
+            <p><c>{write_concurrency,bool()}</c>
+              Performance tuning. Default is <c>false</c>, which means that the table
+              is optimized towards concurrent read access. An operation that
+              mutates (writes to) the table will obtain exclusive access,
+              blocking any concurrent access of the same table until finished.
+              If set to <c>true</c>, the table is optimized towards concurrent
+              write access. Different parts of the same table can be mutated
+              (and read) by concurrent processes. This is achieve to some degree
+              at the expense of single access and concurrent reader performance.
+              Table typ <c>ordered_set</c> is not affected by this option in current
+              implementation.</p>
           </item>
         </list>
       </desc>
@@ -1324,6 +1375,22 @@ is_integer(X), is_integer(Y), X + Y < 4711]]></code>
           that does not actually delete any elements, but only counts
           them.</p>
         <p>The function returns the number of objects matched.</p>
+      </desc>
+    </func>
+    <func>
+      <name>setopts(Tab, Opts) -> true</name>
+      <fsummary>Set table options.</fsummary>
+      <type>
+        <v>Tab = tid() | atom()</v>
+        <v>Opts = Opt | [Opt]</v>
+        <v>Opt = {heir,pid(),HeirData} | {heir,none}</v>
+        <v>HeirData = term()</v>
+      </type>
+      <desc>
+        <p>Set table options. The only option that currently is allowed to be
+          set after the table has been created is
+          <seealso marker="#heir">heir</seealso>. The calling process must be
+          the table owner.</p>
       </desc>
     </func>
     <func>

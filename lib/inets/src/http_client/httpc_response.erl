@@ -59,13 +59,13 @@ parse_headers([Bin, Rest,Header, Headers, MaxHeaderSize, Result, Relaxed]) ->
     
 whole_body(Body, Length) ->
     case size(Body) of
-	N when N < Length, N > 0  ->
+	N when (N < Length) andalso (N > 0)  ->
 	    {?MODULE, whole_body, [Body, Length]};
 	%% OBS!  The Server may close the connection to indicate that the
 	%% whole body is now sent instead of sending a lengh
 	%% indicator.In this case the lengh indicator will be
 	%% -1.
-	N when N >= Length, Length >= 0 -> 
+	N when (N >= Length) andalso (Length >= 0) -> 
 	    %% Potential trailing garbage will be thrown away in
 	    %% format_response/1 Some servers may send a 100-continue
 	    %% response without the client requesting it through an
@@ -86,7 +86,7 @@ whole_body(Body, Length) ->
 %%-------------------------------------------------------------------------
 result(Response = {{_, Code,_}, _, _}, 
        Request = #request{stream = Stream}) 
-  when ((Code == 200) or (Code == 206)) and (Stream =/= none) ->
+  when ((Code =:= 200) orelse (Code =:= 206)) andalso (Stream =/= none) ->
     stream_end(Response, Request);
 
 result(Response = {{_,100,_}, _, _}, Request) ->
@@ -96,7 +96,7 @@ result(Response = {{_,100,_}, _, _}, Request) ->
 result(Response = {{_, Code, _}, _, _}, Request =
        #request{redircount = Redirects,
 		settings = #http_options{autoredirect = true}}) 
-  when Code div 100 == 3, Redirects > ?HTTP_MAX_REDIRECTS ->
+  when ((Code div 100) =:= 3) andalso (Redirects > ?HTTP_MAX_REDIRECTS) ->
     transparent(Response, Request);
 
 %% multiple choices 
@@ -109,24 +109,24 @@ result(Response = {{_, 300, _}, _, _},
 result(Response = {{_, Code, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = true},
-			  method = head}) when Code == 301;
-					       Code == 302;
-					       Code == 303;
-					       Code == 307 ->
+			  method = head}) when (Code =:= 301) orelse
+					       (Code =:= 302) orelse
+					       (Code =:= 303) orelse
+					       (Code =:= 307) ->
     redirect(Response, Request);
 result(Response = {{_, Code, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = true},
-			  method = get}) when Code == 301;
-					      Code == 302;
-					      Code == 303;
-					      Code == 307 ->
+			  method = get}) when (Code =:= 301) orelse 
+					      (Code =:= 302) orelse 
+					      (Code =:= 303) orelse 
+					      (Code =:= 307) ->
     redirect(Response, Request);
 
 
 result(Response = {{_,503,_}, _, _}, Request) ->
     status_service_unavailable(Response, Request);
-result(Response = {{_,Code,_}, _, _}, Request) when (Code div 100) == 5 ->
+result(Response = {{_,Code,_}, _, _}, Request) when (Code div 100) =:= 5 ->
     status_server_error_50x(Response, Request);
 
 result(Response, Request) -> 
@@ -314,7 +314,7 @@ status_service_unavailable(Response = {_, Headers, _}, Request) ->
     case Headers#http_response_h.'retry-after' of 
 	undefined ->
 	    status_server_error_50x(Response, Request);
-	Time when length(Time) < 3 -> % Wait only 99 s or less 
+	Time when (length(Time) < 3) -> % Wait only 99 s or less 
 	    NewTime = list_to_integer(Time) * 100, % time in ms
 	    {_, Data} =  format_response(Response),
 	    {retry, {NewTime, Request}, Data};
@@ -364,9 +364,15 @@ redirect(Response = {StatusLine, Headers, Body}, Request) ->
 	    end
     end.
 
+maybe_to_list(Port) when is_integer(Port) ->
+    integer_to_list(Port);
+maybe_to_list(Port) when is_list(Port) ->
+    Port.
+
 %%% Guessing that we received a relative URI, fix it to become an absoluteURI
 fix_relative_uri(Request, RedirUrl) ->
-    {Server, Port} = Request#request.address,
+    {Server, Port0} = Request#request.address,
+    Port = maybe_to_list(Port0),
     Path = Request#request.path,
     atom_to_list(Request#request.scheme) ++ "://" ++ Server ++ ":" ++ Port
 	++ Path ++ RedirUrl.
@@ -386,8 +392,7 @@ stream_start(Headers, Request, Pid) ->
      http_response:header_list(Headers), Pid}.
 
 stream_end(Response, Request = #request{stream = Self}) 
-  when Self == self;
-       Self == {self, once}-> 
+  when (Self =:= self) orelse (Self =:= {self, once}) -> 
     {{_, Headers, _}, Data} =  format_response(Response),
     {ok, {Request#request.id, stream_end, Headers}, Data};
 
@@ -395,7 +400,7 @@ stream_end(Response, Request) ->
     {_, Data} =  format_response(Response),
     {ok, {Request#request.id, saved_to_file}, Data}.
 
-is_server_closing(Headers) when record(Headers,http_response_h) ->
+is_server_closing(Headers) when is_record(Headers, http_response_h) ->
     case Headers#http_response_h.connection of
 	"close" ->
 	    true;
@@ -416,7 +421,7 @@ format_response({StatusLine, Headers, Body}) ->
 		{Body, <<>>};
 	    -1 -> % When no lenght indicator is provided
 		{Body, <<>>};
-	    Length when Length =< size(Body) ->
+	    Length when (Length =< size(Body)) ->
 		<<BodyThisReq:Length/binary, Next/binary>> = Body,
 		{BodyThisReq, Next};
 	    _ -> %% Connection prematurely ended. 

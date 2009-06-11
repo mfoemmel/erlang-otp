@@ -111,8 +111,11 @@ readdir(XF, ReqID, Handle) ->
 		?binary(Handle)]).    
 
 write(XF,ReqID, Handle, Offset, Data) ->
-    Data1 = if binary(Data) -> Data;
-	       list(Data) -> list_to_binary(Data)
+    Data1 = if 
+		is_binary(Data) ->
+		    Data;
+		is_list(Data) -> 
+		    list_to_binary(Data)
 	    end,
     xf_request(XF,?SSH_FXP_WRITE,
 	       [?uint32(ReqID),
@@ -257,15 +260,21 @@ extended(XF, ReqID, Request, Data) ->
 xf_request(XF, Op, Arg) ->
     CM = XF#ssh_xfer.cm,
     Channel = XF#ssh_xfer.channel,
-    Data = if binary(Arg) -> Arg;
-	      list(Arg) -> list_to_binary(Arg)
+    Data = if 
+	       is_binary(Arg) -> 
+		   Arg;
+	       is_list(Arg) ->
+		   list_to_binary(Arg)
 	   end,
     Size = 1+size(Data),
     ssh_connection:send(CM, Channel, <<?UINT32(Size), Op, Data/binary>>).
 
 xf_send_reply(#ssh_xfer{cm = CM, channel = Channel}, Op, Arg) ->    
-    Data = if binary(Arg) -> Arg;
-	      list(Arg) -> list_to_binary(Arg)
+    Data = if 
+	       is_binary(Arg) ->
+		   Arg;
+	       is_list(Arg) ->
+		   list_to_binary(Arg)
 	   end,
     Size = 1 + size(Data),
     ssh_connection:send(CM, Channel, <<?UINT32(Size), Op, Data/binary>>).

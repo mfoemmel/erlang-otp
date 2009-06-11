@@ -738,6 +738,7 @@ handle_send_discovery(#state{log   = Log,
   when is_binary(Packet) ->
     log(Log, Type, Packet, Ip, Port),
     udp_send(Sock, Ip, Port, Packet),
+    ?vtrace("handle_send_discovery -> sent (~w)", [ReqId]),
     NReqs = snmp_misc:keyreplaceadd(From, 2, Reqs, {ReqId, From}),
     S#state{reqs = NReqs}.
 

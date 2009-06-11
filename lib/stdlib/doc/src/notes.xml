@@ -29,6 +29,80 @@
   </header>
   <p>This document describes the changes made to the STDLIB application.</p>
 
+<section><title>STDLIB 1.16.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>The text of tokens returned by the Erlang scanner
+	    (<c>erl_scan</c>) was sometimes empty when the
+	    <c>text</c> option was given and <c>StartLocation</c> was
+	    a line. This bug has been fixed.</p>
+          <p>
+	    Own Id: OTP-7965</p>
+        </item>
+        <item>
+	    <p>The documentation for <c>base64:decode/1</c> has been
+	    updated to point out that it strips whitespace.</p>
+	    <p><c>base64:decode/1</c> and <c>base64:mime_decode/1</c>
+	    would sometimes fail instead of stripping away non-base64
+	    characters.</p>
+          <p>
+	    Own Id: OTP-7984</p>
+        </item>
+        <item>
+          <p>
+	    Two types in the <c>gen</c> module were corrected.</p>
+          <p>
+	    Own Id: OTP-8029 Aux Id: seq11296 </p>
+        </item>
+        <item>
+          <p>
+	    <c>array:from_orddict([])</c> and
+	    <c>array:from_list([])</c> would construct fixed arrays
+	    instead of extendible arrays.</p>
+          <p>
+	    Own Id: OTP-8033</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Interpreted escripts are now tail recursive.</p>
+          <p>
+	    The function erl_eval:expr/5 has been introduced.</p>
+          <p>
+	    Own Id: OTP-7933</p>
+        </item>
+        <item>
+          <p>
+	    <c>gen_server:call/2,3</c> will be somewhat faster if the
+	    calling process has a many messages in its message queue.</p>
+          <p>
+	    Own Id: OTP-7979</p>
+        </item>
+        <item>
+          <p>
+	    Random now supports seed with arity one,
+	    <c>random:seed/1</c>, which takes a three-tuple.</p>
+          <p>
+	    Own Id: OTP-8019</p>
+        </item>
+        <item>
+	    <p>The <c>regexp</c> module now recognizes the escape
+	    sequences <c>\xXY</c> and <c>\x{X...}</c>.</p>
+          <p>
+	    Own Id: OTP-8024</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>STDLIB 1.16.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

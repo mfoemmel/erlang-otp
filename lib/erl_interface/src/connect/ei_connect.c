@@ -1168,13 +1168,12 @@ static void gen_digest(unsigned challenge, char cookie[],
 }
 
 
-static char *hex(char digest[16])
+static char *hex(char digest[16], char buff[33])
 {
-    unsigned char *d = (unsigned char *) digest;
-    /* FIXME problem for threaded ? */
-    static char buff[sizeof(digest)*2 + 1];
-    char *p = buff;
     static char tab[] = "0123456789abcdef";
+    unsigned char *d = (unsigned char *) digest;
+    //static char buff[sizeof(digest)*2 + 1];
+    char *p = buff;
     int i;
     
     for (i = 0; i < sizeof(digest); ++i) {
@@ -1193,7 +1192,7 @@ static int read_2byte_package(int fd, char **buf, int *buflen,
     unsigned len;
     int res;
     
-    if((res = ei_read_fill_t(fd, nbuf, 2, ms)) != 2) {
+    if((res = ei_read_fill_t(fd, (char *)nbuf, 2, ms)) != 2) {
 	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
@@ -1342,7 +1341,7 @@ static int recv_challenge(int fd, unsigned *challenge,
     int rlen;
     char *s;
     struct sockaddr_in sin;
-    int sin_len = sizeof(sin);
+    socklen_t sin_len = sizeof(sin);
     char tag;
     
     erl_errno = EIO;		/* Default */
@@ -1432,9 +1431,12 @@ static int send_challenge_reply(int fd, unsigned char digest[16],
 	return -1;
     }
     
-    EI_TRACE_CONN2("send_challenge_reply",
+    if (ei_tracelevel >= 3) {
+	char buffer[33];	
+   	EI_TRACE_CONN2("send_challenge_reply",
 		   "-> SEND_CHALLENGE_REPLY (ok) challenge = %d, digest = %s",
-		   challenge,hex(digest));
+		   challenge,hex((char*)digest, buffer));
+    }
     return 0;
 }
 
@@ -1478,9 +1480,14 @@ static int recv_challenge_reply (int fd,
     }
     if (!is_static)
 	free(buf);
-    EI_TRACE_CONN2("recv_challenge_reply",
+
+   
+    if (ei_tracelevel >= 3) {
+	char buffer[33];	
+        EI_TRACE_CONN2("recv_challenge_reply",
 		   "<- RECV_CHALLENGE_REPLY (ok) challenge = %u, digest = %s",
-		   *her_challenge,hex(her_digest));
+		   *her_challenge,hex(her_digest,buffer));
+    }
     erl_errno = 0;
     return 0;
     
@@ -1510,8 +1517,11 @@ static int send_challenge_ack(int fd, unsigned char digest[16], unsigned ms)
 	return -1;
     }
     
-    EI_TRACE_CONN1("recv_challenge_reply",
-		   "-> SEND_CHALLENGE_ACK (ok) digest = %s",hex(digest));
+    if (ei_tracelevel >= 3) {
+	char buffer[33];	
+    	EI_TRACE_CONN1("recv_challenge_reply",
+		   "-> SEND_CHALLENGE_ACK (ok) digest = %s",hex((char *)digest,buffer));
+    }
     
     return 0;
 }
@@ -1553,8 +1563,12 @@ static int recv_challenge_ack(int fd,
     }
     if (!is_static)
 	free(buf);
-    EI_TRACE_CONN1("recv_challenge_ack",
-		   "<- RECV_CHALLENGE_ACK (ok) digest = %s",hex(her_digest));
+
+    if (ei_tracelevel >= 3) {
+	char buffer[33];	
+	EI_TRACE_CONN1("recv_challenge_ack",
+		   "<- RECV_CHALLENGE_ACK (ok) digest = %s",hex(her_digest,buffer));
+    }
     erl_errno = 0;
     return 0;
 
@@ -1586,7 +1600,7 @@ static int recv_name(int fd,
     int rlen;
     char *s;
     struct sockaddr_in sin;
-    int sin_len = sizeof(sin);
+    socklen_t sin_len = sizeof(sin);
     char tag;
     
     erl_errno = EIO;		/* Default */

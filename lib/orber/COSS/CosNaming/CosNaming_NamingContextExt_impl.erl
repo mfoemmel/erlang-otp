@@ -213,7 +213,7 @@ bind(OE_THIS, OE_State, [H|T], Obj) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
-		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		{value, {H, ncontext, NC}} when is_record(NC, 'IOP_IOR') ->
 		    {reply, 'CosNaming_NamingContext':bind(NC, T, Obj), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    bind(NC, OE_State, T, Obj);
@@ -277,7 +277,7 @@ rebind(OE_THIS, OE_State, [H|T], Obj) ->
 						       cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
-		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		{value, {H, ncontext, NC}} when is_record(NC, 'IOP_IOR') ->
 		    {reply, 'CosNaming_NamingContext':rebind(NC, T, Obj), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    rebind(NC, OE_State, T, Obj);
@@ -340,7 +340,7 @@ bind_context(OE_THIS, OE_State, [H|T], Obj) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
-		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		{value, {H, ncontext, NC}} when is_record(NC, 'IOP_IOR') ->
 		    {reply, 'CosNaming_NamingContext':bind_context(NC, T, Obj), 
 		     OE_State};
 		{value, {H, ncontext, NC}} ->
@@ -405,7 +405,7 @@ rebind_context(OE_THIS, OE_State, [H|T], Obj) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
-		{value, {H,ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		{value, {H,ncontext, NC}} when is_record(NC, 'IOP_IOR') ->
 		    {reply, 'CosNaming_NamingContext':rebind_context(NC, T, Obj), 
 		    OE_State};
 		{value, {H,ncontext, NC}} ->
@@ -452,7 +452,7 @@ resolve(OE_THIS, OE_State, [H|T]) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
-		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		{value, {H, ncontext, NC}} when is_record(NC, 'IOP_IOR') ->
 		    {reply, 'CosNaming_NamingContext':resolve(NC, T), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    resolve(NC, OE_State, T);
@@ -510,7 +510,7 @@ unbind(OE_THIS, OE_State, [H|T]) ->
 								 cxt=OE_THIS});
 	X ->
 	    case lists:keysearch(H, 1, X) of
-		{value, {H, ncontext, NC}} when record(NC, 'IOP_IOR') ->
+		{value, {H, ncontext, NC}} when is_record(NC, 'IOP_IOR') ->
 		    {reply, 'CosNaming_NamingContext':unbind(NC, T), OE_State};
 		{value, {H, ncontext, NC}} ->
 		    unbind(NC, OE_State, T);
@@ -615,7 +615,7 @@ destroy(OE_THIS, OE_State) ->
 			case mnesia:wread({orber_CosNaming, SubobjKey}) of
 			    [#orber_CosNaming{nameindex = []}] ->
 				mnesia:delete({orber_CosNaming, SubobjKey});
-			    Other when list(Other) ->
+			    Other when is_list(Other) ->
 				orber:dbg("[~p] ~p:destroy(~p);~n"
 					  "DB access returned ~p", 
 					  [?LINE, ?MODULE, SubobjKey, Other], ?DEBUG_LEVEL),

@@ -29,6 +29,25 @@
   </header>
   <p>This document describes the changes made to the OS_Mon application.</p>
 
+<section><title>Os_Mon 2.2.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    disksup:get_disk_data/0 returned disk volume in bytes
+	    instead of kbytes as stated in the documentation. The
+	    problem occured on Windows only and is now corrected.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7741</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Os_Mon 2.2.1</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

@@ -208,7 +208,7 @@ parse_passwd(Stream, PasswdList, "") ->
 parse_passwd(Stream, PasswdList, [$#|_]) ->
     parse_passwd(Stream, PasswdList);
 parse_passwd(Stream, PasswdList, Line) ->      
-    case regexp:split(Line,":") of
+    case inets_regexp:split(Line,":") of
 	{ok, [User,Password]} ->
 	    parse_passwd(Stream, [{User,Password, []}|PasswdList]);
 	{ok,_} ->
@@ -243,9 +243,9 @@ parse_group(Stream, GroupList, "") ->
 parse_group(Stream, GroupList, [$#|_]) ->
     parse_group(Stream, GroupList);
 parse_group(Stream, GroupList, Line) ->      
-    case regexp:split(Line, ":") of
+    case inets_regexp:split(Line, ":") of
 	{ok, [Group,Users]} ->
-	    {ok, UserList} = regexp:split(Users," "),
+	    {ok, UserList} = inets_regexp:split(Users," "),
 	    parse_group(Stream, [{Group,UserList}|GroupList]);
 	{ok, _} ->
 	    {error, ?NICE(Line)}

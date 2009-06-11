@@ -143,7 +143,7 @@ req(R) ->
 rec() ->
     rec(whereis(?MODULE)).
 
-rec(Pid) when pid(Pid) ->
+rec(Pid) when is_pid(Pid) ->
     receive
 	{?MODULE, _, Reply} ->
 	    Reply;
@@ -162,11 +162,11 @@ rec(Pid, Ref) ->
 	    {error, {node_not_running, node()}}
     end.   
 
-tmlink({From, Ref}) when reference(Ref) ->
+tmlink({From, Ref}) when is_reference(Ref) ->
     link(From);
 tmlink(From) ->
     link(From).
-tmpid({Pid, _Ref}) when pid(Pid) ->
+tmpid({Pid, _Ref}) when is_pid(Pid) ->
     Pid;
 tmpid(Pid) ->
     Pid.
@@ -289,7 +289,7 @@ doit_loop(#state{coordinators=Coordinators,participants=Participants,supervisor=
 			    ?eval_debug_fun({?MODULE,do_commit,post},[{tid,Tid},{pid,nopid}]),
 			    doit_loop(State#state{participants=
 						  gb_trees:delete(Tid,Participants)});
-			Pid when pid(Pid) ->
+			Pid when is_pid(Pid) ->
 			    Pid ! {Tid, committed},
 			    ?eval_debug_fun({?MODULE, do_commit, post}, [{tid, Tid}, {pid, Pid}]),
 			    doit_loop(State)
@@ -327,7 +327,7 @@ doit_loop(#state{coordinators=Coordinators,participants=Participants,supervisor=
 			    ?eval_debug_fun({?MODULE, do_abort, post}, [{tid, Tid}, {pid, nopid}]),
 			    doit_loop(State#state{participants=
 						  gb_trees:delete(Tid,Participants)});
-			Pid when pid(Pid) ->
+			Pid when is_pid(Pid) ->
 			    Pid ! {Tid, {do_abort, Reason}},
 			    ?eval_debug_fun({?MODULE, do_abort, post},
 					    [{tid, Tid}, {pid, Pid}]),
@@ -545,7 +545,7 @@ handle_exit(Pid, Reason, State) ->
 		{none, _} ->
 		    %% We got exit from a local fool
 		    doit_loop(State);
-		{P, _RestP} when record(P, participant) ->
+		{P = #participant{}, _RestP} ->
 		    fatal("Participant ~p in transaction ~p died ~p~n",
 			  [P#participant.pid, P#participant.tid, Reason]),
 		    NewPs = gb_trees:delete(P#participant.tid,State#state.participants),
@@ -839,7 +839,7 @@ apply_fun(Fun, Args, Type) ->
 
 check_exit(Fun, Args, Factor, Retries, Reason, Type) ->
     case Reason of
-	{aborted, C} when record(C, cyclic) ->
+	{aborted, C = #cyclic{}} ->
 	    maybe_restart(Fun, Args, Factor, Retries, Type, C);
 	{aborted, {node_not_running, N}} ->
 	    maybe_restart(Fun, Args, Factor, Retries, Type, {node_not_running, N});
@@ -861,7 +861,7 @@ maybe_restart(Fun, Args, Factor, Retries, Type, Why) ->
     end.
 
 try_again(infinity) -> yes;
-try_again(X) when number(X) , X > 1 -> yes;
+try_again(X) when is_number(X) , X > 1 -> yes;
 try_again(_) -> no.
 
 %% We can only restart toplevel transactions.
@@ -928,7 +928,7 @@ get_restarted(Tid) ->
     end.
 
 decr(infinity) -> infinity;
-decr(X) when integer(X), X > 1 -> X - 1;
+decr(X) when is_integer(X), X > 1 -> X - 1;
 decr(_X) -> 0.
 
 return_abort(Fun, Args, Reason)  ->
@@ -981,8 +981,7 @@ put_activity_id(MTT) ->
     put_activity_id(MTT, undefined).
 put_activity_id(undefined,_) ->
     erase_activity_id();
-put_activity_id({Mod, Tid, Ts},Fun) 
-  when record(Tid, tid), record(Ts, tidstore) ->
+put_activity_id({Mod, Tid = #tid{}, Ts = #tidstore{}},Fun) ->    
     flush_downs(),
     Store = Ts#tidstore.store,
     if 
@@ -1148,13 +1147,15 @@ arrange(Tid, Store, Type) ->
 
 reverse([]) ->
     [];
-reverse([H|R]) when record(H, commit) ->
+reverse([H=#commit{ram_copies=Ram, disc_copies=DC, 
+		   disc_only_copies=DOC,snmp = Snmp}
+	 |R]) ->
     [
      H#commit{
-       ram_copies       =  lists:reverse(H#commit.ram_copies),
-       disc_copies      =  lists:reverse(H#commit.disc_copies),
-       disc_only_copies =  lists:reverse(H#commit.disc_only_copies),
-       snmp             = lists:reverse(H#commit.snmp)
+       ram_copies       =  lists:reverse(Ram),
+       disc_copies      =  lists:reverse(DC),
+       disc_only_copies =  lists:reverse(DOC),
+       snmp             = lists:reverse(Snmp)
       }  
      | reverse(R)].
 
@@ -1478,7 +1479,7 @@ multi_commit(asym_trans, Tid, CR, Store) ->
     case Votes of
 	do_commit ->
 	    case SchemaPrep of
-		{_Modified, C, DumperMode} when record(C, commit) ->
+		{_Modified, C = #commit{}, DumperMode} ->
 		    mnesia_log:log(C), % C is not a binary
 		    ?eval_debug_fun({?MODULE, multi_commit_asym_log_commit_rec},
 				    [{tid, Tid}]),
@@ -1603,18 +1604,18 @@ tell_participants([], _Msg) ->
     ok.
 
 %% Trap exit because we can get a shutdown from application manager
-commit_participant(Coord, Tid, Bin, DiscNs, RamNs) when binary(Bin) ->
+commit_participant(Coord, Tid, Bin, DiscNs, RamNs) when is_binary(Bin) ->
     process_flag(trap_exit, true),
     Commit = binary_to_term(Bin),
     commit_participant(Coord, Tid, Bin, Commit, DiscNs, RamNs);
-commit_participant(Coord, Tid, C, DiscNs, RamNs) when record(C, commit) ->
+commit_participant(Coord, Tid, C = #commit{}, DiscNs, RamNs) ->
     process_flag(trap_exit, true),
     commit_participant(Coord, Tid, C, C, DiscNs, RamNs).
 
 commit_participant(Coord, Tid, Bin, C0, DiscNs, _RamNs) ->
     ?eval_debug_fun({?MODULE, commit_participant, pre}, [{tid, Tid}]),
     case catch mnesia_schema:prepare_commit(Tid, C0, {part, Coord}) of
-	{Modified, C, DumperMode} when record(C, commit) ->
+	{Modified, C = #commit{}, DumperMode} ->
 	    %% If we can not find any local unclear decision
 	    %% we should presume abort at startup recovery
 	    case lists:member(node(), DiscNs) of
@@ -1702,7 +1703,7 @@ commit_participant(Coord, Tid, Bin, C0, DiscNs, _RamNs) ->
     unlink(whereis(?MODULE)),
     exit(normal).
     
-do_abort(Tid, Bin) when binary(Bin) ->
+do_abort(Tid, Bin) when is_binary(Bin) ->
     %% Possible optimization:
     %% If we want we could pass arround a flag
     %% that tells us whether the binary contains
@@ -1720,11 +1721,11 @@ do_dirty(Tid, Commit) when Commit#commit.schema_ops == [] ->
     do_commit(Tid, Commit).
 
 %% do_commit(Tid, CommitRecord)
-do_commit(Tid, Bin) when binary(Bin) ->
+do_commit(Tid, Bin) when is_binary(Bin) ->
     do_commit(Tid, binary_to_term(Bin));
 do_commit(Tid, C) ->
     do_commit(Tid, C, optional).
-do_commit(Tid, Bin, DumperMode) when binary(Bin) ->
+do_commit(Tid, Bin, DumperMode) when is_binary(Bin) ->
     do_commit(Tid, binary_to_term(Bin), DumperMode);
 do_commit(Tid, C, DumperMode) ->
     mnesia_dumper:update(Tid, C#commit.schema_ops, DumperMode),
@@ -1767,7 +1768,7 @@ do_update_op(Tid, Storage, {{Tab, K}, Val, delete}) ->
 do_update_op(Tid, Storage, {{Tab, K}, {RecName, Incr}, update_counter}) ->
     {NewObj, OldObjs} = 
         case catch mnesia_lib:db_update_counter(Storage, Tab, K, Incr) of
-            NewVal when integer(NewVal), NewVal >= 0 ->
+            NewVal when is_integer(NewVal), NewVal >= 0 ->
                 {{RecName, K, NewVal}, [{RecName, K, NewVal - Incr}]};
             _ when Incr > 0 ->
                 New = {RecName, K, Incr},
@@ -2085,7 +2086,7 @@ pr_participant(Stream, P) ->
     Commit0 = P#participant.commit,
     Commit = 
 	if
-	    binary(Commit0) -> binary_to_term(Commit0);
+	    is_binary(Commit0) -> binary_to_term(Commit0);
 	    true -> Commit0
 	end,
     pr_tid(Stream, P#participant.tid),
@@ -2127,7 +2128,7 @@ search_pr_participant(S, [ P | Tail]) ->
 	    io:format( "Tid wants to write objects \n",[]),
 	    Commit = 
 		if
-		    binary(Commit0) -> binary_to_term(Commit0);
+		    is_binary(Commit0) -> binary_to_term(Commit0);
 		    true -> Commit0
 		end,
 	    
@@ -2144,7 +2145,7 @@ display_pid_info(Pid) ->
 	Info ->
 	    Call = fetch(initial_call, Info),
 	    Curr = case fetch(current_function, Info) of
-		       {Mod,F,Args} when list(Args) ->
+		       {Mod,F,Args} when is_list(Args) ->
 			   {Mod,F,length(Args)};
 		       Other ->
 			   Other
@@ -2196,8 +2197,10 @@ send_mnesia_down(Tid, Store, Node) ->
     Msg = {mnesia_down, Node},
     send_to_pids([Tid#tid.pid | get_elements(friends,Store)], Msg).
 
-send_to_pids([Pid | Pids], Msg) ->
+send_to_pids([Pid | Pids], Msg) when is_pid(Pid) ->
     Pid ! Msg,
+    send_to_pids(Pids, Msg);
+send_to_pids([_ | Pids], Msg) ->
     send_to_pids(Pids, Msg);
 send_to_pids([], _Msg) ->
     ok.

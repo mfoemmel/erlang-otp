@@ -38,7 +38,7 @@
 
 	 load_mib/1, unload_mib/1, 
 	 which_mibs/0, 
-	 name_to_oid/1, oid_to_name/1, 
+	 name_to_oid/1, oid_to_name/1, oid_to_type/1, 
 
 	 register_user/3, register_user/4, 
 	 register_user_monitor/3, register_user_monitor/4, 
@@ -175,7 +175,7 @@ demonitor(Ref) ->
 
 -define(NOTIFY_START_TICK_TIME, 500).
 
-notify_started(To) when is_integer(To) and (To > 0) ->
+notify_started(To) when is_integer(To) andalso (To > 0) ->
     spawn_link(?MODULE, snmpm_start_verify, [self(), To]).
 
 cancel_notify_started(Pid) ->
@@ -248,6 +248,10 @@ name_to_oid(Name) ->
 %% Get the aliasname for an oid
 oid_to_name(Oid) ->
     snmpm_config:oid_to_name(Oid).
+
+%% Get the type for an oid
+oid_to_type(Oid) ->
+    snmpm_config:oid_to_type(Oid).
 
 
 %% -- Info -- 
@@ -420,19 +424,19 @@ which_agents(UserId) ->
 %% -- USM users --
 
 register_usm_user(EngineID, UserName, Conf) 
-  when list(EngineID), list(UserName), list(Conf) ->
+  when is_list(EngineID) andalso is_list(UserName) andalso is_list(Conf) ->
     snmpm_config:register_usm_user(EngineID, UserName, Conf).
 
 unregister_usm_user(EngineID, UserName) 
-  when list(EngineID), list(UserName) ->
+  when is_list(EngineID) andalso is_list(UserName) ->
     snmpm_config:unregister_usm_user(EngineID, UserName).
 
 usm_user_info(EngineID, UserName, Item) 
-  when list(EngineID), list(UserName), atom(Item) ->
+  when is_list(EngineID) andalso is_list(UserName) andalso is_atom(Item) ->
     snmpm_config:usm_user_info(EngineID, UserName, Item).
 
 update_usm_user_info(EngineID, UserName, Item, Val) 
-  when list(EngineID), list(UserName), atom(Item) ->
+  when is_list(EngineID) andalso is_list(UserName) andalso is_atom(Item) ->
     snmpm_config:update_usm_user_info(EngineID, UserName, Item, Val).
 
 which_usm_users() ->
@@ -1447,7 +1451,7 @@ format_sec_info_tag(T) ->
 
 format_varbinds(Prefix, []) ->
     lists:flatten(io_lib:format("~sVarbinds:    []~n", [Prefix])); 
-format_varbinds(Prefix, VBs) when list(VBs) ->
+format_varbinds(Prefix, VBs) when is_list(VBs) ->
     lists:flatten(io_lib:format("~sVarbinds: ~n~s", 
 				[Prefix, format_vbs(Prefix ++ "   ", VBs)]));
 format_varbinds(Prefix, VBs) ->

@@ -27,6 +27,7 @@
 #include "erl_atom_table.h"
 
 #define MAX_ATOM_LENGTH 255
+#define ATOM_LIMIT (1024*1024)
 
 /*
  * Atom entry.

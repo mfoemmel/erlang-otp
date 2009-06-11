@@ -39,7 +39,7 @@ name2type(G, Name) ->
 
 %% This is en overloaded function,
 %% differs in input on unions
-member2type(_G, X, I) when record(X, union)->
+member2type(_G, X, I) when is_record(X, union)->
     Name = ic_forms:get_id2(I),
     case lists:keysearch(Name,2,element(6,X#union.tk)) of
 	false ->
@@ -254,7 +254,7 @@ isString(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isString(_G, _N, T)  when record(T, string) ->
+isString(_G, _N, T)  when is_record(T, string) ->
     true;
 isString(_G, _N, _Other) ->
     false. 
@@ -267,7 +267,7 @@ isArray(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isArray(_G, _N, T)  when record(T, array) ->
+isArray(_G, _N, T)  when is_record(T, array) ->
     true;
 isArray(_G, _N, _Other) ->
     false. 
@@ -281,7 +281,7 @@ isStruct(G, N, T) when element(1, T) == scoped_id ->
 	_ ->
 	    false
     end; 
-isStruct(_G, _N, T)  when record(T, struct) ->
+isStruct(_G, _N, T)  when is_record(T, struct) ->
     true;
 isStruct(_G, _N, _Other) ->
     false.
@@ -295,7 +295,7 @@ isUnion(G, N, T) when element(1, T) == scoped_id ->
 	_Other ->
 	    false
     end; 
-isUnion(_G, _N, T)  when record(T, union) ->
+isUnion(_G, _N, T)  when is_record(T, union) ->
     true;
 isUnion(_G, _N, _Other) ->
     false.
@@ -366,7 +366,7 @@ searchIncludedTk({tk_array,TK,_},IR_ID) ->
     searchIncludedTk(TK,IR_ID);
 searchIncludedTk({tk_sequence,TK,_},IR_ID) ->
     searchIncludedTk(TK,IR_ID);
-searchIncludedTk(TK,_IR_ID) when atom(TK) ->
+searchIncludedTk(TK,_IR_ID) when is_atom(TK) ->
     false;
 searchIncludedTk(TK,IR_ID) ->
     case element(2,TK) == IR_ID of

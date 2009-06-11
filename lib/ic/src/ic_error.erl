@@ -357,15 +357,15 @@ pp({tk_objref, _, _}) -> "object reference";
 pp(rshift) -> ">>";
 pp(lshift) -> "<<";
 pp(X) when element(1, X) == tk_enum -> "enum";
-pp(X) when record(X, scoped_id) -> ic_util:to_colon(X);
+pp(X) when is_record(X, scoped_id) -> ic_util:to_colon(X);
 pp(X) when element(1, X) == '<identifier>' -> ic_forms:get_id(X);
-pp(X) when list(X), list(hd(X)) -> ic_util:to_colon(X);
-pp({_, Num, Beef}) when integer(Num) -> Beef;
-pp({Beef, Num}) when integer(Num) -> ic_util:to_list(Beef);
+pp(X) when is_list(X) andalso is_list(hd(X)) -> ic_util:to_colon(X);
+pp({_, Num, Beef}) when is_integer(Num) -> Beef;
+pp({Beef, Num}) when is_integer(Num) -> ic_util:to_list(Beef);
 pp(X) -> ic_util:to_list(X).
 
 %% special treatment of case label names
-case_pp(X, _Val) when record(X, scoped_id) -> pp(X);
+case_pp(X, _Val) when is_record(X, scoped_id) -> pp(X);
 case_pp(_X, Val) -> pp(Val).
 
 

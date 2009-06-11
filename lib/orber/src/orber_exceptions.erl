@@ -93,7 +93,7 @@
 %%-----------------------------------------------------------------
 is_system_exception({'EXCEPTION', E}) ->
     is_system_exception(E);
-is_system_exception(E) when tuple(E) ->
+is_system_exception(E) when is_tuple(E) ->
     ?SYSTEM_EXCEPTION == type(element(1, E));
 is_system_exception(_E) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -169,7 +169,7 @@ get_def(Exception) ->
 		false ->
 		    case mnesia:dirty_index_read(ir_ExceptionDef, TypeId,
 						 #ir_ExceptionDef.id) of
-			[ExcDef] when record(ExcDef, ir_ExceptionDef) ->  
+			[ExcDef] when is_record(ExcDef, ir_ExceptionDef) ->  
 			    {?USER_EXCEPTION, 
 			     ExcDef#ir_ExceptionDef.type,
 			     Exception};
@@ -197,9 +197,9 @@ get_def(Exception) ->
 get_name(TypeId, ?SYSTEM_EXCEPTION) ->
     ExcName = 
 	case string:tokens(TypeId, ":/") of
-	    [_IDL, _OMGORG, _CORBA, Name, _Version] when list(Name) ->
+	    [_IDL, _OMGORG, _CORBA, Name, _Version] when is_list(Name) ->
 		list_to_atom(Name);
-	    [_IDL, _CORBA, Name, _Version] when list(Name) ->
+	    [_IDL, _CORBA, Name, _Version] when is_list(Name) ->
 		%% We should remove this case but we keep it for now due to backward 
 		%% compatible reasons.
 		list_to_atom(Name);
@@ -227,7 +227,7 @@ get_name(TypeId, ?SYSTEM_EXCEPTION) ->
 %%-----------------------------------------------------------------
 %% Generate system exception TypeCode
 %%-----------------------------------------------------------------
-get_system_exception_def(ExcName) when atom(ExcName) ->
+get_system_exception_def(ExcName) when is_atom(ExcName) ->
     Name = atom_to_list(ExcName),
     {'tk_except', "IDL:omg.org/CORBA/" ++ Name ++ ":1.0", Name,
      [{"minor",'tk_ulong'},
@@ -244,7 +244,7 @@ get_system_exception_def(Exc) ->
 %%-----------------------------------------------------------------
 dissect({'EXCEPTION', Exc}) ->
     dissect(Exc);
-dissect(Exception) when tuple(Exception) ->
+dissect(Exception) when is_tuple(Exception) ->
     [Exc, TypeId | _] = tuple_to_list(Exception),
     case type(Exc) of
 	?USER_EXCEPTION ->
@@ -263,11 +263,11 @@ IFR Id.................: ~s
 dissect(_What) ->
     {error, "Not a correct exception supplied to orber_exceptions:dissect/1"}.
 	    
-map_exc({Name, _, Minor, Status}) when integer(Minor) ->
+map_exc({Name, _, Minor, Status}) when is_integer(Minor) ->
     case lookup_vendor(Minor) of
 	{true, Vendor, VMCID} ->
 	    case catch ?MODULE:Name(Minor) of
-		MinorInfo when list(MinorInfo) ->
+		MinorInfo when is_list(MinorInfo) ->
 		    {ok, io_lib:format("~n------------- EXCEPTION INFO --------------
 Vendor.....: ~s
 VMCID......: ~s
@@ -316,9 +316,9 @@ lookup_vendor(Minor) when (?TAO_VMCID bxor Minor) < 16#0fff ->
     {false, "TAO", "0x54410000"};
 lookup_vendor(Minor) when (?PRISMTECH_VMCID bxor Minor) < 16#0fff ->
     {false, "PrismTech", "0x50540000"};
-lookup_vendor(Minor) when integer(Minor), Minor =< ?ULONGMAX ->
+lookup_vendor(Minor) when is_integer(Minor), Minor =< ?ULONGMAX ->
     {false, "undefined", extract_VMCID(Minor)};
-lookup_vendor(Minor) when integer(Minor), Minor =< ?ULONGMAX ->
+lookup_vendor(Minor) when is_integer(Minor), Minor =< ?ULONGMAX ->
     {false, "Unknown", "Unable to extract it"}.
 
 extract_VMCID(Int) ->

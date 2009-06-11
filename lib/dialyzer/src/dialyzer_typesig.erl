@@ -34,7 +34,7 @@
 
 -import(erl_types, 
 	[t_any/0, t_atom/0, t_atom_vals/1,
-	 t_binary/0, t_bitstr/0, t_bitstr/2, t_bitstr_concat/1, t_bool/0,
+	 t_binary/0, t_bitstr/0, t_bitstr/2, t_bitstr_concat/1, t_boolean/0,
 	 t_collect_vars/1, t_cons/2, t_cons_hd/1, t_cons_tl/1,
 	 t_float/0, t_from_range/2, t_from_term/1,
 	 t_fun/0, t_fun/2, t_fun_args/1, t_fun_range/1, 
@@ -901,7 +901,7 @@ get_underapprox_from_guard(Tree, Map) ->
 %% function get_underapprox_from_guard/2
 %%
 get_type_test({erlang, is_atom, 1}) ->      {ok, t_atom()};
-get_type_test({erlang, is_boolean, 1}) ->   {ok, t_bool()};
+get_type_test({erlang, is_boolean, 1}) ->   {ok, t_boolean()};
 get_type_test({erlang, is_binary, 1}) ->    {ok, t_binary()};
 get_type_test({erlang, is_bitstring, 1}) -> {ok, t_bitstr()};
 get_type_test({erlang, is_float, 1}) ->     {ok, t_float()};
@@ -1188,7 +1188,7 @@ get_bif_constr({erlang, is_binary, 1}, Dst, [Arg], State) ->
 get_bif_constr({erlang, is_bitstring, 1}, Dst, [Arg], State) ->
   get_bif_test_constr(Dst, Arg, t_bitstr(), State);
 get_bif_constr({erlang, is_boolean, 1}, Dst, [Arg], State) ->
-  get_bif_test_constr(Dst, Arg, t_bool(), State);
+  get_bif_test_constr(Dst, Arg, t_boolean(), State);
 get_bif_constr({erlang, is_float, 1}, Dst, [Arg], State) ->
   get_bif_test_constr(Dst, Arg, t_float(), State);
 get_bif_constr({erlang, is_function, 1}, Dst, [Arg], State) ->
@@ -1207,7 +1207,7 @@ get_bif_constr({erlang, is_function, 2}, Dst, [Fun, Arity], _State) ->
 	       end
 	   end,
   ArgV = mk_fun_var(ArgFun, [Dst, Arity]),
-  mk_conj_constraint_list([mk_constraint(Dst, sub, t_bool()),
+  mk_conj_constraint_list([mk_constraint(Dst, sub, t_boolean()),
 			   mk_constraint(Arity, sub, t_integer()),
 			   mk_constraint(Fun, sub, ArgV)]);
 get_bif_constr({erlang, is_integer, 1}, Dst, [Arg], State) ->
@@ -1331,10 +1331,10 @@ get_bif_constr({erlang, 'and', 2}, Dst, [Arg1, Arg2] = Args, _State) ->
 			 true ->
 			   case t_is_atom(true, lookup_type(Var, Map)) of
 			     true -> False;
-			     false -> t_bool()
+			     false -> t_boolean()
 			   end;
 			 false -> 
-			   t_bool()
+			   t_boolean()
 		       end
 		   end
 	       end
@@ -1351,7 +1351,7 @@ get_bif_constr({erlang, 'and', 2}, Dst, [Arg1, Arg2] = Args, _State) ->
 		       case (t_is_atom(true, Arg1Type) 
 			     andalso t_is_atom(true, Arg2Type)) of
 			 true -> True;
-			 false -> t_bool()
+			 false -> t_boolean()
 		       end
 		   end
 	       end
@@ -1375,10 +1375,10 @@ get_bif_constr({erlang, 'or', 2}, Dst, [Arg1, Arg2] = Args, _State) ->
 			 true ->
 			   case t_is_atom(false, lookup_type(Var, Map)) of
 			     true -> True;
-			     false -> t_bool()
+			     false -> t_boolean()
 			   end;
 			 false -> 
-			   t_bool()
+			   t_boolean()
 		       end
 		   end
 	       end
@@ -1395,7 +1395,7 @@ get_bif_constr({erlang, 'or', 2}, Dst, [Arg1, Arg2] = Args, _State) ->
 		       case (t_is_atom(false, Arg1Type) 
 			     andalso t_is_atom(false, Arg2Type)) of
 			 true -> False;
-			 false -> t_bool()
+			 false -> t_boolean()
 		       end
 		   end
 	       end
@@ -1421,7 +1421,7 @@ get_bif_constr({erlang, 'not', 1}, Dst, [Arg] = Args, _State) ->
 		  false ->
 		    case t_is_atom(false, Type) of
 		      true -> True;
-		      false -> t_bool()
+		      false -> t_boolean()
 		    end
 		end
 	    end
@@ -1456,7 +1456,7 @@ get_bif_constr({erlang, '=:=', 2}, Dst, [Arg1, Arg2] = Args, _State) ->
 	       ArgType2 = lookup_type(Arg2, Map),
 	       case t_is_none(t_inf(ArgType1, ArgType2)) of
 		 true -> t_from_term(false);
-		 false -> t_bool()
+		 false -> t_boolean()
 	       end
 	   end,
   DstArgs = [Dst, Arg1, Arg2],
@@ -1600,7 +1600,7 @@ get_bif_test_constr(Dst, Arg, Type, State) ->
 			 false ->
 			   case t_is_subtype(ArgType, Type) of
 			     true -> t_from_term(true);
-			     false -> t_bool()
+			     false -> t_boolean()
 			   end
 		       end;
 		     false ->  t_from_term(false)
@@ -1608,7 +1608,7 @@ get_bif_test_constr(Dst, Arg, Type, State) ->
 		 false -> 
 		   case t_is_subtype(ArgType, Type) of
 		     true -> t_from_term(true);
-		     false -> t_bool()
+		     false -> t_boolean()
 		   end
 	       end
 	   end,
@@ -1626,10 +1626,10 @@ solve([Fun], State) ->
   ?debug("============ Analyzing Fun: ~w ===========\n", 
 	 [debug_lookup_name(Fun)]),
   solve_fun(Fun, dict:new(), State);
-solve(SCC = [_|_], State) ->
+solve([_|_] = SCC, State) ->
   ?debug("============ Analyzing SCC: ~w ===========\n", 
 	 [[debug_lookup_name(F) || F <- SCC]]),
-  solve_scc(SCC, dict:new(), State).
+  solve_scc(SCC, dict:new(), State, false).
 
 solve_fun(Fun, FunMap, State) ->
   Cs = state__get_cs(Fun, State),
@@ -1644,7 +1644,7 @@ solve_fun(Fun, FunMap, State) ->
 	       end,
   enter_type(Fun, NewType, NewFunMap1).
 
-solve_scc(SCC, Map, State) ->
+solve_scc(SCC, Map, State, TryingUnit) ->
   State1 = state__mark_as_non_self_rec(SCC, State),
   Vars0 = [{Fun, state__get_rec_var(Fun, State)} || Fun <- SCC],  
   Vars = [Var || {_, {ok, Var}} <- Vars0],
@@ -1652,7 +1652,7 @@ solve_scc(SCC, Map, State) ->
   Types = unsafe_lookup_type_list(Funs, Map),
   RecTypes = [t_limit(Type, ?TYPE_LIMIT) || Type <- Types],
   CleanMap = lists:foldl(fun(Fun, AccFunMap) ->
-				dict:erase(t_var_name(Fun), AccFunMap)
+			     dict:erase(t_var_name(Fun), AccFunMap)
 			 end, Map, SCC),
   Map1 = enter_type_lists(Vars, RecTypes, CleanMap),
   ?debug("Checking SCC: ~w\n", [[debug_lookup_name(F) || F <- SCC]]),
@@ -1663,18 +1663,19 @@ solve_scc(SCC, Map, State) ->
     true ->
       ?debug("SCC ~w reached fixpoint\n", [SCC]),
       NewTypes = unsafe_lookup_type_list(Funs, Map2),
-      case lists:all(fun(T) -> t_is_none(t_fun_range(T)) end, NewTypes) of
+      case lists:all(fun(T) -> t_is_none(t_fun_range(T)) end, NewTypes)
+	andalso TryingUnit =:= false of
 	true ->
 	  UnitTypes = [t_fun(state__fun_arity(F, State), t_unit())
 		       || F <- Funs],
 	  Map3 = enter_type_lists(Funs, UnitTypes, Map2),
-	  solve_scc(SCC, Map3, State);
+	  solve_scc(SCC, Map3, State, true);
 	false ->
 	  Map2
       end;
     false -> 
       ?debug("SCC ~w did not reach fixpoint\n", [SCC]),
-      solve_scc(SCC, Map2, State)
+      solve_scc(SCC, Map2, State, TryingUnit)
   end.
 
 scc_fold_fun(F, FunMap, State) ->

@@ -85,6 +85,6 @@ if [ $SKIP_COFFIX = false ]; then
     rm -f $TEMPFILE
     exit $RES
 else
-    eval gcc -D__WIN32__ -DWIN32 -DWINDOWS -fomit-frame-pointer $CMD 2>/dev/null
+    eval gcc -D__WIN32__ -DWIN32 -DWINDOWS -fomit-frame-pointer -fno-tree-copyrename $CMD 2>/dev/null
     exit $?
 fi

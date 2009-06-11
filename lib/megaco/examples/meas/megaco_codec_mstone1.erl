@@ -27,13 +27,15 @@
 
 
 %% API
--export([start/0,          start/1,
-	 start_flex/0,     start_flex/1, 
-	 start_no_drv/0,   start_no_drv/1, 
-	 start_only_drv/0, start_only_drv/1]).
+-export([
+	 start/0,          start/1,          start/2,
+	 start_flex/0,     start_flex/1,     start_flex/2,
+	 start_no_drv/0,   start_no_drv/1,   start_no_drv/2,
+	 start_only_drv/0, start_only_drv/1, start_only_drv/2
+	]).
 
 %% Internal exports
--export([mstone_runner_init/4]).
+-export([mstone_runner_init/5]).
 
 
 -define(LIB, megaco_codec_mstone_lib).
@@ -49,8 +51,12 @@
 -define(VERSION3, ?MSTONE_VERSION3).
 
 -ifndef(MSTONE_CODECS).
--define(MSTONE_CODECS, [pretty, compact, per, ber, erlang]).
+-define(MSTONE_CODECS, megaco_codec_transform:codecs()).
 -endif.
+
+-define(DEFAULT_MESSAGE_PACKAGE, megaco_codec_transform:default_message_package()).
+-define(DEFAULT_FACTOR,          1).
+-define(DEFAULT_DRV_INCLUDE,     ignore).
 
 %% -define(VERBOSE_STATS,true).
 
@@ -64,67 +70,138 @@
 
 
 start() ->
-    start(1).
+    start(?DEFAULT_FACTOR).
 
+start([Factor]) ->
+    start(?DEFAULT_MESSAGE_PACKAGE, Factor);
+start([MessagePackage, Factor]) ->
+    start(MessagePackage, Factor);
 start(Factor) ->
-    do_start(Factor, ignore).
+    start(?DEFAULT_MESSAGE_PACKAGE, Factor).
+
+start(MessagePackage, Factor) ->
+    do_start(MessagePackage, Factor, ?DEFAULT_DRV_INCLUDE).
 
 
 start_flex() ->
-    start_flex(1).
+    start_flex(?DEFAULT_FACTOR).
 
+start_flex([Factor]) ->
+    start_flex(?DEFAULT_MESSAGE_PACKAGE, Factor);
+start_flex([MessagePackage, Factor]) ->
+    start_flex(MessagePackage, Factor);
 start_flex(Factor) ->
-    do_start(Factor, flex).
+    start_flex(?DEFAULT_MESSAGE_PACKAGE, Factor).
+
+start_flex(MessagePackage, Factor) ->
+    do_start(MessagePackage, Factor, flex).
 
 
 start_only_drv() ->
-    start_only_drv(1).
+    start_only_drv(?DEFAULT_FACTOR).
 
+start_only_drv([Factor]) ->
+    start_only_drv(?DEFAULT_MESSAGE_PACKAGE, Factor);
+start_only_drv([MessagePackage, Factor]) ->
+    start_only_drv(MessagePackage, Factor);
 start_only_drv(Factor) ->
-    do_start(Factor, only_drv).
+    start_only_drv(?DEFAULT_MESSAGE_PACKAGE, Factor).
+
+start_only_drv(MessagePackage, Factor) ->
+    do_start(MessagePackage, Factor, only_drv).
 
 
 start_no_drv() ->
-    start_no_drv(1).
+    start_no_drv(?DEFAULT_FACTOR).
 
+start_no_drv([Factor]) ->
+    start_no_drv(?DEFAULT_MESSAGE_PACKAGE, Factor);
+start_no_drv([MessagePackage, Factor]) ->
+    start_no_drv(MessagePackage, Factor);
 start_no_drv(Factor) ->
-    do_start(Factor, no_drv).
+    start_no_drv(?DEFAULT_MESSAGE_PACKAGE, Factor).
+
+start_no_drv(MessagePackage, Factor) ->
+    do_start(MessagePackage, Factor, no_drv).
+
+    
+do_start(MessagePackageRaw, FactorRaw, DrvInclude) ->
+    Factor         = parse_factor(FactorRaw),
+    MessagePackage = parse_message_package(MessagePackageRaw),
+    mstone_init(MessagePackage, Factor, DrvInclude).
+	
 
 
-do_start(Factor, DrvInclude) when is_integer(Factor) andalso (Factor > 0) ->
-    t(Factor, ?MSTONE_CODECS, DrvInclude);
-do_start([FactorAtom], DrvInclude) when is_atom(FactorAtom) ->
+parse_factor(FactorAtom) when is_atom(FactorAtom) ->
     case (catch list_to_integer(atom_to_list(FactorAtom))) of
-	Factor when is_integer(Factor) ->
-	    t(Factor, ?MSTONE_CODECS, DrvInclude);
+	Factor when is_integer(Factor) andalso (Factor > 0) ->
+	    Factor;
 	_ ->
-	    io:format("ERROR: Invalid factor value: ~p~n", [FactorAtom]),
-	    ok
+	    io:format("ERROR: Bad factor value: ~p~n", [FactorAtom]),
+	    throw({error, {bad_factor, FactorAtom}})
     end;
-do_start(Crap, _) ->    
-    io:format("ERROR: Invalid argument: ~p~n", [Crap]),
-    ok.
+parse_factor(FactorRaw) when is_list(FactorRaw) ->
+    case (catch list_to_integer(FactorRaw)) of
+	Factor when is_integer(Factor) andalso (Factor > 0) ->
+	    Factor;
+	_ ->
+	    io:format("ERROR: Bad factor value: ~p~n", [FactorRaw]),
+	    throw({error, {bad_factor, FactorRaw}})
+    end;
+parse_factor(Factor) when is_integer(Factor) andalso (Factor > 0) ->
+    Factor;
+parse_factor(BadFactor) ->
+    throw({error, {bad_factor, BadFactor}}).
+    
 
-%% Dirs is a list of directories containing files,
-%% each with a single megaco message. 
-%%
-%% Note that it is a requirement that each dir has
-%% the name of the codec with which the messages has
-%% been encoded: 
+parse_message_package(MessagePackageRaw) when is_list(MessagePackageRaw) ->
+    list_to_atom(MessagePackageRaw);
+parse_message_package(MessagePackage) when is_atom(MessagePackage) ->
+    MessagePackage;
+parse_message_package(BadMessagePackage) ->
+    throw({error, {bad_message_package, BadMessagePackage}}).
+
+
+%% Codecs is a list of megaco codec shortnames: 
 %%
 %%    pretty | compact | ber | per | erlang
 %%
 
-t(Factor, Dirs, DrvInclude) ->
+mstone_init(MessagePackage, Factor, DrvInclude) ->
+%%     io:format("mstone_init -> entry with"
+%% 	      "~n   MessagePackage: ~p"
+%% 	      "~n   Factor:         ~p"
+%% 	      "~n   DrvInclude:     ~p"
+%% 	      "~n", [MessagePackage, Factor, DrvInclude]),
+    Codecs = ?MSTONE_CODECS, 
+    mstone_init(MessagePackage, Factor, Codecs, DrvInclude).
+
+mstone_init(MessagePackage, Factor, Codecs, DrvInclude) ->
+    Parent = self(), 
+    Pid = spawn(
+	    fun() -> 
+		    process_flag(trap_exit, true),
+		    do_mstone(MessagePackage, Factor, Codecs, DrvInclude),  
+		    Parent ! {done, self()}
+	    end),
+    receive
+	{done, Pid} ->
+	    ok
+    end.
+			 
+do_mstone(MessagePackage, Factor, Codecs, DrvInclude) ->
     io:format("~n", []),
+    ?LIB:set_default_sched_bind(),
     ?LIB:display_os_info(),
     ?LIB:display_system_info(),
     ?LIB:display_app_info(),
     io:format("~n", []),
+    (catch asn1rt_driver_handler:load_driver()),
     {Pid, Conf} = ?LIB:start_flex_scanner(),
     put(flex_scanner_conf, Conf),
-    EDirs  = duplicate(Factor, ?LIB:expand_dirs(Dirs, DrvInclude)),
-    MStone = t1(EDirs),
+    EMessages = ?LIB:expanded_messages(MessagePackage, Codecs, DrvInclude), 
+    EMsgs  = duplicate(Factor, EMessages),
+    MStone = t1(EMsgs),
     ?LIB:stop_flex_scanner(Pid),
     io:format("~n", []),
     io:format("MStone: ~p~n", [MStone]).
@@ -137,14 +214,16 @@ duplicate(_N, [], Acc) ->
 duplicate(N, [H|T], Acc) ->
     duplicate(N, T, [lists:duplicate(N, H)|Acc]).
 
-t1(EDirs) ->
-    io:format("starting runners [~w] ", [length(EDirs)]),
-    t1(EDirs, []).
+t1(EMsgs) ->
+    io:format(" * starting runners [~w] ", [length(EMsgs)]),
+    t1(EMsgs, []).
 
 t1([], Runners) ->
-    io:format(" done~nawait runners ready ", []),
+    io:format(" done~n * await runners ready ", []),
     await_runners_ready(Runners),
-    io:format(" done~nrelease them~n", []),
+    io:format(" done~n * now snooze", []),
+    receive after 5000 -> ok end,
+    io:format("~n * release them~n", []),
     lists:foreach(fun(P) -> P ! {go, self()} end, Runners),
     t2(1, [], Runners);
 t1([H|T], Runners) ->
@@ -164,7 +243,8 @@ await_runners_ready(Runners) ->
 	    case lists:member(Pid, Runners) of
 		true ->
 		    io:format("~nERROR: "
-			      "received exit signal from from runner ~p:"
+			      "received (unexpected) exit signal "
+			      "from from runner ~p:"
 			      "~n~p~n", [Pid, Reason]),
 		    exit(Reason);
 		false ->
@@ -196,7 +276,7 @@ print_runner_stats(_) ->
 -endif.
 
 t2(_, Acc, []) ->
-    i("~w runners", [length(Acc)]),
+    i("~n~w runners", [length(Acc)]),
     print_runner_stats(Acc),
 
     HeapSzAcc = lists:sort([HS || #mstone{heap_size = HS} <- Acc]),
@@ -223,12 +303,6 @@ t2(N, Acc, Runners) ->
 	{'EXIT', Pid, {runner_done, Codec, Conf, Num, Info}} ->
             {value, {_, HeapSz}} = lists:keysearch(heap_size,  1, Info),
             {value, {_, Reds}}   = lists:keysearch(reductions, 1, Info),
-%% 	    i("runner ~w done: ~w"
-%% 	      "~n   Codec:           ~w"
-%% 	      "~n   Encoding config: ~p"
-%% 	      "~n   Heap size:       ~p"
-%% 	      "~n   Reductions:      ~p", 
-%%               [Pid, Num, Codec, Conf, HeapSz, Reds]),
             MStone = #mstone{id        = N,
 			     count     = Num,
                              codec     = Codec,
@@ -238,11 +312,11 @@ t2(N, Acc, Runners) ->
 	    t2(N + 1, [MStone|Acc], lists:delete(Pid, Runners))
     end.
 
-init_runner({Dir, Codec, Conf}) ->
+init_runner({Codec, Mod, Conf, Msgs}) ->
     Conf1 = runner_conf(Conf),
     Conf2 = [{version3,?VERSION3}|Conf1],
     Pid   = spawn_opt(?MODULE, mstone_runner_init, 
-		      [self(), Codec, Conf2, Dir],
+		      [Codec, self(), Mod, Conf2, Msgs],
 		      ?MSTONE_RUNNER_OPTS),
     Pid.
 
@@ -257,29 +331,29 @@ detect_versions(Codec, _Conf, [], []) ->
     exit({no_messages_found_for_codec, Codec});
 detect_versions(_Codec, _Conf, [], Acc) ->
     lists:reverse(Acc);
-detect_versions(Codec, Conf, [Bin|Bins], Acc) ->
+detect_versions(Codec, Conf, [{_Name, Bin}|Bins], Acc) ->
     Data = ?LIB:detect_version(Codec, Conf, Bin),
     detect_versions(Codec, Conf, Bins, [Data|Acc]).
 	    
 
-mstone_runner_init(Parent, Codec, Conf, Dir) ->
-    Msgs = detect_versions(Codec, Conf, ?LIB:read_messages(Dir), []),
-    warmup(Codec, Conf, Msgs, []),
+mstone_runner_init(_Codec, Parent, Mod, Conf, Msgs0) ->
+    Msgs = detect_versions(Mod, Conf, Msgs0, []),
+    warmup(Mod, Conf, Msgs, []),
     Parent ! {ready, self()},
     receive
         {go, Parent} ->
             ok
     end,
     erlang:send_after(?MSTONE_RUN_TIME, self(), stop),
-    mstone_runner_loop(Parent, Codec, Conf, 0, Msgs).
+    mstone_runner_loop(Parent, Mod, Conf, 0, Msgs).
 
-mstone_runner_loop(Parent, Codec, Conf, N, Msgs1) ->
+mstone_runner_loop(Parent, Mod, Conf, N, Msgs1) ->
     receive
         stop ->
-            exit({runner_done, Codec, Conf, N, mstone_runner_process_info()})
+            exit({runner_done, Mod, Conf, N, mstone_runner_process_info()})
     after 0 ->
-        {Inc, Msgs2} = mstone_all(Codec, Conf, Msgs1, []),
-	mstone_runner_loop(Parent, Codec, Conf, N+Inc, Msgs2)
+        {Inc, Msgs2} = mstone_all(Mod, Conf, Msgs1, []),
+	mstone_runner_loop(Parent, Mod, Conf, N+Inc, Msgs2)
     end.
 
 mstone_runner_process_info() ->
@@ -297,10 +371,13 @@ mstone_all(Codec, Conf, [{V, Msg}|Msgs], Acc) ->
     {ok, Bin} = apply(Codec, encode_message, [Conf, V, Msg]),
     mstone_all(Codec, Conf, Msgs, [{V, Bin}|Acc]).
 
-
 warmup(_Codec, _Conf, [], Acc) ->
     lists:reverse(Acc);
 warmup(Codec, Conf, [{V, M}|Msgs], Acc) ->
+%%     io:format("~p warmup -> entry with"
+%% 	      "~n   Codec: ~p"
+%% 	      "~n   Conf:  ~p"
+%% 	      "~n", [self(), Codec, Conf]),
     case (catch apply(Codec, decode_message, [Conf, V, M])) of
         {ok, Msg} ->
             case (catch apply(Codec, encode_message, [Conf, V, Msg])) of
@@ -310,7 +387,10 @@ warmup(Codec, Conf, [{V, M}|Msgs], Acc) ->
                     emsg("failed encoding message: ~n~p", [EncodeError])
             end;
         DecodeError ->
-            emsg("failed decoding message: ~n~p", [DecodeError])
+            emsg("failed decoding message: "
+		 "~n   DecodeError: ~p"
+		 "~n   V:           ~p"
+		 "~n   M:           ~p", [DecodeError, V, M])
     end.
 
 

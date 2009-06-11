@@ -19,7 +19,7 @@
 
 {application, snmp,
  [{description, "SNMP  CXC 138 13"},
-  {vsn, "4.13.1"},
+  {vsn, "4.13.3"},
   {modules, [
              %% Compiler modules (not in the runtime part of the app)
 %             snmpc,
@@ -43,6 +43,8 @@
              snmpa_authentication_service, 
              snmpa_conf,
              snmpa_error,
+             snmpa_discovery_handler,
+             snmpa_discovery_handler_default,
              snmpa_error_io,
              snmpa_error_logger,
              snmpa_error_report,

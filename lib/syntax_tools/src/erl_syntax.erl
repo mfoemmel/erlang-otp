@@ -5294,8 +5294,8 @@ receive_expr_clauses(Node) ->
 %% if any. If <code>Node</code> represents "<code>receive <em>C1</em>;
 %% ...; <em>Cn</em> end</code>", <code>none</code> is returned.
 %% Otherwise, if <code>Node</code> represents "<code>receive
-%% <em>C1</em>; ...; <em>Cn</em> after <em>Timeout</em> -> <em>A1</em>,
-%% ..., <em>Am</em> end</code>", <code>[A1, ..., Am]</code> is returned.
+%% <em>C1</em>; ...; <em>Cn</em> after <em>Timeout</em> -> ... end</code>",
+%% <code>Timeout</code> is returned.
 %%
 %% @see receive_expr/3
 
@@ -5875,10 +5875,10 @@ macro_arguments(Node) ->
 %% @see concrete/1
 %% @see is_literal/1
 
-abstract([H | T]) when is_integer(H) ->
-    case is_printable([H | T]) of
+abstract([H | T] = L) when is_integer(H) ->
+    case is_printable(L) of
 	true ->
-	    string([H | T]);
+	    string(L);
 	false ->
 	    abstract_tail(H, T)
     end;
@@ -6190,8 +6190,8 @@ revert_forms(T) ->
 	    case catch {ok, revert_forms_1(form_list_elements(T1))} of
 		{ok, Fs} ->
 		    Fs;
-		{error, R} ->
-		    erlang:error({error, R});
+		{error, _} = Error ->
+		    erlang:error(Error);
 		{'EXIT', R} ->
 		    exit(R);
 		R ->
@@ -6650,7 +6650,7 @@ meta_1(T) ->
 	underscore ->
 	    meta_call(underscore, []);
 	variable ->
-	    meta_call(variable, [string(variable_name(T))]);
+	    meta_call(variable, [string(atom_to_list(variable_name(T)))]);
 	warning_marker ->
 	    meta_call(warning_marker,
 		      [abstract(warning_marker_info(T))]);

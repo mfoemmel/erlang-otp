@@ -34,7 +34,7 @@
 %% Timeouts
 -define(tr_comm_failure_wait, 
 	case catch application:get_env(cosTransactions, comFailWait) of
-	    {ok, _Time} when integer(_Time) ->
+	    {ok, _Time} when is_integer(_Time) ->
 		_Time;
 	    _ ->
 		5000
@@ -42,7 +42,7 @@
 
 -define(tr_max_retries, 
 	case catch application:get_env(cosTransactions, maxRetries) of
-	    {ok, _Max} when integer(_Max) ->
+	    {ok, _Max} when is_integer(_Max) ->
 		_Max;
 	    _ ->
 		40
@@ -147,7 +147,7 @@ error_logger:error_msg("============ CosTransactions ==============~n"
 
 -define(tr_start_child(SPEC),
 	case supervisor:start_child(?SUPERVISOR_NAME, SPEC) of
-            {ok, Pid, Obj} when pid(Pid) ->
+            {ok, Pid, Obj} when is_pid(Pid) ->
 		Obj;
             _Other->
 		corba:raise(?tr_badparam)

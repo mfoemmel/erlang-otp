@@ -135,7 +135,7 @@ type	NLINK_SH	FIXED_SIZE	PROCESSES	nlink_sh
 type	NLINK_LH	STANDARD	PROCESSES	nlink_lh
 type	SUSPEND_MON	STANDARD	PROCESSES	suspend_monitor
 type	PEND_SUSPEND	SHORT_LIVED	PROCESSES	pending_suspend
-type	PROC_LIST	FIXED_SIZE	PROCESSES	proc_list
+type	PROC_LIST	SHORT_LIVED	PROCESSES	proc_list
 type	FUN_ENTRY	FIXED_SIZE	CODE		fun_entry
 type	ATOM_TXT	LONG_LIVED	ATOM		atom_text
 type	HEAP		EHEAP		PROCESSES	heap
@@ -240,6 +240,8 @@ type	DRV_TSD		DRIVER		SYSTEM		driver_tsd
 type	PSD		STANDARD	PROCESSES	process_specific_data
 type	PRTSD		STANDARD	SYSTEM		port_specific_data
 type	CPUDATA		LONG_LIVED	SYSTEM		cpu_data
+type	TMP_CPU_IDS	SHORT_LIVED	SYSTEM		tmp_cpu_ids
+type	EXT_TERM_DATA	SHORT_LIVED	PROCESSES	external_term_data
 
 +if smp
 type	PORT_LOCK	STANDARD	SYSTEM		port_lock

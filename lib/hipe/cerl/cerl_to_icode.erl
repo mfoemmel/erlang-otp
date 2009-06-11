@@ -321,8 +321,8 @@ function_1(Name, Fun, Degree, S) ->
     Function = icode_icode(Module, Name, Vs1, Closure, Code,
 			   {LowV, HighV}, {LowL, HighL}),
     if Closure -> 
-	    {value, {_, OrigArity}} =
-		lists:keysearch(closure_orig_arity, 1, cerl:get_ann(Fun)),
+	    {_, OrigArity} =
+		lists:keyfind(closure_orig_arity, 1, cerl:get_ann(Fun)),
 	    {hipe_icode:icode_closure_arity_update(Function, 
 						   OrigArity), 
 	     S2};

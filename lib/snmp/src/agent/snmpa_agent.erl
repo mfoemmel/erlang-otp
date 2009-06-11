@@ -35,7 +35,12 @@
          unregister_notification_filter/2,
          which_notification_filter/1,
  	 get_net_if/1]).
--export([discovery/4]).
+-export([
+	 discovery/5, 
+	 is_originating_discovery_enabled/0,
+	 is_terminating_discovery_enabled/0,
+	 terminating_discovery_stage2/0
+	]).
 -export([verbosity/2, dump_mibs/1, dump_mibs/2]).
 -export([validate_err/3, make_value_a_correct_value/3, 
 	 do_get/3, do_get/4, 
@@ -85,7 +90,8 @@
  
 
 -record(notification_filter, {id, mod, data}).
--record(disco, {from, rec, sender, target, sec_level, ctx, ivbs, stage}).
+-record(disco, 
+	{from, rec, sender, target, sec_level, ctx, ivbs, stage, handler}).
 
 
 %%-----------------------------------------------------------------
@@ -193,7 +199,7 @@ get_request_limit(Agent) ->
 set_request_limit(Agent, NewLimit) ->
     call(Agent, {set_request_limit, NewLimit}).
 
-mib_of(Oid) when list(Oid) ->
+mib_of(Oid) when is_list(Oid) ->
     mib_of(snmp_master_agent, Oid).
 
 mib_of(Agent, Oid) when is_list(Oid) ->
@@ -207,6 +213,9 @@ me_of(Agent, Oid) when is_list(Oid) ->
 
 invalidate_mibs_cache(Agent) ->
     call(Agent, invalidate_mibs_cache).
+
+
+
 
 init([Prio, Parent, Ref, Options]) ->
     ?d("init -> entry with"
@@ -316,7 +325,7 @@ start_net_if(none, Prio, Ref, Vsns, NoteStore, Options) ->
 	    throw({error, {net_if_failed, Error}})
     end;
 start_net_if(Parent, _Prio, _Ref, _Vsns, _NoteStore, _Options) 
-  when pid(Parent) ->
+  when is_pid(Parent) ->
     ?vdebug("start_net_if(~p) -> subagent => ignore", [Parent]),
     {subagent, undefined, undefined}.
     
@@ -465,9 +474,77 @@ send_trap(Agent, Trap, NotifyName, CtxName, Recv, Varbinds) ->
 	    Agent ! Msg
     end.
 
-discovery(TargetName, Notification, ContextName, Varbinds) ->
-    Agent = snmp_master_agent, 
-    call(Agent, {discovery, TargetName, Notification, ContextName, Varbinds}).
+
+%% -- Discovery functions --
+
+is_originating_discovery_enabled() ->
+    case ets:lookup(snmp_agent_table, discovery) of
+	[] -> % upgrade
+	    true;
+	[{discovery, DiscoOptions}] ->
+	    case lists:keysearch(originating, 1, DiscoOptions) of
+		{value, {originating, OrigDisco}} ->
+		    case lists:keysearch(enable, 1, OrigDisco) of
+			{value, {enable, false}} ->
+			    false;
+			_ ->
+			    true
+		    end;
+		_ ->
+		    true
+	    end
+    end.
+    
+is_terminating_discovery_enabled() ->
+    Default = true,
+    case ets:lookup(snmp_agent_table, discovery) of
+	[] -> % upgrade
+	    Default;
+	[{discovery, DiscoOptions}] ->
+	    case lists:keysearch(terminating, 1, DiscoOptions) of
+		{value, {terminating, TermDisco}} ->
+		    case lists:keysearch(enable, 1, TermDisco) of
+			{value, {enable, false}} ->
+			    false;
+			_ ->
+			    Default
+		    end;
+		_ ->
+		    Default
+	    end
+    end.
+		    
+terminating_discovery_stage2() ->
+    Default = discovery, 
+    case ets:lookup(snmp_agent_table, discovery) of
+	[] -> % upgrade
+	    Default;
+	[{discovery, DiscoOptions}] ->
+	    case lists:keysearch(terminating, 1, DiscoOptions) of
+		{value, {terminating, TermDisco}} ->
+		    case lists:keysearch(stage2, 1, TermDisco) of
+			{value, {stage2, Stage2}} when ((Stage2 =:= discovery) orelse (Stage2 =:= plain)) ->
+			    Stage2;
+			_ ->
+			   Default 
+		    end;
+		_ ->
+		    Default
+	    end
+    end.
+
+
+discovery(TargetName, Notification, ContextName, Varbinds, 
+	  DiscoHandler) ->
+    case is_originating_discovery_enabled() of
+	true ->
+	    Agent = snmp_master_agent, 
+	    call(Agent, 
+		 {discovery, 
+		  TargetName, Notification, ContextName, Varbinds, DiscoHandler});
+	false ->
+	    {error, not_enabled}
+    end.
 
 wis(Pid) when is_pid(Pid) ->
     Pid;
@@ -508,7 +585,7 @@ backup(Agent, BackupDir) when is_list(BackupDir) ->
 %%-----------------------------------------------------------------
 dump_mibs(Agent) -> 
     call(Agent, dump_mibs).
-dump_mibs(Agent, File) when list(File) -> 
+dump_mibs(Agent, File) when is_list(File) -> 
     call(Agent, {dump_mibs, File}).
 
 
@@ -718,16 +795,19 @@ handle_call({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds},
 	    ?vinfo("Trap not sent", []),
 	    {reply, {error, send_failed}, S}
     end;
-handle_call({discovery, TargetName, Notification, ContextName, Vbs}, From, 
+handle_call({discovery, 
+	     TargetName, Notification, ContextName, Vbs, DiscoHandler}, 
+	    From, 
 	    #state{disco = undefined} = S) ->
     ?vlog("[handle_call] initiate discovery process:"
 	  "~n   TargetName:   ~p"
 	  "~n   Notification: ~p"
 	  "~n   ContextName:  ~p"
-	  "~n   Vbs:          ~p", 
-	  [TargetName, Notification, ContextName, Vbs]),
+	  "~n   Vbs:          ~p"
+	  "~n   DiscoHandler: ~p", 
+	  [TargetName, Notification, ContextName, Vbs, DiscoHandler]),
     case handle_discovery(S, From, TargetName, 
-			  Notification, ContextName, Vbs) of
+			  Notification, ContextName, Vbs, DiscoHandler) of
 	{ok, NewS} ->
 	    ?vtrace("[handle_call] first stage of discovery process initiated",
 		    []),
@@ -735,7 +815,7 @@ handle_call({discovery, TargetName, Notification, ContextName, Vbs}, From,
 	{error, _} = Error ->
 	    {reply, Error, S}
     end;
-handle_call({discovery, _TargetName, _Notification, _ContextName, _Vbs}, _From, 
+handle_call({discovery, _TargetName, _Notification, _ContextName, _Vbs, _DiscoHandler}, _From, 
 	    #state{disco = DiscoData} = S) ->
     Reply = {error, {discovery_in_progress, DiscoData}}, 
     {reply, Reply, S};
@@ -827,7 +907,7 @@ handle_call({register_subagent, SubTreeOid, SubagentPid}, _From, S) ->
     {reply, Reply, S};
 
 handle_call({unregister_subagent, SubagentPid}, _From, S) 
-  when pid(SubagentPid) ->
+  when is_pid(SubagentPid) ->
     ?vlog("[handle_call] unregister subagent ~p", [SubagentPid]),
     Reply = snmpa_mib:unregister_subagent(get(mibserver), SubagentPid),
     unlink(SubagentPid),
@@ -992,11 +1072,11 @@ handle_cast({verbosity,Verbosity}, S) ->
     ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
     put(verbosity,snmp_verbosity:validate(Verbosity)),
     case S#state.worker of
-	Pid when pid(Pid) -> Pid ! {verbosity,Verbosity};
+	Pid when is_pid(Pid) -> Pid ! {verbosity,Verbosity};
 	_ -> ok
     end,
     case S#state.set_worker of
-	Pid2 when pid(Pid2) -> Pid2 ! {verbosity,Verbosity};
+	Pid2 when is_pid(Pid2) -> Pid2 ! {verbosity,Verbosity};
 	_ -> ok
     end,
     {noreply, S};
@@ -1123,7 +1203,7 @@ workers_restart(#state{worker = W, set_worker = SW} = S) ->
 
 %%-----------------------------------------------------------------
 
-backup_server_stop({Pid, _}) when pid(Pid) ->
+backup_server_stop({Pid, _}) when is_pid(Pid) ->
     exit(Pid, kill);
 backup_server_stop(_) ->
     ok.
@@ -1503,24 +1583,27 @@ handle_send_trap(S, TrapName, NotifyName, ContextName, Recv, Varbinds) ->
 
 maybe_forward_trap(#state{parent = Parent, nfilters = NFs} = S,
 		   TrapRec, NotifyName, ContextName, Recv, V) ->
-    ?vtrace("maybe forward trap",[]),
+    ?vtrace("maybe_forward_trap -> entry with"
+	    "~n   NFs: ~p", [NFs]),
     case filter_notification(NFs, [], TrapRec) of
 	{dont_send, [], Id} ->
-	    ?vdebug("trap not forwarded [filter ~p]",[Id]),
+	    ?vdebug("trap not forwarded [filter ~p]", [Id]),
 	    {ok, S};
 	
 	{dont_send, Removed, Id} ->
-	    ?vdebug("trap not forwarded [filter ~p]",[Id]),
+	    ?vdebug("trap not forwarded [filter ~p]", [Id]),
 	    NFs2 = del_notification_filter(Removed, NFs),
 	    {ok, S#state{nfilters = NFs2}};
 	
 	{send, [], TrapRec2} ->
-	    ?vtrace("forward trap:~n   ~p",[TrapRec2]),
+	    ?vtrace("maybe_forward_trap -> forward trap:"
+		    "~n   ~p", [TrapRec2]),
 	    forward_trap(Parent, TrapRec2, NotifyName, ContextName, Recv, V),
 	    {ok, S};
 	
 	{send, Removed, TrapRec2} ->
-	    ?vtrace("forward trap:~n   ~p",[TrapRec2]),
+	    ?vtrace("maybe_forward_trap -> forward trap:"
+		    "~n   ~p", [TrapRec2]),
 	    forward_trap(Parent, TrapRec2, NotifyName, ContextName, Recv, V),
 	    NFs2 = del_notification_filter(Removed, NFs),
 	    {ok, S#state{nfilters = NFs2}}
@@ -1529,7 +1612,8 @@ maybe_forward_trap(#state{parent = Parent, nfilters = NFs} = S,
 
 maybe_send_trap(#state{nfilters = NFs} = S, 
 		TrapRec, NotifyName, ContextName, Recv, Varbinds) ->
-    ?vtrace("maybe send trap",[]),
+    ?vtrace("maybe_send_trap -> entry with"
+	    "~n   NFs: ~p", [NFs]),
     case filter_notification(NFs, [], TrapRec) of
 	{dont_send, [], Id} ->
 	    ?vdebug("trap not sent [filter ~p]",[Id]),
@@ -1541,12 +1625,14 @@ maybe_send_trap(#state{nfilters = NFs} = S,
 	    {ok, S#state{nfilters = NFs2}};
 	
 	{send, [], TrapRec2} ->
-	    ?vtrace("send trap:~n   ~p",[TrapRec2]),
+	    ?vtrace("maybe_send_trap -> send trap:"
+		    "~n   ~p", [TrapRec2]),
 	    do_handle_send_trap(S, TrapRec2, 
 				NotifyName, ContextName, Recv, Varbinds);
 	
 	{send, Removed, TrapRec2} ->
-	    ?vtrace("send trap:~n   ~p",[TrapRec2]),
+	    ?vtrace("maybe_send_trap -> send trap:"
+		    "~n   ~p", [TrapRec2]),
 	    NFs2 = del_notification_filter(Removed, NFs),
 	    do_handle_send_trap(S#state{nfilters = NFs2}, TrapRec2, 
 				NotifyName, ContextName, Recv, Varbinds)
@@ -1560,18 +1646,20 @@ do_handle_send_trap(S, TrapRec, NotifyName, ContextName, Recv, Varbinds) ->
 			 Recv, V),
 	    {ok, S};
 	master_agent when S#state.multi_threaded =:= false ->
-	    ?vtrace("send trap:~n   ~p",[TrapRec]),
+	    ?vtrace("do_handle_send_trap -> send trap:"
+		    "~n   ~p", [TrapRec]),
 	    snmpa_trap:send_trap(TrapRec, NotifyName, ContextName,
 				 Recv, V, get(net_if)),
 	    {ok, S};
 	master_agent when S#state.worker_state =:= busy ->
 	    %% Main worker busy => create new worker
-	    ?vtrace("~n   main worker busy -> spawn a trap sender", []),
+	    ?vtrace("do_handle_send_trap -> main worker busy: "
+		    "spawn a trap sender", []),
 	    spawn_trap_thread(TrapRec, NotifyName, ContextName, Recv, V),
 	    {ok, S};
 	master_agent ->
 	    %% Send to main worker
-	    ?vtrace("~n   send to main worker",[]),
+	    ?vtrace("do_handle_send_trap -> send to main worker",[]),
 	    S#state.worker ! {TrapRec, NotifyName, ContextName, Recv, V},
 	    {ok, S#state{worker_state = busy}}
     end.
@@ -1641,31 +1729,33 @@ del_notification_filter(IDs, NFs) ->
 
 
 handle_discovery(#state{type = master_agent} = S, From, 
-		 TargetName, Notification, ContextName, Varbinds) ->
+		 TargetName, Notification, ContextName, Varbinds, 
+		 DiscoHandler) ->
     ?vtrace("handle_discovery -> entry with"
-	"~n   TargetName:   ~p" 
-	"~n   Notification: ~p" 
-	"~n   ContextName:  ~p" 
-	"~n   Varbinds:     ~p", 
-	[TargetName, Notification, ContextName, Varbinds]),
+	    "~n   TargetName:   ~p" 
+	    "~n   Notification: ~p" 
+	    "~n   ContextName:  ~p" 
+	    "~n   Varbinds:     ~p", 
+	    [TargetName, Notification, ContextName, Varbinds]),
     case snmpa_trap:construct_trap(Notification, Varbinds) of
 	{ok, Record, InitVars} ->
 	    ?vtrace("handle_discovery -> trap construction complete: "
 		    "~n   Record:   ~p"
 		    "~n   InitVars: ~p", [Record, InitVars]),
 	    send_discovery(S, From, TargetName, 
-			   Record, ContextName, InitVars);
+			   Record, ContextName, InitVars, DiscoHandler);
 	error ->
 	    {error, failed_constructing_notification}
     end;
 handle_discovery(_S, _From, 
-		 _TargetName, _Notification, _ContextName, _Varbinds) ->
+		 _TargetName, _Notification, _ContextName, _Varbinds, 
+		 _DiscoHandler) ->
     {error, only_master_discovery}.
 				
 %% We ignore if the master agent is multi-threaded or not.
 %% 
 send_discovery(S, From, 
-	       TargetName, Record, ContextName, InitVars) ->
+	       TargetName, Record, ContextName, InitVars, DiscoHandler) ->
     case snmpa_trap:send_discovery(TargetName, Record, ContextName,
 				   InitVars, get(net_if)) of
 	{ok, Sender, SecLevel} ->
@@ -1676,7 +1766,8 @@ send_discovery(S, From,
 			   sec_level = SecLevel,
 			   ctx       = ContextName,
 			   ivbs      = InitVars, 
-			   stage     = 1}, 
+			   stage     = 1,
+			   handler   = DiscoHandler}, 
 	    {ok, S#state{disco = Disco}};
 	Error ->
 	    ?vlog("send_discovery -> failed sending discovery: "
@@ -1708,27 +1799,54 @@ handle_discovery_response(#state{disco = #disco{target = TargetName,
 	true when Disco#disco.sec_level =:= ?'SnmpSecurityLevel_noAuthNoPriv' ->
 	    %% Ok, we are done
 	    From = Disco#disco.from,
-	    gen_server:reply(From, ok),
+	    Handler = Disco#disco.handler, 
+	    Reply = handle_discovery_stage1_finish(Handler, 
+						   TargetName, ManagerEngineId),
+	    gen_server:reply(From, Reply),
 	    S#state{disco = undefined};
 
 	true when Disco#disco.sec_level =/= ?'SnmpSecurityLevel_noAuthNoPriv' ->
 	    %% Ok, time for stage 2
 	    %% Send the same inform again, this time we have the proper EngineId
-	    #disco{target = TargetName, 
-		   rec    = Record,
-		   ctx    = ContextName,
-		   ivbs   = InitVars} = Disco, 
-	    case snmpa_trap:send_discovery(TargetName, Record, ContextName,
-					   InitVars, get(net_if)) of
-		{ok, Sender, _SecLevel} ->
-		    Disco2 = Disco#disco{sender = Sender, 
-					 stage  = 2}, 
-		    {ok, S#state{disco = Disco2}};
-		Error ->
-		    Error
-	    end;
 
+	    From = Disco#disco.from,
+	    Handler = Disco#disco.handler, 
+
+	    case handle_discovery_stage1_finish(Handler, 
+						TargetName, ManagerEngineId) of
+		ok ->
+		    ?vdebug("handle_discovery_response(1) -> "
+			    "we are done with stage 1 - "
+			    "continue with stage 2", []),
+		    #disco{target = TargetName, 
+			   rec    = Record,
+			   ctx    = ContextName,
+			   ivbs   = InitVars} = Disco, 
+		    case snmpa_trap:send_discovery(TargetName, Record, ContextName,
+						   InitVars, get(net_if)) of
+			{ok, Sender, _SecLevel} ->
+			    ?vdebug("handle_discovery_response(1) -> "
+				    "stage 2 trap sent", []),
+			    Disco2 = Disco#disco{sender = Sender, 
+						 stage  = 2}, 
+			    {ok, S#state{disco = Disco2}};
+			Error ->
+			    ?vlog("handle_discovery_response(1) -> "
+				  "failed sending stage 2 trap: "
+				  "~n   ~p", [Error]),
+			    Error
+		    end;
+		{error, Reason} = Error ->
+		    ?vlog("handle_discovery_response(1) -> "
+			  "stage 1 finish failed: "
+			  "~n   ~p", [Reason]),
+		    gen_server:reply(From, Error),
+		    S#state{disco = undefined}
+	    end;
 	false ->
+	    ?vinfo("handle_discovery_response(1) -> "
+		   "failed setting doscovered engine-id - "
+		   "inform the user", []),
 	    From   = Disco#disco.from,
 	    Reason = {failed_setting_engine_id, TargetName, ManagerEngineId},
 	    gen_server:reply(From, {error, Reason}),
@@ -1752,6 +1870,38 @@ handle_discovery_response(S, Crap) ->
     warning_msg("Received unexpected discovery response: ~p", [Crap]),
     S.
 
+
+handle_discovery_stage1_finish(Handler, TargetName, ManagerEngineID) ->
+    case (catch Handler:stage1_finish(TargetName, ManagerEngineID)) of
+	ignore ->
+	    ?vtrace("handle_discovery_stage1_finish -> "
+		  "we are done - [ignore] inform the user", []),
+	    {ok, ManagerEngineID};
+	{ok, UsmEntry} when is_tuple(UsmEntry) ->
+	    ?vtrace("handle_discovery_stage1_finish -> "
+		    "received usm entry - attempt to add entry", []),
+	    case snmp_user_based_sm_mib:add_user(UsmEntry) of
+		{ok, _} ->
+		    ok;
+		{error, Reason} ->
+		    ?vlog("handle_discovery_stage1_finish -> "
+			  "failed adding usm entry: "
+			  "~n   ~p", [Reason]),
+		    {error, {failed_adding_entry, Reason, ManagerEngineID}}
+	    end;
+	{'EXIT', Reason} ->
+	    ?vlog("handle_discovery_stage1_finish -> stage 1 function exited: "
+		  "~n   ~p", [Reason]),
+	    {error, {finish_exit, Reason, ManagerEngineID}};
+	{error, Reason} ->
+	    ?vlog("handle_discovery_stage1_finish -> stage 1 function error: "
+		  "~n   ~p", [Reason]),
+	    {error, {finish_error, Reason, ManagerEngineID}};
+	Unknown ->
+	    ?vlog("handle_discovery_stage1_finish -> stage 1 function unknown: "
+		  "~n   ~p", [Unknown]),
+	    {error, {finish_failed, Unknown, ManagerEngineID}}
+    end.
 
     
 handle_me_of(MibServer, Oid) ->
@@ -1871,9 +2021,10 @@ validate_get_v1({noError, _, ResponseVarbinds}) ->
 validate_get_v1({ErrStatus, ErrIndex, ResponseVarbinds}) ->
     {v2err_to_v1err(ErrStatus), ErrIndex, ResponseVarbinds}.
 
-validate_get_v1_2([Vb | Vbs]) when Vb#varbind.value /= noSuchInstance,
-				   Vb#varbind.value /= noSuchObject,
-				   Vb#varbind.variabletype /= 'Counter64' ->
+validate_get_v1_2([Vb | Vbs]) 
+  when ((Vb#varbind.value =/= noSuchInstance) andalso 
+	(Vb#varbind.value =/= noSuchObject) andalso 
+	(Vb#varbind.variabletype =/= 'Counter64')) ->
     validate_get_v1_2(Vbs);
 validate_get_v1_2([Vb | _Vbs]) ->
     {noSuchName, Vb#varbind.org_index};
@@ -2015,9 +2166,9 @@ do_get(UnsortedVarbinds, IsNotification) ->
 %%-----------------------------------------------------------------
 do_get_local([Vb | Vbs], Res, IsNotification) ->
     case try_get(Vb, IsNotification) of
-	NewVb when record(NewVb, varbind) ->
+	NewVb when is_record(NewVb, varbind) ->
 	    do_get_local(Vbs, [NewVb | Res], IsNotification);
-	ListOfNewVb when list(ListOfNewVb) ->
+	ListOfNewVb when is_list(ListOfNewVb) ->
 	    do_get_local(Vbs, lists:append(ListOfNewVb, Res), IsNotification);
 	{error, Error, OrgIndex} ->
 	    {Error, OrgIndex, []}
@@ -2057,7 +2208,7 @@ do_get_subagents([], Res, _IsNotification) ->
 %%          #varbind |
 %%          List of #varbind
 %%-----------------------------------------------------------------
-try_get(IVb, IsNotification) when record(IVb, ivarbind) ->
+try_get(IVb, IsNotification) when is_record(IVb, ivarbind) ->
     ?vtrace("try_get(ivarbind) -> entry with"
 	    "~n   IVb: ~p", [IVb]),
     get_var_value_from_ivb(IVb, IsNotification);
@@ -2212,7 +2363,7 @@ get_value_all_rows([{RowIndex, OrgCols} | Rows], Mod, Func, Args, Res) ->
     Cols   = delete_index(DOrgCols),
     Result = (catch dbg_apply(Mod, Func, [get, RowIndex, Cols | Args])),
     case validate_tab_res(Result, DOrgCols, {Mod, Func, Args}) of
-	Values when list(Values) ->
+	Values when is_list(Values) ->
 	    NVals  = restore_duplicates(Dup, Values),
 	    NewRes = lists:append(NVals, Res),
 	    get_value_all_rows(Rows, Mod, Func, Args, NewRes);
@@ -2288,7 +2439,7 @@ restore_duplicates(Dup, [{_Col, Val, OrgIndex} | T]) ->
 %%         each element in Values and OrgCols correspond to each
 %%         other.
 %%-----------------------------------------------------------------
-validate_tab_res(Values, OrgCols, Mfa) when list(Values) ->
+validate_tab_res(Values, OrgCols, Mfa) when is_list(Values) ->
     {_Col, _ASN1Type, OneIdx} = hd(OrgCols),
     validate_tab_res(Values, OrgCols, Mfa, [], OneIdx);
 validate_tab_res({noValue, Error}, OrgCols, Mfa) ->
@@ -2597,7 +2748,7 @@ get_next_table(#me{mfa = {M, F, A}}, TableOid, TableOids, MibView) ->
 	"~n   MibView:   ~p", [M, F, A, TableOid, TableOids, MibView]),
     Sorted = snmpa_svbl:sort_varbinds_rows(TableOids),
     case get_next_values_all_rows(Sorted, M,F,A, [], TableOid) of
-	NewVbs when list(NewVbs) ->
+	NewVbs when is_list(NewVbs) ->
  	    ?vt("get_next_table -> "
 		"~n   NewVbs: ~p", [NewVbs]),
 	    % We must now check each Vb for endOfTable and that it is
@@ -2617,7 +2768,7 @@ get_next_values_all_rows([Row | Rows], M, F, A, Res, TabOid) ->
     ?vt("get_next_values_all_rows -> "
  	"~n   Result: ~p", [Result]),
     case validate_tab_next_res(Result, TableOids, {M, F, A}, TabOid) of
-	Values when list(Values) -> 
+	Values when is_list(Values) -> 
  	    ?vt("get_next_values_all_rows -> "
  		"~n   Values: ~p", [Values]),
 	    NewRes = lists:append(Values, Res),
@@ -2961,13 +3112,13 @@ try_get_bulk(Sz, MibView, Varbinds) ->
 			    "~n   Idx:    ~p"
 			    "~n   Reason: ~p", [Idx, Reason]),
 		    {genErr, Idx};
-		{SizeLeft, Res} when is_integer(SizeLeft) and is_list(Res) ->
+		{SizeLeft, Res} when is_integer(SizeLeft) andalso is_list(Res) ->
 		    ?vt("try get bulk -> "
 			"~n   SizeLeft: ~w"
 			"~n   Res:      ~w", [SizeLeft, Res]),
 		    {check_end_of_mibview(NextVarbinds),
 		     NextVarbinds, SizeLeft, Res};
-		Res when list(Res) ->
+		Res when is_list(Res) ->
 		    ?vt("try get bulk -> Res: "
 			"~n   ~w", [Res]),
 		    {endOfMibView, [], 0, Res}
@@ -3012,7 +3163,7 @@ sa_split(SubagentVarbinds) ->
     snmpa_svbl:sa_split(SubagentVarbinds).
 
 make_response_pdu(ReqId, ErrStatus, ErrIndex, OrgVarbinds, _ResponseVarbinds)
-  when ErrIndex /= 0 ->
+  when ErrIndex =/= 0 ->
     #pdu{type = 'get-response', request_id = ReqId, error_status = ErrStatus,
 	 error_index = ErrIndex, varbinds = OrgVarbinds};
 make_response_pdu(ReqId, ErrStatus, ErrIndex, _OrgVarbinds, ResponseVarbinds) ->
@@ -3058,49 +3209,49 @@ validate_err(undo, X, Mfa) ->
 	     [Mfa, X]),
     genErr;
 
-validate_err(table_is_set_ok, {Err, Idx}, Mfa) when integer(Idx) ->
+validate_err(table_is_set_ok, {Err, Idx}, Mfa) when is_integer(Idx) ->
     {validate_err(is_set_ok, Err, Mfa), Idx};
 validate_err(table_is_set_ok, X, Mfa) ->
     user_err("~w with is_set_ok (table), returned: ~w. Using genErr.",
 	     [Mfa, X]),
     {genErr, 0};
 
-validate_err(row_is_set_ok, {Err, Idx}, _) when integer(Idx) ->
+validate_err(row_is_set_ok, {Err, Idx}, _) when is_integer(Idx) ->
     {Err, Idx};
 validate_err(row_is_set_ok, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with is_set_ok (table), returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
-validate_err(table_undo, {Err, Idx}, Mfa) when integer(Idx) ->
+validate_err(table_undo, {Err, Idx}, Mfa) when is_integer(Idx) ->
     {validate_err(undo, Err, Mfa), Idx};
 validate_err(table_undo, X, Mfa) ->
     user_err("~w with undo (table), returned: ~w. Using genErr.",
 	     [Mfa, X]),
     {genErr, 0};
 
-validate_err(row_undo, {Err, Idx}, _) when integer(Idx) ->
+validate_err(row_undo, {Err, Idx}, _) when is_integer(Idx) ->
     {Err, Idx};
 validate_err(row_undo, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with undo (table), returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
-validate_err(table_set, {Err, Idx}, Mfa) when integer(Idx) ->
+validate_err(table_set, {Err, Idx}, Mfa) when is_integer(Idx) ->
     {validate_err(set, Err, Mfa), Idx};
 validate_err(table_set, X, Mfa) ->
     user_err("~w with set (table), returned: ~w. Using genErr.",
 	     [Mfa, X]),
     {genErr, 0};
 
-validate_err(row_set, {Err, Idx}, _) when integer(Idx) ->
+validate_err(row_set, {Err, Idx}, _) when is_integer(Idx) ->
     {Err, Idx};
 validate_err(row_set, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with set (table), returned bad column: "
 	     "~w. Using genErr.", [Mfa, BadCol]),
     {genErr, 0};
 
-validate_err(table_next, {Err, Idx}, _Mfa) when integer(Idx) ->
+validate_err(table_next, {Err, Idx}, _Mfa) when is_integer(Idx) ->
     {Err, Idx};
 validate_err(table_next, {_Err, {false, BadCol}}, Mfa) ->
     user_err("~w with get_next, returned bad column: "
@@ -3204,7 +3355,7 @@ make_value_a_correct_value({value, Oid},
 
 make_value_a_correct_value({value, Val}, Asn1, _Mfa)
   when Asn1#asn1_type.bertype =:= 'Opaque' ->
-    if list(Val) -> {value, 'Opaque', Val};
+    if is_list(Val) -> {value, 'Opaque', Val};
        true -> {error, wrongType}
     end;
 
@@ -3256,7 +3407,7 @@ check_octet_string(String, Hi, Lo, Mfa, Type) ->
     end.
 
 check_size(Val, #asn1_type{lo = Lo, hi = Hi, bertype = Type}, Mfa) 
-  when integer(Val) ->
+  when is_integer(Val) ->
     ?vtrace("check size of integer: "
 	    "~n   Value:       ~p"
 	    "~n   Upper limit: ~p"
@@ -3280,9 +3431,9 @@ check_size(Val, _, Mfa) ->
 check_enums(Val, Asn1, Enums, Mfa) ->
     Association = 
 	if
-	    integer(Val) -> lists:keysearch(Val, 2, Enums);
-	    atom(Val)    -> lists:keysearch(Val, 1, Enums);
-	    true         -> {error, wrongType}
+	    is_integer(Val) -> lists:keysearch(Val, 2, Enums);
+	    is_atom(Val)    -> lists:keysearch(Val, 1, Enums);
+	    true            -> {error, wrongType}
     end,
     case Association of
 	{value, {_AliasIntName, Val2}} -> 
@@ -3385,12 +3536,12 @@ pdu_handler_short_name(ma) -> maph;
 pdu_handler_short_name(_)  -> saph.
 
 
-mib_server_verbosity(Pid,Verbosity) when pid(Pid) ->
+mib_server_verbosity(Pid,Verbosity) when is_pid(Pid) ->
     snmpa_mib:verbosity(Pid,Verbosity);
 mib_server_verbosity(_Pid,_Verbosity) ->
     ok.
 
-note_store_verbosity(Pid,Verbosity) when pid(Pid) ->
+note_store_verbosity(Pid,Verbosity) when is_pid(Pid) ->
     snmp_note_store:verbosity(Pid,Verbosity);
 note_store_verbosity(_Pid,_Verbosity) ->
     ok.
@@ -3411,7 +3562,7 @@ subagents_verbosity(_,_V) ->
 %% ---------------------------------------------------------------------
 
 handle_get_log_type(#state{net_if_mod = Mod}) 
-  when Mod /= undefined ->
+  when Mod =/= undefined ->
     case (catch Mod:get_log_type(get(net_if))) of
 	{'EXIT', _} ->
             {error, not_supported};
@@ -3422,7 +3573,7 @@ handle_get_log_type(_) ->
     {error, not_supported}.
 
 handle_set_log_type(#state{net_if_mod = Mod}, NewType) 
-  when Mod /= undefined ->
+  when Mod =/= undefined ->
     case (catch Mod:set_log_type(get(net_if), NewType)) of
 	{'EXIT', _} ->
             {error, not_supported};
@@ -3434,7 +3585,7 @@ handle_set_log_type(_, _) ->
 
 
 handle_get_request_limit(#state{net_if_mod = Mod}) 
-  when Mod /= undefined ->
+  when Mod =/= undefined ->
     case (catch Mod:get_request_limit(get(net_if))) of
 	{'EXIT', _} ->
             {error, not_supported};
@@ -3445,7 +3596,7 @@ handle_get_request_limit(_) ->
     {error, not_supported}.
 
 handle_set_request_limit(#state{net_if_mod = Mod}, NewLimit) 
-  when Mod /= undefined ->
+  when Mod =/= undefined ->
     case (catch Mod:set_request_limit(get(net_if), NewLimit)) of
 	{'EXIT', _} ->
             {error, not_supported};
@@ -3458,7 +3609,7 @@ handle_set_request_limit(_, _) ->
 
 agent_info(#state{worker = W, set_worker = SW}) ->	 
     case (catch get_agent_info(W, SW)) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -3478,9 +3629,9 @@ get_agent_info(W, SW) ->
 		  {community_cache, CCSz}, 
 		  {vacm,            VacmSz}]}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
-	{memory, Sz} when integer(Sz) ->
+	{memory, Sz} when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
@@ -3490,15 +3641,15 @@ proc_mem(_) ->
 
 tab_mem(T) ->
     case (catch ets:info(T, memory)) of
-	Sz when integer(Sz) ->
+	Sz when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
     end.
 
-net_if_info(#state{net_if_mod = Mod}) when Mod /= undefined ->
+net_if_info(#state{net_if_mod = Mod}) when Mod =/= undefined ->
     case (catch Mod:info(get(net_if))) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -3510,7 +3661,7 @@ net_if_info(_) ->
 
 note_store_info(#state{note_store = NS}) ->
     case (catch snmp_note_store:info(NS)) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -3518,7 +3669,7 @@ note_store_info(#state{note_store = NS}) ->
 
 symbolic_store_info() ->
     case (catch snmpa_symbolic_store:info()) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -3526,7 +3677,7 @@ symbolic_store_info() ->
 
 local_db_info() ->
     case (catch snmpa_local_db:info()) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -3534,7 +3685,7 @@ local_db_info() ->
 
 mib_server_info() ->
     case (catch snmpa_mib:info(get(mibserver))) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	E ->
 	    [{error, E}]
@@ -3623,7 +3774,7 @@ get_net_if_options(Opts) ->
     get_option(options, Opts, []).
 
 
-net_if_verbosity(Pid,Verbosity) when pid(Pid) ->
+net_if_verbosity(Pid,Verbosity) when is_pid(Pid) ->
     Pid ! {verbosity,Verbosity};
 net_if_verbosity(_Pid,_Verbosity) ->
     ok.

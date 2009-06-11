@@ -159,10 +159,18 @@ handle_event(Event,State=#state{receivers=RecvPids}) ->
 %% Data = Dir
 %%
 %% Name = tc_start
-%% Data = {Suite,Case}
+%% Data = {Suite,CaseOrGroup}
+%% CaseOrGroup = atom() | {Conf,GroupName,GroupProperties}
+%% Conf = init_per_group | end_per_group
+%% GroupName = atom()
+%% GroupProperties = list()
 %%
 %% Name = tc_done
-%% Data = {Suite,Case,Result}
+%% Data = {Suite,CaseOrGroup,Result}
+%% CaseOrGroup = atom() | {Conf,GroupName,GroupProperties}
+%% Conf = init_per_group | end_per_group
+%% GroupName = atom()
+%% GroupProperties = list()
 %% Result = ok | {skipped,Reason} | {failed,Reason} 
 %%
 %% Name = tc_user_skip

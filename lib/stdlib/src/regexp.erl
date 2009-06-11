@@ -112,6 +112,10 @@ reg3p([$+|S], L) -> reg3p(S, {pclosure,L});
 reg3p([$?|S], L) -> reg3p(S, {optional,L});
 reg3p(S, L) -> {L,S}.
 
+-define(HEX(C), C >= $0 andalso C =< $9 orelse 
+                C >= $A andalso C =< $F orelse 
+                C >= $a andalso C =< $f).
+
 reg4([$(|S0]) ->
     case reg(S0) of
 	{R,[$)|S1]} -> {R,S1};
@@ -120,6 +124,12 @@ reg4([$(|S0]) ->
 reg4([$\\,O1,O2,O3|S]) when
   O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7, O3 >= $0, O3 =< $7 ->
     {(O1*8 + O2)*8 + O3 - 73*$0,S};
+reg4([$\\,$x,H1,H2|S]) when ?HEX(H1), ?HEX(H2) ->
+    {erlang:list_to_integer([H1,H2], 16),S};
+reg4([$\\,$x,${|S]) ->
+    hex(S, []);
+reg4([$\\,$x|_]) ->
+    throw({error,{illegal,[$x]}});
 reg4([$\\,C|S]) -> {escape_char(C),S};
 reg4([$\\]) -> throw({error,{unterminated,"\\"}});
 reg4([$^|S]) -> {bos,S};
@@ -144,6 +154,18 @@ reg4([C|S]) when C =/= $*, C =/= $+, C =/= $?, C =/= $] -> {C,S};
 reg4([C|_S]) -> throw({error,{illegal,[C]}});
 reg4([]) -> {epsilon,[]}.
 
+hex([C|Cs], L) when ?HEX(C) ->
+    hex(Cs, [C|L]);
+hex([$}|S], L) ->
+    case catch erlang:list_to_integer(lists:reverse(L), 16) of
+        V when V =< 16#FF ->
+            {V,S};
+        _ ->
+            throw({error,{illegal,[$}]}})
+    end;
+hex(_S, _) ->
+    throw({error,{unterminated,"\\x{"}}).
+
 escape_char($n) -> $\n;				%\n = LF
 escape_char($r) -> $\r;				%\r = CR
 escape_char($t) -> $\t;				%\t = TAB
@@ -161,6 +183,12 @@ char_class(S) -> char_class(S, []).
 char($\\, [O1,O2,O3|S]) when
   O1 >= $0, O1 =< $7, O2 >= $0, O2 =< $7, O3 >= $0, O3 =< $7 ->
     {(O1*8 + O2)*8 + O3 - 73*$0,S};
+char($\\, [$x,H1,H2|S]) when ?HEX(H1), ?HEX(H2) ->
+    {erlang:list_to_integer([H1,H2], 16),S};
+char($\\,[$x,${|S]) ->
+    hex(S, []);
+char($\\,[$x|_]) ->
+    throw({error,{illegal,[$x]}});
 char($\\, [C|S]) -> {escape_char(C),S};
 char(C, S) -> {C,S}.
 

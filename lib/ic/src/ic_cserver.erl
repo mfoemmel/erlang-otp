@@ -74,11 +74,11 @@ remove_ext(File) ->
 %% 
 %%------------------------------------------------------------
 
-gen(G, N, [X| Xs]) when record(X, preproc) ->
+gen(G, N, [X| Xs]) when is_record(X, preproc) ->
     NewG = change_file_stack(G, N, X#preproc.cat, X), 
     gen(NewG, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, module) ->
+gen(G, N, [X| Xs]) when is_record(X, module) ->
     CD = ic_code:codeDirective(G, X), 
     G2 = ic_file:filename_push(G, N, X, CD), 
     N2 = [ic_forms:get_id2(X)| N], 
@@ -87,7 +87,7 @@ gen(G, N, [X| Xs]) when record(X, module) ->
     G3 = ic_file:filename_pop(G2, CD), 
     gen(G3, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, interface) ->
+gen(G, N, [X| Xs]) when is_record(X, interface) ->
     G2 = ic_file:filename_push(G, N, X, c_server), 
     N2 = [ic_forms:get_id2(X)| N], 
     gen_prototypes(G2, N2, X), 
@@ -95,33 +95,33 @@ gen(G, N, [X| Xs]) when record(X, interface) ->
     G3 = ic_file:filename_pop(G2, c), 
     gen(G3, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, const) ->
+gen(G, N, [X| Xs]) when is_record(X, const) ->
     emit_constant(G, N, X), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, op) ->
+gen(G, N, [X| Xs]) when is_record(X, op) ->
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, attr) ->
+gen(G, N, [X| Xs]) when is_record(X, attr) ->
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, except) ->
+gen(G, N, [X| Xs]) when is_record(X, except) ->
     icstruct:except_gen(G, N, X, c), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, enum) ->
+gen(G, N, [X| Xs]) when is_record(X, enum) ->
     icenum:enum_gen(G, N, X, c), 
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, typedef) ->
+gen(G, N, [X| Xs]) when is_record(X, typedef) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, struct) ->
+gen(G, N, [X| Xs]) when is_record(X, struct) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) when record(X, union) ->
+gen(G, N, [X| Xs]) when is_record(X, union) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
@@ -155,7 +155,7 @@ change_file_stack(G, _N, _Other, _X) ->
 %%------------------------------------------------------------
 
 %% Some items have extra includes
-gen_headers(G, N, X) when record(X, module) ->
+gen_headers(G, N, X) when is_record(X, module) ->
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
@@ -320,13 +320,13 @@ gen_serv(G, N, X) ->
 
 emit_structs_inside_module(G, _Fd, N, Xs)->
     lists:foreach(
-      fun(X) when record(X, enum) ->
+      fun(X) when is_record(X, enum) ->
 	      icenum:enum_gen(G, N, X, c);
-	 (X) when record(X, typedef) ->
+	 (X) when is_record(X, typedef) ->
 	      icstruct:struct_gen(G, N, X, c);
-	 (X) when record(X, struct) ->
+	 (X) when is_record(X, struct) ->
 	      icstruct:struct_gen(G, N, X, c);
-	 (X) when record(X, union) ->
+	 (X) when is_record(X, union) ->
 	      icstruct:struct_gen(G, N, X, c);
 	 (_) ->
 	      ok
@@ -338,12 +338,12 @@ emit_structs_inside_module(G, _Fd, N, Xs)->
 
 emit_exec_prototypes(G, Fd, N, Xs) ->
     lists:foreach(
-      fun(X) when record(X, op) ->
+      fun(X) when is_record(X, op) ->
 	      {ScopedName, _, _} = ic_cbe:extract_info(G, N, X), 
 	      emit(Fd, 
 		   "int ~s__exec(~s oe_obj, CORBA_Environment *oe_env);\n", 
 		   [ScopedName, ic_util:to_undersc(N)]);
-	 (X) when record(X, const) ->
+	 (X) when is_record(X, const) ->
 	      emit_constant(G, N, X); 
 	 (_) ->
 	      ok
@@ -353,7 +353,7 @@ emit_exec_prototypes(G, Fd, N, Xs) ->
 %% Emit restore typedefs
 %%------------------------------------------------------------
 
-emit_restore_typedefs(G, Fd, N, [X| Xs]) when record(X, op) ->
+emit_restore_typedefs(G, Fd, N, [X| Xs]) when is_record(X, op) ->
     %% Check if to use scoped call names
     {ScopedName, ArgNames, Types} = ic_cbe:extract_info(G, N, X), 
     {RetType, ParTypes, _} = Types, 
@@ -410,7 +410,7 @@ emit_restore_typedefs(G, Fd, N, [X| Xs]) when record(X, op) ->
 	    end
     end, 
     emit_restore_typedefs(G, Fd, N, Xs);
-emit_restore_typedefs(G, Fd, N, [X| Xs]) when record(X, attr) ->
+emit_restore_typedefs(G, Fd, N, [X| Xs]) when is_record(X, attr) ->
     emit_restore_typedefs(G, Fd, N, Xs);
 emit_restore_typedefs(G, Fd, N, [_X| Xs]) ->
     emit_restore_typedefs(G, Fd, N, Xs);
@@ -421,7 +421,7 @@ emit_restore_typedefs(_G, _Fd, _N, []) -> ok.
 %% Emit call-back prototypes
 %%------------------------------------------------------------
 
-emit_callback_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
+emit_callback_prototypes(G, Fd, N, [X| Xs]) when is_record(X, op) ->
     %% Check scoped names XXX
     {ScopedName, ArgNames, Types} = ic_cbe:extract_info(G, N, X), 
     {RetType, ParTypes, _} = Types, 
@@ -478,7 +478,7 @@ emit_callback_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
 	    end
     end, 
     emit_callback_prototypes(G, Fd, N, Xs);
-emit_callback_prototypes(G, Fd, N, [X| Xs]) when record(X, attr) ->
+emit_callback_prototypes(G, Fd, N, [X| Xs]) when is_record(X, attr) ->
     emit_callback_prototypes(G, Fd, N, Xs);
 emit_callback_prototypes(G, Fd, N, [_X| Xs]) ->
     emit_callback_prototypes(G, Fd, N, Xs);
@@ -488,7 +488,7 @@ emit_callback_prototypes(_G, _Fd, _N, []) -> ok.
 %% Emit decoder prototypes
 %%------------------------------------------------------------
 
-emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
+emit_decoder_prototypes(G, Fd, N, [X| Xs]) when is_record(X, op) ->
     %% Check if to use scoped call names
     {ScopedName, ArgNames, Types} = ic_cbe:extract_info(G, N, X), 
     {_RetType, ParTypes, _} = Types, 
@@ -503,7 +503,7 @@ emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
 		 [ScopedName, ic_util:to_undersc(N), PLFDP])
     end, 
     emit_decoder_prototypes(G, Fd, N, Xs);
-emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, attr) ->
+emit_decoder_prototypes(G, Fd, N, [X| Xs]) when is_record(X, attr) ->
     emit_decoder_prototypes(G, Fd, N, Xs);
 emit_decoder_prototypes(G, Fd, N, [_X| Xs]) ->
     emit_decoder_prototypes(G, Fd, N, Xs);
@@ -514,7 +514,7 @@ emit_decoder_prototypes(_G, _Fd, _N, []) -> ok.
 %% Emit encoder prototypes
 %%------------------------------------------------------------
 
-emit_encoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
+emit_encoder_prototypes(G, Fd, N, [X| Xs]) when is_record(X, op) ->
     case ic_forms:is_oneway(X) of
 	true ->
 	    emit_encoder_prototypes(G, Fd, N, Xs);
@@ -552,7 +552,7 @@ emit_encoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
 	    end, 
 	    emit_encoder_prototypes(G, Fd, N, Xs)
     end;
-emit_encoder_prototypes(G, Fd, N, [X| Xs]) when record(X, attr) ->
+emit_encoder_prototypes(G, Fd, N, [X| Xs]) when is_record(X, attr) ->
     emit_encoder_prototypes(G, Fd, N, Xs);
 emit_encoder_prototypes(G, Fd, N, [_X| Xs]) ->
     emit_encoder_prototypes(G, Fd, N, Xs);
@@ -597,7 +597,7 @@ get_all_opnames(G, N, Bodies) ->
 	    false  ->
 		fun(X) -> ic_forms:get_id2(X) end
 	end,
-    Filter = fun(X) when record(X, op) -> 
+    Filter = fun(X) when is_record(X, op) -> 
 		     {true, {NF(X), ScNF(X)}};
 		(_) ->
 		     false
@@ -658,7 +658,7 @@ emit_server_generic_decoding(G, Fd, N) ->
 
 emit_dispatch(G, Fd, N, Xs) ->
     lists:foreach(
-      fun(X) when record(X, op) ->
+      fun(X) when is_record(X, op) ->
 	      {Name, ArgNames, Types} = ic_cbe:extract_info(G, N, X), 
 	      {RetType, ParTypes, _} = Types, 
 	      TypeAttrArgs = mk_type_attr_arg_list(ParTypes, ArgNames),
@@ -716,7 +716,7 @@ emit_constant(G, N, ConstRecord) ->
 
 	    emit(Fd, "/* Constant: ~s */\n", [CName]), 
 
-	    if record(ConstRecord#const.type, wstring) -> 
+	    if is_record(ConstRecord#const.type, wstring) -> 
 		    %% If wstring, add 'L' 
 		    emit(Fd, "#define ~s L~p\n\n", [CName, 
 						    ConstRecord#const.val]);
@@ -1210,11 +1210,11 @@ mk_c_ret_type(G, N, Type) ->
     Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 	      true ->
 		  if 
-		      record(Type, string) ->
+		      is_record(Type, string) ->
 			  "*";
 		      Ctype == "CORBA_char *" ->
 			  "";
-		      record(Type, wstring) ->  %% WSTRING
+		      is_record(Type, wstring) ->  %% WSTRING
 			  "*";
 		      Ctype == "CORBA_wchar *" ->  %% WSTRING
 			  "";
@@ -1284,11 +1284,11 @@ mk_dec_par_list(G, N, X, TypeAttrArgs0) ->
 	      case ic_cbe:is_variable_size(G, N, Type) of
 		  true ->
 		      if 
-			  record(Type, string) ->
+			  is_record(Type, string) ->
 			      "&" ++ Arg;
 			  Ctype == "CORBA_char *" ->
 			      Arg;
-			  record(Type, wstring) ->
+			  is_record(Type, wstring) ->
 			      "&" ++ Arg;
 			  Ctype == "CORBA_wchar *" ->
 			      Arg;
@@ -1374,11 +1374,11 @@ mk_par_list_for_decoder(G, N, X, TypeAttrArgs0) ->
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
 			    if 
-				record(Type, string) ->
+				is_record(Type, string) ->
 				    "**";
 				Ctype == "CORBA_char *" ->
 				    "";
-				record(Type, wstring) ->  %% WSTRING
+				is_record(Type, wstring) ->  %% WSTRING
 				    "**";
 				Ctype == "CORBA_wchar *" ->  %% WSTRING
 				    "";
@@ -1413,11 +1413,11 @@ mk_par_list_for_encoder(G, N, X, TypeAttrArgs0) ->
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
 			    if 
-				record(Type, string) ->
+				is_record(Type, string) ->
 				    "*";
 				Ctype == "CORBA_char *" ->
 				    "";
-				record(Type, wstring) ->  %% WSTRING
+				is_record(Type, wstring) ->  %% WSTRING
 				    "*";
 				Ctype == "CORBA_wchar *" ->  %% WSTRING
 				    "";
@@ -1456,11 +1456,11 @@ mk_par_list_for_decoder_prototypes(G, N, X, TypeAttrArgs0) ->
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
 			    if 
-				record(Type, string) ->
+				is_record(Type, string) ->
 				    "**";
 				Ctype == "CORBA_char *" ->
 				    "";
-				record(Type, wstring) ->  %% WSTRING
+				is_record(Type, wstring) ->  %% WSTRING
 				    "**";
 				Ctype == "CORBA_wchar *" ->  %% WSTRING
 				    "";
@@ -1495,11 +1495,11 @@ mk_par_list_for_encoder_prototypes(G, N, X, TypeAttrArgs0) ->
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
 			    if 
-				record(Type, string) ->
+				is_record(Type, string) ->
 				    "*";
 				Ctype == "CORBA_char *" ->
 				    "";
-				record(Type, wstring) ->  %% WSTRING
+				is_record(Type, wstring) ->  %% WSTRING
 				    "*";
 				Ctype == "CORBA_wchar *" ->  %% WSTRING
 				    "";
@@ -1540,11 +1540,11 @@ mk_par_list_for_callback_prototypes(G, N, X, TypeAttrArgs0) ->
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
 			    if 
-				record(Type, string) ->
+				is_record(Type, string) ->
 				    "*" ++ IndOp;
 				Ctype == "CORBA_char *" ->
 				    "" ++ IndOp;
-				record(Type, wstring) ->  %% WSTRING
+				is_record(Type, wstring) ->  %% WSTRING
 				    "*" ++ IndOp;
 				Ctype == "CORBA_wchar *" ->  %% WSTRING
 				    "" ++ IndOp;
@@ -1585,11 +1585,11 @@ mk_var_decl_list(G, N, X, TypeAttrArgs0) ->
 	      VarDecl = case ic_cbe:is_variable_size(G, N, Type) of
 			    true ->
 				if 
-				    record(Type, string) ->
+				    is_record(Type, string) ->
 					Ctype ++ "* " ++ Arg ++ " = NULL";
 				    Ctype == "CORBA_char *" ->
 					Ctype ++ " " ++ Arg ++ " = NULL";
-				    record(Type, wstring) ->  %% WSTRING
+				    is_record(Type, wstring) ->  %% WSTRING
 					Ctype ++ "* " ++ Arg ++ " = NULL";
 				    Ctype == "CORBA_wchar *" ->  %% WSTRING
 					Ctype ++ " " ++ Arg ++ " = NULL";
@@ -1674,11 +1674,11 @@ mk_c_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
 	Type ->
 	    Type
     end;
-mk_c_type(_G, _N, S, _) when list(S) ->
+mk_c_type(_G, _N, S, _) when is_list(S) ->
     S;
-mk_c_type(_G, _N, S, _) when record(S, string) ->
+mk_c_type(_G, _N, S, _) when is_record(S, string) ->
     "CORBA_char";
-mk_c_type(_G, _N, S, _) when record(S, wstring) ->  %% WSTRING
+mk_c_type(_G, _N, S, _) when is_record(S, wstring) ->  %% WSTRING
     "CORBA_wchar";
 mk_c_type(_G, _N, {boolean, _}, _) ->
     "CORBA_boolean";
@@ -1740,7 +1740,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName) when element(1, T) == scoped_id ->
 	FSN ->
 	    emit_encoding_stmt(G, N, X, Fd, FSN, LName)
     end;
-emit_encoding_stmt(G, N, X, Fd, T, LName) when list(T) -> 
+emit_encoding_stmt(G, N, X, Fd, T, LName) when is_list(T) -> 
     %% Already a fullscoped name
     case get_param_tk(LName, X) of
 	error ->
@@ -1759,7 +1759,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName) when list(T) ->
 		    ?emit_c_enc_rpt(Fd, "    ", "", []),
 		    emit(Fd, "    return oe_error_code;\n  }\n\n");
 		false ->
-		    if atom(ParamTK) ->
+		    if is_atom(ParamTK) ->
 			    case ParamTK of
 				tk_ushort -> 
 				    emit(Fd, "  if ((oe_error_code = "
@@ -1967,7 +1967,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName) when list(T) ->
 		    end
 	    end
     end;
-emit_encoding_stmt(G, N, _X, Fd, T, LName)  when record(T, string) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName)  when is_record(T, string) ->
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_string(oe_env, (const char*) ~s)) < 0) {\n", 
 	 [LName]), 
@@ -1975,7 +1975,7 @@ emit_encoding_stmt(G, N, _X, Fd, T, LName)  when record(T, string) ->
 	 "BAD_PARAM, \"Cannot encode string\");\n"), 
     ?emit_c_enc_rpt(Fd, "    ", "string", []),
     emit(Fd, "    return oe_error_code;\n  }\n\n");
-emit_encoding_stmt(G, N, _X, Fd, T, LName) when record(T, wstring) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName) when is_record(T, wstring) ->
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_wstring(oe_env, ~s)) < 0) {\n", 
 	 [LName]), 
@@ -2140,7 +2140,7 @@ get_param_tk(Name, Op) ->
 %% Get parameter (for what? XXX)
 %%------------------------------------------------------------
 
-get_param(Name, Op) when record(Op, op) ->
+get_param(Name, Op) when is_record(Op, op) ->
     get_param_loop(Name, Op#op.params);
 get_param(_Name, _Op) ->
     error.
@@ -2202,7 +2202,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 			       InBuffer, Align, NextPos, DecType, AllocedPars) 
     end;
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos, 
-		   DecType, AllocedPars)  when list(T) ->
+		   DecType, AllocedPars)  when is_list(T) ->
     %% Already a fullscoped name
     Type = ictype:name2type(G, T), 
     case ictype:isBasicType(Type) of
@@ -2232,7 +2232,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 	    emit(Fd, "    }\n")
     end;
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
-		   _DecType, AllocedPars)  when record(T, string) ->
+		   _DecType, AllocedPars)  when is_record(T, string) ->
     emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
 	 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 	 [InBuffer, IndOp, LName]), 
@@ -2241,7 +2241,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos,
     emit(Fd, "      return oe_error_code;\n"),
     emit(Fd, "    }\n");
 emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
-		   _DecType, AllocedPars)  when record(T, wstring) ->  
+		   _DecType, AllocedPars)  when is_record(T, wstring) ->  
     %% WSTRING
     emit(Fd, "    if ((oe_error_code = "
 	 "oe_ei_decode_wstring(~s, "
@@ -2388,10 +2388,10 @@ get_user_proto(G, Default) ->
 %%------------------------------------------------------------
 get_c_timeout(G, Default) ->
     case ic_options:get_opt(G, c_timeout) of
-	Tmo when integer(Tmo) ->
+	Tmo when is_integer(Tmo) ->
 	    TmoStr = integer_to_list(Tmo),
 	    {TmoStr, TmoStr};
-	{SendTmo, RecvTmo}  when integer(SendTmo), integer(RecvTmo) ->
+	{SendTmo, RecvTmo}  when is_integer(SendTmo) andalso is_integer(RecvTmo) ->
 	    {integer_to_list(SendTmo), integer_to_list(RecvTmo)};
 	false ->
 	    Default

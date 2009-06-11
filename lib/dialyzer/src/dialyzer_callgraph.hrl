@@ -50,8 +50,14 @@
 
 %%-----------------------------------------------------------------------
 
+-define(no_arg, no_arg).
+-define(no_label, no_label).
+
+%%-----------------------------------------------------------------------
+
 -type mfa_or_funlbl() :: label() | mfa().
 -type scc()	      :: [mfa_or_funlbl()].
+-type mfa_calls()     :: [{mfa_or_funlbl(), mfa_or_funlbl()}].
 
 %%-----------------------------------------------------------------------
 
@@ -59,43 +65,50 @@
 %% Basic types used in the race analysis
 %%-----------------------------------------------------------------------
 
--type args()       :: 'empty' | [_]. %TO FIX [atom()]
+-type str()        :: [string()].
+-type label_type() :: label() | [label()] | {label()} | ?no_label.
+-type args()       :: 'empty' | [label_type() | str()].
 -type case_tags()  :: 'beg_case' | 'beg_clause' | 'end_clause' | 'end_case'.
--type core_type()  :: core_var() | core_literal() | core_cons() | core_tuple().
--type core_args()  :: [core_type()] |'empty'.
--type curr_fun()   :: {'curr', mfa_or_funlbl(), label(), args()}.
--type mfa_calls()  :: [{mfa_or_funlbl(), mfa_or_funlbl()}].
+-type core_vars()  :: core_tree() | ?no_arg.
+-type var_to_map() :: core_vars() | [core_tree()].
 -type race_tag()   :: 'whereis_register' | 'ets_lookup_insert'.
 
--type fun_calls()  :: {mfa_or_funlbl(), mfa_or_funlbl(), [erl_type()]}.
--type dep_calls()  :: {'whereis', args(), [erl_type()], [core_type()], _,
-                       file_line()}
-                    | {'ets_lookup', args(), [erl_type()], [core_type()], _,
-                       file_line()}.
--type warn_calls() :: {'register', args()} | {'ets_insert', args()}.
--type code()       :: [dep_calls() | warn_calls() | fun_calls() |
-                       curr_fun() | case_tags() | race_tag()]
-                    | 'empty'.
+-record(curr_fun, {mfa        :: mfa_or_funlbl(),
+                   label      :: label(),
+                   args       :: args()}).
+-record(fun_call, {caller     :: mfa_or_funlbl(),
+                   callee     :: mfa_or_funlbl(),
+                   arg_types  :: [erl_type()],
+                   vars       :: [core_vars()]}). 
+-record(dep_call, {call_name  :: 'whereis' | 'ets_lookup',
+                   args       :: args(),
+                   arg_types  :: [erl_type()],
+                   vars       :: [core_vars()],
+                   state      :: _,
+                   file_line  :: file_line()}).
+-record(warn_call, {call_name :: 'register' | 'ets_insert',
+                    args      :: args()}).
 
--type inter_module_calls() :: [{mfa_or_funlbl(), mfa_or_funlbl(),
-                                core_args(), code(), code(), bool(), bool()}]
-                            | mfa_calls().
--type module_local_calls() :: [{mfa_or_funlbl(), label(),
-                                mfa_or_funlbl(), label(),
-                                core_args(), code(), code(), bool()}]
-                            | mfa_calls().
+-type code()       :: [#dep_call{} | #warn_call{} | #fun_call{} |
+                       #curr_fun{} | case_tags() | race_tag()]
+                    | 'empty'.
 
 %%----------------------------------------------------------------------
 %% Record declarations used in various files
 %%----------------------------------------------------------------------
 
--record(dialyzer_callgraph, {digraph      = digraph:new() :: digraph(),
-			     esc	  = sets:new()	  :: set(),
-			     name_map	  = dict:new()	  :: dict(),
-			     rev_name_map = dict:new()	  :: dict(),
-			     postorder    = []	          :: [scc()],
-			     rec_var_map  = dict:new()	  :: dict(),
-			     self_rec	  = sets:new()	  :: set(),
-			     calls        = dict:new()	  :: dict(),
-			     module_local_calls = []	  :: module_local_calls(),
-			     inter_module_calls	= []      :: inter_module_calls()}).
+-record(dialyzer_callgraph, {digraph        = digraph:new() :: digraph(),
+			     esc	    = sets:new()    :: set(),
+			     name_map	    = dict:new()    :: dict(),
+			     rev_name_map   = dict:new()    :: dict(),
+			     postorder      = []	    :: [scc()],
+			     rec_var_map    = dict:new()    :: dict(),
+			     self_rec	    = sets:new()    :: set(),
+			     calls          = dict:new()    :: dict(),
+                             exports        = []            :: [mfa()],
+                             race_var_map   = dict:new()    :: dict(),
+                             race_code      = dict:new()    :: dict(),
+                             race_deplist   = []            :: [bool()],
+                             public_tables  = []            :: [label()],
+                             named_tables   = []            :: str(),
+                             race_detection = false         :: bool()}).

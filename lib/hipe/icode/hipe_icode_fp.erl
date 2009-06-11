@@ -436,11 +436,11 @@ subst_phi(I, Dst, Map) ->
 subst_phi_uses0([{Pred, Var}|Left], Map, Acc) ->
   case gb_trees:lookup(Var, Map) of
     {value, List} -> 
-      case lists:keysearch(Pred, 1, List) of
-	{value, {Pred, {assigned, _NewVar}}} -> 
+      case lists:keyfind(Pred, 1, List) of
+	{Pred, {assigned, _NewVar}} -> 
 	  %% The variable is untagged, but it has been assigned. Keep it!
 	  subst_phi_uses0(Left, Map, [{Pred, Var}|Acc]);
-	{value, {Pred, NewVar}} -> 
+	{Pred, NewVar} ->
 	  %% The variable is untagged and it has never been assigned as tagged.
 	  subst_phi_uses0(Left, Map, [{Pred, NewVar}|Acc]);
 	false ->
@@ -461,11 +461,11 @@ subst_phi_uncond(I, Dst, Map) ->
 subst_phi_uses_uncond0([{Pred, Var}|Left], Map, Acc) ->
   case gb_trees:lookup(Var, Map) of
     {value, List} -> 
-      case lists:keysearch(Pred, 1, List) of
-	{value, {Pred, {assigned, NewVar}}} -> 
+      case lists:keyfind(Pred, 1, List) of
+	{Pred, {assigned, NewVar}} ->
 	  %% The variable is untagged!
 	  subst_phi_uses_uncond0(Left, Map, [{Pred, NewVar}|Acc]);
-	{value, {Pred, NewVar}} -> 
+	{Pred, NewVar} ->
 	  %% The variable is untagged!
 	  subst_phi_uses_uncond0(Left, Map, [{Pred, NewVar}|Acc]);
 	false ->
@@ -716,14 +716,14 @@ join_maps0([{Var, FVar}|Tail], Pred,  Map) ->
     none ->
       join_maps0(Tail, Pred, gb_trees:enter(Var, [{Pred, FVar}], Map));
     {value, List} ->
-      case lists:keysearch(Pred, 1, List) of
-	{value, {Pred, FVar}} ->
+      case lists:keyfind(Pred, 1, List) of
+	false ->
+	  join_maps0(Tail, Pred, gb_trees:update(Var, [{Pred, FVar}|List], Map));
+	{Pred, FVar} ->
 	  %% No problem.
 	  join_maps0(Tail, Pred, Map);
-	{value, _}->
-	  exit('New binding to same variable');
-	false ->
-	  join_maps0(Tail, Pred, gb_trees:update(Var, [{Pred, FVar}|List], Map))
+	_ ->
+	  exit('New binding to same variable')
       end
   end;
 join_maps0([], _, Map) ->

@@ -69,9 +69,10 @@
 %% process, and it will always be alive when testing is ongoing.
 %% test_server_ctrl initiates testing and monitors JobProc(s).
 %% 
-%% When target is local, the test_server_ctrl process is also globally
-%% registered as test_server and simulates the {global,test_server}
-%% process on remote target.
+%% When target is local, and Test Server is *not* being used by a framework 
+%% application (where it might cause duplicate name problems in a distributed 
+%% test environment), the process is globally registered as 'test_server' 
+%% to be able to simulate the {global,test_server} process on a remote target.
 %% 
 %% JobProc is spawned for each 'job' added to the test_server_ctrl. 
 %% A job can mean one test case, one test suite or one spec.
@@ -565,6 +566,8 @@ init([Param]) ->
     case os:getenv("TEST_SERVER_CALL_TRACE") of
 	false ->
 	    ok;
+	"" ->
+	    ok;
 	TraceSpec ->
 	    test_server_sup:call_trace(TraceSpec)
     end,
@@ -598,22 +601,29 @@ init([Param]) ->
 %% If the test is to be run at a remote target, this function sets up
 %% a socket communication with the target.
 contact_main_target(local) ->
-    %% Local target! The global test_server process implemented by
-    %% test_server.erl will not be started, so we simulate it by 
-    %% globally registering this process instead.
-    global:sync(),
-    case global:whereis_name(test_server) of
-	undefined ->
-	    global:register_name(test_server, self());
-	Pid ->
-	    case node() of
-		N when N == node(Pid) ->
-		    io:format(user, "Warning: test_server already running!\n", []),
-		    global:re_register_name(test_server,self());
-		_ ->
-		    ok
-	    end
-    end,	    
+    %% When used by a general framework, global registration of
+    %% test_server should not be required.
+    case os:getenv("TEST_SERVER_FRAMEWORK") of
+	false ->
+	    %% Local target! The global test_server process implemented by
+	    %% test_server.erl will not be started, so we simulate it by 
+	    %% globally registering this process instead.
+	    global:sync(),
+	    case global:whereis_name(test_server) of
+		undefined ->
+		    global:register_name(test_server, self());
+		Pid ->
+		    case node() of
+			N when N == node(Pid) ->
+			    io:format(user, "Warning: test_server already running!\n", []),
+			    global:re_register_name(test_server,self());
+			_ ->
+			    ok
+		    end
+	    end;
+	_ ->
+	    ok
+    end,
     TI = test_server:init_target_info(),
     TargetHost = test_server_sup:hoststr(),
     {ok,TI#target_info{where=local,
@@ -2154,7 +2164,7 @@ run_test_cases_loop([{auto_skip_case,{Type,Ref,Case,Comment},SkipMode}|Cases],
 		    %% buffered io can be flushed
 		    handle_test_case_io_and_status(),
 		    set_io_buffering(undefined),
-		    {Mod,Func} = skip_case(Ref, 0, Case, Comment, false, SkipMode),
+		    {Mod,Func} = skip_case(auto, Ref, 0, Case, Comment, false, SkipMode),
 		    test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
 		    run_test_cases_loop(Cases, Config, MultiplyTimetrap, tl(Mode), 
 					delete_status(Ref, Status));
@@ -2162,7 +2172,7 @@ run_test_cases_loop([{auto_skip_case,{Type,Ref,Case,Comment},SkipMode}|Cases],
 		    %% this is a skipped end conf for a parallel group nested under a 
 		    %% parallel group (io buffering is active)
 		    wait_for_cases(Ref),
-		    {Mod,Func} = skip_case(Ref, 0, Case, Comment, true, SkipMode),
+		    {Mod,Func} = skip_case(auto, Ref, 0, Case, Comment, true, SkipMode),
 		    test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
 		    case CurrIOHandler of
 			{Ref,_} -> 
@@ -2179,14 +2189,14 @@ run_test_cases_loop([{auto_skip_case,{Type,Ref,Case,Comment},SkipMode}|Cases],
 	{Ref,false} ->
 	    %% this is a skipped end conf for a non-parallel group that's not
 	    %% nested under a parallel group
-	    {Mod,Func} = skip_case(Ref, 0, Case, Comment, false, SkipMode),
+	    {Mod,Func} = skip_case(auto, Ref, 0, Case, Comment, false, SkipMode),
 	    test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap, tl(Mode), 
 				delete_status(Ref, Status));
 	{Ref,_} ->
 	    %% this is a skipped end conf for a non-parallel group nested under
 	    %% a parallel group (io buffering is active)
-	    {Mod,Func} = skip_case(Ref, 0, Case, Comment, true, SkipMode),
+	    {Mod,Func} = skip_case(auto, Ref, 0, Case, Comment, true, SkipMode),
 	    test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
 	    case CurrIOHandler of
 		{Ref,_} ->  
@@ -2202,7 +2212,7 @@ run_test_cases_loop([{auto_skip_case,{Type,Ref,Case,Comment},SkipMode}|Cases],
 	{_,false} ->
 	    %% this is a skipped start conf for a group which is not nested
 	    %% under a parallel group
-	    {Mod,Func} = skip_case(Ref, 0, Case, Comment, false, SkipMode),
+	    {Mod,Func} = skip_case(auto, Ref, 0, Case, Comment, false, SkipMode),
 	    test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap, [conf(Ref,[])|Mode], Status);
 	{_,Ref0} when is_reference(Ref0) ->
@@ -2213,14 +2223,14 @@ run_test_cases_loop([{auto_skip_case,{Type,Ref,Case,Comment},SkipMode}|Cases],
 	       true ->
 		    ok
 	    end,
-	    {Mod,Func} = skip_case(Ref, 0, Case, Comment, true, SkipMode),
+	    {Mod,Func} = skip_case(auto, Ref, 0, Case, Comment, true, SkipMode),
 	    test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
 	    run_test_cases_loop(Cases, Config, MultiplyTimetrap, [conf(Ref,[])|Mode], Status)
     end; 
 
 run_test_cases_loop([{auto_skip_case,{Case,Comment},SkipMode}|Cases],
 		    Config, MultiplyTimetrap, Mode, Status) ->
-    {Mod,Func} = skip_case(undefined, get(test_server_case_num)+1, Case, Comment,
+    {Mod,Func} = skip_case(auto, undefined, get(test_server_case_num)+1, Case, Comment,
 			   (undefined /= get(test_server_common_io_handler)), SkipMode),
     test_server_sup:framework_call(report, [tc_auto_skip,{?pl2a(Mod),Func,Comment}]),
     run_test_cases_loop(Cases, Config, MultiplyTimetrap, Mode, 
@@ -2228,7 +2238,7 @@ run_test_cases_loop([{auto_skip_case,{Case,Comment},SkipMode}|Cases],
 
 run_test_cases_loop([{skip_case,{conf,Ref,Case,Comment}}|Cases0],
 		    Config, MultiplyTimetrap, Mode, Status) ->
-    {Mod,Func} = skip_case(Ref, 0, Case, Comment,
+    {Mod,Func} = skip_case(user, Ref, 0, Case, Comment,
 			   (undefined /= get(test_server_common_io_handler))),
     {Cases,Config1} =
 	case curr_ref(Mode) of
@@ -2245,7 +2255,7 @@ run_test_cases_loop([{skip_case,{conf,Ref,Case,Comment}}|Cases0],
 
 run_test_cases_loop([{skip_case,{Case,Comment}}|Cases],
 		    Config, MultiplyTimetrap, Mode, Status) ->
-    {Mod,Func} = skip_case(undefined, get(test_server_case_num)+1, Case, Comment,
+    {Mod,Func} = skip_case(user, undefined, get(test_server_case_num)+1, Case, Comment,
 			   (undefined /= get(test_server_common_io_handler))),
     test_server_sup:framework_call(report, [tc_user_skip,{?pl2a(Mod),Func,Comment}]),
     run_test_cases_loop(Cases, Config, MultiplyTimetrap, Mode,
@@ -2887,17 +2897,17 @@ random_order(N, {Pos,NewSeed}, IxCases, Shuffled) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% skip_case(Ref, CaseNum, Case, Comment, SendSync) -> {Mod,Func}
+%% skip_case(Type, Ref, CaseNum, Case, Comment, SendSync) -> {Mod,Func}
 %%
 %% Prints info about a skipped case in the major and html log files.
 %% SendSync determines if start and finished messages must be sent so 
 %% that the printouts can be buffered and handled in order with io from
 %% parallel processes.
 
-skip_case(Ref, CaseNum, Case, Comment, SendSync) ->
-    skip_case(Ref, CaseNum, Case, Comment, SendSync, []).
+skip_case(Type, Ref, CaseNum, Case, Comment, SendSync) ->
+    skip_case(Type, Ref, CaseNum, Case, Comment, SendSync, []).
 
-skip_case(Ref, CaseNum, Case, Comment, SendSync, Mode) ->
+skip_case(Type, Ref, CaseNum, Case, Comment, SendSync, Mode) ->
     MF = {Mod,Func} = case Case of
 			  {M,F,_A} -> {M,F};
 			  {M,F} -> {M,F}
@@ -2905,15 +2915,18 @@ skip_case(Ref, CaseNum, Case, Comment, SendSync, Mode) ->
     if SendSync ->
 	    queue_test_case_io(Ref, self(), CaseNum, Mod, Func),
 	    self() ! {started,Ref,self(),CaseNum,Mod,Func},
-	    skip_case1(CaseNum, Mod, Func, Comment, Mode),
+	    skip_case1(Type, CaseNum, Mod, Func, Comment, Mode),
 	    self() ! {finished,Ref,self(),CaseNum,Mod,Func,skipped,{0,skipped,[]}};
        not SendSync ->
-	    skip_case1(CaseNum, Mod, Func, Comment, Mode)
+	    skip_case1(Type, CaseNum, Mod, Func, Comment, Mode)
     end,
     MF.	    
 
-skip_case1(CaseNum, Mod, Func, Comment, Mode) ->
+skip_case1(Type, CaseNum, Mod, Func, Comment, Mode) ->
     {{Col0,Col1},_} = get_font_style((CaseNum > 0), Mode),
+    ResultCol = if Type == auto -> "#ffcc99";
+		   Type == user -> "#ff9933"
+		end,
     print(major, "~n=case          ~p:~p", [Mod,Func]),
     print(major, "=started         ~s", [lists:flatten(timestamp_get(""))]),
     print(major, "=result          skipped: ~s", [Comment]),
@@ -2925,9 +2938,9 @@ skip_case1(CaseNum, Mod, Func, Comment, Mode) ->
 	  "<td>" ++ Col0 ++ "~p" ++ Col1 ++ "</td>"
 	  "<td>" ++ Col0 ++ "< >" ++ Col1 ++ "</td>"
 	  "<td>" ++ Col0 ++ "0.000s" ++ Col1 ++ "</td>"
-	  "<td><font color=\"orange\">SKIPPED</font></td>"
+	  "<td><font color=\"~s\">SKIPPED</font></td>"
 	  "<td>~s</td></tr>\n",
-	  [num2str(CaseNum),Mod,Func,Comment]),
+	  [num2str(CaseNum),Mod,Func,ResultCol,Comment]),
     if CaseNum > 0 ->
 	    put(test_server_skipped, get(test_server_skipped)+1),
 	    put(test_server_case_num, CaseNum);
@@ -3591,18 +3604,26 @@ progress(skip, CaseNum, Mod, Func, Loc, Reason, Time,
 	  [get_info_str(Func, CaseNum, get(test_server_cases))]),
     test_server_sup:framework_call(report, [tc_done,{?pl2a(Mod),Func,
 						     {skipped,ReasonStr}}]),
+    ReasonStr1 = lists:flatten([string:strip(S,left) || 
+				S <- string:tokens(ReasonStr,[$\n])]),
+    ReasonStr2 =
+	if length(ReasonStr1) > 80 ->
+		string:substr(ReasonStr1, 1, 77) ++ "...";
+	   true ->
+		ReasonStr1
+	end,
     Comment1 = case Comment of
 		   "" -> "";
-		   _ -> "(" ++ Comment ++ ")"
+		   _ -> "<br>(" ++ Comment ++ ")"
 	       end,
     print(html,
 	  "<td>" ++ St0 ++ "~.3fs" ++ St1 ++ "</td>"
-	  "<td><font color=\"orange\">SKIPPED</font></td>"
-	  "<td>~s ~s</td></tr>\n",
-	  [Time,lists:flatten(ReasonStr),Comment1]),
+	  "<td><font color=\"#ff9933\">SKIPPED</font></td>"
+	  "<td>~s~s</td></tr>\n",
+	  [Time,ReasonStr2,Comment1]),
     FormatLoc = test_server_sup:format_loc(Loc),
     print(minor, "=== location ~s", [FormatLoc]),
-    print(minor, "=== reason = ~p", [lists:flatten(ReasonStr)]),
+    print(minor, "=== reason = ~s", [ReasonStr1]),    
     skip;
     
 progress(failed, CaseNum, Mod, Func, Loc, timetrap_timeout, T, 

@@ -45,7 +45,6 @@
   </description>
   <include file="ssl_app"></include>
   <include file="ssl"></include>
-  <include file="ssl_pkix"></include>
   <include file="new_ssl"></include>  
 </application>
 

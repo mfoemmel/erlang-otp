@@ -59,6 +59,17 @@ app_init(Config) when list(Config) ->
     case is_app(megaco) of
 	{ok, AppFile} ->
 	    io:format("AppFile: ~n~p~n", [AppFile]),
+	    case megaco_flex_scanner:is_enabled() of
+		true ->
+		    case megaco_flex_scanner:is_reentrant_enabled() of
+			true ->
+			    io:format("~nMegaco reentrant flex scanner enabled~n~n", []);
+			false ->
+			    io:format("~nMegaco non-reentrant flex scanner enabled~n~n", [])
+		    end;
+		false ->
+		    io:format("~nMegaco flex scanner disabled~n~n", [])
+	    end,
 	    megaco:print_version_info(),
 	    [{app_file, AppFile}|Config];
 	{error, Reason} ->

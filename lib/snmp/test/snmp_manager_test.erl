@@ -107,7 +107,11 @@
 	 inform4/1,
 	 inform_swarm/1,
 
-	 report/1
+	 report/1,
+
+	 tickets/1,
+	 otp8015/1,
+	 otp8015_1/1
 
 	]).
 
@@ -351,7 +355,8 @@ all(suite) ->
      agent_tests,
      request_tests,
      event_tests, 
-     discovery
+     discovery,
+     tickets
     ].
 
 start_and_stop_tests(suite) ->
@@ -437,6 +442,16 @@ event_tests(suite) ->
      inform4,
      inform_swarm,
      report
+    ].
+
+tickets(suite) ->
+    [
+     otp8015
+    ].
+
+otp8015(suite) ->
+    [
+     otp8015_1
     ].
 
 
@@ -4373,6 +4388,55 @@ report(Config) when list(Config) ->
     ?SKIP(not_yet_implemented).
 
     
+
+%%======================================================================
+
+otp8015_1(doc) -> ["OTP-8015:1 - testing the new api-function."];
+otp8015_1(suite) -> [];
+otp8015_1(Config) when is_list(Config) ->
+    process_flag(trap_exit, true),
+    put(tname, otp8015_1),
+    p("starting with Config: ~p~n", [Config]),
+
+    ConfDir = ?config(manager_conf_dir, Config),
+    DbDir   = ?config(manager_db_dir, Config),
+
+    write_manager_conf(ConfDir),
+
+    Opts = [{server, [{verbosity, trace}]},
+	    {net_if, [{verbosity, trace}]},
+	    {note_store, [{verbosity, trace}]},
+	    {config, [{verbosity, trace}, {dir, ConfDir}, {db_dir, DbDir}]}],
+
+    p("starting manager"),
+    ok = snmpm:start_link(Opts),
+
+    ?SLEEP(1000),
+
+    snmpm:load_mib(std_mib()), 
+    snmpm:load_mib(test_trap_mib(Config)),
+
+    p("manager started, now sleep some"),
+
+    ?SLEEP(1000),
+
+    p("loaded mibs: ~p", [snmpm:which_mibs()]),
+
+    p("get some type(s) from the mibs"),    
+    {ok, 'Counter32'} = snmpm:oid_to_type(?snmpOutTraps), 
+    {ok, [IfIndex]} = snmpm:name_to_oid(ifIndex),
+    {ok, 'INTEGER'} = snmpm:oid_to_type(IfIndex),
+    
+
+    p("stop manager"),
+    ok = snmpm:stop(),
+
+    ?SLEEP(1000),
+
+    p("end"),
+    ok.
+
+
 %%======================================================================
 %% async snmp utility functions
 %%======================================================================

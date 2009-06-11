@@ -91,7 +91,8 @@ INCLUDE = ../include
 # FLAGS
 # ----------------------------------------------------
 EXTRA_ERLC_FLAGS = +warn_unused_vars
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -pa $(ERL_TOP)/lib/public_key/ebin \
+ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src \
+	-pz $(ERL_TOP)/lib/public_key/ebin \
 	-I$(INCLUDE) \
 	$(EXTRA_ERLC_FLAGS) -DVSN=\"$(VSN)\"
 

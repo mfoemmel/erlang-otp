@@ -52,7 +52,7 @@
 %%            a gen_server.
 %%------------------------------------------------------------
 
-init(Options) when list(Options) ->
+init(Options) when is_list(Options) ->
     ?debug_print("Factory:init(~p)~n", [Options]),
     process_flag(trap_exit,true),
     DefaultValues  = [{maxRetries, ?tr_max_retries},
@@ -127,7 +127,7 @@ handle_info(_Info, State) ->
 %%            management.
 %%------------------------------------------------------------
 
-create(_Self, State, TimeOut) when integer(TimeOut) ->
+create(_Self, State, TimeOut) when is_integer(TimeOut) ->
     %% Generate objectnames.
     ETraPName    = 'ETraP_Common':create_name("root"),
     TermName     = 'ETraP_Common':create_name("term"),

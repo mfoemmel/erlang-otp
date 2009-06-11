@@ -54,7 +54,7 @@
 
 -record(state, {
           role,               % client | server
-          user_application,   % pid() 
+          user_application,   % {MonitorRef, pid()} 
           transport_cb,       % atom() - callback module 
           data_tag,           % atom()  - ex tcp.
 	  close_tag,          % atom()  - ex tcp_closed
@@ -238,7 +238,8 @@ start_link(Role, Host, Port, Socket, Options, User, CbInfo) ->
 init([Role, Host, Port, Socket, {SSLOpts, _} = Options, 
       User, CbInfo]) ->
     State0 = initial_state(Role, Host, Port, Socket, Options, User, CbInfo),
-    Hashes0 = ssl_handshake:init_hashes(),  
+    Hashes0 = ssl_handshake:init_hashes(),    
+
     try ssl_init(SSLOpts, Role) of
 	{ok, Ref, CacheRef, OwnCert, Key} ->	   
 	    State = State0#state{tls_handshake_hashes = Hashes0,
@@ -638,8 +639,12 @@ handle_event(#ssl_tls{type = ?HANDSHAKE, fragment = Data},
 
 handle_event(#ssl_tls{type = ?APPLICATION_DATA, fragment = Data},
              StateName, State0) ->
-    State = application_data(Data, State0),
-    {next_state, StateName, State};
+    case application_data(Data, State0) of
+	Stop = {stop,_,_} ->
+	    Stop;
+	State ->
+	    {next_state, StateName, State}
+    end;
 
 handle_event(#ssl_tls{type = ?CHANGE_CIPHER_SPEC, fragment = <<1>>} = 
 	     _ChangeCipher,
@@ -658,7 +663,7 @@ handle_event(#ssl_tls{type = ?ALERT, fragment = Data}, StateName, State) ->
     {next_state, StateName, State};
 
 handle_event(#alert{level = ?FATAL} = Alert, connection, 
-	     #state{from = From, user_application = Pid, log_alert = Log,
+	     #state{from = From, user_application = {_Mon, Pid}, log_alert = Log,
 		    host = Host, port = Port, session = Session,
 		    role = Role, socket_options = Opts} = State) ->
     invalidate_session(Role, Host, Port, Session),
@@ -668,8 +673,8 @@ handle_event(#alert{level = ?FATAL} = Alert, connection,
 handle_event(#alert{level = ?WARNING, description = ?CLOSE_NOTIFY} = Alert, 
 	     connection, #state{from = From,
 				role = Role,
-				user_application = Pid, 
-				socket_options = Opts} = State) -> 
+				user_application = {_Mon, Pid}, 
+				socket_options = Opts} = State) ->
     alert_user(Opts#socket_options.active, Pid, From, Alert, Role),
     {stop, normal, State};
 
@@ -687,7 +692,7 @@ handle_event(#alert{level = ?WARNING, description = ?CLOSE_NOTIFY} = Alert,
 handle_event(#alert{level = ?WARNING} = Alert, StateName, 
 	     #state{log_alert = Log} = State) ->
     log_alert(Log, StateName, Alert),
-    %%TODO:  Could be user_canceled or no_negotion should the latter be 
+%%TODO:  Could be user_canceled or no_negotiation should the latter be 
     %% treated as fatal?! 
     {next_state, StateName, next_record(State)}.
 
@@ -727,16 +732,24 @@ handle_sync_event({shutdown, How}, From, StateName,
 handle_sync_event({recv, N}, From, StateName,
 		  State0 = #state{user_data_buffer = Buffer}) ->
     State1 = State0#state{bytes_to_read = N, from = From},
-    State = case Buffer of
-		<<>> ->
-		    next_record(State1);
-		_ ->
-		    application_data(<<>>, State1)
-	    end,
-    {next_state, StateName, State};
+    case Buffer of
+	<<>> ->
+	    State = next_record(State1),
+	    {next_state, StateName, State};
+	_ ->
+	    case application_data(<<>>, State1) of
+		Stop = {stop, _, _} ->
+		    Stop;
+		State ->
+		    {next_state, StateName, State}
+	    end
+    end;
 
-handle_sync_event({new_user, User}, _From, StateName, State) ->
-    {reply, ok, StateName, State#state{user_application = User}};
+handle_sync_event({new_user, User}, _From, StateName, 
+		  State =#state{user_application = {OldMon, _}}) ->
+    NewMon = erlang:monitor(process, User),
+    erlang:demonitor(OldMon, [flush]),
+    {reply, ok, StateName, State#state{user_application = {NewMon,User}}};
 
 handle_sync_event({get_opts, OptTags}, _From, StateName,
 		  #state{socket = Socket,
@@ -760,19 +773,23 @@ handle_sync_event({set_opts, Opts0}, _From, StateName,
 			 user_data_buffer = Buffer} = State0) ->
     Opts   = set_socket_opts(Socket, Opts0, Opts1, []),
     State1 = State0#state{socket_options = Opts},
-    State  = if 
-		 Opts#socket_options.active =:= false ->
-		     State1;		 
-		 Buffer =:= <<>>, Opts1#socket_options.active =:= false ->
-		     %% Need data, set active once
-		     next_record_if_active(State1);
-		 Buffer =:= <<>> ->
-		     %% Active once already set 
-		     State1;
-		 true ->
-		     application_data(<<>>, State1)
-	     end,
-    {reply, ok, StateName, State};
+    if 
+	Opts#socket_options.active =:= false ->
+	    {reply, ok, StateName, State1};
+	Buffer =:= <<>>, Opts1#socket_options.active =:= false ->
+            %% Need data, set active once
+	    {reply, ok, StateName, next_record_if_active(State1)};
+	Buffer =:= <<>> ->
+            %% Active once already set 
+	    {reply, ok, StateName, State1};
+	true ->
+	    case application_data(<<>>, State1) of
+		Stop = {stop,_,_} ->
+		    Stop;
+		State ->
+		    {reply, ok, StateName, State}
+	    end
+    end;	
 
 handle_sync_event(info, _, StateName, 
 		  #state{negotiated_version = Version,
@@ -855,7 +872,7 @@ handle_info({CloseTag, Socket}, _StateName,
             #state{socket = Socket, close_tag = CloseTag,
 		   negotiated_version = Version, host = Host,
 		   port = Port, socket_options = Opts, 
-		   user_application = Pid, from = From, 
+		   user_application = {_Mon,Pid}, from = From, 
 		   role = Role, session = Session} = State) ->
     error_logger:info_report("SSL: Peer did not send close notify alert."),
     case Version of
@@ -868,6 +885,10 @@ handle_info({CloseTag, Socket}, _StateName,
 	       ?ALERT_REC(?WARNING, ?CLOSE_NOTIFY), Role),
     {stop, normal, State};
 
+handle_info({'DOWN', MonitorRef, _, _, _}, _, 
+	    State = #state{user_application={MonitorRef,_Pid}}) ->
+    {stop, normal, State};   
+
 handle_info(A, StateName, State) ->
     io:format("SSL: Bad info (state ~w): ~w\n", [StateName, A]),
     {stop, bad_info, State}.
@@ -879,7 +900,7 @@ handle_info(A, StateName, State) ->
 %% necessary cleaning up. When it returns, the gen_fsm terminates with
 %% Reason. The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_Reason, connection, #state{negotiated_version = Version,
+terminate(_Reason, connection, _S=#state{negotiated_version = Version,
 				      connection_states = ConnectionStates,
 				      transport_cb = Transport,
 				      socket = Socket}) ->
@@ -887,7 +908,8 @@ terminate(_Reason, connection, #state{negotiated_version = Version,
 				 Version, ConnectionStates),
     Transport:send(Socket, BinAlert),
     Transport:close(Socket);
-terminate(_Reason, _StateName, _State) ->
+terminate(_Reason, _StateName, _S=#state{transport_cb = Transport, socket = Socket}) ->
+    Transport:close(Socket),
     ok.
 
 %%--------------------------------------------------------------------
@@ -1363,7 +1385,7 @@ decode_alerts(<<?BYTE(Level), ?BYTE(Description), Rest/binary>>, Acc) ->
 decode_alerts(<<>>, Acc) ->
     lists:reverse(Acc, []).
 
-application_data(Data, #state{user_application = Pid,
+application_data(Data, #state{user_application = {_Mon, Pid},
                               socket_options = SOpts,
                               bytes_to_read = BytesToRead,
                               from = From,
@@ -1390,11 +1412,13 @@ application_data(Data, #state{user_application = Pid,
 		    next_record(State);
 		true -> %% We have more data
 		    application_data(<<>>, State)
-	    end
+	    end;
+	{error,_Reason} -> %% Invalid packet in packet mode
+	    deliver_packet_error(SOpts, Buffer1, Pid, From),
+	    {stop, normal, State0}
     end.
 
-%% Picks ClientData and formats it accordingly, returns {ok,
-%% ClientData, Buffer}
+%% Picks ClientData 
 get_data(#socket_options{active=Active, packet=Raw}, BytesToRead, Buffer) 
   when Raw =:= raw; Raw =:= 0 ->   %% Raw Mode
     if 
@@ -1409,9 +1433,14 @@ get_data(#socket_options{active=Active, packet=Raw}, BytesToRead, Buffer)
 	    %% Passive Mode not enough data
 	    {ok, <<>>, Buffer}
     end;
-get_data(#socket_options{packet=Type}, _, Buffer) ->
-    PacketOpts = [], %% BUGBUG, FIXME buffer overrun protection
-    erlang:decode_packet(Type, Buffer, PacketOpts).
+get_data(#socket_options{packet=Type, packet_size=Size}, _, Buffer) ->
+    PacketOpts = [{packet_size, Size}], 
+    case erlang:decode_packet(Type, Buffer, PacketOpts) of
+	{more, _} ->
+	    {ok, <<>>, Buffer};
+	Decoded ->
+	    Decoded
+    end.
 
 deliver_app_data(SO = #socket_options{active=once}, Data, Pid, From) ->
     send_or_reply(once, Pid, From, format_reply(SO, Data)),
@@ -1424,6 +1453,14 @@ format_reply(#socket_options{active=false, mode=Mode, header=Header}, Data) ->
     {ok, format_reply(Mode, Header, Data)};
 format_reply(#socket_options{active=_, mode=Mode, header=Header}, Data) ->
     {ssl, sslsocket(), format_reply(Mode, Header, Data)}.
+
+deliver_packet_error(SO= #socket_options{active=Active}, Data, Pid, From) ->
+    send_or_reply(Active, Pid, From, format_packet_error(SO, Data)).
+
+format_packet_error(#socket_options{active=false, mode=Mode}, Data) ->
+    {error, {invalid_packet, format_reply(Mode, raw, Data)}};
+format_packet_error(#socket_options{active=_, mode=Mode}, Data) ->
+    {ssl_error, sslsocket(), {invalid_packet, format_reply(Mode, raw, Data)}}.
 
 format_reply(list,     _, Data) ->  binary_to_list(Data);
 format_reply(binary,   0, Data) ->  Data;
@@ -1521,6 +1558,8 @@ initial_state(Role, Host, Port, Socket, {SSLOptions, SocketOptions}, User,
 			 _  ->
 			     ssl_session_cache
 		     end,
+    
+    Monitor = erlang:monitor(process, User),
 
     #state{socket_options = SocketOptions,
 	   %% We do not want to save the password in the state so that
@@ -1537,7 +1576,7 @@ initial_state(Role, Host, Port, Socket, {SSLOptions, SocketOptions}, User,
 	   tls_handshake_buffer = <<>>,
 	   tls_record_buffer = <<>>,
 	   tls_cipher_texts = [],
-	   user_application = User,
+	   user_application = {Monitor, User},
 	   bytes_to_read = 0,
 	   user_data_buffer = <<>>,
 	   log_alert = true,

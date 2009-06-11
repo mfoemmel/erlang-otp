@@ -43,10 +43,8 @@
 
 
 %% API
--export([t/0, t1/0, t/1]).
--export([te/0,
-	 tb/0, tbb/0, tbp/0,
-	 tt/0, ttp/0, ttc/0]).
+-export([start/0, start/1]).
+-export([start1/0]).
 
 %% Internal exports
 -export([do_measure_codec/7, do_measure_codec_loop/7]).
@@ -68,42 +66,38 @@
 -endif.
 
 -ifndef(MEASURE_CODECS).
--define(MEASURE_CODECS, [pretty, compact, per, ber, erlang]).
-%% -define(MEASURE_CODECS, [pretty, compact]).
+-define(MEASURE_CODECS, megaco_codec_transform:codecs()).
 -endif.
 
--record(stat, {file, ecount, etime, dcount, dtime, size}).
+-define(DEFAULT_MESSAGE_PACKAGE, megaco_codec_transform:default_message_package()).
+
+-record(stat, {name, ecount, etime, dcount, dtime, size}).
 
 
 %% Runs the measurement on all "official" codecs
 
-t1() ->
+start1() ->
     put(everbose,true),
-    t().
+    start().
 
-t() ->
-    t(?MEASURE_CODECS).
+start() ->
+    meas_init(?DEFAULT_MESSAGE_PACKAGE, ?MEASURE_CODECS).
 
-te() ->
-    t([erlang]).
+start([MessagePackage]) ->
+    do_start(MessagePackage, ?MEASURE_CODECS);
+start(MessagePackage) ->
+    do_start(MessagePackage, ?MEASURE_CODECS).
 
-tb() ->
-    t([ber, per]).
-
-tbb() ->
-    t([ber]).
-
-tbp() ->
-    t([per]).
-
-tt() ->
-    t([pretty, compact]).
-
-ttp() ->
-    t([pretty]).
-
-ttc() ->
-    t([compact]).
+do_start(MessagePackageRaw, Codecs) ->
+    MessagePackage = parse_message_package(MessagePackageRaw), 
+    meas_init(MessagePackage, Codecs).
+    
+parse_message_package(MessagePackageRaw) when is_list(MessagePackageRaw) ->
+    list_to_atom(MessagePackageRaw);
+parse_message_package(MessagePackage) when is_atom(MessagePackage) ->
+    MessagePackage;
+parse_message_package(BadMessagePackage) ->
+    throw({error, {bad_message_package, BadMessagePackage}}).
 
 
 %% Dirs is a list of directories containing files,
@@ -116,18 +110,23 @@ ttc() ->
 %%    pretty | compact | ber | per | erlang
 %%
 
-t(Dirs) when list(Dirs) ->
+meas_init(MessagePackage, Codecs) ->
     %% process_flag(trap_exit, true),
-    io:format("~n", []),
+    io:format("~nRun meas on message package: ~p~n~n", [MessagePackage]),
     display_os_info(),
     display_system_info(),
     display_app_info(),
     io:format("~n", []),
     Started = now(),
-    EDirs = expand_dirs(Dirs, []),
-    Results = t1(EDirs, []), 
-    display_time(Started, now()),
-    store_results(Results).
+    case megaco_codec_transform:messages(MessagePackage) of
+	Messages when is_list(Messages) ->
+	    ExpandedMessages = expand_messages(Codecs, Messages),
+	    Results = t1(ExpandedMessages, []), 
+	    display_time(Started, now()),
+	    store_results(Results);
+	Error ->
+	    Error
+    end.
 
 display_os_info() ->
     V = case os:version() of
@@ -160,15 +159,27 @@ display_megaco_info() ->
     MI = megaco:module_info(),
     {value, {attributes, Attr}} = lists:keysearch(attributes, 1, MI),
     {value, {app_vsn,    Ver}}  = lists:keysearch(app_vsn, 1, Attr),
-    io:format("Megaco version:      ~s~n", [Ver]).
+    FlexStr = 
+	case megaco_flex_scanner:is_enabled() of
+	    true ->
+		case megaco_flex_scanner:is_reentrant_enabled() of
+		    true ->
+			"reentrant flex";
+		    false ->
+			"non-reentrant flex"
+		end;
+	    false ->
+		"no flex"
+	end,
+    io:format("Megaco version:      ~s (~s)~n", [Ver, FlexStr]).
 
 display_asn1_info() ->
     AI = megaco_ber_bin_drv_media_gateway_control_v1:info(),
     Vsn = 
 	case lists:keysearch(vsn, 1, AI) of
-	    {value, {vsn, V}} when atom(V) ->
+	    {value, {vsn, V}} when is_atom(V) ->
 		atom_to_list(V);
-	    {value, {vsn, V}} when list(V) ->
+	    {value, {vsn, V}} when is_list(V) ->
 		V;
 	    _ ->
 		"unknown"
@@ -216,74 +227,78 @@ format_diff(Start, Fin) ->
 			      
 t1([], Results) ->
     lists:reverse(Results);
-t1([{Dir, Codec, Conf, _} = EDir|Dirs], Results) ->
-    case (catch measure(EDir)) of
+t1([{Id, Codec, Conf, _, _} = ECodec|EMsgs], Results) ->
+    case (catch measure(ECodec)) of
 	{'EXIT', Reason} ->
 	    error("measure of codec ~p exited: ~n~p", [Codec, Reason]),
-	    t1(Dirs, Results);
+	    t1(EMsgs, Results);
 	{error, Reason} ->
 	    error("skipping codec ~p: ~n~p", [Codec, Reason]),
-	    t1(Dirs, Results);
+	    t1(EMsgs, Results);
 	{ok, Res} ->
-	    t1(Dirs, [{Dir, Conf, Res}| Results])
+	    t1(EMsgs, [{Id, Conf, Res}| Results])
     end.
 
 
-measure({Dir, Codec, Conf, Count}) when list(Dir) ->
+measure({Id, Codec, Conf, Count, Msgs}) ->
     io:format("measure using codec ~p ~p~n ", [Codec, Conf]),
     {Init, Conf1} = measure_init(Conf),
     Conf2 = [{version3,?V3}|Conf1],
-    Res = measure(Dir, Codec, Conf2, read_files(Dir), [], Count),
+    Res = measure(Id, Codec, Conf2, Msgs, [], Count),
     measure_fin(Init),
     Res.
 
 
-expand_dirs([], EDirs) ->
-    lists:reverse(lists:flatten(EDirs));
-expand_dirs([Dir|Dirs], EDirs) when atom(Dir) ->
-    EDir = expand_dir(atom_to_list(Dir)),
-    expand_dirs(Dirs, [EDir|EDirs]);
-expand_dirs([Dir|Dirs], EDirs) when list(Dir) ->
-    EDir = expand_dir(Dir),
-    expand_dirs(Dirs, [EDir|EDirs]).
+expand_messages(Codecs, Messages) ->
+    ECodecs = expand_codecs(Codecs, []),
+    expand_messages(ECodecs, Messages, []).
 
-expand_dir(Dir) ->
-    case Dir of
-	"pretty" ->
-	    [{Dir, megaco_pretty_text_encoder, [flex_scanner], 3000},
-	     {Dir, megaco_pretty_text_encoder, [],             1000}];
-	"compact" ->
-	    [{Dir, megaco_compact_text_encoder, [flex_scanner], 3000},
-	     {Dir, megaco_compact_text_encoder, [],             1500}];
-	"ber" ->
-	    [{Dir, megaco_ber_bin_encoder, [driver,native], 4000},
-	     {Dir, megaco_ber_bin_encoder, [native],        3000},
-	     {Dir, megaco_ber_bin_encoder, [driver],        3000},
-	     {Dir, megaco_ber_bin_encoder, [],              1000}];
-	"per" ->
-	    [{Dir, megaco_per_bin_encoder, [driver,native], 4000},
-	     {Dir, megaco_per_bin_encoder, [native],        3000},
-	     {Dir, megaco_per_bin_encoder, [driver],        3000},
-	     {Dir, megaco_per_bin_encoder, [],              1000}];
-	"erlang" ->
+expand_messages([], _, EMessages) ->
+    lists:reverse(EMessages);
+expand_messages([{Id, Codec, Conf, Count} | ECodecs], Messages, EMessages) ->
+    case lists:keysearch(Id, 1, Messages) of
+	{value, {Id, Msgs}} ->
+	    expand_messages(ECodecs, Messages, 
+			    [{Id, Codec, Conf, Count, Msgs}|EMessages]);
+	false ->
+	    exit({error, {no_such_codec_data, Id}})
+    end.
+
+expand_codecs([], ECodecs) ->
+    lists:reverse(lists:flatten(ECodecs));
+expand_codecs([Codec|Codecs], ECodecs) when is_atom(Codec) ->
+    ECodec = expand_codec(Codec),
+    expand_codecs(Codecs, [ECodec|ECodecs]).
+
+expand_codec(Codec) ->
+    case Codec of
+	pretty ->
+	    [{Codec, megaco_pretty_text_encoder, [flex_scanner], 2000},
+	     {Codec, megaco_pretty_text_encoder, [],             1000}];
+	compact ->
+	    [{Codec, megaco_compact_text_encoder, [flex_scanner], 3000},
+	     {Codec, megaco_compact_text_encoder, [],             1500}];
+	ber ->
+	    [{Codec, megaco_ber_bin_encoder, [driver,native], 4000},
+	     {Codec, megaco_ber_bin_encoder, [native],        3000},
+	     {Codec, megaco_ber_bin_encoder, [driver],        3000},
+	     {Codec, megaco_ber_bin_encoder, [],              1000}];
+	per ->
+	    [{Codec, megaco_per_bin_encoder, [driver,native], 4000},
+	     {Codec, megaco_per_bin_encoder, [native],        3000},
+	     {Codec, megaco_per_bin_encoder, [driver],        3000},
+	     {Codec, megaco_per_bin_encoder, [],              1000}];
+	erlang ->
 	    [
-	     {Dir, megaco_erl_dist_encoder, [megaco_compressed,compressed], 500},
-	     {Dir, megaco_erl_dist_encoder, [compressed], 400},
-	     {Dir, megaco_erl_dist_encoder, [megaco_compressed], 10000},
- 	     {Dir, megaco_erl_dist_encoder, [], 10000}
+	     {Codec, megaco_erl_dist_encoder, [megaco_compressed,compressed], 500},
+	     {Codec, megaco_erl_dist_encoder, [compressed], 400},
+	     {Codec, megaco_erl_dist_encoder, [megaco_compressed], 10000},
+ 	     {Codec, megaco_erl_dist_encoder, [], 10000}
 	    ];
 	Else ->
 	    exit({error, {invalid_codec, Else}})
     end.
 
-
-read_files(Dir) ->
-    case file:list_dir(Dir) of
-        {ok, Files} ->
-            lists:sort(Files);
-        Error ->
-            exit(Error)
-    end.
 
 measure_init([flex_scanner]) ->
     start_flex_scanner();
@@ -291,7 +306,7 @@ measure_init(Conf) ->
     {undefined, Conf}.
 
 
-measure_fin(Pid) when pid(Pid) ->
+measure_fin(Pid) when is_pid(Pid) ->
     stop_flex_scanner(Pid),
     ok;
 measure_fin(_) ->
@@ -315,16 +330,16 @@ measure(_Dir, _Codec, _Conf, [], Res, _MCount) ->
 
     {ok, lists:reverse(Res)};
 
-measure(Dir, Codec, Conf, [File|Files], Results, MCount) ->
-    io:format(" ~s", [File]),
-    case (catch do_measure(Dir, Codec, Conf, File, MCount)) of
+measure(Dir, Codec, Conf, [{Name, Bin}|Msgs], Results, MCount) ->
+    io:format(" ~p", [Name]),
+    case (catch do_measure(Dir, Codec, Conf, Name, Bin, MCount)) of
 	{ok, Stat} ->
-	    measure(Dir, Codec, Conf, Files, [Stat | Results], MCount);
+	    measure(Dir, Codec, Conf, Msgs, [Stat | Results], MCount);
 
 	{error, S} ->
-	    io:format("~n~s failed: ~n", [File]),
+	    io:format("~n~s failed: ~n", [Name]),
 	    error(S,[]),
-	    measure(Dir, Codec, Conf, Files, Results, MCount);
+	    measure(Dir, Codec, Conf, Msgs, Results, MCount);
 
 	{info, S} ->
 	    case get(verbose) of
@@ -332,58 +347,23 @@ measure(Dir, Codec, Conf, [File|Files], Results, MCount) ->
 		    io:format("~n", []),
 		    info(S,[]);
 		_ ->
-		    io:format("~n~s skipped~n", [File])
+		    io:format("~n~s skipped~n", [Name])
 	    end,
-	    measure(Dir, Codec, Conf, Files, Results, MCount)
+	    measure(Dir, Codec, Conf, Msgs, Results, MCount)
 
     end.
 
 
-do_measure(Dir, Codec, Conf, File, MCount) ->
-    BinMsg             = read_message(Dir, File),
+do_measure(_Id, Codec, Conf, Name, BinMsg, MCount) ->
     %% io:format("~n~s~n", [binary_to_list(BinMsg)]),
     {Version, NewBin}  = detect_version(Codec, Conf, BinMsg),
     {Msg, Dcnt, Dtime} = measure_decode(Codec, Conf, Version, NewBin, MCount),
     {_,   Ecnt, Etime} = measure_encode(Codec, Conf, Version, Msg, MCount),
 
-    {ok, #stat{file = File, 
-% 	       ecount = 1, etime = 1, 
-% 	       dcount = 1, dtime = 1, 
+    {ok, #stat{name   = Name, 
 	       ecount = Ecnt, etime = Etime, 
 	       dcount = Dcnt, dtime = Dtime, 
 	       size = size(NewBin)}}.
-
-read_message(Dir, FileName) ->
-    File = filename:join([Dir, FileName]),
-    case file:read_file_info(File) of
-        {ok, #file_info{size = Sz, type = regular}} when Sz > 0 ->
-            case file:read_file(File) of
-                {ok, Msg} ->
-		    %% io:format(".", []),
-                    Msg;
-                {error, Reason} ->
-                    S = format("failed reading file ~s: ~p", [File, Reason]),
-                    throw({error, S})
-            end;
-
-        {ok, #file_info{type = regular}} ->
-            S = format("skipping empty file ~s", [File]),
-            throw({info, S});
-
-        {ok, #file_info{type = Type}} ->
-            S = format("skipping ~p file ~s", [Type, File]),
-            throw({info, S});
-
-        {ok, Info} ->
-            S = format("skipping file ~s~n~p", [File, Info]),
-            throw({info, S});
-
-        {error, Reason} ->
-            S = format("failed reading file info for ~s: ~p", [File, Reason]),
-            throw({error, S})
-
-    end.
-
 
 detect_version(Codec, Conf, Bin) ->
     case (catch Codec:version_of(Conf, Bin)) of
@@ -572,7 +552,7 @@ store_excel_tab(Fd, Res) ->
 
 store_excel_tab1(Fd, []) ->
     io:format(Fd, "~n", []);
-store_excel_tab1(Fd, [{Dir, Conf, Avg, Values}|T]) when list(Conf) ->
+store_excel_tab1(Fd, [{Dir, Conf, Avg, Values}|T]) when is_list(Conf) ->
     io:format(Fd, "~s~s (~w)", 
 	      [filename:basename(Dir), config_to_string(Conf), Avg]),
     store_excel_tab_row(Fd, Values),
@@ -580,9 +560,9 @@ store_excel_tab1(Fd, [{Dir, Conf, Avg, Values}|T]) when list(Conf) ->
 
 config_to_string([]) ->
     "";
-config_to_string([C]) when atom(C) ->
+config_to_string([C]) when is_atom(C) ->
     io_lib:format("_~w", [C]);
-config_to_string([C|Cs]) when atom(C) ->
+config_to_string([C|Cs]) when is_atom(C) ->
     lists:flatten(io_lib:format("_~w", [C]) ++ config_to_string(Cs)).
 
 store_excel_tab_header(Fd, 0, _) ->
@@ -621,9 +601,12 @@ stop_flex_scanner(Pid) ->
 
 flex_scanner_handler(Pid) ->
     case (catch megaco_flex_scanner:start()) of
-        {ok, Port} when port(Port) ->
+        {ok, Port} when is_port(Port) ->
             Pid ! {flex_scanner_started, self(), {flex, Port}},
             flex_scanner_handler(Pid, Port);
+        {ok, Ports} when is_tuple(Ports) ->
+            Pid ! {flex_scanner_started, self(), {flex, Ports}},
+            flex_scanner_handler(Pid, Ports);
         {error, {load_driver, {open_error, Reason}}} ->
             Error = {failed_loading_flex_scanner_driver, Reason},
             Pid ! {flex_scanner_error, Error},
@@ -634,20 +617,27 @@ flex_scanner_handler(Pid) ->
             exit(Error)
     end.
 
-flex_scanner_handler(Pid, Port) ->
+flex_scanner_handler(Pid, PortOrPorts) ->
     receive
         {ping, Pinger} ->
             Pinger ! {pong, self()},
-            flex_scanner_handler(Pid, Port);
+            flex_scanner_handler(Pid, PortOrPorts);
         {'EXIT', Port, Reason} ->
-            Pid ! {flex_scanner_exit, Reason},
-            exit({flex_scanner_exit, Reason});
+	    case megaco_flex_scanner:is_scanner_port(Port, PortOrPorts) of
+		true ->
+		    Pid ! {flex_scanner_exit, Reason},
+		    exit({flex_scanner_exit, Reason});
+		false ->
+		    info("exit signal from unknown port ~p"
+			 "~n   Reason: ~p", [Port, Reason]),
+		    flex_scanner_handler(Pid, PortOrPorts)
+	    end;
         stop_flex_scanner ->
-            megaco_flex_scanner:stop(Port),
+            megaco_flex_scanner:stop(PortOrPorts),
             exit(normal);
         Other ->
             info("flex scanner handler got something:~n~p", [Other]),
-            flex_scanner_handler(Pid, Port)
+            flex_scanner_handler(Pid, PortOrPorts)
     end.
 
 

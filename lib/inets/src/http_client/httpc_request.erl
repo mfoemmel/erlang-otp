@@ -201,6 +201,9 @@ handle_user_info(UserInfo, Headers) ->
 	[User, Passwd] ->
 	    UserPasswd = base64:encode_to_string(User ++ ":" ++ Passwd),
 	    Headers#http_request_h{authorization = "Basic " ++ UserPasswd};
+	[User] ->
+	    UserPasswd = base64:encode_to_string(User ++ ":"),
+	    Headers#http_request_h{authorization = "Basic " ++ UserPasswd}; 
 	_ ->
 	    Headers
     end.

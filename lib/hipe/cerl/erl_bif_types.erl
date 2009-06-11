@@ -45,7 +45,7 @@
 		    t_atom_vals/1,
 		    t_binary/0,
 		    t_bitstr/0,
-		    t_bool/0,
+		    t_boolean/0,
 		    t_byte/0,
 		    t_char/0,
 		    t_cons/0,
@@ -77,7 +77,7 @@
 		    t_is_atom/1,
 		    t_is_binary/1,
 		    t_is_bitstr/1,
-		    t_is_bool/1,
+		    t_is_boolean/1,
 		    t_is_cons/1,
 		    t_is_constant/1,
 		    t_is_float/1,
@@ -150,7 +150,7 @@ type(M, F, A) ->
 type(code, add_path, 1, Xs) ->
   strict(arg_types(code, add_path, 1), Xs,
 	 fun (_) ->
-	     t_sup(t_bool(),
+	     t_sup(t_boolean(),
 		   t_tuple([t_atom('error'), t_atom('bad_directory')]))
 	 end);
 type(code, add_patha, 1, Xs) ->
@@ -172,11 +172,11 @@ type(code, compiler_dir, 0, _) ->
 type(code, del_path, 1, Xs) ->
   strict(arg_types(code, del_path, 1), Xs,
 	 fun (_) ->
-	     t_sup(t_bool(),
+	     t_sup(t_boolean(),
 		   t_tuple([t_atom('error'), t_atom('bad_name')]))
 	 end);
 type(code, delete, 1, Xs) ->
-  strict(arg_types(code, delete, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(code, delete, 1), Xs, fun (_) -> t_boolean() end);
 type(code, ensure_loaded, 1, Xs) ->
   type(code, load_file, 1, Xs);
 type(code, get_chunk, 2, Xs) ->
@@ -199,10 +199,10 @@ type(code, is_loaded, 1, Xs) ->
 		    t_atom('false')])
 	 end);
 type(code, is_sticky, 1, Xs) ->
-  strict(arg_types(code, is_sticky, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(code, is_sticky, 1), Xs, fun (_) -> t_boolean() end);
 type(code, is_module_native, 1, Xs) ->
   strict(arg_types(code, is_module_native, 1), Xs,
-	 fun (_) -> t_sup(t_bool(), t_atom('undefined')) end);
+	 fun (_) -> t_sup(t_boolean(), t_atom('undefined')) end);
 type(code, lib_dir, 0, _) ->
   t_string();
 type(code, lib_dir, 1, Xs) ->
@@ -326,7 +326,7 @@ type(erlang, '==', 2, Xs = [X1, X2]) ->
     false ->
       case t_is_integer(X1) andalso t_is_integer(X2) of
 	true -> type(erlang, '=:=', 2, Xs);
-	false -> strict(Xs, t_bool())
+	false -> strict(Xs, t_boolean())
       end
   end;
 type(erlang, '/=', 2, Xs = [X1, X2]) -> 
@@ -335,7 +335,7 @@ type(erlang, '/=', 2, Xs = [X1, X2]) ->
     false ->
       case t_is_integer(X1) andalso t_is_integer(X2) of
 	true -> type(erlang, '=/=', 2, Xs);
-	false -> strict(Xs, t_bool())
+	false -> strict(Xs, t_boolean())
       end
   end;
 type(erlang, '=:=', 2, Xs = [Lhs, Rhs]) -> 
@@ -346,19 +346,19 @@ type(erlang, '=:=', 2, Xs = [Lhs, Rhs]) ->
 	case t_is_atom(Lhs) andalso t_is_atom(Rhs) of
 	  true ->
 	    case {t_atom_vals(Lhs), t_atom_vals(Rhs)} of
-	      {unknown, _} -> t_bool();
-	      {_, unknown} -> t_bool();
+	      {unknown, _} -> t_boolean();
+	      {_, unknown} -> t_boolean();
 	      {[X], [X]} -> t_atom('true');
 	      {LhsVals, RhsVals} ->
 		case lists:all(fun({X, Y}) -> X =/= Y end, 
 			       [{X, Y} || X <- LhsVals, Y <- RhsVals]) of
 		  true -> t_atom('false');
-		  false -> t_bool()
+		  false -> t_boolean()
 		end
 	    end;
 	  false ->
 	    case t_is_integer(Lhs) andalso t_is_integer(Rhs) of
-	      false -> t_bool();
+	      false -> t_boolean();
 	      true ->
 		case {t_number_vals(Lhs), t_number_vals(Rhs)} of
 		  {[X], [X]} when is_integer(X) -> t_atom('true');
@@ -375,7 +375,7 @@ type(erlang, '=:=', 2, Xs = [Lhs, Rhs]) ->
 			    andalso (RhsMin > LhsMax)),
 		    case Ans1 orelse Ans2 of
 		      true -> t_atom('false');
-		      false -> t_bool()
+		      false -> t_boolean()
 		    end
 		end
 	    end
@@ -390,15 +390,15 @@ type(erlang, '=/=', 2, Xs = [Lhs, Rhs]) ->
 	case t_is_atom(Lhs) andalso t_is_atom(Rhs) of
 	  true ->
 	    case {t_atom_vals(Lhs), t_atom_vals(Rhs)} of
-	      {unknown, _} -> t_bool();
-	      {_, unknown} -> t_bool();
+	      {unknown, _} -> t_boolean();
+	      {_, unknown} -> t_boolean();
 	      {[Val], [Val]} -> t_atom('false');
 	      {LhsVals, RhsVals} ->
 		t_sup([t_from_term(X =/= Y) || X <- LhsVals, Y <- RhsVals])
 	    end;
 	  false ->
 	    case t_is_integer(Lhs) andalso t_is_integer(Rhs) of
-	      false -> t_bool();
+	      false -> t_boolean();
 	      true ->
 		LhsMax = number_max(Lhs),
 		LhsMin = number_min(Lhs),
@@ -414,7 +414,7 @@ type(erlang, '=/=', 2, Xs = [Lhs, Rhs]) ->
 		    if LhsMax =:= LhsMin, 
 		       RhsMin =:= RhsMax, 
 		       RhsMax =:= LhsMax -> t_atom('false');
-		       true -> t_bool()
+		       true -> t_boolean()
 		    end
 		end
 	    end
@@ -434,9 +434,9 @@ type(erlang, '>', 2, Xs = [Lhs, Rhs]) ->
 	if 
 	  is_integer(LhsMin), is_integer(RhsMax), LhsMin > RhsMax -> T;
 	  is_integer(LhsMax), is_integer(RhsMin), RhsMin >= LhsMax -> F;
-	  true -> t_bool()
+	  true -> t_boolean()
 	end;
-      false -> t_bool()
+      false -> t_boolean()
     end,
   strict(Xs, Ans);
 type(erlang, '>=', 2, Xs = [Lhs, Rhs]) ->
@@ -452,9 +452,9 @@ type(erlang, '>=', 2, Xs = [Lhs, Rhs]) ->
 	if 
 	  is_integer(LhsMin), is_integer(RhsMax), LhsMin >= RhsMax -> T;
 	  is_integer(LhsMax), is_integer(RhsMin), RhsMin > LhsMax -> F;
-	  true -> t_bool()
+	  true -> t_boolean()
 	end;
-      false -> t_bool()
+      false -> t_boolean()
     end,
   strict(Xs, Ans);
 type(erlang, '<', 2, Xs = [Lhs, Rhs]) ->
@@ -470,9 +470,9 @@ type(erlang, '<', 2, Xs = [Lhs, Rhs]) ->
 	if 
 	  is_integer(LhsMax), is_integer(RhsMin), LhsMax < RhsMin -> T;
 	  is_integer(LhsMin), is_integer(RhsMax), RhsMax =< LhsMin -> F;
-	  true -> t_bool()
+	  true -> t_boolean()
 	end;
-      false -> t_bool()
+      false -> t_boolean()
     end,
   strict(Xs, Ans);
 type(erlang, '=<', 2, Xs = [Lhs, Rhs]) ->
@@ -488,9 +488,9 @@ type(erlang, '=<', 2, Xs = [Lhs, Rhs]) ->
 	if 
 	  is_integer(LhsMax), is_integer(RhsMin), LhsMax =< RhsMin -> T;
 	  is_integer(LhsMin), is_integer(RhsMax), RhsMax < LhsMin -> F;
-	  true -> t_bool()
+	  true -> t_boolean()
 	end;
-      false -> t_bool()
+      false -> t_boolean()
     end,
   strict(Xs, Ans);
 type(erlang, '+', 1, Xs) ->
@@ -597,13 +597,13 @@ type(erlang, '--', 2, Xs) ->
 	     end
 	 end);
 type(erlang, 'and', 2, Xs) ->
-  strict(arg_types(erlang, 'and', 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, 'and', 2), Xs, fun (_) -> t_boolean() end);
 type(erlang, 'or', 2, Xs) ->
-  strict(arg_types(erlang, 'or', 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, 'or', 2), Xs, fun (_) -> t_boolean() end);
 type(erlang, 'xor', 2, Xs) ->
-  strict(arg_types(erlang, 'xor', 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, 'xor', 2), Xs, fun (_) -> t_boolean() end);
 type(erlang, 'not', 1, Xs) ->
-  strict(arg_types(erlang, 'not', 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, 'not', 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, 'band', 2, Xs) ->
   strict(arg_types(erlang, 'band', 2), Xs,
 	 fun ([X1, X2]) ->
@@ -726,7 +726,7 @@ type(erlang, cancel_timer, 1, Xs) ->
 	 fun (_) -> t_sup(t_integer(), t_atom('false')) end);
 type(erlang, check_process_code, 2, Xs) ->
   strict(arg_types(erlang, check_process_code, 2), Xs,
-	 fun (_) -> t_bool() end);
+	 fun (_) -> t_boolean() end);
 type(erlang, concat_binary, 1, Xs) ->
   strict(arg_types(erlang, concat_binary, 1), Xs, fun (_) -> t_binary() end);
 type(erlang, date, 0, _) ->
@@ -745,7 +745,7 @@ type(erlang, delete_module, 1, Xs) ->
 type(erlang, demonitor, 1, Xs) ->
   strict(arg_types(erlang, demonitor, 1), Xs, fun (_) -> t_atom('true') end);
 type(erlang, disconnect_node, 1, Xs) ->
-  strict(arg_types(erlang, disconnect_node, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, disconnect_node, 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, display, 1, _) -> t_atom('true');
 type(erlang, dist_exit, 3, Xs) ->
   strict(arg_types(erlang, dist_exit, 3), Xs, fun (_) -> t_atom('true') end);
@@ -780,7 +780,8 @@ type(erlang, float, 1, Xs) ->
 type(erlang, float_to_list, 1, Xs) ->
   strict(arg_types(erlang, float_to_list, 1), Xs, fun (_) -> t_string() end);
 type(erlang, function_exported, 3, Xs) ->
-  strict(arg_types(erlang, function_exported, 3), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, function_exported, 3), Xs,
+	 fun (_) -> t_boolean() end);
 type(erlang, fun_info, 1, Xs) ->
   strict(arg_types(erlang, fun_info, 1), Xs,
 	 fun (_) -> t_list(t_tuple([t_atom(), t_any()])) end);
@@ -791,7 +792,7 @@ type(erlang, fun_to_list, 1, Xs) ->
   strict(arg_types(erlang, fun_to_list, 1), Xs, fun (_) -> t_string() end);
 type(erlang, garbage_collect, 0, _) -> t_atom('true');
 type(erlang, garbage_collect, 1, Xs) ->
-  strict(arg_types(erlang, garbage_collect, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, garbage_collect, 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, get, 0, _) -> t_list(t_tuple(2));
 type(erlang, get, 1, _) -> t_any();          % | t_atom('undefined')
 type(erlang, get_cookie, 0, _) -> t_atom();  % | t_atom('nocookie')
@@ -848,7 +849,7 @@ type(erlang, iolist_size, 1, Xs) ->
 type(erlang, iolist_to_binary, 1, Xs) ->
   strict(arg_types(erlang, iolist_to_binary, 1), Xs,
 	 fun (_) -> t_binary() end);
-type(erlang, is_alive, 0, _) -> t_bool();
+type(erlang, is_alive, 0, _) -> t_boolean();
 type(erlang, is_atom, 1, Xs) ->   
   Fun = fun (X) -> check_guard(X, fun (Y) -> t_is_atom(Y) end, t_atom()) end,
   strict(arg_types(erlang, is_atom, 1), Xs, Fun);
@@ -866,11 +867,11 @@ type(erlang, is_bitstring, 1, Xs) ->
   strict(arg_types(erlang, is_bitstring, 1), Xs, Fun);
 type(erlang, is_boolean, 1, Xs) ->
   Fun = fun (X) ->
-	    check_guard(X, fun (Y) -> t_is_bool(Y) end, t_bool())
+	    check_guard(X, fun (Y) -> t_is_boolean(Y) end, t_boolean())
 	end,
   strict(arg_types(erlang, is_boolean, 1), Xs, Fun);
 type(erlang, is_builtin, 3, Xs) ->
-  strict(arg_types(erlang, is_builtin, 3), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, is_builtin, 3), Xs, fun (_) -> t_boolean() end);
 type(erlang, is_constant, 1, Xs) ->
   Fun = fun (X) ->
 	    check_guard(X, fun (Y) -> t_is_constant(Y) end, t_constant())
@@ -887,14 +888,14 @@ type(erlang, is_function, 1, Xs) ->
 type(erlang, is_function, 2, Xs) ->
   Fun = fun ([FunType, ArityType]) -> 
 	    case t_number_vals(ArityType) of
-	      unknown -> t_bool();
+	      unknown -> t_boolean();
 	      [Val] -> 
 		FunConstr = t_fun(any_list(Val), t_any()),
 		Fun2 = fun (X) ->
 			   t_is_subtype(X, FunConstr) andalso (not t_is_none(X))
 		       end,
 		check_guard_single(FunType, Fun2, FunConstr);
-	      IntList when is_list(IntList) -> t_bool() %% true?
+	      IntList when is_list(IntList) -> t_boolean() %% true?
 	    end
 	end,
   strict(arg_types(erlang, is_function, 2), Xs, Fun);
@@ -922,37 +923,37 @@ type(erlang, is_port, 1, Xs) ->
   strict(arg_types(erlang, is_port, 1), Xs, Fun);
 type(erlang, is_process_alive, 1, Xs) ->
   strict(arg_types(erlang, is_process_alive, 1), Xs,
-	 fun (_) -> t_bool() end);
+	 fun (_) -> t_boolean() end);
 type(erlang, is_record, 2, Xs) ->
   Fun = fun ([X, Y]) ->
 	    case t_is_tuple(X) of
 	      false ->
 		case t_is_none(t_inf(t_tuple(), X)) of
 		  true -> t_atom('false');
-		  false -> t_bool()
+		  false -> t_boolean()
 		end;
 	      true ->
 		case t_tuple_subtypes(X) of
-		  unknown -> t_bool();
+		  unknown -> t_boolean();
 		  [Tuple] ->
 		    case t_tuple_args(Tuple) of
-		      %% any -> t_bool();
+		      %% any -> t_boolean();
 		      [Tag|_] ->
 			case t_is_atom(Tag) of
 			  false ->
 			    TagAtom = t_inf(Tag, t_atom()),
 			    case t_is_none(TagAtom) of
 			      true -> t_atom('false');
-			      false -> t_bool()
+			      false -> t_boolean()
 			    end;
 			  true ->
 			    case t_atom_vals(Tag) of
 			      [RealTag] -> 
 				case t_atom_vals(Y) of
 				  [RealTag] -> t_atom('true');
-				  _ -> t_bool() 
+				  _ -> t_boolean() 
 				end;
-			      _ -> t_bool()
+			      _ -> t_boolean()
 			    end
 			end
 		    end;
@@ -970,20 +971,20 @@ type(erlang, is_record, 3, Xs) ->
 		[RealArity] = Arity,
 		case t_is_none(t_inf(t_tuple(RealArity), X)) of
 		  true -> t_atom('false');
-		  false -> t_bool()
+		  false -> t_boolean()
 		end;
 	      false ->
 		case t_is_none(t_inf(t_tuple(), X)) of
 		  true -> t_atom('false');
-		  false -> t_bool()
+		  false -> t_boolean()
 		end;
 	      true when length(Arity) =:= 1 ->
 		[RealArity] = Arity,
 		case t_tuple_subtypes(X) of
-		  unknown -> t_bool();
+		  unknown -> t_boolean();
 		  [Tuple] ->
 		    case t_tuple_args(Tuple) of
-		      %% any -> t_bool();
+		      %% any -> t_boolean();
 		      Args when length(Args) =:= RealArity ->
 			Tag = hd(Args),
 			case t_is_atom(Tag) of
@@ -991,26 +992,26 @@ type(erlang, is_record, 3, Xs) ->
 			    TagAtom = t_inf(Tag, t_atom()),
 			    case t_is_none(TagAtom) of
 			      true -> t_atom('false');
-			      false -> t_bool()
+			      false -> t_boolean()
 			    end;
 			  true ->
 			    case t_atom_vals(Tag) of
 			      [RealTag] -> 
 				case t_atom_vals(Y) of
 				  [RealTag] -> t_atom('true');
-				  _ -> t_bool()
+				  _ -> t_boolean()
 				end;
-			      _ -> t_bool()
+			      _ -> t_boolean()
 			    end
 			end;
 		      Args when length(Args) =/= RealArity ->
 			t_atom('false')
 		    end;
 		  [_, _|_] ->
-		    t_bool()
+		    t_boolean()
 		end;
 	      true ->
-		t_bool()
+		t_boolean()
 	    end
 	end,
   strict(arg_types(erlang, is_record, 3), Xs, Fun);
@@ -1077,7 +1078,15 @@ type(erlang, make_fun, 3, Xs) ->
 type(erlang, make_ref, 0, _) -> t_reference();
 type(erlang, make_tuple, 2, Xs) ->
   strict(arg_types(erlang, make_tuple, 2), Xs,
-	 fun ([Int,_]) ->
+	 fun ([Int, _]) ->
+	     case t_number_vals(Int) of
+	       [N] when is_integer(N), N >= 0 -> t_tuple(N);
+	       _Other -> t_tuple()
+	     end
+	 end);
+type(erlang, make_tuple, 3, Xs) ->
+  strict(arg_types(erlang, make_tuple, 3), Xs,
+	 fun ([Int, _, _]) ->
 	     case t_number_vals(Int) of
 	       [N] when is_integer(N), N >= 0 -> t_tuple(N);
 	       _Other -> t_tuple()
@@ -1099,7 +1108,7 @@ type(erlang, md5_init, 0, _) -> t_binary();
 type(erlang, md5_update, 2, Xs) ->
   strict(arg_types(erlang, md5_update, 2), Xs, fun (_) -> t_binary() end);
 type(erlang, module_loaded, 1, Xs) ->
-  strict(arg_types(erlang, module_loaded, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, module_loaded, 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, monitor, 2, Xs) ->
   strict(arg_types(erlang, monitor, 2), Xs, fun (_) -> t_reference() end);
 type(erlang, monitor_node, 2, Xs) ->
@@ -1179,7 +1188,7 @@ type(erlang, port_set_data, 2, Xs) ->
 type(erlang, pre_loaded, 0, _) -> t_list(t_atom());
 type(erlang, process_display, 2, _) -> t_atom('true');
 type(erlang, process_flag, 2, Xs) ->
-  T_process_flag_returns = t_sup([t_bool(), t_atom(), t_non_neg_integer()]),
+  T_process_flag_returns = t_sup([t_boolean(), t_atom(), t_non_neg_integer()]),
   strict(arg_types(erlang, process_flag, 2), Xs,
 	 fun ([Flag, _Option]) ->
 	     case t_is_atom(Flag) of
@@ -1187,10 +1196,10 @@ type(erlang, process_flag, 2, Xs) ->
 		 case t_atom_vals(Flag) of
 		   ['error_handler'] -> t_atom();
 		   ['min_heap_size'] -> t_non_neg_integer();
-		   ['monitor_nodes'] -> t_bool();
+		   ['monitor_nodes'] -> t_boolean();
 		   ['priority'] -> t_process_priority_level();
 		   ['save_calls'] -> t_non_neg_integer();
-		   ['trap_exit'] -> t_bool();
+		   ['trap_exit'] -> t_boolean();
 		   List when is_list(List) ->
 		     T_process_flag_returns;
 		   unknown ->
@@ -1268,7 +1277,7 @@ type(erlang, process_info, 2, Xs) ->
 			 ['total_heap_size'] ->
 			   t_tuple([InfoItem, t_non_neg_integer()]);
 			 ['trap_exit'] ->
-			   t_tuple([InfoItem, t_bool()]);
+			   t_tuple([InfoItem, t_boolean()]);
 			 List when is_list(List) ->
 			   T_process_info_2_normal_returns;
 			 unknown ->
@@ -1320,10 +1329,10 @@ type(erlang, seq_trace_info, 1, Xs) ->
 	     case t_atom_vals(Item) of
 	       ['label'] -> t_sup(t_tuple([Item, t_any()]), t_nil());
 	       ['serial'] -> t_sup(t_tuple([Item, t_tuple(2)]), t_nil());
-	       ['send'] -> t_tuple([Item, t_bool()]);
-	       ['receive'] -> t_tuple([Item, t_bool()]);
-	       ['print'] -> t_tuple([Item, t_bool()]);
-	       ['timestamp'] -> t_tuple([Item, t_bool()]);
+	       ['send'] -> t_tuple([Item, t_boolean()]);
+	       ['receive'] -> t_tuple([Item, t_boolean()]);
+	       ['print'] -> t_tuple([Item, t_boolean()]);
+	       ['timestamp'] -> t_tuple([Item, t_boolean()]);
 	       List when is_list(List) ->
 		 t_sup(t_tuple([t_seq_trace_info(), t_any()]), t_nil());
 	       unknown ->
@@ -1331,44 +1340,41 @@ type(erlang, seq_trace_info, 1, Xs) ->
 	     end
 	 end);
 type(erlang, seq_trace_print, 1, Xs) ->
-  strict(arg_types(erlang, seq_trace_print, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, seq_trace_print, 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, seq_trace_print, 2, Xs) ->
-  strict(arg_types(erlang, seq_trace_print, 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erlang, seq_trace_print, 2), Xs, fun (_) -> t_boolean() end);
 type(erlang, set_cookie, 2, Xs) ->
   strict(arg_types(erlang, set_cookie, 2), Xs, fun (_) -> t_atom('true') end);
 type(erlang, setelement, 3, Xs) ->
   strict(arg_types(erlang, setelement, 3), Xs,
 	 fun ([X1, X2, X3]) ->
-	     Ans =
-	       case t_tuple_subtypes(X2) of
-		 unknown -> t_tuple();
-		 [_] ->
-		   Sz = t_tuple_size(X2),
-		   As = t_tuple_args(X2),
-		   case t_number_vals(X1) of
-		     unknown ->
-		       t_tuple([t_sup(X, X3) || X <- As]);
-		     [N] when is_integer(N), 1 =< N, N =< Sz ->
-		       t_tuple(list_replace(N, X3, As));
-		     [N] when is_integer(N), N < 1 ->
-		       t_none();
-		     [N] when is_integer(N), N > Sz ->
-		       t_none();
-		     Ns ->
-		       Fun = fun
-			       (N, Xs) when is_integer(N), 1 =< N, N =< Sz ->
-				 X = lists:nth(N, Xs),
-				 Y = t_sup(X, X3),
-				 list_replace(N, Y, Xs);
+	     case t_tuple_subtypes(X2) of
+	       unknown -> t_tuple();
+	       [_] ->
+		 Sz = t_tuple_size(X2),
+		 As = t_tuple_args(X2),
+		 case t_number_vals(X1) of
+		   unknown ->
+		     t_tuple([t_sup(X, X3) || X <- As]);
+		   [N] when is_integer(N), 1 =< N, N =< Sz ->
+		     t_tuple(list_replace(N, X3, As));
+		   [N] when is_integer(N), N < 1 ->
+		     t_none();
+		   [N] when is_integer(N), N > Sz ->
+		     t_none();
+		   Ns ->
+		     Fun = fun (N, Xs) when is_integer(N), 1 =< N, N =< Sz ->
+			       X = lists:nth(N, Xs),
+			       Y = t_sup(X, X3),
+			       list_replace(N, Y, Xs);
 			       (_, Xs) ->
-				 Xs
-			     end,
-		       t_tuple(lists:foldl(Fun, As, Ns))
-		   end;
-		 Ts when is_list(Ts) ->
-		   t_sup([type(erlang, setelement, 3, [X1, Y, X3]) || Y <- Ts])
-	       end,
-	     Ans
+			       Xs
+			   end,
+		     t_tuple(lists:foldl(Fun, As, Ns))
+		 end;
+	       Ts when is_list(Ts) ->
+		 t_sup([type(erlang, setelement, 3, [X1, Y, X3]) || Y <- Ts])
+	     end
 	 end);
 type(erlang, setnode, 2, Xs) ->
   strict(arg_types(erlang, setnode, 2), Xs, fun (_) -> t_atom('true') end);
@@ -1456,13 +1462,13 @@ type(erlang, suspend_process, 1, Xs) ->
 	 fun (_) -> t_atom('true') end);
 type(erlang, suspend_process, 2, Xs) ->
   strict(arg_types(erlang, suspend_process, 2), Xs,
-	 fun (_) -> t_bool() end);
+	 fun (_) -> t_boolean() end);
 type(erlang, system_flag, 2, Xs) ->
   strict(arg_types(erlang, system_flag, 2), Xs,
 	 fun ([Flag,_Value]) ->
 	     %% this provides an overapproximation of all return values 
 	     T_system_flag_2 = t_sup([t_integer(),
-				      t_bool(),
+				      t_boolean(),
 				      t_system_cpu_topology(),
 				      t_system_multi_scheduling()]),
 	     case t_is_atom(Flag) of
@@ -1524,7 +1530,7 @@ type(erlang, system_info, 1, Xs) ->
 					      t_list(t_tuple([t_atom(),
 							      t_any()]))]))]);
 		   ['break_ignored'] ->
-		     t_bool();
+		     t_boolean();
 		   ['cpu_topology'] ->
 		     t_system_cpu_topology();
 		   ['compat_rel'] ->
@@ -1532,7 +1538,7 @@ type(erlang, system_info, 1, Xs) ->
 		   ['creation'] ->
 		     t_fixnum();
 		   ['debug_compiled'] ->
-		     t_bool();
+		     t_boolean();
 		   ['dist'] ->
 		     t_binary();
 		   ['dist_ctrl'] ->
@@ -1595,15 +1601,15 @@ type(erlang, system_info, 1, Xs) ->
 		   ['schedulers_online'] ->
 		     t_pos_fixnum();
 		   ['sequential_tracer'] ->
-		     t_tuple([t_atom('sequential_tracer'), t_bool()]);
+		     t_tuple([t_atom('sequential_tracer'), t_boolean()]);
 		   ['smp_support'] ->
-		     t_bool();
+		     t_boolean();
 		   ['system_architecture'] ->
 		     t_string();
 		   ['system_version'] ->
 		     t_string();
 		   ['threads'] ->
-		     t_bool();
+		     t_boolean();
 		   ['thread_pool_size'] ->
 		     t_non_neg_fixnum();
 		   ['trace_control_word'] ->
@@ -1732,7 +1738,7 @@ type(erts_debug, disassemble, 1, Xs) ->
 type(erts_debug, flat_size, 1, Xs) ->
   strict(arg_types(erts_debug, flat_size, 1), Xs, fun (_) -> t_integer() end);
 type(erts_debug, same, 2, Xs) ->
-  strict(arg_types(erts_debug, same, 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(erts_debug, same, 2), Xs, fun (_) -> t_boolean() end);
 %%-- ets ----------------------------------------------------------------------
 type(ets, all, 0, _) ->
   t_list(t_tab());
@@ -1747,6 +1753,8 @@ type(ets, delete_object, 2, Xs) ->
   strict(arg_types(ets, delete_object, 2), Xs, fun (_) -> t_atom('true') end);
 type(ets, first, 1, Xs) ->
   strict(arg_types(ets, first, 1), Xs, fun (_) -> t_any() end);
+type(ets, give_away, 3, Xs) ->
+  strict(arg_types(ets, give_away, 3), Xs, fun (_) -> t_atom('true') end);
 type(ets, info, 1, Xs) ->
   strict(arg_types(ets, info, 1), Xs,
 	 fun (_) ->
@@ -1758,9 +1766,9 @@ type(ets, info, 2, Xs) ->
 type(ets, insert, 2, Xs) ->
   strict(arg_types(ets, insert, 2), Xs, fun (_) -> t_atom('true') end);
 type(ets, insert_new, 2, Xs) ->
-  strict(arg_types(ets, insert_new, 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(ets, insert_new, 2), Xs, fun (_) -> t_boolean() end);
 type(ets, is_compiled_ms, 1, Xs) ->
-  strict(arg_types(ets, is_compiled_ms, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(ets, is_compiled_ms, 1), Xs, fun (_) -> t_boolean() end);
 type(ets, last, 1, Xs) ->
   type(ets, first, 1, Xs);
 type(ets, lookup, 2, Xs) ->
@@ -1781,7 +1789,7 @@ type(ets, match_spec_compile, 1, Xs) ->
 type(ets, match_spec_run_r, 3, Xs) ->
   strict(arg_types(ets, match_spec_run_r, 3), Xs, fun (_) -> t_list() end);
 type(ets, member, 2, Xs) ->
-  strict(arg_types(ets, member, 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(ets, member, 2), Xs, fun (_) -> t_boolean() end);
 type(ets, new, 2, Xs) ->
   strict(arg_types(ets, new, 2), Xs, fun (_) -> t_tab() end);
 type(ets, next, 2, Xs) ->
@@ -1808,13 +1816,15 @@ type(ets, select_delete, 2, Xs) ->
 type(ets, select_reverse, 1, Xs) -> type(ets, select, 1, Xs);
 type(ets, select_reverse, 2, Xs) -> type(ets, select, 2, Xs);
 type(ets, select_reverse, 3, Xs) -> type(ets, select, 3, Xs);
+type(ets, setopts, 2, Xs) ->
+  strict(arg_types(ets, setopts, 2), Xs, fun (_) -> t_atom('true') end);
 type(ets, slot, 2, Xs) ->
   strict(arg_types(ets, slot, 2), Xs,
 	 fun (_) -> t_sup(t_list(t_tuple()), t_atom('$end_of_table')) end);
 type(ets, update_counter, 3, Xs) ->
   strict(arg_types(ets, update_counter, 3), Xs, fun (_) -> t_integer() end);
 type(ets, update_element, 3, Xs) ->
-  strict(arg_types(ets, update_element, 3), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(ets, update_element, 3), Xs, fun (_) -> t_boolean() end);
 %%-- file ---------------------------------------------------------------------
 type(file, close, 1, Xs) ->
   strict(arg_types(file, close, 1), Xs, fun (_) -> t_file_return() end);
@@ -1934,7 +1944,7 @@ type(hipe_bifs, bif_address, 3, Xs) ->
 type(hipe_bifs, bitarray, 2, Xs) ->
   strict(arg_types(hipe_bifs, bitarray, 2), Xs, fun (_) -> t_bitarray() end);
 type(hipe_bifs, bitarray_sub, 2, Xs) ->
-  strict(arg_types(hipe_bifs, bitarray_sub, 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(hipe_bifs, bitarray_sub, 2), Xs, fun (_) -> t_boolean() end);
 type(hipe_bifs, bitarray_update, 3, Xs) ->
   strict(arg_types(hipe_bifs, bitarray_update, 3), Xs,
 	 fun (_) -> t_bitarray() end);
@@ -1958,7 +1968,7 @@ type(hipe_bifs, call_count_on, 1, Xs) ->
   strict(arg_types(hipe_bifs, call_count_on, 1), Xs,
 	 fun (_) -> t_sup(t_atom('true'), t_nil()) end);
 type(hipe_bifs, check_crc, 1, Xs) ->
-  strict(arg_types(hipe_bifs, check_crc, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(hipe_bifs, check_crc, 1), Xs, fun (_) -> t_boolean() end);
 type(hipe_bifs, enter_code, 2, Xs) ->
   strict(arg_types(hipe_bifs, enter_code, 2), Xs,
 	 fun (_) -> t_tuple([t_integer(),
@@ -2287,16 +2297,16 @@ type(lists, keymember, 3, Xs) ->
 	       true -> t_atom('false');
 	       false ->
 		 case t_is_any(X) of
-		   true -> t_bool();
+		   true -> t_boolean();
 		   false ->
 		     case t_tuple_subtypes(Tuple) of
-		       unknown -> t_bool();
+		       unknown -> t_boolean();
 		       List ->
 			 Keys = [type(erlang, element, 2, [Y,S]) || S <- List],
 			 Infs = [t_inf(Key, X) || Key <- Keys],
 			 case all_is_none(Infs) of
 			   true -> t_atom('false');
-			   false -> t_bool()
+			   false -> t_boolean()
 			 end
 		     end
 		 end
@@ -2403,7 +2413,7 @@ type(lists, member, 2, Xs) ->
 	     Y1 = t_list_elements(Y),
 	     case t_is_none(t_inf(Y1, X)) of
 	       true -> t_atom('false');
-	       false -> t_bool()
+	       false -> t_boolean()
 	     end
 	 end);
 %% type(lists, merge, 1, Xs) ->
@@ -2467,7 +2477,7 @@ type(lists, sort, 2, Xs) ->
   strict(arg_types(lists, sort, 2), Xs,
 	 fun ([F, L]) ->
 	     R = t_fun_range(F),
-	     case t_is_bool(R) of
+	     case t_is_boolean(R) of
 	       true -> L;
 	       false ->
 		 case t_is_nil(L) of
@@ -2612,7 +2622,7 @@ type(math, tanh, 1, Xs) ->
 %%-- net_kernel ---------------------------------------------------------------
 type(net_kernel, dflag_unicode_io, 1, Xs) ->
   strict(arg_types(net_kernel, dflag_unicode_io, 1), Xs, 
-	 fun (_) -> t_bool() end); 
+	 fun (_) -> t_boolean() end); 
 %%-- ordsets ------------------------------------------------------------------
 type(ordsets, filter, 2, Xs) ->
   type(lists, filter, 2, Xs);
@@ -2675,7 +2685,7 @@ type(string, chars, 3, Xs) ->  % NOTE: added to avoid loss of information
 type(string, concat, 2, Xs) -> % NOTE: added to avoid loss of information
   strict(arg_types(string, concat, 2), Xs, fun (_) -> t_string() end);
 type(string, equal, 2, Xs) ->  % NOTE: added to avoid loss of information
-  strict(arg_types(string, equal, 2), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(string, equal, 2), Xs, fun (_) -> t_boolean() end);
 type(string, to_float, 1, Xs) ->
   strict(arg_types(string, to_float, 1), Xs,
 	 fun (_) -> t_sup(t_tuple([t_float(), t_string()]),
@@ -2706,7 +2716,7 @@ type(unicode, characters_to_list, 2, Xs) ->
 		    t_tuple([t_atom('incomplete'), t_string(), t_ML()])])
 	 end);
 type(unicode, bin_is_7bit, 1, Xs) ->
-  strict(arg_types(unicode, bin_is_7bit, 1), Xs, fun (_) -> t_bool() end);
+  strict(arg_types(unicode, bin_is_7bit, 1), Xs, fun (_) -> t_boolean() end);
 
 %%-----------------------------------------------------------------------------
 type(M, F, A, Xs) when is_atom(M), is_atom(F),
@@ -2780,7 +2790,7 @@ check_guard_single(X, Test, Type) ->
 	false ->
 	  case t_is_none(t_inf(Type, X)) of
 	    true -> t_atom('false');
-	    false -> t_bool()
+	    false -> t_boolean()
 	  end
       end
   end.
@@ -3278,13 +3288,13 @@ arg_types(erlang, 'div', 2) ->
 arg_types(erlang, 'rem', 2) ->
   [t_integer(), t_integer()];
 arg_types(erlang, 'and', 2) ->
-  [t_bool(), t_bool()];
+  [t_boolean(), t_boolean()];
 arg_types(erlang, 'or', 2) ->
-  [t_bool(), t_bool()];
+  [t_boolean(), t_boolean()];
 arg_types(erlang, 'xor', 2) ->
-  [t_bool(), t_bool()];
+  [t_boolean(), t_boolean()];
 arg_types(erlang, 'not', 1) ->
-  [t_bool()];
+  [t_boolean()];
 arg_types(erlang, 'band', 2) ->
   [t_integer(), t_integer()];
 arg_types(erlang, 'bor', 2) ->
@@ -3501,13 +3511,15 @@ arg_types(erlang, localtime_to_universaltime, 1) ->
   [t_tuple([t_date(), t_time()])];
 arg_types(erlang, localtime_to_universaltime, 2) ->
   arg_types(erlang, localtime_to_universaltime, 1) ++
-    [t_sup(t_bool(), t_atom('undefined'))];
+    [t_sup(t_boolean(), t_atom('undefined'))];
 arg_types(erlang, make_fun, 3) ->
   [t_atom(), t_atom(), t_arity()];
 arg_types(erlang, make_ref, 0) ->
   [];
 arg_types(erlang, make_tuple, 2) ->
   [t_non_neg_fixnum(), t_any()];  % the value 0 is OK as first argument
+arg_types(erlang, make_tuple, 3) ->
+  [t_non_neg_fixnum(), t_any(), t_list(t_tuple([t_pos_integer(), t_any()]))];
 arg_types(erlang, match_spec_test, 3) ->
   [t_sup(t_list(), t_tuple()),
    t_any(),
@@ -3525,9 +3537,9 @@ arg_types(erlang, module_loaded, 1) ->
 arg_types(erlang, monitor, 2) ->
   [t_atom(), t_sup([t_pid(), t_atom(), t_tuple([t_atom(), t_node()])])];
 arg_types(erlang, monitor_node, 2) ->
-  [t_node(), t_bool()];
+  [t_node(), t_boolean()];
 arg_types(erlang, monitor_node, 3) ->
-  [t_node(), t_bool(), t_list(t_atom('allow_passive_connect'))];
+  [t_node(), t_boolean(), t_list(t_atom('allow_passive_connect'))];
 arg_types(erlang, node, 0) ->
   [];
 arg_types(erlang, node, 1) ->
@@ -3596,7 +3608,7 @@ arg_types(erlang, process_flag, 2) ->
 	  t_atom('min_heap_size'), t_atom('priority'), t_atom('save_calls'),
 	  t_atom('monitor_nodes'), 			  % undocumented
 	  t_tuple([t_atom('monitor_nodes'), t_list()])]), % undocumented
-   t_sup([t_bool(), t_atom(), t_non_neg_integer()])];
+   t_sup([t_boolean(), t_atom(), t_non_neg_integer()])];
 arg_types(erlang, process_flag, 3) ->
   [t_pid(), t_atom('save_calls'), t_non_neg_integer()];
 arg_types(erlang, process_info, 1) ->
@@ -3632,7 +3644,7 @@ arg_types(erlang, send, 3) ->
 arg_types(erlang, send_after, 3) ->
   [t_non_neg_integer(), t_sup(t_pid(), t_atom()), t_any()];
 arg_types(erlang, seq_trace, 2) ->
-  [t_atom(), t_sup([t_bool(), t_tuple([t_fixnum(), t_fixnum()]), t_nil()])];
+  [t_atom(), t_sup([t_boolean(), t_tuple([t_fixnum(), t_fixnum()]), t_nil()])];
 arg_types(erlang, seq_trace_info, 1) ->
   [t_seq_trace_info()];
 arg_types(erlang, seq_trace_print, 1) ->
@@ -3734,7 +3746,8 @@ arg_types(erlang, term_to_binary, 1) ->
   [t_any()];
 arg_types(erlang, term_to_binary, 2) ->
   [t_any(), t_list(t_sup([t_atom('compressed'),
-			  t_tuple([t_atom('minor_version'), t_integer()])]))];
+			  t_tuple([t_atom('compressed'), t_from_range(0, 9)]),
+			  t_tuple([t_atom('minor_version'), t_integers([0, 1])])]))];
 arg_types(erlang, throw, 1) ->
   [t_any()];
 arg_types(erlang, time, 0) ->
@@ -3743,7 +3756,7 @@ arg_types(erlang, tl, 1) ->
   [t_cons()];
 arg_types(erlang, trace, 3) ->
   [t_sup(t_pid(), t_sup([t_atom('existing'), t_atom('new'), t_atom('all')])),
-   t_bool(),
+   t_boolean(),
    t_list(t_sup(t_atom(), t_tuple(2)))];
 arg_types(erlang, trace_delivered, 1) ->
   [t_sup(t_pid(), t_atom('all'))];
@@ -3760,7 +3773,7 @@ arg_types(erlang, trace_info, 2) ->
 arg_types(erlang, trace_pattern, 2) ->
   [t_sup(t_tuple([t_atom(), t_atom(), t_sup(t_arity(), t_atom('_'))]),
 	 t_atom('on_load')),
-   t_sup([t_bool(), t_list(), t_atom('restart'), t_atom('pause')])];
+   t_sup([t_boolean(), t_list(), t_atom('restart'), t_atom('pause')])];
 arg_types(erlang, trace_pattern, 3) ->
   arg_types(erlang, trace_pattern, 2) ++
     [t_list(t_sup([t_atom('global'), t_atom('local'),
@@ -3796,7 +3809,7 @@ arg_types(error_logger, warning_map, 0) ->
   [];
 %%------- erts_debug ----------------------------------------------------------
 arg_types(erts_debug, breakpoint, 2) ->
-  [t_tuple([t_atom(), t_atom(), t_sup(t_integer(), t_atom('_'))]), t_bool()];
+  [t_tuple([t_atom(), t_atom(), t_sup(t_integer(), t_atom('_'))]), t_boolean()];
 arg_types(erts_debug, disassemble, 1) ->
   [t_sup(t_mfa(), t_integer())];
 arg_types(erts_debug, flat_size, 1) ->
@@ -3816,6 +3829,8 @@ arg_types(ets, delete_object, 2) ->
   [t_tab(), t_tuple()];
 arg_types(ets, first, 1) ->
   [t_tab()];
+arg_types(ets, give_away, 3) ->
+  [t_tab(), t_pid(), t_any()];
 arg_types(ets, info, 1) ->
   [t_tab()];
 arg_types(ets, info, 2) ->
@@ -3859,7 +3874,7 @@ arg_types(ets, prev, 2) ->
 arg_types(ets, rename, 2) ->
   [t_atom(), t_atom()];
 arg_types(ets, safe_fixtable, 2) ->
-  [t_tab(), t_bool()];
+  [t_tab(), t_boolean()];
 arg_types(ets, select, 1) ->
   [t_any()];
 arg_types(ets, select, 2) ->
@@ -3878,6 +3893,10 @@ arg_types(ets, select_reverse, 3) ->
   arg_types(ets, select, 3);
 arg_types(ets, slot, 2) ->
   [t_tab(), t_non_neg_fixnum()]; % 2nd arg can be 0
+arg_types(ets, setopts, 2) ->
+  Opt = t_sup(t_tuple([t_atom('heir'), t_pid(), t_any()]),
+	      t_tuple([t_atom('heir'), t_atom('none')])),
+  [t_tab(), t_sup(Opt, t_list(Opt))];
 arg_types(ets, update_counter, 3) ->
   [t_tab(), t_any(), t_sup(t_integer(),
 			   t_sup(t_tuple([t_integer(), t_integer()]),
@@ -3957,11 +3976,11 @@ arg_types(hipe_bifs, atom_to_word, 1) ->
 arg_types(hipe_bifs, bif_address, 3) ->
   [t_atom(), t_atom(), t_arity()];
 arg_types(hipe_bifs, bitarray, 2) ->
-  [t_non_neg_fixnum(), t_bool()];
+  [t_non_neg_fixnum(), t_boolean()];
 arg_types(hipe_bifs, bitarray_sub, 2) ->
   [t_bitarray(), t_non_neg_fixnum()];
 arg_types(hipe_bifs, bitarray_update, 3) ->
-  [t_bytearray(), t_non_neg_fixnum(), t_bool()];
+  [t_bytearray(), t_non_neg_fixnum(), t_boolean()];
 arg_types(hipe_bifs, bytearray, 2) ->
   [t_non_neg_fixnum(), t_byte()];
 arg_types(hipe_bifs, bytearray_sub, 2) ->
@@ -3983,7 +4002,7 @@ arg_types(hipe_bifs, enter_code, 2) ->
 arg_types(hipe_bifs, enter_sdesc, 1) ->
   [t_tuple([t_integer(), t_integer(), t_integer(), t_integer(), t_integer()])];
 arg_types(hipe_bifs, find_na_or_make_stub, 2) ->
-  [t_mfa(), t_bool()];
+  [t_mfa(), t_boolean()];
 arg_types(hipe_bifs, fun_to_address, 1) ->
   [t_mfa()];
 %% arg_types(hipe_bifs, get_emu_address, 1) ->
@@ -4019,7 +4038,7 @@ arg_types(hipe_bifs, remove_refs_from, 1) ->
 arg_types(hipe_bifs, set_funinfo_native_address, 3) ->
   arg_types(hipe_bifs, set_native_address, 3);
 arg_types(hipe_bifs, set_native_address, 3) ->
-  [t_mfa(), t_integer(), t_bool()];
+  [t_mfa(), t_integer(), t_boolean()];
 arg_types(hipe_bifs, system_crc, 1) ->
   [t_integer()];
 arg_types(hipe_bifs, term_to_word, 1) ->
@@ -4056,17 +4075,17 @@ arg_types(io_lib, fwrite, 2) ->
   arg_types(io_lib, format, 2);
 %%------- lists ---------------------------------------------------------------
 arg_types(lists, all, 2) ->
-  [t_fun([t_any()], t_bool()), t_list()];
+  [t_fun([t_any()], t_boolean()), t_list()];
 arg_types(lists, any, 2) ->
-  [t_fun([t_any()], t_bool()), t_list()];
+  [t_fun([t_any()], t_boolean()), t_list()];
 arg_types(lists, append, 2) -> 
   arg_types(erlang, '++', 2);  % alias
 arg_types(lists, delete, 2) ->
   [t_any(), t_maybe_improper_list()];
 arg_types(lists, dropwhile, 2) ->
-  [t_fun([t_any()], t_bool()), t_maybe_improper_list()];
+  [t_fun([t_any()], t_boolean()), t_maybe_improper_list()];
 arg_types(lists, filter, 2) ->
-  [t_fun([t_any()], t_bool()), t_list()];
+  [t_fun([t_any()], t_boolean()), t_list()];
 arg_types(lists, flatten, 1) ->
   [t_list()];
 arg_types(lists, flatmap, 2) ->
@@ -4110,7 +4129,7 @@ arg_types(lists, member, 2) ->
 arg_types(lists, merge, 2) ->
   [t_list(), t_list()];
 %% arg_types(lists, merge, 3) ->
-%%   [t_fun([t_any(), t_any()], t_bool()), t_list(), t_list()];
+%%   [t_fun([t_any(), t_any()], t_boolean()), t_list(), t_list()];
 %% arg_types(lists, merge3, 3) ->
 %%   [t_list(), t_list(), t_list()];
 arg_types(lists, min, 1) ->
@@ -4132,15 +4151,15 @@ arg_types(lists, seq, 3) ->
 arg_types(lists, sort, 1) ->
   [t_list()];
 arg_types(lists, sort, 2) ->
-  [t_fun([t_any(), t_any()], t_bool()), t_list()];
+  [t_fun([t_any(), t_any()], t_boolean()), t_list()];
 arg_types(lists, split, 2) ->
   [t_non_neg_fixnum(), t_maybe_improper_list()]; % do not lie in 2nd arg
 arg_types(lists, splitwith, 2) ->
-  [t_fun([t_any()], t_bool()), t_maybe_improper_list()];
+  [t_fun([t_any()], t_boolean()), t_maybe_improper_list()];
 arg_types(lists, subtract, 2) ->
   arg_types(erlang, '--', 2);  % alias
 arg_types(lists, takewhile, 2) ->
-  [t_fun([t_any()], t_bool()), t_maybe_improper_list()];
+  [t_fun([t_any()], t_boolean()), t_maybe_improper_list()];
 arg_types(lists, usort, 1) ->
   arg_types(lists, sort, 1);   % same
 arg_types(lists, usort, 2) ->
@@ -4562,10 +4581,12 @@ t_matchres() ->
 
 %% From the 'ets' documentation
 %%-----------------------------
-%% Option = Type | Access | named_table | {keypos,Pos}
-%%   Type = set | ordered_set | bag | duplicate_bag
-%% Access = public | protected | private
-%%    Pos = integer()
+%%   Option = Type | Access | named_table | {keypos,Pos}
+%%          | {heir,pid(),HeirData} | {heir,none} | {write_concurrency,bool()}
+%%     Type = set | ordered_set | bag | duplicate_bag
+%%   Access = public | protected | private
+%%      Pos = integer()
+%% HeirData = term()
 t_ets_new_options() ->
   t_list(t_sup([t_atom('set'),
 		t_atom('ordered_set'),
@@ -4575,7 +4596,10 @@ t_ets_new_options() ->
 		t_atom('protected'),
 		t_atom('private'),
 		t_atom('named_table'),
-		t_tuple([t_atom('keypos'), t_integer()])])).
+		t_tuple([t_atom('heir'), t_pid(), t_any()]),
+		t_tuple([t_atom('heir'), t_atom('none')]),
+		t_tuple([t_atom('keypos'), t_integer()]),
+		t_tuple([t_atom('write_concurrency'), t_boolean()])])).
 
 t_ets_info_items() ->
   t_sup([t_atom('fixed'),
@@ -4753,19 +4777,19 @@ t_insn_type() ->
 
 t_inet_setoption() ->
   t_sup([%% first the 2-tuple options
-	 t_tuple([t_atom('active'), t_sup(t_bool(), t_atom('once'))]),
-	 t_tuple([t_atom('broadcast'), t_bool()]),
-	 t_tuple([t_atom('delay_send'), t_bool()]),
-	 t_tuple([t_atom('dontroute'), t_bool()]),
-	 t_tuple([t_atom('exit_on_close'), t_bool()]),
+	 t_tuple([t_atom('active'), t_sup(t_boolean(), t_atom('once'))]),
+	 t_tuple([t_atom('broadcast'), t_boolean()]),
+	 t_tuple([t_atom('delay_send'), t_boolean()]),
+	 t_tuple([t_atom('dontroute'), t_boolean()]),
+	 t_tuple([t_atom('exit_on_close'), t_boolean()]),
 	 t_tuple([t_atom('header'), t_non_neg_integer()]),
-	 t_tuple([t_atom('keepalive'), t_bool()]),
-	 t_tuple([t_atom('nodelay'), t_bool()]),
+	 t_tuple([t_atom('keepalive'), t_boolean()]),
+	 t_tuple([t_atom('nodelay'), t_boolean()]),
 	 t_tuple([t_atom('packet'), t_inet_setoption_packettype()]),
 	 t_tuple([t_atom('packet_size'), t_non_neg_integer()]),
 	 t_tuple([t_atom('read_packets'), t_non_neg_integer()]),
 	 t_tuple([t_atom('recbuf'), t_non_neg_integer()]),
-	 t_tuple([t_atom('reuseaddr'), t_bool()]),
+	 t_tuple([t_atom('reuseaddr'), t_boolean()]),
 	 t_tuple([t_atom('send_timeout'), t_non_neg_integer()]),
 	 t_tuple([t_atom('sndbuf'), t_non_neg_integer()]),
 	 t_tuple([t_atom('priority'), t_non_neg_integer()]),

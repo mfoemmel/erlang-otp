@@ -45,7 +45,7 @@ EUNIT_DIR = $(ERL_TOP)/lib/eunit/src
 EUNIT_INC_DIR = $(ERL_TOP)/lib/eunit/include
 
 EUNIT_MODULES = \
-	eunit
+	eunit eunit_surefire
 
 XML_APPLICATION_FILES = ref_man.xml
 

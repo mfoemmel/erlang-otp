@@ -749,6 +749,22 @@ get_now(Uint* megasec, Uint* sec, Uint* microsec)
     *microsec = (Uint) (now.tv_usec);
 }
 
+void
+get_sys_now(Uint* megasec, Uint* sec, Uint* microsec)
+{
+    SysTimeval now;
+    
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    
+    sys_gettimeofday(&now);
+    
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
+    
+    *megasec = (Uint) (now.tv_sec / 1000000);
+    *sec = (Uint) (now.tv_sec % 1000000);
+    *microsec = (Uint) (now.tv_usec);
+}
+
 
 /* deliver elapsed *ticks* to the machine - takes a pointer
    to a struct timeval representing current time (to save

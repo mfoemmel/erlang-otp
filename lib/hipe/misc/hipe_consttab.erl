@@ -444,9 +444,9 @@ update_referred_labels(Table, LabelMap) ->
       end,
       Table,
       LabelMap),
-  NewRefs = [case lists:keysearch(Lbl, 1, LabelMap) of
-	       {value, {_, New}} -> New;
-	       _ -> Lbl
+  NewRefs = [case lists:keyfind(Lbl, 1, LabelMap) of
+	       {_, New} -> New;
+	       false -> Lbl
 	     end || Lbl <- Refs],
   %% io:format("NewTb:~w\n", [{Tb, NewRefs, Next}]),
   {Tb, NewRefs, Next}.

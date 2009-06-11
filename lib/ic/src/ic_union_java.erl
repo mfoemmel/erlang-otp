@@ -41,7 +41,7 @@
 %%-----------------------------------------------------------------
 %% Func: gen/3
 %%-----------------------------------------------------------------
-gen(G, N, X) when record(X, union) ->
+gen(G, N, X) when is_record(X, union) ->
 
     %% Create a TK value if not existed
     %% Should be integrated in fetchTk
@@ -708,7 +708,7 @@ enum_default_val_loop(_G, _N, _, [], []) ->
     none;
 enum_default_val_loop(_G, _N, DiscrType, [Value| _], []) ->
     DiscrType ++ "." ++ Value;
-enum_default_val_loop(G, N, DiscrType, Values, [Case | MList]) when tuple(Case) ->
+enum_default_val_loop(G, N, DiscrType, Values, [Case | MList]) when is_tuple(Case) ->
     NewValues = lists:delete(element(1,Case), Values),
     enum_default_val_loop(G, N, DiscrType, NewValues, MList).
 

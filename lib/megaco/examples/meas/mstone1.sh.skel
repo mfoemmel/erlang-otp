@@ -1,5 +1,6 @@
 #!/bin/sh
 
+#
 # %CopyrightBegin%
 # 
 # Copyright Ericsson AB 2007-2009. All Rights Reserved.
@@ -17,7 +18,6 @@
 # 
 # %CopyrightEnd%
 
-#
 # Skeleton for a script intended to run the mstone1(N) 
 # performance test.
 #
@@ -33,27 +33,29 @@ test. It is not intended to test the megaco stack but instead to
 give a \"performance value\" of the host on which it is run.
 
 Options:
- -help             display this help and exit.
- -h <num>          default process heap size
- -a <num>          async thread pool size (default is 0)
- -f <factor>       normally the test is run with 16 processes 
-                   (factor 1), one for each codec config. The test 
-                   can however be run with other factors, e.g. 
-                   factor 10 means that 10 processes will be started 
-                   for each megaco codec config.
-                   The options -s and -f cannot both be present.
- -s <num sched>    normally the test is run with a fixed factor,
-                   but if this option is given, the number of
-                   schedulers is fixed (to the value set by this option)
-                   and the factor is the variable.
-                   The options -s and -f cannot both be present.
- -d <drv-mode>     driver mode for the test:
-                   std  - all codec config(s) will be used
-                   flex - only the text codec config(s) utilizing the 
-                          flex scanner will be used
-                   nd   - only codec config(s) without drivers will be used
-                   od   - only codec config(s) with drivers will be used
- --                everything after this is just passed on to erl.
+ -help                  display this help and exit.
+ -mp <message package>  message package to use for test
+                        default is time_test
+ -h <num>               default process heap size
+ -a <num>               async thread pool size (default is 0)
+ -f <factor>            normally the test is run with 16 processes 
+                        (factor 1), one for each codec config. The test 
+                        can however be run with other factors, e.g. 
+                        factor 10 means that 10 processes will be started 
+                        for each megaco codec config.
+                        The options -s and -f cannot both be present.
+ -s <num sched>         normally the test is run with a fixed factor,
+                        but if this option is given, the number of
+                        schedulers is fixed (to the value set by this option)
+                        and the factor is the variable.
+                        The options -s and -f cannot both be present.
+ -d <drv-mode>          driver mode for the test:
+                        std  - all codec config(s) will be used
+                        flex - only the text codec config(s) utilizing the 
+                               flex scanner will be used
+                        nd   - only codec config(s) without drivers will be used
+                        od   - only codec config(s) with drivers will be used
+ --                     everything after this is just passed on to erl.
 "
 
 ERL_HOME=<path to otp top dir>
@@ -64,7 +66,7 @@ PATH=$ERL_HOME/bin:$PATH
 MODULE=megaco_codec_mstone1
 STARTF="start"
 FACTOR=""
-TYPE=undefined
+MSG_PACK=time_test
 
 while test $# != 0; do
     # echo "DBG: Value = $1"
@@ -72,6 +74,10 @@ while test $# != 0; do
         -help)
             echo "$usage" ;
             exit 0;;
+
+        -mp)
+            MSG_PACK="$2";
+            shift ; shift ;;
 
         -h)
             PHS="+h $2";
@@ -134,12 +140,14 @@ done
 
 if [ $TYPE = factor ]; then
 
-    MSTONE="-s $MODULE $STARTF $FACTOR"
+    MSTONE="-s $MODULE $STARTF $MSG_PACK $FACTOR"
 
     # SCHEDS="no_smp 01 02 04"
-    # SCHEDS="no_smp 01 02 03 04 05 06 07 08"
-    SCHEDS="no_smp 01 02 04 08 16 32"
+    # SCHEDS="no_smp 01 02 04 08"
+    # SCHEDS="no_smp 01 02 04 08 16"
+    # SCHEDS="no_smp 01 02 04 08 16 32"
     # SCHEDS="no_smp 01 02 04 08 16 32 64"
+    SCHEDS="no_smp 01 02 03 04 05 06 07 08"
 
     for i in `echo $SCHEDS`; do
         case $i in
@@ -183,11 +191,11 @@ if [ $TYPE = factor ]; then
 
 elif [ $TYPE = sched ]; then
 
-    MSTONE="-s $MODULE $STARTF "
+    MSTONE="-s $MODULE $STARTF $MSG_PACK"
 
-    FACTORS="01 02 03 04"
+    # FACTORS="01 02 03 04"
     # FACTORS="01 02 03 04 05 06 07 08 09 10"
-    # FACTORS="01 02 04 08 16"
+    FACTORS="01 02 04 08 16 32"
     # FACTORS="001 010 100"
 
     case $SCHED in
@@ -222,9 +230,10 @@ elif [ $TYPE = sched ]; then
         $ERL | tee $LOG
     done
 
+
 else
-
-    echo "neither option -f nor -s was provided" ;
+    echo "Either option -f or -s must be specified"
     echo "$usage" ;
-
+    exit 0
+    
 fi

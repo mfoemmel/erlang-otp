@@ -23,7 +23,7 @@
 #ifdef EI_64BIT
 int ei_decode_ulong(const char *buf, int *index, unsigned long *p)
 {
-    return ei_decode_ulonglong(buf, index, p);
+    return ei_decode_ulonglong(buf, index, (EI_ULONGLONG *)p);
 }
 #endif
 

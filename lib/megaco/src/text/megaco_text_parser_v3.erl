@@ -10,7 +10,7 @@
 
 
 
--file("/net/shelob/ldisk/daily_build/otp_prebuild_r13b.2009-04-20_20/otp_src_R13B/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b01.2009-06-07_20/otp_src_R13B01/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 
@@ -35,17 +35,17 @@
 
 -type(yecc_ret() :: {'error', _} | {'ok', _}).
 
--spec(parse/1 :: (_) -> yecc_ret()).
+-spec parse(Tokens :: list()) -> yecc_ret().
 parse(Tokens) ->
-    yeccpars0(Tokens, false).
+    yeccpars0(Tokens, {no_func, no_line}, 0, [], []).
 
 -spec(parse_and_scan/1 ::
       ({function() | {atom(), atom()}, [_]} | {atom(), atom(), [_]}) ->
             yecc_ret()).
 parse_and_scan({F, A}) -> % Fun or {M, F}
-    yeccpars0([], {F, A});
+    yeccpars0([], {{F, A}, no_line}, 0, [], []);
 parse_and_scan({M, F, A}) ->
-    yeccpars0([], {{M, F}, A}).
+    yeccpars0([], {{{M, F}, A}, no_line}, 0, [], []).
 
 -spec(format_error/1 :: (any()) -> [char() | list()]).
 format_error(Message) ->
@@ -58,15 +58,15 @@ format_error(Message) ->
 
 % To be used in grammar files to throw an error message to the parser
 % toplevel. Doesn't have to be exported!
--compile({nowarn_unused_function,{return_error,2}}).
+-compile({nowarn_unused_function, return_error/2}).
 -spec(return_error/2 :: (integer(), any()) -> no_return()).
 return_error(Line, Message) ->
     throw({error, {Line, ?MODULE, Message}}).
 
--define(CODE_VERSION, "1.3").
+-define(CODE_VERSION, "1.4").
 
-yeccpars0(Tokens, MFA) ->
-    try yeccpars1(Tokens, MFA, 0, [], [])
+yeccpars0(Tokens, Tzr, State, States, Vstack) ->
+    try yeccpars1(Tokens, Tzr, State, States, Vstack)
     catch 
         error: Error ->
             Stacktrace = erlang:get_stacktrace(),
@@ -76,11 +76,12 @@ yeccpars0(Tokens, MFA) ->
                 {missing_in_goto_table=Tag, Symbol, State} ->
                     Desc = {Symbol, State, Tag},
                     erlang:raise(error, {yecc_bug, ?CODE_VERSION, Desc},
-                                Stacktrace)
+                                 Stacktrace)
             catch _:_ -> erlang:raise(error, Error, Stacktrace)
             end;
-        throw: {error, {_Line, ?MODULE, _M}} = Error -> 
-            Error % probably from return_error/2
+        %% Probably thrown from return_error/2:
+        throw: {error, {_Line, ?MODULE, _M}} = Error ->
+            Error
     end.
 
 yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
@@ -92,20 +93,24 @@ yecc_error_type(function_clause, [{?MODULE,F,[State,_,_,_,Token,_,_]} | _]) ->
             {missing_in_goto_table, Symbol, State}
     end.
 
-yeccpars1([Token | Tokens], Tokenizer, State, States, Vstack) ->
-    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, 
-              Tokenizer);
-yeccpars1([], {F, A}, State, States, Vstack) ->
+yeccpars1([Token | Tokens], Tzr, State, States, Vstack) ->
+    yeccpars2(State, element(1, Token), States, Vstack, Token, Tokens, Tzr);
+yeccpars1([], {{F, A},_Line}, State, States, Vstack) ->
     case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(Tokens, {F, A}, State, States, Vstack);
-        {eof, _Endline} ->
-            yeccpars1([], false, State, States, Vstack);
+        {ok, Tokens, Endline} ->
+	    yeccpars1(Tokens, {{F, A}, Endline}, State, States, Vstack);
+        {eof, Endline} ->
+            yeccpars1([], {no_func, Endline}, State, States, Vstack);
         {error, Descriptor, _Endline} ->
             {error, Descriptor}
     end;
-yeccpars1([], false, State, States, Vstack) ->
-    yeccpars2(State, '$end', States, Vstack, {'$end', 999999}, [], false).
+yeccpars1([], {no_func, no_line}, State, States, Vstack) ->
+    Line = 999999,
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Line), [],
+              {no_func, Line});
+yeccpars1([], {no_func, Endline}, State, States, Vstack) ->
+    yeccpars2(State, '$end', States, Vstack, yecc_end(Endline), [],
+              {no_func, Endline}).
 
 %% yeccpars1/7 is called from generated code.
 %%
@@ -113,34 +118,59 @@ yeccpars1([], false, State, States, Vstack) ->
 %% yeccpars1/7 can be found by parsing the file without following
 %% include directives. yecc will otherwise assume that an old
 %% yeccpre.hrl is included (one which defines yeccpars1/5).
-yeccpars1(State1, State, States, Vstack, Stack1, [Token | Tokens], 
-          Tokenizer) ->
+yeccpars1(State1, State, States, Vstack, Token0, [Token | Tokens], Tzr) ->
     yeccpars2(State, element(1, Token), [State1 | States],
-              [Stack1 | Vstack], Token, Tokens, Tokenizer);
-yeccpars1(State1, State, States, Vstack, Stack1, [], {F, A}) ->
-    case apply(F, A) of
-        {ok, Tokens, _Endline} ->
-	    yeccpars1(State1, State, States, Vstack, Stack1, Tokens, {F, A});
-        {eof, _Endline} ->
-            yeccpars1(State1, State, States, Vstack, Stack1, [], false);
-        {error, Descriptor, _Endline} ->
-            {error, Descriptor}
-    end;
-yeccpars1(State1, State, States, Vstack, Stack1, [], false) ->
-    yeccpars2(State, '$end', [State1 | States], [Stack1 | Vstack],
-              {'$end', 999999}, [], false).
+              [Token0 | Vstack], Token, Tokens, Tzr);
+yeccpars1(State1, State, States, Vstack, Token0, [], {{_F,_A}, _Line}=Tzr) ->
+    yeccpars1([], Tzr, State, [State1 | States], [Token0 | Vstack]);
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, no_line}) ->
+    Line = yecctoken_end_location(Token0),
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line});
+yeccpars1(State1, State, States, Vstack, Token0, [], {no_func, Line}) ->
+    yeccpars2(State, '$end', [State1 | States], [Token0 | Vstack],
+              yecc_end(Line), [], {no_func, Line}).
 
 % For internal use only.
+yecc_end({Line,_Column}) ->
+    {'$end', Line};
+yecc_end(Line) ->
+    {'$end', Line}.
+
+yecctoken_end_location(Token) ->
+    try
+        {text, Str} = erl_scan:token_info(Token, text),
+        {line, Line} = erl_scan:token_info(Token, line),
+        Parts = re:split(Str, "\n"),
+        Dline = length(Parts) - 1,
+        Yline = Line + Dline,
+        case erl_scan:token_info(Token, column) of
+            {column, Column} ->
+                Col = byte_size(lists:last(Parts)),
+                {Yline, Col + if Dline =:= 0 -> Column; true -> 1 end};
+            undefined ->
+                Yline
+        end
+    catch _:_ ->
+        yecctoken_location(Token)
+    end.
+
 yeccerror(Token) ->
-    Text = case catch erl_scan:token_info(Token, text) of
-               {text, Txt} -> Txt;
-               _ -> yecctoken2string(Token)
-           end,
-    Location = case catch erl_scan:token_info(Token, location) of
-                   {location, Loc} -> Loc;
-                   _ -> element(2, Token)
-               end,
+    Text = yecctoken_to_string(Token),
+    Location = yecctoken_location(Token),
     {error, {Location, ?MODULE, ["syntax error before: ", Text]}}.
+
+yecctoken_to_string(Token) ->
+    case catch erl_scan:token_info(Token, text) of
+        {text, Txt} -> Txt;
+        _ -> yecctoken2string(Token)
+    end.
+
+yecctoken_location(Token) ->
+    case catch erl_scan:token_info(Token, location) of
+        {location, Loc} -> Loc;
+        _ -> element(2, Token)
+    end.
 
 yecctoken2string({atom, _, A}) -> io_lib:write(A);
 yecctoken2string({integer,_,N}) -> io_lib:write(N);
@@ -148,13 +178,13 @@ yecctoken2string({float,_,F}) -> io_lib:write(F);
 yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format("~s", [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_unicode_string(S);
-yecctoken2string({reserved_symbol, _, A}) -> io_lib:format("~w", [A]);
-yecctoken2string({_Cat, _, Val}) -> io_lib:format("~w", [Val]);
+yecctoken2string({reserved_symbol, _, A}) -> io_lib:write(A);
+yecctoken2string({_Cat, _, Val}) -> io_lib:write(Val);
 yecctoken2string({dot, _}) -> "'.'";
 yecctoken2string({'$end', _}) ->
     [];
 yecctoken2string({Other, _}) when is_atom(Other) ->
-    io_lib:format("~w", [Other]);
+    io_lib:write(Other);
 yecctoken2string(Other) ->
     io_lib:write(Other).
 
@@ -162,7 +192,7 @@ yecctoken2string(Other) ->
 
 
 
--file("./megaco_text_parser_v3.erl", 165).
+-file("./megaco_text_parser_v3.erl", 195).
 
 yeccpars2(0=S, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_0(S, Cat, Ss, Stack, T, Ts, Tzr);
@@ -10083,21 +10113,21 @@ yeccgoto_valueList(308, Cat, Ss, Stack, T, Ts, Tzr) ->
 yeccgoto_valueList(598, Cat, Ss, Stack, T, Ts, Tzr) ->
  yeccpars2_599(599, Cat, Ss, Stack, T, Ts, Tzr).
 
--compile({inline,{yeccpars2_0_,1}}).
+-compile({inline,yeccpars2_0_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_0_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_1_,1}}).
+-compile({inline,yeccpars2_1_/1}).
 -file("megaco_text_parser_v3.yrl", 491).
 yeccpars2_1_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_3_,1}}).
+-compile({inline,yeccpars2_3_/1}).
 -file("megaco_text_parser_v3.yrl", 485).
 yeccpars2_3_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10105,7 +10135,7 @@ yeccpars2_3_(__Stack0) ->
    sep
   end | __Stack].
 
--compile({inline,{yeccpars2_7_,1}}).
+-compile({inline,yeccpars2_7_/1}).
 -file("megaco_text_parser_v3.yrl", 1548).
 yeccpars2_7_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10113,14 +10143,14 @@ yeccpars2_7_(__Stack0) ->
    make_safe_token ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_84_,1}}).
+-compile({inline,yeccpars2_84_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_84_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_85_,1}}).
+-compile({inline,yeccpars2_85_/1}).
 -file("megaco_text_parser_v3.yrl", 490).
 yeccpars2_85_(__Stack0) ->
  [__8,__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10128,14 +10158,14 @@ yeccpars2_85_(__Stack0) ->
    ensure_auth_header ( __3 , __5 , __7 )
   end | __Stack].
 
--compile({inline,{yeccpars2_86_,1}}).
+-compile({inline,yeccpars2_86_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_86_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_88_,1}}).
+-compile({inline,yeccpars2_88_/1}).
 -file("megaco_text_parser_v3.yrl", 483).
 yeccpars2_88_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10143,28 +10173,28 @@ yeccpars2_88_(__Stack0) ->
    # 'MegacoMessage' { authHeader = __2 , mess = __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_94_,1}}).
+-compile({inline,yeccpars2_94_/1}).
 -file("megaco_text_parser_v3.yrl", 1025).
 yeccpars2_94_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_95_,1}}).
+-compile({inline,yeccpars2_95_/1}).
 -file("megaco_text_parser_v3.yrl", 1025).
 yeccpars2_95_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_97_,1}}).
+-compile({inline,yeccpars2_97_/1}).
 -file("megaco_text_parser_v3.yrl", 1025).
 yeccpars2_97_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_98_,1}}).
+-compile({inline,yeccpars2_98_/1}).
 -file("megaco_text_parser_v3.yrl", 1026).
 yeccpars2_98_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -10172,7 +10202,7 @@ yeccpars2_98_(__Stack0) ->
    [ colon | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_99_,1}}).
+-compile({inline,yeccpars2_99_/1}).
 -file("megaco_text_parser_v3.yrl", 1023).
 yeccpars2_99_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10180,7 +10210,7 @@ yeccpars2_99_(__Stack0) ->
    ensure_domainAddress ( __2 , asn1_NOVALUE )
   end | __Stack].
 
--compile({inline,{yeccpars2_101_,1}}).
+-compile({inline,yeccpars2_101_/1}).
 -file("megaco_text_parser_v3.yrl", 1030).
 yeccpars2_101_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10188,14 +10218,14 @@ yeccpars2_101_(__Stack0) ->
    ensure_uint16 ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_102_,1}}).
+-compile({inline,yeccpars2_102_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_102_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_103_,1}}).
+-compile({inline,yeccpars2_103_/1}).
 -file("megaco_text_parser_v3.yrl", 1021).
 yeccpars2_103_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10203,7 +10233,7 @@ yeccpars2_103_(__Stack0) ->
    ensure_domainAddress ( __2 , __5 )
   end | __Stack].
 
--compile({inline,{yeccpars2_104_,1}}).
+-compile({inline,yeccpars2_104_/1}).
 -file("megaco_text_parser_v3.yrl", 1027).
 yeccpars2_104_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -10211,7 +10241,7 @@ yeccpars2_104_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_106_,1}}).
+-compile({inline,yeccpars2_106_/1}).
 -file("megaco_text_parser_v3.yrl", 1013).
 yeccpars2_106_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10219,14 +10249,14 @@ yeccpars2_106_(__Stack0) ->
    ensure_domainName ( __2 , asn1_NOVALUE )
   end | __Stack].
 
--compile({inline,{yeccpars2_108_,1}}).
+-compile({inline,yeccpars2_108_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_108_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_109_,1}}).
+-compile({inline,yeccpars2_109_/1}).
 -file("megaco_text_parser_v3.yrl", 1011).
 yeccpars2_109_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10234,7 +10264,7 @@ yeccpars2_109_(__Stack0) ->
    ensure_domainName ( __2 , __5 )
   end | __Stack].
 
--compile({inline,{yeccpars2_110_,1}}).
+-compile({inline,yeccpars2_110_/1}).
 -file("megaco_text_parser_v3.yrl", 505).
 yeccpars2_110_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10242,7 +10272,7 @@ yeccpars2_110_(__Stack0) ->
    { transactionResponseAck , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_111_,1}}).
+-compile({inline,yeccpars2_111_/1}).
 -file("megaco_text_parser_v3.yrl", 502).
 yeccpars2_111_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10250,7 +10280,7 @@ yeccpars2_111_(__Stack0) ->
    { transactionRequest , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_112_,1}}).
+-compile({inline,yeccpars2_112_/1}).
 -file("megaco_text_parser_v3.yrl", 503).
 yeccpars2_112_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10258,7 +10288,7 @@ yeccpars2_112_(__Stack0) ->
    { transactionReply , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_113_,1}}).
+-compile({inline,yeccpars2_113_/1}).
 -file("megaco_text_parser_v3.yrl", 504).
 yeccpars2_113_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10266,7 +10296,7 @@ yeccpars2_113_(__Stack0) ->
    { transactionPending , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_114_,1}}).
+-compile({inline,yeccpars2_114_/1}).
 -file("megaco_text_parser_v3.yrl", 497).
 yeccpars2_114_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10274,7 +10304,7 @@ yeccpars2_114_(__Stack0) ->
    { transactions , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_115_,1}}).
+-compile({inline,yeccpars2_115_/1}).
 -file("megaco_text_parser_v3.yrl", 499).
 yeccpars2_115_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10282,7 +10312,7 @@ yeccpars2_115_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_116_,1}}).
+-compile({inline,yeccpars2_116_/1}).
 -file("megaco_text_parser_v3.yrl", 506).
 yeccpars2_116_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10290,7 +10320,7 @@ yeccpars2_116_(__Stack0) ->
    { segmentReply , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_117_,1}}).
+-compile({inline,yeccpars2_117_/1}).
 -file("megaco_text_parser_v3.yrl", 494).
 yeccpars2_117_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10298,7 +10328,7 @@ yeccpars2_117_(__Stack0) ->
    ensure_message ( __1 , __2 , __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_118_,1}}).
+-compile({inline,yeccpars2_118_/1}).
 -file("megaco_text_parser_v3.yrl", 496).
 yeccpars2_118_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10306,14 +10336,14 @@ yeccpars2_118_(__Stack0) ->
    { messageError , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_127_,1}}).
+-compile({inline,yeccpars2_127_/1}).
 -file("megaco_text_parser_v3.yrl", 535).
 yeccpars2_127_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_130_,1}}).
+-compile({inline,yeccpars2_130_/1}).
 -file("megaco_text_parser_v3.yrl", 1018).
 yeccpars2_130_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10321,7 +10351,7 @@ yeccpars2_130_(__Stack0) ->
    ensure_contextID ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_133_,1}}).
+-compile({inline,yeccpars2_133_/1}).
 -file("megaco_text_parser_v3.yrl", 560).
 yeccpars2_133_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10329,7 +10359,7 @@ yeccpars2_133_(__Stack0) ->
    { topology , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_136_,1}}).
+-compile({inline,yeccpars2_136_/1}).
 -file("megaco_text_parser_v3.yrl", 561).
 yeccpars2_136_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10337,7 +10367,7 @@ yeccpars2_136_(__Stack0) ->
    { priority , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_138_,1}}).
+-compile({inline,yeccpars2_138_/1}).
 -file("megaco_text_parser_v3.yrl", 564).
 yeccpars2_138_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10345,7 +10375,7 @@ yeccpars2_138_(__Stack0) ->
    { iepsCallind , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_139_,1}}).
+-compile({inline,yeccpars2_139_/1}).
 -file("megaco_text_parser_v3.yrl", 554).
 yeccpars2_139_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10353,7 +10383,7 @@ yeccpars2_139_(__Stack0) ->
    { contextProp , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_140_,1}}).
+-compile({inline,yeccpars2_140_/1}).
 -file("megaco_text_parser_v3.yrl", 555).
 yeccpars2_140_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10361,7 +10391,7 @@ yeccpars2_140_(__Stack0) ->
    { contextAudit , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_142_,1}}).
+-compile({inline,yeccpars2_142_/1}).
 -file("megaco_text_parser_v3.yrl", 556).
 yeccpars2_142_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10369,14 +10399,14 @@ yeccpars2_142_(__Stack0) ->
    { commandRequest , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_146_,1}}).
+-compile({inline,yeccpars2_146_/1}).
 -file("megaco_text_parser_v3.yrl", 552).
 yeccpars2_146_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_148_,1}}).
+-compile({inline,yeccpars2_148_/1}).
 -file("megaco_text_parser_v3.yrl", 675).
 yeccpars2_148_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10384,7 +10414,7 @@ yeccpars2_148_(__Stack0) ->
    { addReq , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_153_,1}}).
+-compile({inline,yeccpars2_153_/1}).
 -file("megaco_text_parser_v3.yrl", 563).
 yeccpars2_153_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10392,7 +10422,7 @@ yeccpars2_153_(__Stack0) ->
    { emergency , false }
   end | __Stack].
 
--compile({inline,{yeccpars2_154_,1}}).
+-compile({inline,yeccpars2_154_/1}).
 -file("megaco_text_parser_v3.yrl", 562).
 yeccpars2_154_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10400,7 +10430,7 @@ yeccpars2_154_(__Stack0) ->
    { emergency , true }
   end | __Stack].
 
--compile({inline,{yeccpars2_156_,1}}).
+-compile({inline,yeccpars2_156_/1}).
 -file("megaco_text_parser_v3.yrl", 677).
 yeccpars2_156_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10408,7 +10438,7 @@ yeccpars2_156_(__Stack0) ->
    { modReq , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_157_,1}}).
+-compile({inline,yeccpars2_157_/1}).
 -file("megaco_text_parser_v3.yrl", 676).
 yeccpars2_157_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10416,14 +10446,14 @@ yeccpars2_157_(__Stack0) ->
    { moveReq , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_165_,1}}).
+-compile({inline,yeccpars2_165_/1}).
 -file("megaco_text_parser_v3.yrl", 1526).
 yeccpars2_165_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_166_,1}}).
+-compile({inline,yeccpars2_166_/1}).
 -file("megaco_text_parser_v3.yrl", 1522).
 yeccpars2_166_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10431,7 +10461,7 @@ yeccpars2_166_(__Stack0) ->
    { tid , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_167_,1}}).
+-compile({inline,yeccpars2_167_/1}).
 -file("megaco_text_parser_v3.yrl", 1048).
 yeccpars2_167_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10439,7 +10469,7 @@ yeccpars2_167_(__Stack0) ->
    ensure_terminationID ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_168_,1}}).
+-compile({inline,yeccpars2_168_/1}).
 -file("megaco_text_parser_v3.yrl", 1523).
 yeccpars2_168_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10447,7 +10477,7 @@ yeccpars2_168_(__Stack0) ->
    { sid , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_169_,1}}).
+-compile({inline,yeccpars2_169_/1}).
 -file("megaco_text_parser_v3.yrl", 1530).
 yeccpars2_169_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10455,7 +10485,7 @@ yeccpars2_169_(__Stack0) ->
    { direction , bothway }
   end | __Stack].
 
--compile({inline,{yeccpars2_170_,1}}).
+-compile({inline,yeccpars2_170_/1}).
 -file("megaco_text_parser_v3.yrl", 1531).
 yeccpars2_170_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10463,7 +10493,7 @@ yeccpars2_170_(__Stack0) ->
    { direction , isolate }
   end | __Stack].
 
--compile({inline,{yeccpars2_171_,1}}).
+-compile({inline,yeccpars2_171_/1}).
 -file("megaco_text_parser_v3.yrl", 1534).
 yeccpars2_171_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10471,7 +10501,7 @@ yeccpars2_171_(__Stack0) ->
    { direction_ext , onewayboth }
   end | __Stack].
 
--compile({inline,{yeccpars2_172_,1}}).
+-compile({inline,yeccpars2_172_/1}).
 -file("megaco_text_parser_v3.yrl", 1533).
 yeccpars2_172_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10479,7 +10509,7 @@ yeccpars2_172_(__Stack0) ->
    { direction_ext , onewayexternal }
   end | __Stack].
 
--compile({inline,{yeccpars2_173_,1}}).
+-compile({inline,yeccpars2_173_/1}).
 -file("megaco_text_parser_v3.yrl", 1532).
 yeccpars2_173_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10487,7 +10517,7 @@ yeccpars2_173_(__Stack0) ->
    { direction , oneway }
   end | __Stack].
 
--compile({inline,{yeccpars2_176_,1}}).
+-compile({inline,yeccpars2_176_/1}).
 -file("megaco_text_parser_v3.yrl", 948).
 yeccpars2_176_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10495,7 +10525,7 @@ yeccpars2_176_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_177_,1}}).
+-compile({inline,yeccpars2_177_/1}).
 -file("megaco_text_parser_v3.yrl", 1187).
 yeccpars2_177_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10503,14 +10533,14 @@ yeccpars2_177_(__Stack0) ->
    ensure_streamID ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_180_,1}}).
+-compile({inline,yeccpars2_180_/1}).
 -file("megaco_text_parser_v3.yrl", 1526).
 yeccpars2_180_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_181_,1}}).
+-compile({inline,yeccpars2_181_/1}).
 -file("megaco_text_parser_v3.yrl", 1528).
 yeccpars2_181_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10518,7 +10548,7 @@ yeccpars2_181_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_182_,1}}).
+-compile({inline,yeccpars2_182_/1}).
 -file("megaco_text_parser_v3.yrl", 1520).
 yeccpars2_182_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10526,7 +10556,7 @@ yeccpars2_182_(__Stack0) ->
    merge_topologyDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_184_,1}}).
+-compile({inline,yeccpars2_184_/1}).
 -file("megaco_text_parser_v3.yrl", 1034).
 yeccpars2_184_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10534,28 +10564,28 @@ yeccpars2_184_(__Stack0) ->
    [ __1 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_185_,1}}).
+-compile({inline,yeccpars2_185_/1}).
 -file("megaco_text_parser_v3.yrl", 715).
 yeccpars2_185_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_187_,1}}).
+-compile({inline,yeccpars2_187_/1}).
 -file("megaco_text_parser_v3.yrl", 1043).
 yeccpars2_187_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_190_,1}}).
+-compile({inline,yeccpars2_190_/1}).
 -file("megaco_text_parser_v3.yrl", 1043).
 yeccpars2_190_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_191_,1}}).
+-compile({inline,yeccpars2_191_/1}).
 -file("megaco_text_parser_v3.yrl", 1042).
 yeccpars2_191_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10563,7 +10593,7 @@ yeccpars2_191_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_192_,1}}).
+-compile({inline,yeccpars2_192_/1}).
 -file("megaco_text_parser_v3.yrl", 1036).
 yeccpars2_192_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10571,7 +10601,7 @@ yeccpars2_192_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_193_,1}}).
+-compile({inline,yeccpars2_193_/1}).
 -file("megaco_text_parser_v3.yrl", 709).
 yeccpars2_193_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10581,14 +10611,14 @@ yeccpars2_193_(__Stack0) ->
     make_commandRequest ( { subtractReq , __1 } , SR )
   end | __Stack].
 
--compile({inline,{yeccpars2_197_,1}}).
+-compile({inline,yeccpars2_197_/1}).
 -file("megaco_text_parser_v3.yrl", 767).
 yeccpars2_197_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_198_,1}}).
+-compile({inline,yeccpars2_198_/1}).
 -file("megaco_text_parser_v3.yrl", 788).
 yeccpars2_198_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10596,7 +10626,7 @@ yeccpars2_198_(__Stack0) ->
    { terminationAudit , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_199_,1}}).
+-compile({inline,yeccpars2_199_/1}).
 -file("megaco_text_parser_v3.yrl", 815).
 yeccpars2_199_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10604,7 +10634,7 @@ yeccpars2_199_(__Stack0) ->
    { indAudStatisticsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_200_,1}}).
+-compile({inline,yeccpars2_200_/1}).
 -file("megaco_text_parser_v3.yrl", 809).
 yeccpars2_200_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10612,7 +10642,7 @@ yeccpars2_200_(__Stack0) ->
    { indAudSignalsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_201_,1}}).
+-compile({inline,yeccpars2_201_/1}).
 -file("megaco_text_parser_v3.yrl", 817).
 yeccpars2_201_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10620,7 +10650,7 @@ yeccpars2_201_(__Stack0) ->
    { indAudPackagesDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_202_,1}}).
+-compile({inline,yeccpars2_202_/1}).
 -file("megaco_text_parser_v3.yrl", 805).
 yeccpars2_202_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10628,7 +10658,7 @@ yeccpars2_202_(__Stack0) ->
    { indAudMediaDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_203_,1}}).
+-compile({inline,yeccpars2_203_/1}).
 -file("megaco_text_parser_v3.yrl", 807).
 yeccpars2_203_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10636,7 +10666,7 @@ yeccpars2_203_(__Stack0) ->
    { indAudEventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_204_,1}}).
+-compile({inline,yeccpars2_204_/1}).
 -file("megaco_text_parser_v3.yrl", 813).
 yeccpars2_204_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10644,7 +10674,7 @@ yeccpars2_204_(__Stack0) ->
    { indAudEventBufferDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_205_,1}}).
+-compile({inline,yeccpars2_205_/1}).
 -file("megaco_text_parser_v3.yrl", 811).
 yeccpars2_205_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10652,21 +10682,21 @@ yeccpars2_205_(__Stack0) ->
    { indAudDigitMapDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_206_,1}}).
+-compile({inline,yeccpars2_206_/1}).
 -file("megaco_text_parser_v3.yrl", 802).
 yeccpars2_206_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_208_,1}}).
+-compile({inline,yeccpars2_208_/1}).
 -file("megaco_text_parser_v3.yrl", 770).
 yeccpars2_208_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_210_,1}}).
+-compile({inline,yeccpars2_210_/1}).
 -file("megaco_text_parser_v3.yrl", 940).
 yeccpars2_210_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10674,7 +10704,7 @@ yeccpars2_210_(__Stack0) ->
    ensure_IADMD ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_211_,1}}).
+-compile({inline,yeccpars2_211_/1}).
 -file("megaco_text_parser_v3.yrl", 777).
 yeccpars2_211_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10682,7 +10712,7 @@ yeccpars2_211_(__Stack0) ->
    digitMapToken
   end | __Stack].
 
--compile({inline,{yeccpars2_212_,1}}).
+-compile({inline,yeccpars2_212_/1}).
 -file("megaco_text_parser_v3.yrl", 786).
 yeccpars2_212_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10690,7 +10720,7 @@ yeccpars2_212_(__Stack0) ->
    eventBufferToken
   end | __Stack].
 
--compile({inline,{yeccpars2_213_,1}}).
+-compile({inline,yeccpars2_213_/1}).
 -file("megaco_text_parser_v3.yrl", 787).
 yeccpars2_213_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10698,7 +10728,7 @@ yeccpars2_213_(__Stack0) ->
    eventsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_214_,1}}).
+-compile({inline,yeccpars2_214_/1}).
 -file("megaco_text_parser_v3.yrl", 776).
 yeccpars2_214_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10706,7 +10736,7 @@ yeccpars2_214_(__Stack0) ->
    mediaToken
   end | __Stack].
 
--compile({inline,{yeccpars2_215_,1}}).
+-compile({inline,yeccpars2_215_/1}).
 -file("megaco_text_parser_v3.yrl", 775).
 yeccpars2_215_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10714,7 +10744,7 @@ yeccpars2_215_(__Stack0) ->
    modemToken
   end | __Stack].
 
--compile({inline,{yeccpars2_216_,1}}).
+-compile({inline,yeccpars2_216_/1}).
 -file("megaco_text_parser_v3.yrl", 774).
 yeccpars2_216_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10722,7 +10752,7 @@ yeccpars2_216_(__Stack0) ->
    muxToken
   end | __Stack].
 
--compile({inline,{yeccpars2_217_,1}}).
+-compile({inline,yeccpars2_217_/1}).
 -file("megaco_text_parser_v3.yrl", 779).
 yeccpars2_217_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10730,7 +10760,7 @@ yeccpars2_217_(__Stack0) ->
    observedEventsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_218_,1}}).
+-compile({inline,yeccpars2_218_/1}).
 -file("megaco_text_parser_v3.yrl", 780).
 yeccpars2_218_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10738,7 +10768,7 @@ yeccpars2_218_(__Stack0) ->
    packagesToken
   end | __Stack].
 
--compile({inline,{yeccpars2_219_,1}}).
+-compile({inline,yeccpars2_219_/1}).
 -file("megaco_text_parser_v3.yrl", 785).
 yeccpars2_219_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10746,7 +10776,7 @@ yeccpars2_219_(__Stack0) ->
    signalsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_220_,1}}).
+-compile({inline,yeccpars2_220_/1}).
 -file("megaco_text_parser_v3.yrl", 778).
 yeccpars2_220_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10754,7 +10784,7 @@ yeccpars2_220_(__Stack0) ->
    statsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_222_,1}}).
+-compile({inline,yeccpars2_222_/1}).
 -file("megaco_text_parser_v3.yrl", 1189).
 yeccpars2_222_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10762,7 +10792,7 @@ yeccpars2_222_(__Stack0) ->
    ensure_pkgdName ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_224_,1}}).
+-compile({inline,yeccpars2_224_/1}).
 -file("megaco_text_parser_v3.yrl", 943).
 yeccpars2_224_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10770,7 +10800,7 @@ yeccpars2_224_(__Stack0) ->
    # 'IndAudStatisticsDescriptor' { statName = __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_225_,1}}).
+-compile({inline,yeccpars2_225_/1}).
 -file("megaco_text_parser_v3.yrl", 920).
 yeccpars2_225_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -10778,7 +10808,7 @@ yeccpars2_225_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_227_,1}}).
+-compile({inline,yeccpars2_227_/1}).
 -file("megaco_text_parser_v3.yrl", 927).
 yeccpars2_227_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10786,7 +10816,7 @@ yeccpars2_227_(__Stack0) ->
    { signal , ensure_indAudSignal ( __1 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_228_,1}}).
+-compile({inline,yeccpars2_228_/1}).
 -file("megaco_text_parser_v3.yrl", 1298).
 yeccpars2_228_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10794,7 +10824,7 @@ yeccpars2_228_(__Stack0) ->
    merge_signalRequest ( __1 , [ ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_231_,1}}).
+-compile({inline,yeccpars2_231_/1}).
 -file("megaco_text_parser_v3.yrl", 926).
 yeccpars2_231_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10802,7 +10832,7 @@ yeccpars2_231_(__Stack0) ->
    { seqSigList , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_232_,1}}).
+-compile({inline,yeccpars2_232_/1}).
 -file("megaco_text_parser_v3.yrl", 923).
 yeccpars2_232_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -10810,7 +10840,7 @@ yeccpars2_232_(__Stack0) ->
    asn1_NOVALUE
   end | __Stack].
 
--compile({inline,{yeccpars2_235_,1}}).
+-compile({inline,yeccpars2_235_/1}).
 -file("megaco_text_parser_v3.yrl", 930).
 yeccpars2_235_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10818,7 +10848,7 @@ yeccpars2_235_(__Stack0) ->
    # 'IndAudSeqSigList' { id = ensure_uint16 ( __3 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_236_,1}}).
+-compile({inline,yeccpars2_236_/1}).
 -file("megaco_text_parser_v3.yrl", 1368).
 yeccpars2_236_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10826,7 +10856,7 @@ yeccpars2_236_(__Stack0) ->
    ensure_uint16 ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_240_,1}}).
+-compile({inline,yeccpars2_240_/1}).
 -file("megaco_text_parser_v3.yrl", 933).
 yeccpars2_240_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10836,7 +10866,7 @@ yeccpars2_240_(__Stack0) ->
     ensure_indAudSignalListParm ( __5 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_241_,1}}).
+-compile({inline,yeccpars2_241_/1}).
 -file("megaco_text_parser_v3.yrl", 924).
 yeccpars2_241_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10844,14 +10874,14 @@ yeccpars2_241_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_243_,1}}).
+-compile({inline,yeccpars2_243_/1}).
 -file("megaco_text_parser_v3.yrl", 1301).
 yeccpars2_243_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_248_COMMA,1}}).
+-compile({inline,yeccpars2_248_COMMA/1}).
 -file("megaco_text_parser_v3.yrl", 1332).
 yeccpars2_248_COMMA(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10859,7 +10889,7 @@ yeccpars2_248_COMMA(__Stack0) ->
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_248_RBRKT,1}}).
+-compile({inline,yeccpars2_248_RBRKT/1}).
 -file("megaco_text_parser_v3.yrl", 1332).
 yeccpars2_248_RBRKT(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10867,7 +10897,7 @@ yeccpars2_248_RBRKT(__Stack0) ->
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_254_,1}}).
+-compile({inline,yeccpars2_254_/1}).
 -file("megaco_text_parser_v3.yrl", 1324).
 yeccpars2_254_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10875,7 +10905,7 @@ yeccpars2_254_(__Stack0) ->
    { stream , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_256_,1}}).
+-compile({inline,yeccpars2_256_/1}).
 -file("megaco_text_parser_v3.yrl", 1326).
 yeccpars2_256_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10883,7 +10913,7 @@ yeccpars2_256_(__Stack0) ->
    { signal_type , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_257_,1}}).
+-compile({inline,yeccpars2_257_/1}).
 -file("megaco_text_parser_v3.yrl", 1344).
 yeccpars2_257_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10891,7 +10921,7 @@ yeccpars2_257_(__Stack0) ->
    brief
   end | __Stack].
 
--compile({inline,{yeccpars2_258_,1}}).
+-compile({inline,yeccpars2_258_/1}).
 -file("megaco_text_parser_v3.yrl", 1342).
 yeccpars2_258_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10899,7 +10929,7 @@ yeccpars2_258_(__Stack0) ->
    onOff
   end | __Stack].
 
--compile({inline,{yeccpars2_259_,1}}).
+-compile({inline,yeccpars2_259_/1}).
 -file("megaco_text_parser_v3.yrl", 1343).
 yeccpars2_259_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10907,7 +10937,7 @@ yeccpars2_259_(__Stack0) ->
    timeOut
   end | __Stack].
 
--compile({inline,{yeccpars2_261_,1}}).
+-compile({inline,yeccpars2_261_/1}).
 -file("megaco_text_parser_v3.yrl", 1402).
 yeccpars2_261_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10915,7 +10945,7 @@ yeccpars2_261_(__Stack0) ->
    ensure_requestID ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_262_,1}}).
+-compile({inline,yeccpars2_262_/1}).
 -file("megaco_text_parser_v3.yrl", 1336).
 yeccpars2_262_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10923,14 +10953,14 @@ yeccpars2_262_(__Stack0) ->
    { requestId , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_265_,1}}).
+-compile({inline,yeccpars2_265_/1}).
 -file("megaco_text_parser_v3.yrl", 1351).
 yeccpars2_265_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_266_,1}}).
+-compile({inline,yeccpars2_266_/1}).
 -file("megaco_text_parser_v3.yrl", 1354).
 yeccpars2_266_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10938,7 +10968,7 @@ yeccpars2_266_(__Stack0) ->
    onInterruptByEvent
   end | __Stack].
 
--compile({inline,{yeccpars2_267_,1}}).
+-compile({inline,yeccpars2_267_/1}).
 -file("megaco_text_parser_v3.yrl", 1355).
 yeccpars2_267_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10946,7 +10976,7 @@ yeccpars2_267_(__Stack0) ->
    onInterruptByNewSignalDescr
   end | __Stack].
 
--compile({inline,{yeccpars2_268_,1}}).
+-compile({inline,yeccpars2_268_/1}).
 -file("megaco_text_parser_v3.yrl", 1357).
 yeccpars2_268_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10954,7 +10984,7 @@ yeccpars2_268_(__Stack0) ->
    iteration
   end | __Stack].
 
--compile({inline,{yeccpars2_269_,1}}).
+-compile({inline,yeccpars2_269_/1}).
 -file("megaco_text_parser_v3.yrl", 1356).
 yeccpars2_269_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10962,7 +10992,7 @@ yeccpars2_269_(__Stack0) ->
    otherReason
   end | __Stack].
 
--compile({inline,{yeccpars2_270_,1}}).
+-compile({inline,yeccpars2_270_/1}).
 -file("megaco_text_parser_v3.yrl", 1353).
 yeccpars2_270_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -10970,14 +11000,14 @@ yeccpars2_270_(__Stack0) ->
    onTimeOut
   end | __Stack].
 
--compile({inline,{yeccpars2_273_,1}}).
+-compile({inline,yeccpars2_273_/1}).
 -file("megaco_text_parser_v3.yrl", 1351).
 yeccpars2_273_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_274_,1}}).
+-compile({inline,yeccpars2_274_/1}).
 -file("megaco_text_parser_v3.yrl", 1350).
 yeccpars2_274_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -10985,7 +11015,7 @@ yeccpars2_274_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_275_,1}}).
+-compile({inline,yeccpars2_275_/1}).
 -file("megaco_text_parser_v3.yrl", 1331).
 yeccpars2_275_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -10993,7 +11023,7 @@ yeccpars2_275_(__Stack0) ->
    { notify_completion , [ __4 | __5 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_277_,1}}).
+-compile({inline,yeccpars2_277_/1}).
 -file("megaco_text_parser_v3.yrl", 1338).
 yeccpars2_277_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11001,7 +11031,7 @@ yeccpars2_277_(__Stack0) ->
    { intersigDelay , ensure_uint16 ( __3 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_279_,1}}).
+-compile({inline,yeccpars2_279_/1}).
 -file("megaco_text_parser_v3.yrl", 1328).
 yeccpars2_279_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11009,7 +11039,7 @@ yeccpars2_279_(__Stack0) ->
    { duration , ensure_uint16 ( __3 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_281_,1}}).
+-compile({inline,yeccpars2_281_/1}).
 -file("megaco_text_parser_v3.yrl", 1334).
 yeccpars2_281_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11017,7 +11047,7 @@ yeccpars2_281_(__Stack0) ->
    { direction , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_282_,1}}).
+-compile({inline,yeccpars2_282_/1}).
 -file("megaco_text_parser_v3.yrl", 1348).
 yeccpars2_282_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11025,7 +11055,7 @@ yeccpars2_282_(__Stack0) ->
    both
   end | __Stack].
 
--compile({inline,{yeccpars2_283_,1}}).
+-compile({inline,yeccpars2_283_/1}).
 -file("megaco_text_parser_v3.yrl", 1346).
 yeccpars2_283_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11033,7 +11063,7 @@ yeccpars2_283_(__Stack0) ->
    external
   end | __Stack].
 
--compile({inline,{yeccpars2_284_,1}}).
+-compile({inline,yeccpars2_284_/1}).
 -file("megaco_text_parser_v3.yrl", 1347).
 yeccpars2_284_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11041,7 +11071,7 @@ yeccpars2_284_(__Stack0) ->
    internal
   end | __Stack].
 
--compile({inline,{yeccpars2_285_,1}}).
+-compile({inline,yeccpars2_285_/1}).
 -file("megaco_text_parser_v3.yrl", 1340).
 yeccpars2_285_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11049,7 +11079,7 @@ yeccpars2_285_(__Stack0) ->
    { other , ensure_NAME ( __1 ) , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_290_,1}}).
+-compile({inline,yeccpars2_290_/1}).
 -file("megaco_text_parser_v3.yrl", 1122).
 yeccpars2_290_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11058,7 +11088,7 @@ yeccpars2_290_(__Stack0) ->
     extraInfo = { relation , unequalTo } }
   end | __Stack].
 
--compile({inline,{yeccpars2_291_,1}}).
+-compile({inline,yeccpars2_291_/1}).
 -file("megaco_text_parser_v3.yrl", 1546).
 yeccpars2_291_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11066,7 +11096,7 @@ yeccpars2_291_(__Stack0) ->
    ensure_value ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_292_,1}}).
+-compile({inline,yeccpars2_292_/1}).
 -file("megaco_text_parser_v3.yrl", 1545).
 yeccpars2_292_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11074,7 +11104,7 @@ yeccpars2_292_(__Stack0) ->
    ensure_value ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_293_,1}}).
+-compile({inline,yeccpars2_293_/1}).
 -file("megaco_text_parser_v3.yrl", 1125).
 yeccpars2_293_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11083,7 +11113,7 @@ yeccpars2_293_(__Stack0) ->
     extraInfo = { relation , smallerThan } }
   end | __Stack].
 
--compile({inline,{yeccpars2_294_,1}}).
+-compile({inline,yeccpars2_294_/1}).
 -file("megaco_text_parser_v3.yrl", 1128).
 yeccpars2_294_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11092,7 +11122,7 @@ yeccpars2_294_(__Stack0) ->
     extraInfo = { relation , greaterThan } }
   end | __Stack].
 
--compile({inline,{yeccpars2_295_,1}}).
+-compile({inline,yeccpars2_295_/1}).
 -file("megaco_text_parser_v3.yrl", 1149).
 yeccpars2_295_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11100,7 +11130,7 @@ yeccpars2_295_(__Stack0) ->
    # 'PropertyParm' { value = [ __1 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_296_,1}}).
+-compile({inline,yeccpars2_296_/1}).
 -file("megaco_text_parser_v3.yrl", 1119).
 yeccpars2_296_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11108,21 +11138,21 @@ yeccpars2_296_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_299_,1}}).
+-compile({inline,yeccpars2_299_/1}).
 -file("megaco_text_parser_v3.yrl", 1152).
 yeccpars2_299_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_303_,1}}).
+-compile({inline,yeccpars2_303_/1}).
 -file("megaco_text_parser_v3.yrl", 1152).
 yeccpars2_303_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_304_,1}}).
+-compile({inline,yeccpars2_304_/1}).
 -file("megaco_text_parser_v3.yrl", 1151).
 yeccpars2_304_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11130,7 +11160,7 @@ yeccpars2_304_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_306_,1}}).
+-compile({inline,yeccpars2_306_/1}).
 -file("megaco_text_parser_v3.yrl", 1141).
 yeccpars2_306_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11139,7 +11169,7 @@ yeccpars2_306_(__Stack0) ->
     extraInfo = { range , true } }
   end | __Stack].
 
--compile({inline,{yeccpars2_307_,1}}).
+-compile({inline,yeccpars2_307_/1}).
 -file("megaco_text_parser_v3.yrl", 1145).
 yeccpars2_307_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11148,14 +11178,14 @@ yeccpars2_307_(__Stack0) ->
     extraInfo = { sublist , true } }
   end | __Stack].
 
--compile({inline,{yeccpars2_308_,1}}).
+-compile({inline,yeccpars2_308_/1}).
 -file("megaco_text_parser_v3.yrl", 1152).
 yeccpars2_308_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_310_,1}}).
+-compile({inline,yeccpars2_310_/1}).
 -file("megaco_text_parser_v3.yrl", 1137).
 yeccpars2_310_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11164,14 +11194,14 @@ yeccpars2_310_(__Stack0) ->
     extraInfo = { sublist , false } }
   end | __Stack].
 
--compile({inline,{yeccpars2_313_,1}}).
+-compile({inline,yeccpars2_313_/1}).
 -file("megaco_text_parser_v3.yrl", 1301).
 yeccpars2_313_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_314_,1}}).
+-compile({inline,yeccpars2_314_/1}).
 -file("megaco_text_parser_v3.yrl", 1300).
 yeccpars2_314_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11179,7 +11209,7 @@ yeccpars2_314_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_315_,1}}).
+-compile({inline,yeccpars2_315_/1}).
 -file("megaco_text_parser_v3.yrl", 1297).
 yeccpars2_315_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11187,7 +11217,7 @@ yeccpars2_315_(__Stack0) ->
    merge_signalRequest ( __1 , [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_317_,1}}).
+-compile({inline,yeccpars2_317_/1}).
 -file("megaco_text_parser_v3.yrl", 1494).
 yeccpars2_317_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11195,7 +11225,7 @@ yeccpars2_317_(__Stack0) ->
    ensure_packagesItem ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_319_,1}}).
+-compile({inline,yeccpars2_319_/1}).
 -file("megaco_text_parser_v3.yrl", 946).
 yeccpars2_319_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11203,7 +11233,7 @@ yeccpars2_319_(__Stack0) ->
    merge_indAudPackagesDescriptor ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_321_,1}}).
+-compile({inline,yeccpars2_321_/1}).
 -file("megaco_text_parser_v3.yrl", 830).
 yeccpars2_321_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11211,7 +11241,7 @@ yeccpars2_321_(__Stack0) ->
    { termStateDescr , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_322_,1}}).
+-compile({inline,yeccpars2_322_/1}).
 -file("megaco_text_parser_v3.yrl", 828).
 yeccpars2_322_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11219,7 +11249,7 @@ yeccpars2_322_(__Stack0) ->
    { streamParm , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_323_,1}}).
+-compile({inline,yeccpars2_323_/1}).
 -file("megaco_text_parser_v3.yrl", 829).
 yeccpars2_323_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11227,7 +11257,7 @@ yeccpars2_323_(__Stack0) ->
    { streamDescr , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_324_,1}}).
+-compile({inline,yeccpars2_324_/1}).
 -file("megaco_text_parser_v3.yrl", 845).
 yeccpars2_324_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11235,14 +11265,14 @@ yeccpars2_324_(__Stack0) ->
    # 'IndAudStreamParms' { statisticsDescriptor = __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_325_,1}}).
+-compile({inline,yeccpars2_325_/1}).
 -file("megaco_text_parser_v3.yrl", 833).
 yeccpars2_325_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_326_,1}}).
+-compile({inline,yeccpars2_326_/1}).
 -file("megaco_text_parser_v3.yrl", 843).
 yeccpars2_326_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11250,7 +11280,7 @@ yeccpars2_326_(__Stack0) ->
    # 'IndAudStreamParms' { localControlDescriptor = __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_328_,1}}).
+-compile({inline,yeccpars2_328_/1}).
 -file("megaco_text_parser_v3.yrl", 840).
 yeccpars2_328_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11259,7 +11289,7 @@ yeccpars2_328_(__Stack0) ->
     # 'IndAudStreamParms' { localDescriptor = LD }
   end | __Stack].
 
--compile({inline,{yeccpars2_329_,1}}).
+-compile({inline,yeccpars2_329_/1}).
 -file("megaco_text_parser_v3.yrl", 837).
 yeccpars2_329_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11268,7 +11298,7 @@ yeccpars2_329_(__Stack0) ->
     # 'IndAudStreamParms' { remoteDescriptor = RD }
   end | __Stack].
 
--compile({inline,{yeccpars2_334_,1}}).
+-compile({inline,yeccpars2_334_/1}).
 -file("megaco_text_parser_v3.yrl", 886).
 yeccpars2_334_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11276,7 +11306,7 @@ yeccpars2_334_(__Stack0) ->
    { prop , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_335_,1}}).
+-compile({inline,yeccpars2_335_/1}).
 -file("megaco_text_parser_v3.yrl", 887).
 yeccpars2_335_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11284,7 +11314,7 @@ yeccpars2_335_(__Stack0) ->
    { name , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_338_,1}}).
+-compile({inline,yeccpars2_338_/1}).
 -file("megaco_text_parser_v3.yrl", 885).
 yeccpars2_338_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11292,7 +11322,7 @@ yeccpars2_338_(__Stack0) ->
    bufferToken
   end | __Stack].
 
--compile({inline,{yeccpars2_339_,1}}).
+-compile({inline,yeccpars2_339_/1}).
 -file("megaco_text_parser_v3.yrl", 890).
 yeccpars2_339_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11300,7 +11330,7 @@ yeccpars2_339_(__Stack0) ->
    serviceStatesToken
   end | __Stack].
 
--compile({inline,{yeccpars2_342_,1}}).
+-compile({inline,yeccpars2_342_/1}).
 -file("megaco_text_parser_v3.yrl", 894).
 yeccpars2_342_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11308,7 +11338,7 @@ yeccpars2_342_(__Stack0) ->
    { serviceStates , { inequal , __3 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_343_,1}}).
+-compile({inline,yeccpars2_343_/1}).
 -file("megaco_text_parser_v3.yrl", 1174).
 yeccpars2_343_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11316,7 +11346,7 @@ yeccpars2_343_(__Stack0) ->
    inSvc
   end | __Stack].
 
--compile({inline,{yeccpars2_344_,1}}).
+-compile({inline,yeccpars2_344_/1}).
 -file("megaco_text_parser_v3.yrl", 1173).
 yeccpars2_344_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11324,7 +11354,7 @@ yeccpars2_344_(__Stack0) ->
    outOfSvc
   end | __Stack].
 
--compile({inline,{yeccpars2_345_,1}}).
+-compile({inline,yeccpars2_345_/1}).
 -file("megaco_text_parser_v3.yrl", 1172).
 yeccpars2_345_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11332,7 +11362,7 @@ yeccpars2_345_(__Stack0) ->
    test
   end | __Stack].
 
--compile({inline,{yeccpars2_346_,1}}).
+-compile({inline,yeccpars2_346_/1}).
 -file("megaco_text_parser_v3.yrl", 892).
 yeccpars2_346_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11340,7 +11370,7 @@ yeccpars2_346_(__Stack0) ->
    { serviceStates , { equal , __3 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_347_,1}}).
+-compile({inline,yeccpars2_347_/1}).
 -file("megaco_text_parser_v3.yrl", 878).
 yeccpars2_347_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11348,7 +11378,7 @@ yeccpars2_347_(__Stack0) ->
    merge_indAudTerminationStateDescriptor ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_348_,1}}).
+-compile({inline,yeccpars2_348_/1}).
 -file("megaco_text_parser_v3.yrl", 1116).
 yeccpars2_348_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11356,7 +11386,7 @@ yeccpars2_348_(__Stack0) ->
    setelement ( # 'PropertyParm' .name , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_353_,1}}).
+-compile({inline,yeccpars2_353_/1}).
 -file("megaco_text_parser_v3.yrl", 849).
 yeccpars2_353_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11365,7 +11395,7 @@ yeccpars2_353_(__Stack0) ->
     streamParms = __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_355_,1}}).
+-compile({inline,yeccpars2_355_/1}).
 -file("megaco_text_parser_v3.yrl", 872).
 yeccpars2_355_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11373,7 +11403,7 @@ yeccpars2_355_(__Stack0) ->
    { prop , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_356_,1}}).
+-compile({inline,yeccpars2_356_/1}).
 -file("megaco_text_parser_v3.yrl", 873).
 yeccpars2_356_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11381,14 +11411,14 @@ yeccpars2_356_(__Stack0) ->
    { name , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_357_,1}}).
+-compile({inline,yeccpars2_357_/1}).
 -file("megaco_text_parser_v3.yrl", 860).
 yeccpars2_357_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_358_,1}}).
+-compile({inline,yeccpars2_358_/1}).
 -file("megaco_text_parser_v3.yrl", 869).
 yeccpars2_358_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11396,7 +11426,7 @@ yeccpars2_358_(__Stack0) ->
    modeToken
   end | __Stack].
 
--compile({inline,{yeccpars2_359_,1}}).
+-compile({inline,yeccpars2_359_/1}).
 -file("megaco_text_parser_v3.yrl", 867).
 yeccpars2_359_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11404,7 +11434,7 @@ yeccpars2_359_(__Stack0) ->
    reservedGroupToken
   end | __Stack].
 
--compile({inline,{yeccpars2_360_,1}}).
+-compile({inline,yeccpars2_360_/1}).
 -file("megaco_text_parser_v3.yrl", 868).
 yeccpars2_360_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11412,7 +11442,7 @@ yeccpars2_360_(__Stack0) ->
    reservedValueToken
   end | __Stack].
 
--compile({inline,{yeccpars2_363_,1}}).
+-compile({inline,yeccpars2_363_/1}).
 -file("megaco_text_parser_v3.yrl", 871).
 yeccpars2_363_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11420,7 +11450,7 @@ yeccpars2_363_(__Stack0) ->
    { mode , { inequal , __3 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_364_,1}}).
+-compile({inline,yeccpars2_364_/1}).
 -file("megaco_text_parser_v3.yrl", 1112).
 yeccpars2_364_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11428,7 +11458,7 @@ yeccpars2_364_(__Stack0) ->
    inactive
   end | __Stack].
 
--compile({inline,{yeccpars2_365_,1}}).
+-compile({inline,yeccpars2_365_/1}).
 -file("megaco_text_parser_v3.yrl", 1113).
 yeccpars2_365_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11436,7 +11466,7 @@ yeccpars2_365_(__Stack0) ->
    loopBack
   end | __Stack].
 
--compile({inline,{yeccpars2_366_,1}}).
+-compile({inline,yeccpars2_366_/1}).
 -file("megaco_text_parser_v3.yrl", 1110).
 yeccpars2_366_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11444,7 +11474,7 @@ yeccpars2_366_(__Stack0) ->
    recvOnly
   end | __Stack].
 
--compile({inline,{yeccpars2_367_,1}}).
+-compile({inline,yeccpars2_367_/1}).
 -file("megaco_text_parser_v3.yrl", 1109).
 yeccpars2_367_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11452,7 +11482,7 @@ yeccpars2_367_(__Stack0) ->
    sendOnly
   end | __Stack].
 
--compile({inline,{yeccpars2_368_,1}}).
+-compile({inline,yeccpars2_368_/1}).
 -file("megaco_text_parser_v3.yrl", 1111).
 yeccpars2_368_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11460,7 +11490,7 @@ yeccpars2_368_(__Stack0) ->
    sendRecv
   end | __Stack].
 
--compile({inline,{yeccpars2_369_,1}}).
+-compile({inline,yeccpars2_369_/1}).
 -file("megaco_text_parser_v3.yrl", 870).
 yeccpars2_369_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11468,14 +11498,14 @@ yeccpars2_369_(__Stack0) ->
    { mode , { equal , __3 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_372_,1}}).
+-compile({inline,yeccpars2_372_/1}).
 -file("megaco_text_parser_v3.yrl", 860).
 yeccpars2_372_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_373_,1}}).
+-compile({inline,yeccpars2_373_/1}).
 -file("megaco_text_parser_v3.yrl", 859).
 yeccpars2_373_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11483,7 +11513,7 @@ yeccpars2_373_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_374_,1}}).
+-compile({inline,yeccpars2_374_/1}).
 -file("megaco_text_parser_v3.yrl", 856).
 yeccpars2_374_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11491,14 +11521,14 @@ yeccpars2_374_(__Stack0) ->
    merge_indAudLocalControlDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_377_,1}}).
+-compile({inline,yeccpars2_377_/1}).
 -file("megaco_text_parser_v3.yrl", 833).
 yeccpars2_377_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_378_,1}}).
+-compile({inline,yeccpars2_378_/1}).
 -file("megaco_text_parser_v3.yrl", 832).
 yeccpars2_378_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11506,7 +11536,7 @@ yeccpars2_378_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_379_,1}}).
+-compile({inline,yeccpars2_379_/1}).
 -file("megaco_text_parser_v3.yrl", 822).
 yeccpars2_379_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11514,7 +11544,7 @@ yeccpars2_379_(__Stack0) ->
    merge_indAudMediaDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_384_,1}}).
+-compile({inline,yeccpars2_384_/1}).
 -file("megaco_text_parser_v3.yrl", 911).
 yeccpars2_384_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11522,7 +11552,7 @@ yeccpars2_384_(__Stack0) ->
    # 'IndAudEventsDescriptor' { pkgdName = __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_388_,1}}).
+-compile({inline,yeccpars2_388_/1}).
 -file("megaco_text_parser_v3.yrl", 914).
 yeccpars2_388_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11531,14 +11561,14 @@ yeccpars2_388_(__Stack0) ->
     pkgdName = __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_390_,1}}).
+-compile({inline,yeccpars2_390_/1}).
 -file("megaco_text_parser_v3.yrl", 904).
 yeccpars2_390_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_392_,1}}).
+-compile({inline,yeccpars2_392_/1}).
 -file("megaco_text_parser_v3.yrl", 897).
 yeccpars2_392_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11546,7 +11576,7 @@ yeccpars2_392_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_393_,1}}).
+-compile({inline,yeccpars2_393_/1}).
 -file("megaco_text_parser_v3.yrl", 900).
 yeccpars2_393_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11554,7 +11584,7 @@ yeccpars2_393_(__Stack0) ->
    merge_indAudEventBufferDescriptor ( __1 , __2 )
   end | __Stack].
 
--compile({inline,{yeccpars2_395_,1}}).
+-compile({inline,yeccpars2_395_/1}).
 -file("megaco_text_parser_v3.yrl", 1279).
 yeccpars2_395_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11562,7 +11592,7 @@ yeccpars2_395_(__Stack0) ->
    ensure_NAME ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_397_,1}}).
+-compile({inline,yeccpars2_397_/1}).
 -file("megaco_text_parser_v3.yrl", 907).
 yeccpars2_397_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11570,7 +11600,7 @@ yeccpars2_397_(__Stack0) ->
    { streamID , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_398_,1}}).
+-compile({inline,yeccpars2_398_/1}).
 -file("megaco_text_parser_v3.yrl", 908).
 yeccpars2_398_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11578,7 +11608,7 @@ yeccpars2_398_(__Stack0) ->
    { eventParameterName , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_399_,1}}).
+-compile({inline,yeccpars2_399_/1}).
 -file("megaco_text_parser_v3.yrl", 903).
 yeccpars2_399_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11586,7 +11616,7 @@ yeccpars2_399_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_400_,1}}).
+-compile({inline,yeccpars2_400_/1}).
 -file("megaco_text_parser_v3.yrl", 764).
 yeccpars2_400_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11594,7 +11624,7 @@ yeccpars2_400_(__Stack0) ->
    merge_auditDescriptor ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_401_,1}}).
+-compile({inline,yeccpars2_401_/1}).
 -file("megaco_text_parser_v3.yrl", 766).
 yeccpars2_401_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11602,14 +11632,14 @@ yeccpars2_401_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_403_,1}}).
+-compile({inline,yeccpars2_403_/1}).
 -file("megaco_text_parser_v3.yrl", 770).
 yeccpars2_403_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_404_,1}}).
+-compile({inline,yeccpars2_404_/1}).
 -file("megaco_text_parser_v3.yrl", 769).
 yeccpars2_404_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11617,7 +11647,7 @@ yeccpars2_404_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_405_,1}}).
+-compile({inline,yeccpars2_405_/1}).
 -file("megaco_text_parser_v3.yrl", 797).
 yeccpars2_405_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11625,14 +11655,14 @@ yeccpars2_405_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_407_,1}}).
+-compile({inline,yeccpars2_407_/1}).
 -file("megaco_text_parser_v3.yrl", 802).
 yeccpars2_407_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_413_,1}}).
+-compile({inline,yeccpars2_413_/1}).
 -file("megaco_text_parser_v3.yrl", 801).
 yeccpars2_413_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11640,7 +11670,7 @@ yeccpars2_413_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_414_,1}}).
+-compile({inline,yeccpars2_414_/1}).
 -file("megaco_text_parser_v3.yrl", 714).
 yeccpars2_414_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11648,7 +11678,7 @@ yeccpars2_414_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_421_,1}}).
+-compile({inline,yeccpars2_421_/1}).
 -file("megaco_text_parser_v3.yrl", 1444).
 yeccpars2_421_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11656,7 +11686,7 @@ yeccpars2_421_(__Stack0) ->
    { time_stamp , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_422_,1}}).
+-compile({inline,yeccpars2_422_/1}).
 -file("megaco_text_parser_v3.yrl", 1446).
 yeccpars2_422_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11664,7 +11694,7 @@ yeccpars2_422_(__Stack0) ->
    { version , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_423_,1}}).
+-compile({inline,yeccpars2_423_/1}).
 -file("megaco_text_parser_v3.yrl", 1439).
 yeccpars2_423_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11672,7 +11702,7 @@ yeccpars2_423_(__Stack0) ->
    { reason , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_424_,1}}).
+-compile({inline,yeccpars2_424_/1}).
 -file("megaco_text_parser_v3.yrl", 1442).
 yeccpars2_424_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11680,14 +11710,14 @@ yeccpars2_424_(__Stack0) ->
    { profile , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_425_,1}}).
+-compile({inline,yeccpars2_425_/1}).
 -file("megaco_text_parser_v3.yrl", 1436).
 yeccpars2_425_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_426_,1}}).
+-compile({inline,yeccpars2_426_/1}).
 -file("megaco_text_parser_v3.yrl", 1445).
 yeccpars2_426_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11695,7 +11725,7 @@ yeccpars2_426_(__Stack0) ->
    { mgc_id , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_427_,1}}).
+-compile({inline,yeccpars2_427_/1}).
 -file("megaco_text_parser_v3.yrl", 1438).
 yeccpars2_427_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11703,7 +11733,7 @@ yeccpars2_427_(__Stack0) ->
    { method , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_428_,1}}).
+-compile({inline,yeccpars2_428_/1}).
 -file("megaco_text_parser_v3.yrl", 1440).
 yeccpars2_428_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11711,7 +11741,7 @@ yeccpars2_428_(__Stack0) ->
    { delay , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_429_,1}}).
+-compile({inline,yeccpars2_429_/1}).
 -file("megaco_text_parser_v3.yrl", 1441).
 yeccpars2_429_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11719,7 +11749,7 @@ yeccpars2_429_(__Stack0) ->
    { address , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_430_,1}}).
+-compile({inline,yeccpars2_430_/1}).
 -file("megaco_text_parser_v3.yrl", 1543).
 yeccpars2_430_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11727,7 +11757,7 @@ yeccpars2_430_(__Stack0) ->
    ensure_extensionParameter ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_432_,1}}).
+-compile({inline,yeccpars2_432_/1}).
 -file("megaco_text_parser_v3.yrl", 1443).
 yeccpars2_432_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11735,7 +11765,7 @@ yeccpars2_432_(__Stack0) ->
    { extension , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_433_,1}}).
+-compile({inline,yeccpars2_433_/1}).
 -file("megaco_text_parser_v3.yrl", 1448).
 yeccpars2_433_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11743,7 +11773,7 @@ yeccpars2_433_(__Stack0) ->
    { audit_item , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_440_,1}}).
+-compile({inline,yeccpars2_440_/1}).
 -file("megaco_text_parser_v3.yrl", 1447).
 yeccpars2_440_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11751,7 +11781,7 @@ yeccpars2_440_(__Stack0) ->
    incomplete
   end | __Stack].
 
--compile({inline,{yeccpars2_441_,1}}).
+-compile({inline,yeccpars2_441_/1}).
 -file("megaco_text_parser_v3.yrl", 1496).
 yeccpars2_441_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11759,7 +11789,7 @@ yeccpars2_441_(__Stack0) ->
    ensure_timeStamp ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_444_,1}}).
+-compile({inline,yeccpars2_444_/1}).
 -file("megaco_text_parser_v3.yrl", 1465).
 yeccpars2_444_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11767,14 +11797,14 @@ yeccpars2_444_(__Stack0) ->
    ensure_version ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_445_,1}}).
+-compile({inline,yeccpars2_445_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_445_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_446_,1}}).
+-compile({inline,yeccpars2_446_/1}).
 -file("megaco_text_parser_v3.yrl", 1459).
 yeccpars2_446_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11782,7 +11812,7 @@ yeccpars2_446_(__Stack0) ->
    { portNumber , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_447_,1}}).
+-compile({inline,yeccpars2_447_/1}).
 -file("megaco_text_parser_v3.yrl", 1457).
 yeccpars2_447_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11790,7 +11820,7 @@ yeccpars2_447_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_449_,1}}).
+-compile({inline,yeccpars2_449_/1}).
 -file("megaco_text_parser_v3.yrl", 1453).
 yeccpars2_449_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11798,7 +11828,7 @@ yeccpars2_449_(__Stack0) ->
    [ __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_451_,1}}).
+-compile({inline,yeccpars2_451_/1}).
 -file("megaco_text_parser_v3.yrl", 1463).
 yeccpars2_451_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11806,14 +11836,14 @@ yeccpars2_451_(__Stack0) ->
    ensure_profile ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_452_,1}}).
+-compile({inline,yeccpars2_452_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_452_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_453_,1}}).
+-compile({inline,yeccpars2_453_/1}).
 -file("megaco_text_parser_v3.yrl", 1461).
 yeccpars2_453_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11821,7 +11851,7 @@ yeccpars2_453_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_455_,1}}).
+-compile({inline,yeccpars2_455_/1}).
 -file("megaco_text_parser_v3.yrl", 1451).
 yeccpars2_455_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11829,7 +11859,7 @@ yeccpars2_455_(__Stack0) ->
    ensure_serviceChangeMethod ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_457_,1}}).
+-compile({inline,yeccpars2_457_/1}).
 -file("megaco_text_parser_v3.yrl", 1455).
 yeccpars2_457_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11837,7 +11867,7 @@ yeccpars2_457_(__Stack0) ->
    ensure_uint32 ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_458_,1}}).
+-compile({inline,yeccpars2_458_/1}).
 -file("megaco_text_parser_v3.yrl", 1468).
 yeccpars2_458_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11845,14 +11875,14 @@ yeccpars2_458_(__Stack0) ->
    setelement ( # 'PropertyParm' .name , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_461_,1}}).
+-compile({inline,yeccpars2_461_/1}).
 -file("megaco_text_parser_v3.yrl", 1436).
 yeccpars2_461_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_462_,1}}).
+-compile({inline,yeccpars2_462_/1}).
 -file("megaco_text_parser_v3.yrl", 1435).
 yeccpars2_462_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11860,7 +11890,7 @@ yeccpars2_462_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_463_,1}}).
+-compile({inline,yeccpars2_463_/1}).
 -file("megaco_text_parser_v3.yrl", 1432).
 yeccpars2_463_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11868,7 +11898,7 @@ yeccpars2_463_(__Stack0) ->
    merge_ServiceChangeParm ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_464_,1}}).
+-compile({inline,yeccpars2_464_/1}).
 -file("megaco_text_parser_v3.yrl", 974).
 yeccpars2_464_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11878,7 +11908,7 @@ yeccpars2_464_(__Stack0) ->
     serviceChangeParms = __5 } )
   end | __Stack].
 
--compile({inline,{yeccpars2_466_,1}}).
+-compile({inline,yeccpars2_466_/1}).
 -file("megaco_text_parser_v3.yrl", 1541).
 yeccpars2_466_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11886,7 +11916,7 @@ yeccpars2_466_(__Stack0) ->
    ensure_uint16 ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_470_,1}}).
+-compile({inline,yeccpars2_470_/1}).
 -file("megaco_text_parser_v3.yrl", 961).
 yeccpars2_470_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11894,7 +11924,7 @@ yeccpars2_470_(__Stack0) ->
    # 'NotifyRequest' { observedEventsDescriptor = __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_472_,1}}).
+-compile({inline,yeccpars2_472_/1}).
 -file("megaco_text_parser_v3.yrl", 963).
 yeccpars2_472_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -11902,42 +11932,42 @@ yeccpars2_472_(__Stack0) ->
    # 'NotifyRequest' { errorDescriptor = __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_476_,1}}).
+-compile({inline,yeccpars2_476_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_476_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_477_,1}}).
+-compile({inline,yeccpars2_477_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_477_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_479_,1}}).
+-compile({inline,yeccpars2_479_/1}).
 -file("megaco_text_parser_v3.yrl", 1382).
 yeccpars2_479_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_481_,1}}).
+-compile({inline,yeccpars2_481_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_481_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_482_,1}}).
+-compile({inline,yeccpars2_482_/1}).
 -file("megaco_text_parser_v3.yrl", 1382).
 yeccpars2_482_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_483_,1}}).
+-compile({inline,yeccpars2_483_/1}).
 -file("megaco_text_parser_v3.yrl", 1381).
 yeccpars2_483_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11945,7 +11975,7 @@ yeccpars2_483_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_484_,1}}).
+-compile({inline,yeccpars2_484_/1}).
 -file("megaco_text_parser_v3.yrl", 1378).
 yeccpars2_484_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -11954,14 +11984,14 @@ yeccpars2_484_(__Stack0) ->
     observedEventLst = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_485_,1}}).
+-compile({inline,yeccpars2_485_/1}).
 -file("megaco_text_parser_v3.yrl", 1394).
 yeccpars2_485_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_486_,1}}).
+-compile({inline,yeccpars2_486_/1}).
 -file("megaco_text_parser_v3.yrl", 1389).
 yeccpars2_486_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11969,14 +11999,14 @@ yeccpars2_486_(__Stack0) ->
    merge_observed_event ( __3 , __2 , asn1_NOVALUE )
   end | __Stack].
 
--compile({inline,{yeccpars2_488_,1}}).
+-compile({inline,yeccpars2_488_/1}).
 -file("megaco_text_parser_v3.yrl", 1397).
 yeccpars2_488_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_491_,1}}).
+-compile({inline,yeccpars2_491_/1}).
 -file("megaco_text_parser_v3.yrl", 1277).
 yeccpars2_491_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -11984,14 +12014,14 @@ yeccpars2_491_(__Stack0) ->
    select_stream_or_other ( __1 , __2 )
   end | __Stack].
 
--compile({inline,{yeccpars2_494_,1}}).
+-compile({inline,yeccpars2_494_/1}).
 -file("megaco_text_parser_v3.yrl", 1397).
 yeccpars2_494_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_495_,1}}).
+-compile({inline,yeccpars2_495_/1}).
 -file("megaco_text_parser_v3.yrl", 1396).
 yeccpars2_495_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -11999,7 +12029,7 @@ yeccpars2_495_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_496_,1}}).
+-compile({inline,yeccpars2_496_/1}).
 -file("megaco_text_parser_v3.yrl", 1393).
 yeccpars2_496_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12007,21 +12037,21 @@ yeccpars2_496_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_498_,1}}).
+-compile({inline,yeccpars2_498_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_498_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_500_,1}}).
+-compile({inline,yeccpars2_500_/1}).
 -file("megaco_text_parser_v3.yrl", 1394).
 yeccpars2_500_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_501_,1}}).
+-compile({inline,yeccpars2_501_/1}).
 -file("megaco_text_parser_v3.yrl", 1387).
 yeccpars2_501_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12029,7 +12059,7 @@ yeccpars2_501_(__Stack0) ->
    merge_observed_event ( __6 , __5 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_502_,1}}).
+-compile({inline,yeccpars2_502_/1}).
 -file("megaco_text_parser_v3.yrl", 956).
 yeccpars2_502_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12039,7 +12069,7 @@ yeccpars2_502_(__Stack0) ->
     make_commandRequest ( { notifyReq , __1 } , NR )
   end | __Stack].
 
--compile({inline,{yeccpars2_504_,1}}).
+-compile({inline,yeccpars2_504_/1}).
 -file("megaco_text_parser_v3.yrl", 1536).
 yeccpars2_504_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12047,7 +12077,7 @@ yeccpars2_504_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_505_,1}}).
+-compile({inline,yeccpars2_505_/1}).
 -file("megaco_text_parser_v3.yrl", 1106).
 yeccpars2_505_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12055,7 +12085,7 @@ yeccpars2_505_(__Stack0) ->
    false
   end | __Stack].
 
--compile({inline,{yeccpars2_506_,1}}).
+-compile({inline,yeccpars2_506_/1}).
 -file("megaco_text_parser_v3.yrl", 1105).
 yeccpars2_506_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12063,7 +12093,7 @@ yeccpars2_506_(__Stack0) ->
    true
   end | __Stack].
 
--compile({inline,{yeccpars2_508_,1}}).
+-compile({inline,yeccpars2_508_/1}).
 -file("megaco_text_parser_v3.yrl", 605).
 yeccpars2_508_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12071,7 +12101,7 @@ yeccpars2_508_(__Stack0) ->
    { select_prio , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_509_,1}}).
+-compile({inline,yeccpars2_509_/1}).
 -file("megaco_text_parser_v3.yrl", 601).
 yeccpars2_509_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12079,7 +12109,7 @@ yeccpars2_509_(__Stack0) ->
    { prop , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_511_,1}}).
+-compile({inline,yeccpars2_511_/1}).
 -file("megaco_text_parser_v3.yrl", 607).
 yeccpars2_511_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12087,7 +12117,7 @@ yeccpars2_511_(__Stack0) ->
    { select_ieps , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_512_,1}}).
+-compile({inline,yeccpars2_512_/1}).
 -file("megaco_text_parser_v3.yrl", 606).
 yeccpars2_512_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12095,14 +12125,14 @@ yeccpars2_512_(__Stack0) ->
    { select_emergency , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_514_,1}}).
+-compile({inline,yeccpars2_514_/1}).
 -file("megaco_text_parser_v3.yrl", 594).
 yeccpars2_514_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_516_,1}}).
+-compile({inline,yeccpars2_516_/1}).
 -file("megaco_text_parser_v3.yrl", 608).
 yeccpars2_516_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12110,7 +12140,7 @@ yeccpars2_516_(__Stack0) ->
    { select_logic , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_517_,1}}).
+-compile({inline,yeccpars2_517_/1}).
 -file("megaco_text_parser_v3.yrl", 611).
 yeccpars2_517_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12118,7 +12148,7 @@ yeccpars2_517_(__Stack0) ->
    { andAUDITSelect , 'NULL' }
   end | __Stack].
 
--compile({inline,{yeccpars2_519_,1}}).
+-compile({inline,yeccpars2_519_/1}).
 -file("megaco_text_parser_v3.yrl", 598).
 yeccpars2_519_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12126,7 +12156,7 @@ yeccpars2_519_(__Stack0) ->
    emergencyAudit
   end | __Stack].
 
--compile({inline,{yeccpars2_521_,1}}).
+-compile({inline,yeccpars2_521_/1}).
 -file("megaco_text_parser_v3.yrl", 600).
 yeccpars2_521_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12134,7 +12164,7 @@ yeccpars2_521_(__Stack0) ->
    iepsCallind
   end | __Stack].
 
--compile({inline,{yeccpars2_522_,1}}).
+-compile({inline,yeccpars2_522_/1}).
 -file("megaco_text_parser_v3.yrl", 612).
 yeccpars2_522_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12142,7 +12172,7 @@ yeccpars2_522_(__Stack0) ->
    { orAUDITSelect , 'NULL' }
   end | __Stack].
 
--compile({inline,{yeccpars2_523_,1}}).
+-compile({inline,yeccpars2_523_/1}).
 -file("megaco_text_parser_v3.yrl", 599).
 yeccpars2_523_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12150,7 +12180,7 @@ yeccpars2_523_(__Stack0) ->
    priorityAudit
   end | __Stack].
 
--compile({inline,{yeccpars2_524_,1}}).
+-compile({inline,yeccpars2_524_/1}).
 -file("megaco_text_parser_v3.yrl", 597).
 yeccpars2_524_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12158,7 +12188,7 @@ yeccpars2_524_(__Stack0) ->
    topologyAudit
   end | __Stack].
 
--compile({inline,{yeccpars2_526_,1}}).
+-compile({inline,yeccpars2_526_/1}).
 -file("megaco_text_parser_v3.yrl", 1539).
 yeccpars2_526_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12166,7 +12196,7 @@ yeccpars2_526_(__Stack0) ->
    false
   end | __Stack].
 
--compile({inline,{yeccpars2_527_,1}}).
+-compile({inline,yeccpars2_527_/1}).
 -file("megaco_text_parser_v3.yrl", 1538).
 yeccpars2_527_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12174,14 +12204,14 @@ yeccpars2_527_(__Stack0) ->
    true
   end | __Stack].
 
--compile({inline,{yeccpars2_530_,1}}).
+-compile({inline,yeccpars2_530_/1}).
 -file("megaco_text_parser_v3.yrl", 1418).
 yeccpars2_530_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_531_,1}}).
+-compile({inline,yeccpars2_531_/1}).
 -file("megaco_text_parser_v3.yrl", 601).
 yeccpars2_531_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12189,28 +12219,28 @@ yeccpars2_531_(__Stack0) ->
    { prop , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_533_,1}}).
+-compile({inline,yeccpars2_533_/1}).
 -file("megaco_text_parser_v3.yrl", 594).
 yeccpars2_533_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_537_,1}}).
+-compile({inline,yeccpars2_537_/1}).
 -file("megaco_text_parser_v3.yrl", 576).
 yeccpars2_537_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_540_,1}}).
+-compile({inline,yeccpars2_540_/1}).
 -file("megaco_text_parser_v3.yrl", 576).
 yeccpars2_540_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_541_,1}}).
+-compile({inline,yeccpars2_541_/1}).
 -file("megaco_text_parser_v3.yrl", 575).
 yeccpars2_541_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12218,7 +12248,7 @@ yeccpars2_541_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_542_,1}}).
+-compile({inline,yeccpars2_542_/1}).
 -file("megaco_text_parser_v3.yrl", 573).
 yeccpars2_542_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12226,14 +12256,14 @@ yeccpars2_542_(__Stack0) ->
    [ __4 | __5 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_545_,1}}).
+-compile({inline,yeccpars2_545_/1}).
 -file("megaco_text_parser_v3.yrl", 594).
 yeccpars2_545_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_546_,1}}).
+-compile({inline,yeccpars2_546_/1}).
 -file("megaco_text_parser_v3.yrl", 593).
 yeccpars2_546_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12241,7 +12271,7 @@ yeccpars2_546_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_547_,1}}).
+-compile({inline,yeccpars2_547_/1}).
 -file("megaco_text_parser_v3.yrl", 590).
 yeccpars2_547_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12249,7 +12279,7 @@ yeccpars2_547_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_548_,1}}).
+-compile({inline,yeccpars2_548_/1}).
 -file("megaco_text_parser_v3.yrl", 570).
 yeccpars2_548_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12257,7 +12287,7 @@ yeccpars2_548_(__Stack0) ->
    { contextList , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_549_,1}}).
+-compile({inline,yeccpars2_549_/1}).
 -file("megaco_text_parser_v3.yrl", 1416).
 yeccpars2_549_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -12265,14 +12295,14 @@ yeccpars2_549_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_551_,1}}).
+-compile({inline,yeccpars2_551_/1}).
 -file("megaco_text_parser_v3.yrl", 1418).
 yeccpars2_551_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_553_,1}}).
+-compile({inline,yeccpars2_553_/1}).
 -file("megaco_text_parser_v3.yrl", 1417).
 yeccpars2_553_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12280,7 +12310,7 @@ yeccpars2_553_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_554_,1}}).
+-compile({inline,yeccpars2_554_/1}).
 -file("megaco_text_parser_v3.yrl", 568).
 yeccpars2_554_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12288,7 +12318,7 @@ yeccpars2_554_(__Stack0) ->
    { contextProp , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_556_,1}}).
+-compile({inline,yeccpars2_556_/1}).
 -file("megaco_text_parser_v3.yrl", 584).
 yeccpars2_556_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12297,7 +12327,7 @@ yeccpars2_556_(__Stack0) ->
     # 'ContextAttrAuditRequest' { } , [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_557_,1}}).
+-compile({inline,yeccpars2_557_/1}).
 -file("megaco_text_parser_v3.yrl", 580).
 yeccpars2_557_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12306,14 +12336,14 @@ yeccpars2_557_(__Stack0) ->
     # 'ContextAttrAuditRequest' { } , __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_560_,1}}).
+-compile({inline,yeccpars2_560_/1}).
 -file("megaco_text_parser_v3.yrl", 715).
 yeccpars2_560_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_561_,1}}).
+-compile({inline,yeccpars2_561_/1}).
 -file("megaco_text_parser_v3.yrl", 718).
 yeccpars2_561_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12322,14 +12352,14 @@ yeccpars2_561_(__Stack0) ->
     make_auditRequest ( __3 , __4 ) )
   end | __Stack].
 
--compile({inline,{yeccpars2_563_,1}}).
+-compile({inline,yeccpars2_563_/1}).
 -file("megaco_text_parser_v3.yrl", 715).
 yeccpars2_563_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_564_,1}}).
+-compile({inline,yeccpars2_564_/1}).
 -file("megaco_text_parser_v3.yrl", 721).
 yeccpars2_564_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12338,7 +12368,7 @@ yeccpars2_564_(__Stack0) ->
     make_auditRequest ( __3 , __4 ) )
   end | __Stack].
 
--compile({inline,{yeccpars2_565_,1}}).
+-compile({inline,yeccpars2_565_/1}).
 -file("megaco_text_parser_v3.yrl", 546).
 yeccpars2_565_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12346,7 +12376,7 @@ yeccpars2_565_(__Stack0) ->
    merge_action_request ( __3 , __5 )
   end | __Stack].
 
--compile({inline,{yeccpars2_566_,1}}).
+-compile({inline,yeccpars2_566_/1}).
 -file("megaco_text_parser_v3.yrl", 548).
 yeccpars2_566_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -12354,14 +12384,14 @@ yeccpars2_566_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_568_,1}}).
+-compile({inline,yeccpars2_568_/1}).
 -file("megaco_text_parser_v3.yrl", 552).
 yeccpars2_568_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_569_,1}}).
+-compile({inline,yeccpars2_569_/1}).
 -file("megaco_text_parser_v3.yrl", 551).
 yeccpars2_569_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12369,14 +12399,14 @@ yeccpars2_569_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_571_,1}}).
+-compile({inline,yeccpars2_571_/1}).
 -file("megaco_text_parser_v3.yrl", 680).
 yeccpars2_571_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_572_,1}}).
+-compile({inline,yeccpars2_572_/1}).
 -file("megaco_text_parser_v3.yrl", 670).
 yeccpars2_572_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12387,7 +12417,7 @@ yeccpars2_572_(__Stack0) ->
     descriptors = Descs } )
   end | __Stack].
 
--compile({inline,{yeccpars2_574_,1}}).
+-compile({inline,yeccpars2_574_/1}).
 -file("megaco_text_parser_v3.yrl", 694).
 yeccpars2_574_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12395,7 +12425,7 @@ yeccpars2_574_(__Stack0) ->
    { statisticsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_575_,1}}).
+-compile({inline,yeccpars2_575_/1}).
 -file("megaco_text_parser_v3.yrl", 691).
 yeccpars2_575_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12403,7 +12433,7 @@ yeccpars2_575_(__Stack0) ->
    { signalsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_576_,1}}).
+-compile({inline,yeccpars2_576_/1}).
 -file("megaco_text_parser_v3.yrl", 688).
 yeccpars2_576_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12411,7 +12441,7 @@ yeccpars2_576_(__Stack0) ->
    { muxDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_577_,1}}).
+-compile({inline,yeccpars2_577_/1}).
 -file("megaco_text_parser_v3.yrl", 687).
 yeccpars2_577_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12419,7 +12449,7 @@ yeccpars2_577_(__Stack0) ->
    { modemDescriptor , deprecated }
   end | __Stack].
 
--compile({inline,{yeccpars2_578_,1}}).
+-compile({inline,yeccpars2_578_/1}).
 -file("megaco_text_parser_v3.yrl", 686).
 yeccpars2_578_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12427,7 +12457,7 @@ yeccpars2_578_(__Stack0) ->
    { mediaDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_579_,1}}).
+-compile({inline,yeccpars2_579_/1}).
 -file("megaco_text_parser_v3.yrl", 689).
 yeccpars2_579_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12435,7 +12465,7 @@ yeccpars2_579_(__Stack0) ->
    { eventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_580_,1}}).
+-compile({inline,yeccpars2_580_/1}).
 -file("megaco_text_parser_v3.yrl", 690).
 yeccpars2_580_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12443,7 +12473,7 @@ yeccpars2_580_(__Stack0) ->
    { eventBufferDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_581_,1}}).
+-compile({inline,yeccpars2_581_/1}).
 -file("megaco_text_parser_v3.yrl", 692).
 yeccpars2_581_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12451,7 +12481,7 @@ yeccpars2_581_(__Stack0) ->
    { digitMapDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_582_,1}}).
+-compile({inline,yeccpars2_582_/1}).
 -file("megaco_text_parser_v3.yrl", 693).
 yeccpars2_582_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12459,14 +12489,14 @@ yeccpars2_582_(__Stack0) ->
    { auditDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_583_,1}}).
+-compile({inline,yeccpars2_583_/1}).
 -file("megaco_text_parser_v3.yrl", 683).
 yeccpars2_583_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_584_,1}}).
+-compile({inline,yeccpars2_584_/1}).
 -file("megaco_text_parser_v3.yrl", 1424).
 yeccpars2_584_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12474,7 +12504,7 @@ yeccpars2_584_(__Stack0) ->
    ensure_DMD ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_585_,1}}).
+-compile({inline,yeccpars2_585_/1}).
 -file("megaco_text_parser_v3.yrl", 1155).
 yeccpars2_585_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12482,7 +12512,7 @@ yeccpars2_585_(__Stack0) ->
    [ ]
   end | __Stack].
 
--compile({inline,{yeccpars2_586_,1}}).
+-compile({inline,yeccpars2_586_/1}).
 -file("megaco_text_parser_v3.yrl", 1192).
 yeccpars2_586_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12491,7 +12521,7 @@ yeccpars2_586_(__Stack0) ->
     eventList = [ ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_590_,1}}).
+-compile({inline,yeccpars2_590_/1}).
 -file("megaco_text_parser_v3.yrl", 1288).
 yeccpars2_590_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12499,14 +12529,14 @@ yeccpars2_590_(__Stack0) ->
    [ ]
   end | __Stack].
 
--compile({inline,{yeccpars2_593_,1}}).
+-compile({inline,yeccpars2_593_/1}).
 -file("megaco_text_parser_v3.yrl", 1504).
 yeccpars2_593_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_594_,1}}).
+-compile({inline,yeccpars2_594_/1}).
 -file("megaco_text_parser_v3.yrl", 1508).
 yeccpars2_594_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12515,7 +12545,7 @@ yeccpars2_594_(__Stack0) ->
     statValue = asn1_NOVALUE }
   end | __Stack].
 
--compile({inline,{yeccpars2_596_,1}}).
+-compile({inline,yeccpars2_596_/1}).
 -file("megaco_text_parser_v3.yrl", 1511).
 yeccpars2_596_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12524,14 +12554,14 @@ yeccpars2_596_(__Stack0) ->
     statValue = [ __3 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_598_,1}}).
+-compile({inline,yeccpars2_598_/1}).
 -file("megaco_text_parser_v3.yrl", 1152).
 yeccpars2_598_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_600_,1}}).
+-compile({inline,yeccpars2_600_/1}).
 -file("megaco_text_parser_v3.yrl", 1514).
 yeccpars2_600_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12540,14 +12570,14 @@ yeccpars2_600_(__Stack0) ->
     statValue = [ __4 | __5 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_603_,1}}).
+-compile({inline,yeccpars2_603_/1}).
 -file("megaco_text_parser_v3.yrl", 1504).
 yeccpars2_603_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_604_,1}}).
+-compile({inline,yeccpars2_604_/1}).
 -file("megaco_text_parser_v3.yrl", 1503).
 yeccpars2_604_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12555,7 +12585,7 @@ yeccpars2_604_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_605_,1}}).
+-compile({inline,yeccpars2_605_/1}).
 -file("megaco_text_parser_v3.yrl", 1501).
 yeccpars2_605_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12563,7 +12593,7 @@ yeccpars2_605_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_607_,1}}).
+-compile({inline,yeccpars2_607_/1}).
 -file("megaco_text_parser_v3.yrl", 1294).
 yeccpars2_607_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12571,14 +12601,14 @@ yeccpars2_607_(__Stack0) ->
    { signal , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_608_,1}}).
+-compile({inline,yeccpars2_608_/1}).
 -file("megaco_text_parser_v3.yrl", 1291).
 yeccpars2_608_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_609_,1}}).
+-compile({inline,yeccpars2_609_/1}).
 -file("megaco_text_parser_v3.yrl", 1293).
 yeccpars2_609_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12586,21 +12616,21 @@ yeccpars2_609_(__Stack0) ->
    { seqSigList , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_614_,1}}).
+-compile({inline,yeccpars2_614_/1}).
 -file("megaco_text_parser_v3.yrl", 1366).
 yeccpars2_614_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_617_,1}}).
+-compile({inline,yeccpars2_617_/1}).
 -file("megaco_text_parser_v3.yrl", 1366).
 yeccpars2_617_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_618_,1}}).
+-compile({inline,yeccpars2_618_/1}).
 -file("megaco_text_parser_v3.yrl", 1365).
 yeccpars2_618_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12608,7 +12638,7 @@ yeccpars2_618_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_619_,1}}).
+-compile({inline,yeccpars2_619_/1}).
 -file("megaco_text_parser_v3.yrl", 1361).
 yeccpars2_619_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12617,14 +12647,14 @@ yeccpars2_619_(__Stack0) ->
     signalList = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_622_,1}}).
+-compile({inline,yeccpars2_622_/1}).
 -file("megaco_text_parser_v3.yrl", 1291).
 yeccpars2_622_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_623_,1}}).
+-compile({inline,yeccpars2_623_/1}).
 -file("megaco_text_parser_v3.yrl", 1290).
 yeccpars2_623_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12632,7 +12662,7 @@ yeccpars2_623_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_624_,1}}).
+-compile({inline,yeccpars2_624_/1}).
 -file("megaco_text_parser_v3.yrl", 1287).
 yeccpars2_624_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12640,7 +12670,7 @@ yeccpars2_624_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_626_,1}}).
+-compile({inline,yeccpars2_626_/1}).
 -file("megaco_text_parser_v3.yrl", 1185).
 yeccpars2_626_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12648,7 +12678,7 @@ yeccpars2_626_(__Stack0) ->
    ensure_muxType ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_628_,1}}).
+-compile({inline,yeccpars2_628_/1}).
 -file("megaco_text_parser_v3.yrl", 1182).
 yeccpars2_628_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12657,14 +12687,14 @@ yeccpars2_628_(__Stack0) ->
     termList = __4 }
   end | __Stack].
 
--compile({inline,{yeccpars2_630_,1}}).
+-compile({inline,yeccpars2_630_/1}).
 -file("megaco_text_parser_v3.yrl", 1043).
 yeccpars2_630_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_632_,1}}).
+-compile({inline,yeccpars2_632_/1}).
 -file("megaco_text_parser_v3.yrl", 1039).
 yeccpars2_632_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12672,7 +12702,7 @@ yeccpars2_632_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_635_,1}}).
+-compile({inline,yeccpars2_635_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_635_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12680,21 +12710,21 @@ yeccpars2_635_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_636_,1}}).
+-compile({inline,yeccpars2_636_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_636_(__Stack0) ->
  [begin
    '$undefined'
   end | __Stack0].
 
--compile({inline,{yeccpars2_639_,1}}).
+-compile({inline,yeccpars2_639_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_639_(__Stack0) ->
  [begin
    '$undefined'
   end | __Stack0].
 
--compile({inline,{yeccpars2_640_,1}}).
+-compile({inline,yeccpars2_640_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_640_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12702,14 +12732,14 @@ yeccpars2_640_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_641_,1}}).
+-compile({inline,yeccpars2_641_/1}).
 -file("megaco_text_parser_v3.yrl", 1414).
 yeccpars2_641_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_642_,1}}).
+-compile({inline,yeccpars2_642_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_642_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12717,14 +12747,14 @@ yeccpars2_642_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_644_,1}}).
+-compile({inline,yeccpars2_644_/1}).
 -file("megaco_text_parser_v3.yrl", 1418).
 yeccpars2_644_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_646_,1}}).
+-compile({inline,yeccpars2_646_/1}).
 -file("megaco_text_parser_v3.yrl", 1413).
 yeccpars2_646_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12732,14 +12762,14 @@ yeccpars2_646_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_647_,1}}).
+-compile({inline,yeccpars2_647_/1}).
 -file("megaco_text_parser_v3.yrl", 1414).
 yeccpars2_647_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_648_,1}}).
+-compile({inline,yeccpars2_648_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_648_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12747,7 +12777,7 @@ yeccpars2_648_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_650_,1}}).
+-compile({inline,yeccpars2_650_/1}).
 -file("megaco_text_parser_v3.yrl", 1064).
 yeccpars2_650_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12755,7 +12785,7 @@ yeccpars2_650_(__Stack0) ->
    { termState , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_651_,1}}).
+-compile({inline,yeccpars2_651_/1}).
 -file("megaco_text_parser_v3.yrl", 1060).
 yeccpars2_651_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12763,7 +12793,7 @@ yeccpars2_651_(__Stack0) ->
    { streamParm , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_652_,1}}).
+-compile({inline,yeccpars2_652_/1}).
 -file("megaco_text_parser_v3.yrl", 1062).
 yeccpars2_652_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12771,7 +12801,7 @@ yeccpars2_652_(__Stack0) ->
    { streamDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_653_,1}}).
+-compile({inline,yeccpars2_653_/1}).
 -file("megaco_text_parser_v3.yrl", 1075).
 yeccpars2_653_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12779,14 +12809,14 @@ yeccpars2_653_(__Stack0) ->
    { statistics , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_654_,1}}).
+-compile({inline,yeccpars2_654_/1}).
 -file("megaco_text_parser_v3.yrl", 1054).
 yeccpars2_654_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_655_,1}}).
+-compile({inline,yeccpars2_655_/1}).
 -file("megaco_text_parser_v3.yrl", 1074).
 yeccpars2_655_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12794,7 +12824,7 @@ yeccpars2_655_(__Stack0) ->
    { control , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_657_,1}}).
+-compile({inline,yeccpars2_657_/1}).
 -file("megaco_text_parser_v3.yrl", 1069).
 yeccpars2_657_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12803,7 +12833,7 @@ yeccpars2_657_(__Stack0) ->
     { local , # 'LocalRemoteDescriptor' { propGrps = PGs } }
   end | __Stack].
 
--compile({inline,{yeccpars2_658_,1}}).
+-compile({inline,yeccpars2_658_/1}).
 -file("megaco_text_parser_v3.yrl", 1072).
 yeccpars2_658_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12812,14 +12842,14 @@ yeccpars2_658_(__Stack0) ->
     { remote , # 'LocalRemoteDescriptor' { propGrps = PGs } }
   end | __Stack].
 
--compile({inline,{yeccpars2_662_,1}}).
+-compile({inline,yeccpars2_662_/1}).
 -file("megaco_text_parser_v3.yrl", 1097).
 yeccpars2_662_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_663_,1}}).
+-compile({inline,yeccpars2_663_/1}).
 -file("megaco_text_parser_v3.yrl", 1166).
 yeccpars2_663_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12827,7 +12857,7 @@ yeccpars2_663_(__Stack0) ->
    { serviceState , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_664_,1}}).
+-compile({inline,yeccpars2_664_/1}).
 -file("megaco_text_parser_v3.yrl", 1168).
 yeccpars2_664_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12835,7 +12865,7 @@ yeccpars2_664_(__Stack0) ->
    { propertyParm , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_665_,1}}).
+-compile({inline,yeccpars2_665_/1}).
 -file("megaco_text_parser_v3.yrl", 1167).
 yeccpars2_665_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12843,7 +12873,7 @@ yeccpars2_665_(__Stack0) ->
    { eventBufferControl , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_669_,1}}).
+-compile({inline,yeccpars2_669_/1}).
 -file("megaco_text_parser_v3.yrl", 1170).
 yeccpars2_669_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12851,7 +12881,7 @@ yeccpars2_669_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_671_,1}}).
+-compile({inline,yeccpars2_671_/1}).
 -file("megaco_text_parser_v3.yrl", 1176).
 yeccpars2_671_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12859,7 +12889,7 @@ yeccpars2_671_(__Stack0) ->
    __3
   end | __Stack].
 
--compile({inline,{yeccpars2_672_,1}}).
+-compile({inline,yeccpars2_672_/1}).
 -file("megaco_text_parser_v3.yrl", 1179).
 yeccpars2_672_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12867,7 +12897,7 @@ yeccpars2_672_(__Stack0) ->
    lockStep
   end | __Stack].
 
--compile({inline,{yeccpars2_673_,1}}).
+-compile({inline,yeccpars2_673_/1}).
 -file("megaco_text_parser_v3.yrl", 1178).
 yeccpars2_673_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12875,14 +12905,14 @@ yeccpars2_673_(__Stack0) ->
    off
   end | __Stack].
 
--compile({inline,{yeccpars2_676_,1}}).
+-compile({inline,yeccpars2_676_/1}).
 -file("megaco_text_parser_v3.yrl", 1097).
 yeccpars2_676_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_677_,1}}).
+-compile({inline,yeccpars2_677_/1}).
 -file("megaco_text_parser_v3.yrl", 1096).
 yeccpars2_677_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12890,7 +12920,7 @@ yeccpars2_677_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_678_,1}}).
+-compile({inline,yeccpars2_678_/1}).
 -file("megaco_text_parser_v3.yrl", 1094).
 yeccpars2_678_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12898,21 +12928,21 @@ yeccpars2_678_(__Stack0) ->
    merge_terminationStateDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_682_,1}}).
+-compile({inline,yeccpars2_682_/1}).
 -file("megaco_text_parser_v3.yrl", 1083).
 yeccpars2_682_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_685_,1}}).
+-compile({inline,yeccpars2_685_/1}).
 -file("megaco_text_parser_v3.yrl", 1083).
 yeccpars2_685_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_686_,1}}).
+-compile({inline,yeccpars2_686_/1}).
 -file("megaco_text_parser_v3.yrl", 1082).
 yeccpars2_686_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12920,7 +12950,7 @@ yeccpars2_686_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_687_,1}}).
+-compile({inline,yeccpars2_687_/1}).
 -file("megaco_text_parser_v3.yrl", 1079).
 yeccpars2_687_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12929,7 +12959,7 @@ yeccpars2_687_(__Stack0) ->
     streamParms = merge_streamParms ( [ __5 | __6 ] ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_689_,1}}).
+-compile({inline,yeccpars2_689_/1}).
 -file("megaco_text_parser_v3.yrl", 1103).
 yeccpars2_689_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -12937,14 +12967,14 @@ yeccpars2_689_(__Stack0) ->
    { prop , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_690_,1}}).
+-compile({inline,yeccpars2_690_/1}).
 -file("megaco_text_parser_v3.yrl", 1089).
 yeccpars2_690_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_695_,1}}).
+-compile({inline,yeccpars2_695_/1}).
 -file("megaco_text_parser_v3.yrl", 1101).
 yeccpars2_695_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12952,7 +12982,7 @@ yeccpars2_695_(__Stack0) ->
    { value , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_697_,1}}).
+-compile({inline,yeccpars2_697_/1}).
 -file("megaco_text_parser_v3.yrl", 1100).
 yeccpars2_697_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12960,7 +12990,7 @@ yeccpars2_697_(__Stack0) ->
    { group , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_699_,1}}).
+-compile({inline,yeccpars2_699_/1}).
 -file("megaco_text_parser_v3.yrl", 1102).
 yeccpars2_699_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12968,14 +12998,14 @@ yeccpars2_699_(__Stack0) ->
    { mode , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_702_,1}}).
+-compile({inline,yeccpars2_702_/1}).
 -file("megaco_text_parser_v3.yrl", 1089).
 yeccpars2_702_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_703_,1}}).
+-compile({inline,yeccpars2_703_/1}).
 -file("megaco_text_parser_v3.yrl", 1088).
 yeccpars2_703_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -12983,7 +13013,7 @@ yeccpars2_703_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_704_,1}}).
+-compile({inline,yeccpars2_704_/1}).
 -file("megaco_text_parser_v3.yrl", 1086).
 yeccpars2_704_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -12991,14 +13021,14 @@ yeccpars2_704_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_707_,1}}).
+-compile({inline,yeccpars2_707_/1}).
 -file("megaco_text_parser_v3.yrl", 1054).
 yeccpars2_707_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_708_,1}}).
+-compile({inline,yeccpars2_708_/1}).
 -file("megaco_text_parser_v3.yrl", 1053).
 yeccpars2_708_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13006,7 +13036,7 @@ yeccpars2_708_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_709_,1}}).
+-compile({inline,yeccpars2_709_/1}).
 -file("megaco_text_parser_v3.yrl", 1051).
 yeccpars2_709_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13014,21 +13044,21 @@ yeccpars2_709_(__Stack0) ->
    merge_mediaDescriptor ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_713_,1}}).
+-compile({inline,yeccpars2_713_/1}).
 -file("megaco_text_parser_v3.yrl", 1200).
 yeccpars2_713_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_714_,1}}).
+-compile({inline,yeccpars2_714_/1}).
 -file("megaco_text_parser_v3.yrl", 1207).
 yeccpars2_714_(__Stack0) ->
  [begin
    # 'RequestedEvent' { evParList = [ ] }
   end | __Stack0].
 
--compile({inline,{yeccpars2_715_,1}}).
+-compile({inline,yeccpars2_715_/1}).
 -file("megaco_text_parser_v3.yrl", 1203).
 yeccpars2_715_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -13036,7 +13066,7 @@ yeccpars2_715_(__Stack0) ->
    setelement ( # 'RequestedEvent' .pkgdName , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_717_,1}}).
+-compile({inline,yeccpars2_717_/1}).
 -file("megaco_text_parser_v3.yrl", 1219).
 yeccpars2_717_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13044,7 +13074,7 @@ yeccpars2_717_(__Stack0) ->
    { notifyRegulated , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_718_,1}}).
+-compile({inline,yeccpars2_718_/1}).
 -file("megaco_text_parser_v3.yrl", 1231).
 yeccpars2_718_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13052,14 +13082,14 @@ yeccpars2_718_(__Stack0) ->
    { notifyBehaviour , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_720_,1}}).
+-compile({inline,yeccpars2_720_/1}).
 -file("megaco_text_parser_v3.yrl", 1223).
 yeccpars2_720_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_724_,1}}).
+-compile({inline,yeccpars2_724_/1}).
 -file("megaco_text_parser_v3.yrl", 1283).
 yeccpars2_724_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13067,7 +13097,7 @@ yeccpars2_724_(__Stack0) ->
    ensure_eventDM ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_726_COMMA,1}}).
+-compile({inline,yeccpars2_726_COMMA/1}).
 -file("megaco_text_parser_v3.yrl", 1226).
 yeccpars2_726_COMMA(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13075,7 +13105,7 @@ yeccpars2_726_COMMA(__Stack0) ->
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_726_RBRKT,1}}).
+-compile({inline,yeccpars2_726_RBRKT/1}).
 -file("megaco_text_parser_v3.yrl", 1226).
 yeccpars2_726_RBRKT(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13083,7 +13113,7 @@ yeccpars2_726_RBRKT(__Stack0) ->
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_727_,1}}).
+-compile({inline,yeccpars2_727_/1}).
 -file("megaco_text_parser_v3.yrl", 1218).
 yeccpars2_727_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13091,7 +13121,7 @@ yeccpars2_727_(__Stack0) ->
    { neverNotify , 'NULL' }
   end | __Stack].
 
--compile({inline,{yeccpars2_728_,1}}).
+-compile({inline,yeccpars2_728_/1}).
 -file("megaco_text_parser_v3.yrl", 1217).
 yeccpars2_728_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13099,7 +13129,7 @@ yeccpars2_728_(__Stack0) ->
    { notifyImmediate , 'NULL' }
   end | __Stack].
 
--compile({inline,{yeccpars2_729_,1}}).
+-compile({inline,yeccpars2_729_/1}).
 -file("megaco_text_parser_v3.yrl", 1211).
 yeccpars2_729_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13107,7 +13137,7 @@ yeccpars2_729_(__Stack0) ->
    # 'RegulatedEmbeddedDescriptor' { }
   end | __Stack].
 
--compile({inline,{yeccpars2_730_,1}}).
+-compile({inline,yeccpars2_730_/1}).
 -file("megaco_text_parser_v3.yrl", 1232).
 yeccpars2_730_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13115,7 +13145,7 @@ yeccpars2_730_(__Stack0) ->
    resetEventsDescriptor
   end | __Stack].
 
--compile({inline,{yeccpars2_738_,1}}).
+-compile({inline,yeccpars2_738_/1}).
 -file("megaco_text_parser_v3.yrl", 1244).
 yeccpars2_738_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13124,21 +13154,21 @@ yeccpars2_738_(__Stack0) ->
     eventList = [ ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_742_,1}}).
+-compile({inline,yeccpars2_742_/1}).
 -file("megaco_text_parser_v3.yrl", 1252).
 yeccpars2_742_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_743_,1}}).
+-compile({inline,yeccpars2_743_/1}).
 -file("megaco_text_parser_v3.yrl", 1260).
 yeccpars2_743_(__Stack0) ->
  [begin
    # 'SecondRequestedEvent' { evParList = [ ] }
   end | __Stack0].
 
--compile({inline,{yeccpars2_744_,1}}).
+-compile({inline,yeccpars2_744_/1}).
 -file("megaco_text_parser_v3.yrl", 1256).
 yeccpars2_744_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -13146,14 +13176,14 @@ yeccpars2_744_(__Stack0) ->
    setelement ( # 'SecondRequestedEvent' .pkgdName , __2 , __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_746_,1}}).
+-compile({inline,yeccpars2_746_/1}).
 -file("megaco_text_parser_v3.yrl", 1263).
 yeccpars2_746_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_747_,1}}).
+-compile({inline,yeccpars2_747_/1}).
 -file("megaco_text_parser_v3.yrl", 1270).
 yeccpars2_747_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13161,7 +13191,7 @@ yeccpars2_747_(__Stack0) ->
    { notifyBehaviour , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_752_COMMA,1}}).
+-compile({inline,yeccpars2_752_COMMA/1}).
 -file("megaco_text_parser_v3.yrl", 1266).
 yeccpars2_752_COMMA(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13169,7 +13199,7 @@ yeccpars2_752_COMMA(__Stack0) ->
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_752_RBRKT,1}}).
+-compile({inline,yeccpars2_752_RBRKT/1}).
 -file("megaco_text_parser_v3.yrl", 1266).
 yeccpars2_752_RBRKT(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13177,7 +13207,7 @@ yeccpars2_752_RBRKT(__Stack0) ->
    keepActive
   end | __Stack].
 
--compile({inline,{yeccpars2_753_,1}}).
+-compile({inline,yeccpars2_753_/1}).
 -file("megaco_text_parser_v3.yrl", 1271).
 yeccpars2_753_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13185,7 +13215,7 @@ yeccpars2_753_(__Stack0) ->
    resetEventsDescriptor
   end | __Stack].
 
--compile({inline,{yeccpars2_756_,1}}).
+-compile({inline,yeccpars2_756_/1}).
 -file("megaco_text_parser_v3.yrl", 1274).
 yeccpars2_756_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13193,14 +13223,14 @@ yeccpars2_756_(__Stack0) ->
    { second_embed , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_759_,1}}).
+-compile({inline,yeccpars2_759_/1}).
 -file("megaco_text_parser_v3.yrl", 1263).
 yeccpars2_759_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_760_,1}}).
+-compile({inline,yeccpars2_760_/1}).
 -file("megaco_text_parser_v3.yrl", 1262).
 yeccpars2_760_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13208,7 +13238,7 @@ yeccpars2_760_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_761_,1}}).
+-compile({inline,yeccpars2_761_/1}).
 -file("megaco_text_parser_v3.yrl", 1259).
 yeccpars2_761_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13216,14 +13246,14 @@ yeccpars2_761_(__Stack0) ->
    merge_secondEventParameters ( [ __2 | __3 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_764_,1}}).
+-compile({inline,yeccpars2_764_/1}).
 -file("megaco_text_parser_v3.yrl", 1252).
 yeccpars2_764_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_765_,1}}).
+-compile({inline,yeccpars2_765_/1}).
 -file("megaco_text_parser_v3.yrl", 1251).
 yeccpars2_765_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13231,7 +13261,7 @@ yeccpars2_765_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_766_,1}}).
+-compile({inline,yeccpars2_766_/1}).
 -file("megaco_text_parser_v3.yrl", 1248).
 yeccpars2_766_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13240,7 +13270,7 @@ yeccpars2_766_(__Stack0) ->
     eventList = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_767_,1}}).
+-compile({inline,yeccpars2_767_/1}).
 -file("megaco_text_parser_v3.yrl", 1241).
 yeccpars2_767_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13248,7 +13278,7 @@ yeccpars2_767_(__Stack0) ->
    { embed , asn1_NOVALUE , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_769_,1}}).
+-compile({inline,yeccpars2_769_/1}).
 -file("megaco_text_parser_v3.yrl", 1238).
 yeccpars2_769_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13256,7 +13286,7 @@ yeccpars2_769_(__Stack0) ->
    { embed , __3 , asn1_NOVALUE }
   end | __Stack].
 
--compile({inline,{yeccpars2_771_,1}}).
+-compile({inline,yeccpars2_771_/1}).
 -file("megaco_text_parser_v3.yrl", 1236).
 yeccpars2_771_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13264,7 +13294,7 @@ yeccpars2_771_(__Stack0) ->
    { embed , __3 , __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_772_,1}}).
+-compile({inline,yeccpars2_772_/1}).
 -file("megaco_text_parser_v3.yrl", 1215).
 yeccpars2_772_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13272,7 +13302,7 @@ yeccpars2_772_(__Stack0) ->
    make_RegulatedEmbeddedDescriptor ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_773_,1}}).
+-compile({inline,yeccpars2_773_/1}).
 -file("megaco_text_parser_v3.yrl", 1213).
 yeccpars2_773_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13280,14 +13310,14 @@ yeccpars2_773_(__Stack0) ->
    make_RegulatedEmbeddedDescriptor ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_776_,1}}).
+-compile({inline,yeccpars2_776_/1}).
 -file("megaco_text_parser_v3.yrl", 1223).
 yeccpars2_776_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_777_,1}}).
+-compile({inline,yeccpars2_777_/1}).
 -file("megaco_text_parser_v3.yrl", 1222).
 yeccpars2_777_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13295,7 +13325,7 @@ yeccpars2_777_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_778_,1}}).
+-compile({inline,yeccpars2_778_/1}).
 -file("megaco_text_parser_v3.yrl", 1206).
 yeccpars2_778_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13303,14 +13333,14 @@ yeccpars2_778_(__Stack0) ->
    merge_eventParameters ( [ __2 | __3 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_781_,1}}).
+-compile({inline,yeccpars2_781_/1}).
 -file("megaco_text_parser_v3.yrl", 1200).
 yeccpars2_781_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_782_,1}}).
+-compile({inline,yeccpars2_782_/1}).
 -file("megaco_text_parser_v3.yrl", 1199).
 yeccpars2_782_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13318,7 +13348,7 @@ yeccpars2_782_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_783_,1}}).
+-compile({inline,yeccpars2_783_/1}).
 -file("megaco_text_parser_v3.yrl", 1196).
 yeccpars2_783_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13327,14 +13357,14 @@ yeccpars2_783_(__Stack0) ->
     eventList = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_784_,1}}).
+-compile({inline,yeccpars2_784_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_784_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_785_,1}}).
+-compile({inline,yeccpars2_785_/1}).
 -file("megaco_text_parser_v3.yrl", 1163).
 yeccpars2_785_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13342,28 +13372,28 @@ yeccpars2_785_(__Stack0) ->
    merge_eventSpec ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_786_,1}}).
+-compile({inline,yeccpars2_786_/1}).
 -file("megaco_text_parser_v3.yrl", 1161).
 yeccpars2_786_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_788_,1}}).
+-compile({inline,yeccpars2_788_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_788_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_789_,1}}).
+-compile({inline,yeccpars2_789_/1}).
 -file("megaco_text_parser_v3.yrl", 1161).
 yeccpars2_789_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_790_,1}}).
+-compile({inline,yeccpars2_790_/1}).
 -file("megaco_text_parser_v3.yrl", 1160).
 yeccpars2_790_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13371,7 +13401,7 @@ yeccpars2_790_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_791_,1}}).
+-compile({inline,yeccpars2_791_/1}).
 -file("megaco_text_parser_v3.yrl", 1158).
 yeccpars2_791_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13379,14 +13409,14 @@ yeccpars2_791_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_794_,1}}).
+-compile({inline,yeccpars2_794_/1}).
 -file("megaco_text_parser_v3.yrl", 683).
 yeccpars2_794_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_795_,1}}).
+-compile({inline,yeccpars2_795_/1}).
 -file("megaco_text_parser_v3.yrl", 682).
 yeccpars2_795_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13394,7 +13424,7 @@ yeccpars2_795_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_796_,1}}).
+-compile({inline,yeccpars2_796_/1}).
 -file("megaco_text_parser_v3.yrl", 679).
 yeccpars2_796_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13402,14 +13432,14 @@ yeccpars2_796_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_799_,1}}).
+-compile({inline,yeccpars2_799_/1}).
 -file("megaco_text_parser_v3.yrl", 535).
 yeccpars2_799_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_800_,1}}).
+-compile({inline,yeccpars2_800_/1}).
 -file("megaco_text_parser_v3.yrl", 534).
 yeccpars2_800_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13417,7 +13447,7 @@ yeccpars2_800_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_801_,1}}).
+-compile({inline,yeccpars2_801_/1}).
 -file("megaco_text_parser_v3.yrl", 523).
 yeccpars2_801_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13426,7 +13456,7 @@ yeccpars2_801_(__Stack0) ->
     actions = [ __3 | __4 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_803_,1}}).
+-compile({inline,yeccpars2_803_/1}).
 -file("megaco_text_parser_v3.yrl", 1001).
 yeccpars2_803_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13434,14 +13464,14 @@ yeccpars2_803_(__Stack0) ->
    ensure_uint32 ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_805_,1}}).
+-compile({inline,yeccpars2_805_/1}).
 -file("megaco_text_parser_v3.yrl", 535).
 yeccpars2_805_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_807_,1}}).
+-compile({inline,yeccpars2_807_/1}).
 -file("megaco_text_parser_v3.yrl", 527).
 yeccpars2_807_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13450,14 +13480,14 @@ yeccpars2_807_(__Stack0) ->
     actions = [ __4 | __5 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_809_,1}}).
+-compile({inline,yeccpars2_809_/1}).
 -file("megaco_text_parser_v3.yrl", 535).
 yeccpars2_809_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_811_,1}}).
+-compile({inline,yeccpars2_811_/1}).
 -file("megaco_text_parser_v3.yrl", 531).
 yeccpars2_811_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13466,14 +13496,14 @@ yeccpars2_811_(__Stack0) ->
     actions = [ __5 | __6 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_813_,1}}).
+-compile({inline,yeccpars2_813_/1}).
 -file("megaco_text_parser_v3.yrl", 514).
 yeccpars2_813_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_814_,1}}).
+-compile({inline,yeccpars2_814_/1}).
 -file("megaco_text_parser_v3.yrl", 516).
 yeccpars2_814_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13481,14 +13511,14 @@ yeccpars2_814_(__Stack0) ->
    ensure_transactionAck ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_817_,1}}).
+-compile({inline,yeccpars2_817_/1}).
 -file("megaco_text_parser_v3.yrl", 514).
 yeccpars2_817_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_818_,1}}).
+-compile({inline,yeccpars2_818_/1}).
 -file("megaco_text_parser_v3.yrl", 513).
 yeccpars2_818_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13496,7 +13526,7 @@ yeccpars2_818_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_819_,1}}).
+-compile({inline,yeccpars2_819_/1}).
 -file("megaco_text_parser_v3.yrl", 510).
 yeccpars2_819_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13504,7 +13534,7 @@ yeccpars2_819_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_822_,1}}).
+-compile({inline,yeccpars2_822_/1}).
 -file("megaco_text_parser_v3.yrl", 1003).
 yeccpars2_822_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13512,14 +13542,14 @@ yeccpars2_822_(__Stack0) ->
    make_transactionID_and_segment_info ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_823_,1}}).
+-compile({inline,yeccpars2_823_/1}).
 -file("megaco_text_parser_v3.yrl", 633).
 yeccpars2_823_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_826_,1}}).
+-compile({inline,yeccpars2_826_/1}).
 -file("megaco_text_parser_v3.yrl", 632).
 yeccpars2_826_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -13527,7 +13557,7 @@ yeccpars2_826_(__Stack0) ->
    'NULL'
   end | __Stack].
 
--compile({inline,{yeccpars2_828_,1}}).
+-compile({inline,yeccpars2_828_/1}).
 -file("megaco_text_parser_v3.yrl", 635).
 yeccpars2_828_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13535,14 +13565,14 @@ yeccpars2_828_(__Stack0) ->
    { transactionError , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_829_,1}}).
+-compile({inline,yeccpars2_829_/1}).
 -file("megaco_text_parser_v3.yrl", 639).
 yeccpars2_829_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_832_,1}}).
+-compile({inline,yeccpars2_832_/1}).
 -file("megaco_text_parser_v3.yrl", 645).
 yeccpars2_832_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13550,7 +13580,7 @@ yeccpars2_832_(__Stack0) ->
    # 'ActionReply' { contextId = __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_834_,1}}).
+-compile({inline,yeccpars2_834_/1}).
 -file("megaco_text_parser_v3.yrl", 662).
 yeccpars2_834_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13558,7 +13588,7 @@ yeccpars2_834_(__Stack0) ->
    { command , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_835_,1}}).
+-compile({inline,yeccpars2_835_/1}).
 -file("megaco_text_parser_v3.yrl", 665).
 yeccpars2_835_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13566,7 +13596,7 @@ yeccpars2_835_(__Stack0) ->
    { command , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_836_,1}}).
+-compile({inline,yeccpars2_836_/1}).
 -file("megaco_text_parser_v3.yrl", 648).
 yeccpars2_836_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13574,7 +13604,7 @@ yeccpars2_836_(__Stack0) ->
    # 'ActionReply' { errorDescriptor = __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_837_,1}}).
+-compile({inline,yeccpars2_837_/1}).
 -file("megaco_text_parser_v3.yrl", 666).
 yeccpars2_837_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13582,14 +13612,14 @@ yeccpars2_837_(__Stack0) ->
    { context , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_838_,1}}).
+-compile({inline,yeccpars2_838_/1}).
 -file("megaco_text_parser_v3.yrl", 660).
 yeccpars2_838_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_839_,1}}).
+-compile({inline,yeccpars2_839_/1}).
 -file("megaco_text_parser_v3.yrl", 663).
 yeccpars2_839_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13597,7 +13627,7 @@ yeccpars2_839_(__Stack0) ->
    { command , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_841_,1}}).
+-compile({inline,yeccpars2_841_/1}).
 -file("megaco_text_parser_v3.yrl", 664).
 yeccpars2_841_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13605,7 +13635,7 @@ yeccpars2_841_(__Stack0) ->
    { command , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_843_,1}}).
+-compile({inline,yeccpars2_843_/1}).
 -file("megaco_text_parser_v3.yrl", 700).
 yeccpars2_843_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13613,7 +13643,7 @@ yeccpars2_843_(__Stack0) ->
    addReply
   end | __Stack].
 
--compile({inline,{yeccpars2_846_,1}}).
+-compile({inline,yeccpars2_846_/1}).
 -file("megaco_text_parser_v3.yrl", 702).
 yeccpars2_846_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13621,7 +13651,7 @@ yeccpars2_846_(__Stack0) ->
    modReply
   end | __Stack].
 
--compile({inline,{yeccpars2_847_,1}}).
+-compile({inline,yeccpars2_847_/1}).
 -file("megaco_text_parser_v3.yrl", 701).
 yeccpars2_847_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13629,7 +13659,7 @@ yeccpars2_847_(__Stack0) ->
    moveReply
   end | __Stack].
 
--compile({inline,{yeccpars2_850_,1}}).
+-compile({inline,yeccpars2_850_/1}).
 -file("megaco_text_parser_v3.yrl", 703).
 yeccpars2_850_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13637,14 +13667,14 @@ yeccpars2_850_(__Stack0) ->
    subtractReply
   end | __Stack].
 
--compile({inline,{yeccpars2_852_,1}}).
+-compile({inline,yeccpars2_852_/1}).
 -file("megaco_text_parser_v3.yrl", 989).
 yeccpars2_852_(__Stack0) ->
  [begin
    { serviceChangeResParms , # 'ServiceChangeResParm' { } }
   end | __Stack0].
 
--compile({inline,{yeccpars2_853_,1}}).
+-compile({inline,yeccpars2_853_/1}).
 -file("megaco_text_parser_v3.yrl", 980).
 yeccpars2_853_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13654,7 +13684,7 @@ yeccpars2_853_(__Stack0) ->
     serviceChangeResult = __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_859_,1}}).
+-compile({inline,yeccpars2_859_/1}).
 -file("megaco_text_parser_v3.yrl", 1485).
 yeccpars2_859_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13662,7 +13692,7 @@ yeccpars2_859_(__Stack0) ->
    { time_stamp , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_860_,1}}).
+-compile({inline,yeccpars2_860_/1}).
 -file("megaco_text_parser_v3.yrl", 1484).
 yeccpars2_860_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13670,7 +13700,7 @@ yeccpars2_860_(__Stack0) ->
    { version , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_861_,1}}).
+-compile({inline,yeccpars2_861_/1}).
 -file("megaco_text_parser_v3.yrl", 1483).
 yeccpars2_861_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13678,7 +13708,7 @@ yeccpars2_861_(__Stack0) ->
    { profile , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_862_,1}}).
+-compile({inline,yeccpars2_862_/1}).
 -file("megaco_text_parser_v3.yrl", 1482).
 yeccpars2_862_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13686,7 +13716,7 @@ yeccpars2_862_(__Stack0) ->
    { mgc_id , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_863_,1}}).
+-compile({inline,yeccpars2_863_/1}).
 -file("megaco_text_parser_v3.yrl", 1481).
 yeccpars2_863_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13694,21 +13724,21 @@ yeccpars2_863_(__Stack0) ->
    { address , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_864_,1}}).
+-compile({inline,yeccpars2_864_/1}).
 -file("megaco_text_parser_v3.yrl", 1479).
 yeccpars2_864_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_871_,1}}).
+-compile({inline,yeccpars2_871_/1}).
 -file("megaco_text_parser_v3.yrl", 1479).
 yeccpars2_871_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_872_,1}}).
+-compile({inline,yeccpars2_872_/1}).
 -file("megaco_text_parser_v3.yrl", 1478).
 yeccpars2_872_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13716,7 +13746,7 @@ yeccpars2_872_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_873_,1}}).
+-compile({inline,yeccpars2_873_/1}).
 -file("megaco_text_parser_v3.yrl", 1475).
 yeccpars2_873_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13724,7 +13754,7 @@ yeccpars2_873_(__Stack0) ->
    merge_ServiceChangeResParm ( [ __3 | __4 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_874_,1}}).
+-compile({inline,yeccpars2_874_/1}).
 -file("megaco_text_parser_v3.yrl", 985).
 yeccpars2_874_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13732,7 +13762,7 @@ yeccpars2_874_(__Stack0) ->
    { errorDescriptor , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_875_,1}}).
+-compile({inline,yeccpars2_875_/1}).
 -file("megaco_text_parser_v3.yrl", 987).
 yeccpars2_875_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13740,14 +13770,14 @@ yeccpars2_875_(__Stack0) ->
    { serviceChangeResParms , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_877_,1}}).
+-compile({inline,yeccpars2_877_/1}).
 -file("megaco_text_parser_v3.yrl", 970).
 yeccpars2_877_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_878_,1}}).
+-compile({inline,yeccpars2_878_/1}).
 -file("megaco_text_parser_v3.yrl", 966).
 yeccpars2_878_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13756,7 +13786,7 @@ yeccpars2_878_(__Stack0) ->
     errorDescriptor = __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_881_,1}}).
+-compile({inline,yeccpars2_881_/1}).
 -file("megaco_text_parser_v3.yrl", 969).
 yeccpars2_881_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13764,7 +13794,7 @@ yeccpars2_881_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_883_,1}}).
+-compile({inline,yeccpars2_883_/1}).
 -file("megaco_text_parser_v3.yrl", 739).
 yeccpars2_883_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13772,7 +13802,7 @@ yeccpars2_883_(__Stack0) ->
    merge_auditOther ( __1 , [ ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_884_,1}}).
+-compile({inline,yeccpars2_884_/1}).
 -file("megaco_text_parser_v3.yrl", 729).
 yeccpars2_884_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13780,7 +13810,7 @@ yeccpars2_884_(__Stack0) ->
    { auditValueReply , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_886_,1}}).
+-compile({inline,yeccpars2_886_/1}).
 -file("megaco_text_parser_v3.yrl", 734).
 yeccpars2_886_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13788,7 +13818,7 @@ yeccpars2_886_(__Stack0) ->
    { contextAuditResult , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_887_,1}}).
+-compile({inline,yeccpars2_887_/1}).
 -file("megaco_text_parser_v3.yrl", 725).
 yeccpars2_887_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13796,7 +13826,7 @@ yeccpars2_887_(__Stack0) ->
    { auditValueReply , __4 }
   end | __Stack].
 
--compile({inline,{yeccpars2_892_,1}}).
+-compile({inline,yeccpars2_892_/1}).
 -file("megaco_text_parser_v3.yrl", 996).
 yeccpars2_892_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13804,14 +13834,14 @@ yeccpars2_892_(__Stack0) ->
    ensure_uint ( __1 , 0 , 999 )
   end | __Stack].
 
--compile({inline,{yeccpars2_894_,1}}).
+-compile({inline,yeccpars2_894_/1}).
 -file("megaco_text_parser_v3.yrl", 999).
 yeccpars2_894_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_896_,1}}).
+-compile({inline,yeccpars2_896_/1}).
 -file("megaco_text_parser_v3.yrl", 998).
 yeccpars2_896_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13819,7 +13849,7 @@ yeccpars2_896_(__Stack0) ->
    value_of ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_897_,1}}).
+-compile({inline,yeccpars2_897_/1}).
 -file("megaco_text_parser_v3.yrl", 993).
 yeccpars2_897_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -13828,7 +13858,7 @@ yeccpars2_897_(__Stack0) ->
     errorText = __5 }
   end | __Stack].
 
--compile({inline,{yeccpars2_898_,1}}).
+-compile({inline,yeccpars2_898_/1}).
 -file("megaco_text_parser_v3.yrl", 736).
 yeccpars2_898_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -13836,7 +13866,7 @@ yeccpars2_898_(__Stack0) ->
    { error , __2 }
   end | __Stack].
 
--compile({inline,{yeccpars2_901_,1}}).
+-compile({inline,yeccpars2_901_/1}).
 -file("megaco_text_parser_v3.yrl", 758).
 yeccpars2_901_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13844,7 +13874,7 @@ yeccpars2_901_(__Stack0) ->
    { statisticsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_902_,1}}).
+-compile({inline,yeccpars2_902_/1}).
 -file("megaco_text_parser_v3.yrl", 754).
 yeccpars2_902_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13852,7 +13882,7 @@ yeccpars2_902_(__Stack0) ->
    { signalsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_903_,1}}).
+-compile({inline,yeccpars2_903_/1}).
 -file("megaco_text_parser_v3.yrl", 759).
 yeccpars2_903_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13860,7 +13890,7 @@ yeccpars2_903_(__Stack0) ->
    { packagesDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_904_,1}}).
+-compile({inline,yeccpars2_904_/1}).
 -file("megaco_text_parser_v3.yrl", 756).
 yeccpars2_904_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13868,7 +13898,7 @@ yeccpars2_904_(__Stack0) ->
    { observedEventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_905_,1}}).
+-compile({inline,yeccpars2_905_/1}).
 -file("megaco_text_parser_v3.yrl", 752).
 yeccpars2_905_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13876,7 +13906,7 @@ yeccpars2_905_(__Stack0) ->
    { muxDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_906_,1}}).
+-compile({inline,yeccpars2_906_/1}).
 -file("megaco_text_parser_v3.yrl", 0).
 yeccpars2_906_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13884,7 +13914,7 @@ yeccpars2_906_(__Stack0) ->
    '$undefined'
   end | __Stack].
 
--compile({inline,{yeccpars2_907_,1}}).
+-compile({inline,yeccpars2_907_/1}).
 -file("megaco_text_parser_v3.yrl", 750).
 yeccpars2_907_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13892,7 +13922,7 @@ yeccpars2_907_(__Stack0) ->
    { mediaDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_908_,1}}).
+-compile({inline,yeccpars2_908_/1}).
 -file("megaco_text_parser_v3.yrl", 753).
 yeccpars2_908_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13900,7 +13930,7 @@ yeccpars2_908_(__Stack0) ->
    { eventsDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_909_,1}}).
+-compile({inline,yeccpars2_909_/1}).
 -file("megaco_text_parser_v3.yrl", 757).
 yeccpars2_909_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13908,7 +13938,7 @@ yeccpars2_909_(__Stack0) ->
    { eventBufferDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_910_,1}}).
+-compile({inline,yeccpars2_910_/1}).
 -file("megaco_text_parser_v3.yrl", 760).
 yeccpars2_910_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13916,7 +13946,7 @@ yeccpars2_910_(__Stack0) ->
    { errorDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_911_,1}}).
+-compile({inline,yeccpars2_911_/1}).
 -file("megaco_text_parser_v3.yrl", 755).
 yeccpars2_911_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13924,14 +13954,14 @@ yeccpars2_911_(__Stack0) ->
    { digitMapDescriptor , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_912_,1}}).
+-compile({inline,yeccpars2_912_/1}).
 -file("megaco_text_parser_v3.yrl", 748).
 yeccpars2_912_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_913_,1}}).
+-compile({inline,yeccpars2_913_/1}).
 -file("megaco_text_parser_v3.yrl", 761).
 yeccpars2_913_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13939,7 +13969,7 @@ yeccpars2_913_(__Stack0) ->
    { auditReturnItem , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_914_,1}}).
+-compile({inline,yeccpars2_914_/1}).
 -file("megaco_text_parser_v3.yrl", 776).
 yeccpars2_914_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13947,7 +13977,7 @@ yeccpars2_914_(__Stack0) ->
    mediaToken
   end | __Stack].
 
--compile({inline,{yeccpars2_915_,1}}).
+-compile({inline,yeccpars2_915_/1}).
 -file("megaco_text_parser_v3.yrl", 775).
 yeccpars2_915_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13955,7 +13985,7 @@ yeccpars2_915_(__Stack0) ->
    modemToken
   end | __Stack].
 
--compile({inline,{yeccpars2_916_,1}}).
+-compile({inline,yeccpars2_916_/1}).
 -file("megaco_text_parser_v3.yrl", 774).
 yeccpars2_916_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13963,7 +13993,7 @@ yeccpars2_916_(__Stack0) ->
    muxToken
   end | __Stack].
 
--compile({inline,{yeccpars2_917_,1}}).
+-compile({inline,yeccpars2_917_/1}).
 -file("megaco_text_parser_v3.yrl", 779).
 yeccpars2_917_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13971,7 +14001,7 @@ yeccpars2_917_(__Stack0) ->
    observedEventsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_918_,1}}).
+-compile({inline,yeccpars2_918_/1}).
 -file("megaco_text_parser_v3.yrl", 780).
 yeccpars2_918_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13979,7 +14009,7 @@ yeccpars2_918_(__Stack0) ->
    packagesToken
   end | __Stack].
 
--compile({inline,{yeccpars2_919_,1}}).
+-compile({inline,yeccpars2_919_/1}).
 -file("megaco_text_parser_v3.yrl", 778).
 yeccpars2_919_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -13987,21 +14017,21 @@ yeccpars2_919_(__Stack0) ->
    statsToken
   end | __Stack].
 
--compile({inline,{yeccpars2_921_,1}}).
+-compile({inline,yeccpars2_921_/1}).
 -file("megaco_text_parser_v3.yrl", 1492).
 yeccpars2_921_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_924_,1}}).
+-compile({inline,yeccpars2_924_/1}).
 -file("megaco_text_parser_v3.yrl", 1492).
 yeccpars2_924_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_925_,1}}).
+-compile({inline,yeccpars2_925_/1}).
 -file("megaco_text_parser_v3.yrl", 1491).
 yeccpars2_925_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14009,7 +14039,7 @@ yeccpars2_925_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_926_,1}}).
+-compile({inline,yeccpars2_926_/1}).
 -file("megaco_text_parser_v3.yrl", 1489).
 yeccpars2_926_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14017,7 +14047,7 @@ yeccpars2_926_(__Stack0) ->
    [ __3 | __4 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_927_,1}}).
+-compile({inline,yeccpars2_927_/1}).
 -file("megaco_text_parser_v3.yrl", 745).
 yeccpars2_927_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -14025,14 +14055,14 @@ yeccpars2_927_(__Stack0) ->
    merge_terminationAudit ( [ __1 | __2 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_929_,1}}).
+-compile({inline,yeccpars2_929_/1}).
 -file("megaco_text_parser_v3.yrl", 748).
 yeccpars2_929_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_930_,1}}).
+-compile({inline,yeccpars2_930_/1}).
 -file("megaco_text_parser_v3.yrl", 747).
 yeccpars2_930_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14040,7 +14070,7 @@ yeccpars2_930_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_931_,1}}).
+-compile({inline,yeccpars2_931_/1}).
 -file("megaco_text_parser_v3.yrl", 741).
 yeccpars2_931_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14048,7 +14078,7 @@ yeccpars2_931_(__Stack0) ->
    merge_auditOther ( __1 , __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_933_,1}}).
+-compile({inline,yeccpars2_933_/1}).
 -file("megaco_text_parser_v3.yrl", 731).
 yeccpars2_933_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14056,7 +14086,7 @@ yeccpars2_933_(__Stack0) ->
    { auditCapReply , __3 }
   end | __Stack].
 
--compile({inline,{yeccpars2_935_,1}}).
+-compile({inline,yeccpars2_935_/1}).
 -file("megaco_text_parser_v3.yrl", 727).
 yeccpars2_935_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14064,7 +14094,7 @@ yeccpars2_935_(__Stack0) ->
    { auditCapReply , __4 }
   end | __Stack].
 
--compile({inline,{yeccpars2_936_,1}}).
+-compile({inline,yeccpars2_936_/1}).
 -file("megaco_text_parser_v3.yrl", 643).
 yeccpars2_936_(__Stack0) ->
  [__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14072,14 +14102,14 @@ yeccpars2_936_(__Stack0) ->
    setelement ( # 'ActionReply' .contextId , __5 , __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_938_,1}}).
+-compile({inline,yeccpars2_938_/1}).
 -file("megaco_text_parser_v3.yrl", 706).
 yeccpars2_938_(__Stack0) ->
  [begin
    asn1_NOVALUE
   end | __Stack0].
 
--compile({inline,{yeccpars2_939_,1}}).
+-compile({inline,yeccpars2_939_/1}).
 -file("megaco_text_parser_v3.yrl", 697).
 yeccpars2_939_(__Stack0) ->
  [__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14088,7 +14118,7 @@ yeccpars2_939_(__Stack0) ->
     terminationAudit = __4 } }
   end | __Stack].
 
--compile({inline,{yeccpars2_942_,1}}).
+-compile({inline,yeccpars2_942_/1}).
 -file("megaco_text_parser_v3.yrl", 705).
 yeccpars2_942_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14096,7 +14126,7 @@ yeccpars2_942_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_943_,1}}).
+-compile({inline,yeccpars2_943_/1}).
 -file("megaco_text_parser_v3.yrl", 650).
 yeccpars2_943_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -14104,7 +14134,7 @@ yeccpars2_943_(__Stack0) ->
    merge_action_reply ( [ __1 | __2 ] )
   end | __Stack].
 
--compile({inline,{yeccpars2_945_,1}}).
+-compile({inline,yeccpars2_945_/1}).
 -file("megaco_text_parser_v3.yrl", 657).
 yeccpars2_945_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -14112,14 +14142,14 @@ yeccpars2_945_(__Stack0) ->
    [ { error , __2 } ]
   end | __Stack].
 
--compile({inline,{yeccpars2_946_,1}}).
+-compile({inline,yeccpars2_946_/1}).
 -file("megaco_text_parser_v3.yrl", 660).
 yeccpars2_946_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_947_,1}}).
+-compile({inline,yeccpars2_947_/1}).
 -file("megaco_text_parser_v3.yrl", 659).
 yeccpars2_947_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14127,7 +14157,7 @@ yeccpars2_947_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_948_,1}}).
+-compile({inline,yeccpars2_948_/1}).
 -file("megaco_text_parser_v3.yrl", 636).
 yeccpars2_948_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -14135,14 +14165,14 @@ yeccpars2_948_(__Stack0) ->
    { actionReplies , [ __1 | __2 ] }
   end | __Stack].
 
--compile({inline,{yeccpars2_950_,1}}).
+-compile({inline,yeccpars2_950_/1}).
 -file("megaco_text_parser_v3.yrl", 639).
 yeccpars2_950_(__Stack0) ->
  [begin
    [ ]
   end | __Stack0].
 
--compile({inline,{yeccpars2_951_,1}}).
+-compile({inline,yeccpars2_951_/1}).
 -file("megaco_text_parser_v3.yrl", 638).
 yeccpars2_951_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14150,7 +14180,7 @@ yeccpars2_951_(__Stack0) ->
    [ __2 | __3 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_952_,1}}).
+-compile({inline,yeccpars2_952_/1}).
 -file("megaco_text_parser_v3.yrl", 624).
 yeccpars2_952_(__Stack0) ->
  [__7,__6,__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14158,7 +14188,7 @@ yeccpars2_952_(__Stack0) ->
    make_TransactionReply ( __3 , __5 , __6 )
   end | __Stack].
 
--compile({inline,{yeccpars2_956_,1}}).
+-compile({inline,yeccpars2_956_/1}).
 -file("megaco_text_parser_v3.yrl", 519).
 yeccpars2_956_(__Stack0) ->
  [__5,__4,__3,__2,__1 | __Stack] = __Stack0,
@@ -14166,7 +14196,7 @@ yeccpars2_956_(__Stack0) ->
    # 'TransactionPending' { transactionId = ensure_transactionID ( __3 ) }
   end | __Stack].
 
--compile({inline,{yeccpars2_958_,1}}).
+-compile({inline,yeccpars2_958_/1}).
 -file("megaco_text_parser_v3.yrl", 628).
 yeccpars2_958_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14174,7 +14204,7 @@ yeccpars2_958_(__Stack0) ->
    make_SegmentReply ( __3 )
   end | __Stack].
 
--compile({inline,{yeccpars2_959_,1}}).
+-compile({inline,yeccpars2_959_/1}).
 -file("megaco_text_parser_v3.yrl", 500).
 yeccpars2_959_(__Stack0) ->
  [__2,__1 | __Stack] = __Stack0,
@@ -14182,7 +14212,7 @@ yeccpars2_959_(__Stack0) ->
    [ __1 | __2 ]
   end | __Stack].
 
--compile({inline,{yeccpars2_960_,1}}).
+-compile({inline,yeccpars2_960_/1}).
 -file("megaco_text_parser_v3.yrl", 1046).
 yeccpars2_960_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -14190,7 +14220,7 @@ yeccpars2_960_(__Stack0) ->
    ensure_pathName ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_961_,1}}).
+-compile({inline,yeccpars2_961_/1}).
 -file("megaco_text_parser_v3.yrl", 1015).
 yeccpars2_961_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -14198,21 +14228,21 @@ yeccpars2_961_(__Stack0) ->
    { deviceName , __1 }
   end | __Stack].
 
--compile({inline,{yeccpars2_962_,1}}).
+-compile({inline,yeccpars2_962_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_962_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_963_,1}}).
+-compile({inline,yeccpars2_963_/1}).
 -file("megaco_text_parser_v3.yrl", 486).
 yeccpars2_963_(__Stack0) ->
  [begin
    no_sep
   end | __Stack0].
 
--compile({inline,{yeccpars2_964_,1}}).
+-compile({inline,yeccpars2_964_/1}).
 -file("megaco_text_parser_v3.yrl", 1032).
 yeccpars2_964_(__Stack0) ->
  [__1 | __Stack] = __Stack0,
@@ -14220,7 +14250,7 @@ yeccpars2_964_(__Stack0) ->
    ensure_mtpAddress ( __1 )
   end | __Stack].
 
--compile({inline,{yeccpars2_965_,1}}).
+-compile({inline,yeccpars2_965_/1}).
 -file("megaco_text_parser_v3.yrl", 1008).
 yeccpars2_965_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,
@@ -14228,7 +14258,7 @@ yeccpars2_965_(__Stack0) ->
    __2
   end | __Stack].
 
--compile({inline,{yeccpars2_966_,1}}).
+-compile({inline,yeccpars2_966_/1}).
 -file("megaco_text_parser_v3.yrl", 1007).
 yeccpars2_966_(__Stack0) ->
  [__3,__2,__1 | __Stack] = __Stack0,

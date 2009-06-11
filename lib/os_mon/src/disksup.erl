@@ -319,8 +319,8 @@ check_disks_win32([H|T], Threshold) ->
 		true ->
 		    clear_alarm({disk_almost_full, Drive})
 	    end,
-	    [{Drive, BTot, Cap} |
-	     check_disks_win32(T, Threshold)];
+	    [{Drive, BTot div 1024, Cap} |
+	     check_disks_win32(T, Threshold)]; % Return Total Capacity in Kbytes
 	{ok,_,_RestStr} ->
 	    check_disks_win32(T,Threshold);
 	_Other ->

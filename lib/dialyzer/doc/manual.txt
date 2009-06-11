@@ -312,7 +312,7 @@ dialyzer --build_plt -r $ERL_TOP/lib/stdlib/ebin\
                         $ERL_TOP/lib/mnesia/ebin
 
 Dialyzer will look if there is an environment variable called
-$DIALZYER_PLT and place the PLT at this lokation. If no such variable
+$DIALYZER_PLT and place the PLT at this location. If no such variable
 is set, Dialyzer will place the PLT at $HOME/.dialyzer_plt. The
 placement can also be specified using the --plt, or --output_plt
 options.

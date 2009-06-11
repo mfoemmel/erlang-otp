@@ -473,7 +473,7 @@ find_dest(TargetName) ->
 		 {value, ?'RowStatus_active'}] ->
 		    ?vtrace("find_dest -> found snmpTargetParamsTable info:"
 			    "~n   SecModel: ~p"
-			    "~n   SecModel: ~p"
+			    "~n   SecName:  ~p"
 			    "~n   SecLevel: ~p", 
 			    [SecModel, SecName, SecLevel]),
 		    DestAddr     = {TDomain, TAddress},
@@ -575,8 +575,6 @@ init_discovery_inform(Parent,
     SecLevelFlag = mk_flag(SecLevel), 
     SecData      = {SecModel, SecName, SecLevelFlag, TargetName}, 
     MsgData      = {SecData, ContextEngineId, ContextName}, 
-%%     NoteTimeout = note_timeout(Timeout, Retry),
-%%     Msg         = {send_discovery, Pdu, MsgData, NoteTimeout, Dest, self()},
     Msg          = {send_discovery, Pdu, MsgData, Dest, self()},
     ?MODULE:send_discovery_inform(Parent, Timeout*10, Retry, Msg, NetIf).
 
