@@ -129,8 +129,8 @@ encrypt_private(PlainText, Key, Options)  ->
 %% dsa private keys. In the case of a key entry ChipherInfo will be
 %% used by decode_private_key/2 if the key is protected by a password.
 %%--------------------------------------------------------------------
-pem_to_der(File) when is_list(File) ->
-    pem_to_der(File, no_passwd).
+pem_to_der(CertSource) ->
+    pem_to_der(CertSource, no_passwd).
 
 pem_to_der(File, Password) when is_list(File) ->
     pubkey_pem:read_file(File, Password);
