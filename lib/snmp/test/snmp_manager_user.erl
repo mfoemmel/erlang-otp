@@ -804,7 +804,7 @@ loop(#state{parent = Parent, id = Id} = S) ->
 
 %% -------------
 
-do_purify_oid([A|T]) when atom(A) ->
+do_purify_oid([A|T]) when is_atom(A) ->
     case snmpm:name_to_oid(A) of
 	{ok, [Oid|_]} ->
 	    verify_pure_oid(lists:flatten([Oid|T]));
@@ -813,14 +813,14 @@ do_purify_oid([A|T]) when atom(A) ->
 	{error, _} = Error ->
 	    Error
     end;
-do_purify_oid(L) when list(L) ->
+do_purify_oid(L) when is_list(L) ->
     verify_pure_oid(lists:flatten(L));
 do_purify_oid(X) ->
     {error, {unpure_oid, X}}.
 
 verify_pure_oid([]) ->
     [];
-verify_pure_oid([H | T]) when is_integer(H) and (H >= 0) ->
+verify_pure_oid([H | T]) when is_integer(H) andalso (H >= 0) ->
     [H | verify_pure_oid(T)];
 verify_pure_oid([H | _]) ->
     throw({error, {not_pure_oid, H}}).
@@ -837,7 +837,7 @@ info(F, A) ->
 call(Req) ->
     call(Req, 5000).
 
-call(Req, To) when integer(To) ->
+call(Req, To) when is_integer(To) ->
     Ref = make_ref(),
     ?SERVER ! {Req, self(), Ref},
     receive

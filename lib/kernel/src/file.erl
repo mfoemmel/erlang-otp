@@ -39,6 +39,7 @@
 -export([open/2, close/1, 
 	 read/2, write/2, 
 	 pread/2, pread/3, pwrite/2, pwrite/3,
+	 read_line/1,
 	 position/2, truncate/1, sync/1,
 	 copy/2, copy/3]).
 %% High level operations
@@ -71,14 +72,15 @@
 -define(RAM_FILE, ram_file).           % Module
 
 %% data types
+-type filename()  :: string().
 -type io_device() :: pid() | #file_descriptor{}.
--type location() :: integer() | {bof, integer()} | {cur, integer()} | 
-		{eof, integer()} | bof | cur | eof.
--type filemodes() :: [read | write | append | raw | binary | 
-		{delayed_write, non_neg_integer(), non_neg_integer()} | 
-		delayed_write | {read_ahead, pos_integer()} | 
-		read_ahead | compressed].
--type bindings() :: any().
+-type location()  :: integer() | {'bof', integer()} | {'cur', integer()}
+		   | {'eof', integer()} | 'bof' | 'cur' | 'eof'.
+-type filemodes() :: ['read' | 'write' | 'append' | 'raw' | 'binary' | 
+		      {'delayed_write', non_neg_integer(), non_neg_integer()} | 
+		      'delayed_write' | {'read_ahead', pos_integer()} | 
+		      'read_ahead' | 'compressed'].
+-type bindings()  :: any().
 
 %%%-----------------------------------------------------------------
 %%% General functions
@@ -105,7 +107,7 @@ format_error(terminated) ->
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
--spec pid2name(Pid :: pid()) -> {'ok', string()} | 'undefined'.
+-spec pid2name(Pid :: pid()) -> {'ok', filename()} | 'undefined'.
 
 pid2name(Pid) when is_pid(Pid) ->
     case whereis(?FILE_SERVER) of
@@ -124,15 +126,15 @@ pid2name(Pid) when is_pid(Pid) ->
 %%% File server functions.
 %%% Functions that do not operate on a single open file.
 %%% Stateless.
--spec get_cwd() -> {'ok', string()} | {'error', posix()}. 
+-spec get_cwd() -> {'ok', filename()} | {'error', posix()}. 
 
-get_cwd() -> 
+get_cwd() ->
     call(get_cwd, []).
 
--spec get_cwd(Dirname :: string()) -> {'ok', string()} | {'error', posix()}.
+-spec get_cwd(Drive :: string()) -> {'ok', filename()} | {'error', posix()}.
 
-get_cwd(Dirname) ->
-    check_and_call(get_cwd, [file_name(Dirname)]).
+get_cwd(Drive) ->
+    check_and_call(get_cwd, [file_name(Drive)]).
 
 -spec set_cwd(Dirname :: name()) -> 'ok' | {'error', posix()}.
 
@@ -169,12 +171,12 @@ read_file_info(Name) ->
 altname(Name) ->
     check_and_call(altname, [file_name(Name)]).
 
--spec read_link_info(Name :: name()) -> {'ok', any()} | {'error', posix()}.
+-spec read_link_info(Name :: name()) -> {'ok', #file_info{}} | {'error', posix()}.
 
 read_link_info(Name) ->
     check_and_call(read_link_info, [file_name(Name)]).
 
--spec read_link(Name :: name()) -> {'ok', string()} | {'error', posix()}.
+-spec read_link(Name :: name()) -> {'ok', filename()} | {'error', posix()}.
 
 read_link(Name) ->
     check_and_call(read_link, [file_name(Name)]).
@@ -185,7 +187,7 @@ read_link(Name) ->
 write_file_info(Name, Info = #file_info{}) ->
     check_and_call(write_file_info, [file_name(Name), Info]).
 
--spec list_dir(Name :: name()) -> {'ok', [string()]} | {'error', posix()}.
+-spec list_dir(Name :: name()) -> {'ok', [filename()]} | {'error', posix()}.
 
 list_dir(Name) ->
     check_and_call(list_dir, [file_name(Name)]).
@@ -271,7 +273,7 @@ raw_write_file_info(Name, #file_info{} = Info) ->
 %% Contemporary mode specification - list of options
 
 -spec open(Name :: name(), Modes :: filemodes()) -> 
-	{'ok',io_device()} | {'error', posix()}.
+	{'ok', io_device()} | {'error', posix()}.
 
 open(Item, ModeList) when is_list(ModeList) ->
     case lists:member(raw, ModeList) of
@@ -356,6 +358,21 @@ read(#file_descriptor{module = Module} = Handle, Sz)
   when is_integer(Sz), Sz >= 0 ->
     Module:read(Handle, Sz);
 read(_, _) ->
+    {error, badarg}.
+
+-spec read_line(File :: io_device()) ->
+	'eof' | {'ok', [char()] | binary()} | {'error', posix()}.
+
+read_line(File) when is_pid(File) ->
+    case io:request(File, {get_line, ''}) of
+	Data when is_list(Data); is_binary(Data) ->
+	    {ok, Data};
+	Other ->
+	    Other
+    end;
+read_line(#file_descriptor{module = Module} = Handle) ->
+    Module:read_line(Handle);
+read_line(_) ->
     {error, badarg}.
 
 -spec pread(File :: io_device(),
@@ -724,7 +741,7 @@ consult(File) ->
     end.
 
 -spec path_consult(Paths :: [name()], File :: name()) ->
-	{'ok', list(), string()} | {'error', posix() | {integer(), atom(), any()}}.
+	{'ok', list(), filename()} | {'error', posix() | {integer(), atom(), any()}}.
 
 path_consult(Path, File) ->
     case path_open(Path, File, [read]) of
@@ -760,13 +777,13 @@ eval(File, Bs) ->
     end.
 
 -spec path_eval(Paths :: [name()], File :: name()) ->
-	{'ok', string()} | {'error', posix() | {integer(), atom(), any()}}.
+	{'ok', filename()} | {'error', posix() | {integer(), atom(), any()}}.
 
 path_eval(Path, File) ->
     path_eval(Path, File, erl_eval:new_bindings()).
 
 -spec path_eval(Paths :: [name()], File :: name(), Bindings :: bindings()) ->
-	{'ok', string()} | {'error', posix() | {integer(), atom(), any()}}.
+	{'ok', filename()} | {'error', posix() | {integer(), atom(), any()}}.
 
 path_eval(Path, File, Bs) ->
     case path_open(Path, File, [read]) of
@@ -803,7 +820,7 @@ script(File, Bs) ->
     end.
 
 -spec path_script/2 :: (Paths :: [name()], File :: name()) ->
-	{'ok', _, string()} | {'error', posix() | {integer(), atom(), _}}.
+	{'ok', term(), filename()} | {'error', posix() | {integer(), atom(), _}}.
 
 path_script(Path, File) ->
     path_script(Path, File, erl_eval:new_bindings()).
@@ -811,7 +828,7 @@ path_script(Path, File) ->
 -spec path_script(Paths :: [name()],
 		  File :: name(),
 		  Bindings :: bindings()) ->
-	{'ok', _, string()} | {'error', posix() | {integer(), atom(), _}}.
+	{'ok', term(), filename()} | {'error', posix() | {integer(), atom(), _}}.
 
 path_script(Path, File, Bs) ->
     case path_open(Path, File, [read]) of
@@ -836,10 +853,8 @@ path_script(Path, File, Bs) ->
 %% Searches the Paths for file Filename which can be opened with Mode.
 %% The path list is ignored if Filename contains an absolute path.
 
--spec path_open(Paths :: [name()],
-		Filename :: name(),
-		Modes :: filemodes()) ->
-	{'ok', io_device(), string()} | {'error', posix()}.
+-spec path_open(Paths :: [name()], Name :: name(), Modes :: filemodes()) ->
+	{'ok', io_device(), filename()} | {'error', posix()}.
 
 path_open(PathList, Name, Mode) ->
     case file_name(Name) of
@@ -851,9 +866,9 @@ path_open(PathList, Name, Mode) ->
 		    path_open_first(PathList, FileName, Mode, enoent);
 		_ ->
 		    case open(Name, Mode) of
-			{ok, Fd} -> 
+			{ok, Fd} ->
 			    {ok, Fd, Name};
-			Error -> 
+			Error ->
 			    Error
 		    end
 	    end

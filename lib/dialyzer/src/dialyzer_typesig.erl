@@ -56,19 +56,18 @@
 	 t_none/0, t_unit/0]).
 
 -include("dialyzer.hrl").
--include("dialyzer_callgraph.hrl").
 
 %%-----------------------------------------------------------------------------
 
 -type dep()      :: integer().  %% type variable names used as constraint ids
--type type_var() :: erl_type(). %% actually: {'c','var',_,_}
+-type type_var() :: erl_types:erl_type(). %% actually: {'c','var',_,_}
 
--record(fun_var, {'fun' :: fun((_) -> erl_type()), deps :: [dep()]}).
+-record(fun_var, {'fun' :: fun((_) -> erl_types:erl_type()), deps :: [dep()]}).
 
 -type constr_op()    :: 'eq' | 'sub'.
--type fvar_or_type() :: #fun_var{} | erl_type().
+-type fvar_or_type() :: #fun_var{} | erl_types:erl_type().
 
--record(constraint, {lhs  :: erl_type(),
+-record(constraint, {lhs  :: erl_types:erl_type(),
 		     op   :: constr_op(),
 		     rhs  :: fvar_or_type(),
 		     deps :: [dep()]}).
@@ -82,24 +81,24 @@
 
 -type constr() :: #constraint{} | #constraint_list{} | #constraint_ref{}.
 
--type typesig_ret()    :: [{mfa(), erl_type()}].
+-type typesig_ret()    :: [{mfa(), erl_types:erl_type()}].
 -type typesig_scc()    :: [{mfa(), {core_var(), core_fun()}, dict()}].
 -type typesig_funmap() :: [{type_var(), type_var()}]. %% Orddict
 
--record(state, {callgraph                  :: #dialyzer_callgraph{},
+-record(state, {callgraph                  :: dialyzer_callgraph:callgraph(),
 		cs            = []         :: [constr()],
 		cmap          = dict:new() :: dict(),
 		fun_map       = []         :: typesig_funmap(),
 		fun_arities   = dict:new() :: dict(),
-		in_match      = false      :: bool(),
-		in_guard      = false      :: bool(),
+		in_match      = false      :: boolean(),
+		in_guard      = false      :: boolean(),
 		name_map      = dict:new() :: dict(),
 		next_label                 :: label(),
 		non_self_recs = []         :: [label()],
-		plt                        :: #dialyzer_plt{}, 
+		plt                        :: dialyzer_plt:plt(), 
 		prop_types    = dict:new() :: dict(),
 		records       = dict:new() :: dict(),
-		opaques       = []         :: [erl_type()],
+		opaques       = []         :: [erl_types:erl_type()],
 		scc           = []         :: [type_var()]}).
 		
 %%-----------------------------------------------------------------------------
@@ -142,7 +141,8 @@
 %%             about functions that can be called by this SCC.
 %%-----------------------------------------------------------------------------
 
--spec analyze_scc(typesig_scc(), label(), #dialyzer_callgraph{}, #dialyzer_plt{}) ->
+-spec analyze_scc(typesig_scc(), label(),
+		  dialyzer_callgraph:callgraph(), dialyzer_plt:plt()) ->
 	 typesig_ret().
 
 analyze_scc(SCC, NextLabel, CallGraph, Plt) when is_integer(NextLabel) ->
@@ -155,8 +155,8 @@ assert_format_of_scc([]) ->
   ok.
 
 -spec analyze_scc_get_all_fun_types(typesig_scc(), label(),
-				    #dialyzer_callgraph{}, 
-				    #dialyzer_plt{}, dict()) -> dict().
+				    dialyzer_callgraph:callgraph(), 
+				    dialyzer_plt:plt(), dict()) -> dict().
 
 analyze_scc_get_all_fun_types(SCC, NextLabel, CallGraph, Plt, PropTypes) ->
   assert_format_of_scc(SCC),
@@ -783,7 +783,7 @@ handle_clauses_1([Clause|Tail], TopVar, Arg, DefinedVars,
 handle_clauses_1([], _TopVar, _Arg, _DefinedVars, State, _SubtrType, Acc) ->
   {state__new_constraint_context(State), Acc}.
 
--spec get_safe_underapprox([_], core_tree()) -> erl_type().
+-spec get_safe_underapprox([core_values()], core_tree()) -> erl_types:erl_type().
 
 get_safe_underapprox(Pats, Guard) ->
   try
@@ -2263,7 +2263,7 @@ state__finalize(State) ->
 %%
 %% ============================================================================
 
--spec mk_constraint(erl_type(), constr_op(), fvar_or_type()) -> #constraint{}.
+-spec mk_constraint(erl_types:erl_type(), constr_op(), fvar_or_type()) -> #constraint{}.
 
 mk_constraint(Lhs, Op, Rhs) ->
   case t_is_any(Lhs) orelse constraint_opnd_is_any(Rhs) of
@@ -2290,12 +2290,12 @@ mk_constraint(Lhs, Op, Rhs) ->
 
 %% the following function is used so that we do not call
 %% erl_types:t_is_any/1 with a term other than an erl_type()
--spec constraint_opnd_is_any(fvar_or_type()) -> bool().
+-spec constraint_opnd_is_any(fvar_or_type()) -> boolean().
 
 constraint_opnd_is_any(#fun_var{}) -> false;
 constraint_opnd_is_any(Type) -> t_is_any(Type).
 
--spec mk_fun_var(fun((_) -> erl_type()), [erl_type()]) -> #fun_var{}.
+-spec mk_fun_var(fun((_) -> erl_types:erl_type()), [erl_types:erl_type()]) -> #fun_var{}.
 
 mk_fun_var(Fun, Types) ->
   Deps = [t_var_name(Var) || Var <- t_collect_vars(t_product(Types))],

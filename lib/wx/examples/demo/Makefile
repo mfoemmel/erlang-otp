@@ -27,15 +27,19 @@ ERLINC = $(TOPDIR)/include
 ERLC = erlc
 TESTMODS = \
 	demo \
+	demo_html_tagger \
+	ex_aui \
 	ex_button \
 	ex_canvas \
 	ex_canvas_paint \
 	ex_choices \
 	ex_cursor \
 	ex_dialogs \
-	ex_frameutilities \
+	ex_frame_utils \
 	ex_gauge \
+	ex_gl \
 	ex_grid \
+	ex_htmlWindow \
 	ex_listCtrl \
 	ex_notebook \
 	ex_pickers \
@@ -47,7 +51,9 @@ TESTMODS = \
 	ex_splitterWindow \
 	ex_static \
 	ex_textCtrl \
-	ex_treeCtrl
+	ex_treeCtrl \
+	ex_graphicsContext  
+
 
 TESTTARGETS = $(TESTMODS:%=%.beam)
 TESTSRC = $(TESTMODS:%=%.erl)
@@ -78,7 +84,7 @@ release_spec:
 	$(INSTALL_DIR) $(EXRELSYSDIR)
 	$(INSTALL_DATA) $(TESTSRC)  $(EXRELSYSDIR)
 	$(INSTALL_DATA) $(TESTTARGETS) $(EXRELSYSDIR)
-	$(INSTALL_DATA) image.jpg $(EXRELSYSDIR)
+	$(INSTALL_DATA) image.jpg erlang.png ex_htmlWindow.html $(EXRELSYSDIR)
 
 release_tests_spec:
 

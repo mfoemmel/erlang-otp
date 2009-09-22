@@ -52,6 +52,7 @@
 #define FILE_SETOPT		26
 #define FILE_IPREAD             27
 #define FILE_ALTNAME            28
+#define FILE_READ_LINE          29
 
 /* Return codes */
 
@@ -80,6 +81,10 @@
 #define FILE_SEGMENT_WRITE (256*1024)
 
 /* Internal */
+
+/* Set to 1 to test having read_ahead implicitly for read_line */ 
+#define ALWAYS_READ_LINE_AHEAD 0
+
 
 /* Must not be possible to get from malloc()! */
 #define FILE_FD_INVALID ((Sint)(-1))
@@ -165,6 +170,11 @@ static unsigned file_fixed_key = 1;
   put_int32((i).second,(b) + 5 * 4)
 
 
+#if ALWAYS_READ_LINE_AHEAD
+#define DEFAULT_LINEBUF_SIZE 2048
+#else
+#define DEFAULT_LINEBUF_SIZE 512 /* Small, it's usually discarded anyway */ 
+#endif
 
 typedef unsigned char uchar;
 
@@ -327,6 +337,16 @@ struct t_data
 	    size_t        bin_size;
 	    size_t        size;
 	} read;
+	struct {
+	    ErlDrvBinary *binp; /* in - out */
+	    size_t        read_offset; /* in - out */
+	    size_t        read_size; /* in - out */
+	    size_t        nl_pos; /* out */
+	    short         nl_skip; /* out, 0 or 1 */
+#if !ALWAYS_READ_LINE_AHEAD
+	    short         read_ahead; /* in, bool */
+#endif
+	} read_line;
 	struct {
 	    ErlDrvBinary *binp;
 	    int           size;
@@ -927,6 +947,113 @@ static void free_read(void *data)
     struct t_data *d = (struct t_data *) data;
 
     driver_free_binary(d->c.read.binp);
+    EF_FREE(d);
+}
+
+static void invoke_read_line(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int status;
+    size_t read_size;
+    int local_loop = (d->again == 0);
+
+    do {
+	size_t size = (d->c.read_line.binp)->orig_size - 
+	    d->c.read_line.read_offset - d->c.read_line.read_size;
+	if (size == 0) {
+	    /* Need more place */
+	    size_t need = (d->c.read_line.read_size >= DEFAULT_LINEBUF_SIZE) ? 
+		d->c.read_line.read_size + DEFAULT_LINEBUF_SIZE : DEFAULT_LINEBUF_SIZE;
+	    ErlDrvBinary   *newbin = driver_alloc_binary(need);
+	    if (newbin == NULL) {
+		d->result_ok = 0;
+		d->errInfo.posix_errno = ENOMEM;
+		d->again = 0;
+		break;
+	    }
+	    memcpy(newbin->orig_bytes, (d->c.read_line.binp)->orig_bytes + d->c.read_line.read_offset,  
+		   d->c.read_line.read_size);
+	    driver_free_binary(d->c.read_line.binp);
+	    d->c.read_line.binp = newbin;
+	    d->c.read_line.read_offset = 0;
+	    size = need - d->c.read_line.read_size;
+	}
+	if (d->flags & EFILE_COMPRESSED) {
+	    read_size = erts_gzread((gzFile)d->fd, 
+				    d->c.read_line.binp->orig_bytes + 
+				    d->c.read_line.read_offset + d->c.read_line.read_size,
+				    size);
+	    status = (read_size != -1);
+	    if (!status) {
+		d->errInfo.posix_errno = EIO;
+	    }
+	} else {
+	    status = efile_read(&d->errInfo, d->flags, (int) d->fd,
+				d->c.read_line.binp->orig_bytes + 
+				d->c.read_line.read_offset + d->c.read_line.read_size,
+				size,
+				&read_size);
+	}
+	if ( (d->result_ok = status)) {
+	    void *nl_ptr = memchr((d->c.read_line.binp)->orig_bytes + 
+				  d->c.read_line.read_offset + d->c.read_line.read_size,'\n',read_size);
+	    ASSERT(read_size <= size);
+	    d->c.read_line.read_size += read_size;
+	    if (nl_ptr != NULL) {
+		/* If found, we're done */
+		d->c.read_line.nl_pos = ((char *) nl_ptr) - 
+		    ((char *) ((d->c.read_line.binp)->orig_bytes)) + 1;
+		if (d->c.read_line.nl_pos > 1 &&
+		    *(((char *) nl_ptr) - 1) == '\r') {
+		    --d->c.read_line.nl_pos;
+		    *(((char *) nl_ptr) - 1) = '\n';
+		    d->c.read_line.nl_skip = 1;
+		} else {
+		    d->c.read_line.nl_skip = 0;
+		}
+		d->again = 0;
+#if !ALWAYS_READ_LINE_AHEAD
+		if (!(d->c.read_line.read_ahead)) {
+		    /* Ouch! Undo buffering... */
+		    size_t too_much = d->c.read_line.read_size - d->c.read_line.nl_skip - 
+			(d->c.read_line.nl_pos - d->c.read_line.read_offset);
+		    d->c.read_line.read_size -= too_much;
+		    ASSERT(d->c.read_line.read_size >= 0);
+		    if (d->flags & EFILE_COMPRESSED) {
+			Sint64 location = erts_gzseek((gzFile)d->fd, 
+						      -((Sint64) too_much), EFILE_SEEK_CUR);
+			if (location == -1) {
+			    d->result_ok = 0;
+			    d->errInfo.posix_errno = errno;
+			}
+		    } else {
+			Sint64 location;
+			d->result_ok = efile_seek(&d->errInfo, (int) d->fd, 
+						-((Sint64) too_much), EFILE_SEEK_CUR,
+						&location);
+		    }
+		}
+#endif
+		break;
+	    } else if (read_size == 0) {
+		d->c.read_line.nl_pos = 
+		    d->c.read_line.read_offset + d->c.read_line.read_size;
+		d->c.read_line.nl_skip = 0;
+		d->again = 0;
+		break;
+	    }
+	} else {
+	    d->again = 0;
+	    break;
+	}
+    } while (local_loop);
+}
+
+static void free_read_line(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    driver_free_binary(d->c.read_line.binp);
     EF_FREE(d);
 }
 
@@ -1691,7 +1818,7 @@ file_async_ready(ErlDrvData e, ErlDrvThreadData data)
     struct t_data *d = (struct t_data *) data;
     char header[5];		/* result code + count */
     char resbuf[RESBUFSIZE];	/* Result buffer. */
-
+    
 
     TRACE_C('r');
 
@@ -1701,7 +1828,7 @@ file_async_ready(ErlDrvData e, ErlDrvThreadData data)
 
     switch (d->command)
     {
-      case FILE_READ:
+    case FILE_READ:
 	if (!d->result_ok) {
 	    reply_error(desc, &d->errInfo);
 	} else {
@@ -1719,6 +1846,38 @@ file_async_ready(ErlDrvData e, ErlDrvThreadData data)
 	    try_free_read_bin(desc);
 	}
 	free_read(data);
+	break;
+      case FILE_READ_LINE:
+	  /* The read_line stucture differs from the read structure.
+	     The data->read_offset and d->c.read_line.read_offset are copies, as are 
+	     data->read_size and d->c.read_line.read_size 
+             The read_line function does not kniow in advance how large the binary has to be,
+	     why new allocation (but not reallocation of the old binary, for obvious reasons) 
+	     may happen in the worker thread. */
+	if (!d->result_ok) {
+	    reply_error(desc, &d->errInfo);
+	} else {
+	    size_t len = d->c.read_line.nl_pos - d->c.read_line.read_offset;
+	    TRACE_C('L');
+	    reply_data(desc, d->c.read_line.binp, 
+		       d->c.read_line.read_offset, len);
+	    desc->read_offset = d->c.read_line.read_offset + d->c.read_line.nl_skip + len;
+	    desc->read_size = 
+		d->c.read_line.read_size - d->c.read_line.nl_skip - len;
+	    if (desc->read_binp != d->c.read_line.binp) { /* New binary allocated */
+		driver_free_binary(desc->read_binp);
+		desc->read_binp =  d->c.read_line.binp;
+		driver_binary_inc_refc(desc->read_binp);
+	    }
+#if !ALWAYS_READ_LINE_AHEAD
+	    ASSERT(desc->read_bufsize > 0 || desc->read_size == 0);
+	    if (desc->read_bufsize == 0) {
+		desc->read_offset = desc->read_binp->orig_size; /* triggers cleanup */
+	    }
+#endif
+	    try_free_read_bin(desc);
+	}
+	free_read_line(data);
 	break;
       case FILE_READ_FILE:
 	if (!d->result_ok)
@@ -2325,6 +2484,16 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    reply_posix_error(desc, err);
 	    goto done;
 	}
+#if ALWAYS_READ_LINE_AHEAD
+	if (desc->read_bufsize == 0 && desc->read_binp != NULL && desc->read_size > 0) {
+	    /* We have allocated a buffer for line mode but should not really have a 
+	       read-ahead buffer... */
+	    if (lseek_flush_read(desc, &err) < 0) {
+		reply_posix_error(desc, err);
+		goto done;
+	    }
+	}
+#endif
 	if (ev->size != 1+8
 	    || !EV_GET_UINT32(ev, &sizeH, &p, &q)
 	    || !EV_GET_UINT32(ev, &sizeL, &p, &q)) {
@@ -2414,6 +2583,86 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	cq_enq(desc, d);
     } goto done; /* case FILE_READ: */
 
+    case FILE_READ_LINE: {
+	/*
+	 * Icky little creature... We do mostly as ordinary file read, but with a few differences.
+	 * 1) We have to scan for proper newline sequence if there is a buffer already, we cannot know 
+	 *    in advance if the buffer contains a whole line without scanning.
+	 * 2) We do not know how large the buffer needs to be in advance. We give a default buffer,
+	 *    but the worker may need to allocate a new one. Freeing the old and rereferencing a newly 
+	 *    allocated binary + dealing with offsets and lengts are done in file_async ready
+	 *    for this OP.
+	 */
+	struct t_data *d;
+	if (flush_write_check_error(desc, &err) < 0) {
+	    reply_posix_error(desc, err);
+	    goto done;
+	}
+	if (ev->size != 1) {
+	    /* Wrong command length */
+	    reply_posix_error(desc, EINVAL);
+	    goto done;
+	}
+	if ((desc->fd == FILE_FD_INVALID)
+	    || (! (desc->flags & EFILE_MODE_READ)) ) {
+	    reply_posix_error(desc, EBADF);
+	    goto done;
+	}
+	if (desc->read_size > 0) {
+	    /* look for '\n' in what we'we already got */
+	    void *nl_ptr = memchr(desc->read_binp->orig_bytes + desc->read_offset,'\n',desc->read_size);
+	    if (nl_ptr != NULL) {
+		/* If found, we're done */
+		int skip = 0;
+		size_t size = ((char *) nl_ptr) - 
+		    ((char *) (desc->read_binp->orig_bytes + desc->read_offset)) + 1;
+		if (size > 1 &&
+		    *(((char *) nl_ptr) - 1) == '\r') {
+		    *(((char *) nl_ptr) - 1) = '\n';		    
+		    skip = 1;
+		    --size;
+		} 
+		reply_data(desc, desc->read_binp, desc->read_offset, size);
+		desc->read_offset += (size + skip);
+		desc->read_size -= (size + skip);
+		try_free_read_bin(desc);
+		goto done;
+	    }
+	}
+	/* Now, it's up to the thread to work out the need for more buffers and such, it's
+	   no use doing it in this thread as we do not have the information required anyway. 
+	   Even a NULL buffer could be handled by the thread, but code is simplified by us 
+	   allocating it */
+	if (! desc->read_binp) {
+	    int alloc_size = (desc->read_bufsize > DEFAULT_LINEBUF_SIZE) ? desc->read_bufsize : 
+		DEFAULT_LINEBUF_SIZE;
+	    /* Allocate a new binary for the result */
+	    if (! (desc->read_binp = driver_alloc_binary(alloc_size))) {
+		reply_posix_error(desc, ENOMEM);
+		goto done;
+	    }
+	}	
+	if (! (d = EF_ALLOC(sizeof(struct t_data)))) {
+	    reply_posix_error(desc, ENOMEM);
+	    goto done;
+	}
+
+	d->command = command;
+	d->reply = !0;
+	d->fd = desc->fd;
+	d->flags = desc->flags;
+	d->c.read_line.binp = desc->read_binp;
+	d->c.read_line.read_offset = desc->read_offset;
+	d->c.read_line.read_size = desc->read_size;
+#if !ALWAYS_READ_LINE_AHEAD
+	d->c.read_line.read_ahead = (desc->read_bufsize > 0);
+#endif 
+	driver_binary_inc_refc(d->c.read.binp);
+	d->invoke = invoke_read_line;
+	d->free = free_read_line;
+	d->level = 1;
+	cq_enq(desc, d);
+    } goto done;
     case FILE_WRITE: {
 	int skip = 1;
 	int size = ev->size - skip;

@@ -36,6 +36,8 @@
 -export([listen_init/4]).
 
 -define(TIMEOUT, 15000).
+-include("httpd_internal.hrl").
+
 
 %%%=========================================================================
 %%%  API
@@ -47,24 +49,20 @@ start_link(HttpdServices, stand_alone) ->
     supervisor:start_link(?MODULE, [HttpdServices]).
 
 start_child(Config) ->
-    Spec =
-	try httpd_config(Config) of
-	    NewConfig ->
-		httpd_child_spec(NewConfig, ?TIMEOUT, [])
-	catch
-	    %% When httpd is started at another time than
-	    %% the inets application start it is allowed
-	    %% to start from a property list.
-	    {error, mandatory_config_file_missing} ->
-		httpd_child_spec(Config, ?TIMEOUT, [])
-	end,    	
-    
-    case supervisor:start_child(?MODULE, Spec) of
-	{error,{invalid_child_spec, Error}} ->
-	    Error;
-	Other ->
-	    Other
+    try httpd_config(Config) of
+	{ok, NewConfig} ->
+	    Spec = httpd_child_spec(NewConfig, ?TIMEOUT, []),
+	    case supervisor:start_child(?MODULE, Spec) of
+		{error, {invalid_child_spec, Error}} ->
+		    Error;
+		Other ->
+		    Other
+	    end
+    catch
+	throw:Error ->
+	    Error
     end.
+    
 
 restart_child(Address, Port) ->
     Name = id(Address, Port),
@@ -87,15 +85,18 @@ stop_child(Address, Port) ->
 id(Address, Port) ->
     {httpd_instance_sup, Address, Port}.
 
+
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
 init([HttpdServices]) ->
+    ?hdrd("starting", []),
     RestartStrategy = one_for_one,
     MaxR = 10,
     MaxT = 3600,
     Children = child_specs(HttpdServices, []),
     {ok, {{RestartStrategy, MaxR, MaxT}, Children}}.
+
 
 %%%=========================================================================
 %%%  Internal functions
@@ -117,39 +118,38 @@ init([HttpdServices]) ->
 child_specs([], Acc) ->
     Acc;
 child_specs([{httpd, HttpdService} | Rest], Acc) ->
-    NewHttpdService = mk_tuple_list(HttpdService),
+    ?hdrd("child specs", [{httpd, HttpdService}]),
+    NewHttpdService = (catch mk_tuple_list(HttpdService)),
+    ?hdrd("child specs", [{new_httpd, NewHttpdService}]),
     case catch child_spec(NewHttpdService) of
 	{error, Reason} ->
+	    ?hdri("failed generating child spec", [{reason, Reason}]),
 	    error_msg("Failed to start service: ~n~p ~n due to: ~p~n",
 		      [HttpdService, Reason]),
 	    child_specs(Rest, Acc);
 	Spec ->
+	    ?hdrt("child spec", [{child_spec, Spec}]),
 	    child_specs(Rest, [Spec | Acc])
     end.
 
 child_spec(HttpdService) ->
-    Debug = proplists:get_value(debug, HttpdService, []),
-    AcceptTimeout = proplists:get_value(accept_timeout, HttpdService, 15000),
-    Config = httpd_config(HttpdService),
+    {ok, Config}  = httpd_config(HttpdService),
+    ?hdrt("child spec", [{config, Config}]),
+    Debug         = proplists:get_value(debug, Config, []),
+    AcceptTimeout = proplists:get_value(accept_timeout, Config, 15000),
     httpd_util:valid_options(Debug, AcceptTimeout, Config),
     httpd_child_spec(Config, AcceptTimeout, Debug).
 
-httpd_config([Value| _] = HttpdService) when is_tuple(Value) ->
-    case proplists:get_value(file, HttpdService) of
+httpd_config([Value| _] = Config) when is_tuple(Value) ->
+    case proplists:get_value(file, Config) of
 	undefined -> 
-	    case proplists:get_value(proplist_file, HttpdService) of
+	    case proplists:get_value(proplist_file, Config) of
 		undefined ->
-		    case mandatory_properties(HttpdService) of
-			ok -> % stand alone start
-			    HttpdService;
-			_ ->
-			    throw({error, 
-				   mandatory_config_file_missing})
-		    end;
+		    httpd_conf:validate_properties(Config);
 		File ->
 		   try file:consult(File) of
 		       {ok, [PropList]} ->
-			   PropList
+			   httpd_conf:validate_properties(PropList)
 		   catch 
 		       exit:_ ->
 			   throw({error, 
@@ -157,37 +157,24 @@ httpd_config([Value| _] = HttpdService) when is_tuple(Value) ->
 		   end
 	    end;
 	File -> 
-	    File
+	    {ok, File}
     end.
 
 httpd_child_spec([Value| _] = Config, AcceptTimeout, Debug)  
   when is_tuple(Value)  ->
-    case mandatory_properties(Config) of
-	ok ->
-	    case address(Config) of
-		{ok, Address, NewConfig} ->  
-		     Port =  
-			proplists:get_value(port, NewConfig, 80),
-		    httpd_child_spec(NewConfig, AcceptTimeout, 
-				     Debug, Address, Port);
-		 Error ->
-		    Error
-	    end;
-	Error ->
-	    Error
-    end;
+    Address = proplists:get_value(bind_address, Config, any),
+    Port    = proplists:get_value(port, Config, 80),
+    httpd_child_spec(Config, AcceptTimeout, Debug, Address, Port);
 
 httpd_child_spec(ConfigFile, AcceptTimeout, Debug) ->
     case httpd_conf:load(ConfigFile) of
 	{ok, ConfigList} ->
-	    case mandatory_properties(ConfigList) of
-		ok ->
-		    Port = proplists:get_value(port, ConfigList, 80),
-		    Address = proplists:get_value(bind_address, ConfigList,
-						  any), 
-		    httpd_child_spec([{file, ConfigFile} | ConfigList], 
-				     AcceptTimeout, 
-				     Debug, Address, Port);
+	    case httpd_conf:validate_properties(ConfigList) of
+		{ok, Config} ->
+		    Address = proplists:get_value(bind_address, Config, any), 
+		    Port    = proplists:get_value(port, Config, 80),
+		    httpd_child_spec([{file, ConfigFile} | Config], 
+				     AcceptTimeout, Debug, Address, Port);
 		Error ->
 		    Error
 	    end;
@@ -228,7 +215,7 @@ mk_tuple_list([]) ->
 mk_tuple_list([H={_,_}|T]) ->
     [H|mk_tuple_list(T)];
 mk_tuple_list(F) ->
-    [{file,F}].
+    [{file, F}].
 
 error_msg(F, A) ->
     error_logger:error_msg(F ++ "~n", A).
@@ -247,20 +234,6 @@ listen(Address, Port, Config)  ->
 	    end;
 	{error, Reason} ->
 	    {error, {socket_start_failed, Reason}}
-    end.
-
-address(Config) ->
-    case proplists:get_value(bind_address, Config, any) of
-	any ->
-	    {ok, any, Config};
-	Host ->
-	    case httpd_util:ip_address(Host) of
-		{ok, Address} ->
-		    NewConfig = proplists:delete(bind_address, Config),
-		    {ok, Address, [{bind_address, Address} | NewConfig]};
-		{error, Reason} ->
-		    {error, Reason}
-	    end
     end.
 
 start_listen(Address, Port, Config) ->
@@ -285,19 +258,6 @@ listen_loop() ->
 	    ok
     end.
 	    
-mandatory_properties(ConfigList) ->
-    a_must(ConfigList, [server_name,port,server_root,document_root]).
-
-a_must(_ConfigList, []) ->
-    ok;
-a_must(ConfigList, [Prop | Rest]) ->
-    case proplists:get_value(Prop, ConfigList) of
-	undefined ->
-	    {error, {missing_property, Prop}};
-	_ ->
-	    a_must(ConfigList, Rest)
-    end.
-
 
 
 

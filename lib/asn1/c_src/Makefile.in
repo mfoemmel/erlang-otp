@@ -60,7 +60,7 @@ EI_INCLUDES = -I$(ERL_TOP)/lib/erl_interface/include
 DRIVER_INCLUDES = -I$(ERL_TOP)/erts/emulator/beam \
 	-I$(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE)
 CFLAGS = $(DRIVER_INCLUDES) $(EI_INCLUDES) @DED_CFLAGS@
-LDFLAGS = @DED_LDFLAGS@
+LDFLAGS += @DED_LDFLAGS@
 
 LD_INCL_EI = -L$(EI_LIBDIR)
 

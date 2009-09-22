@@ -444,8 +444,8 @@ logger_loop(State) ->
     receive
 	{log,Pid,GL,List} ->
 	    case get_groupleader(Pid,GL,State) of
-		{tc_log,TCGLs} ->
-		    case erlang:is_process_alive(GL) of
+		{tc_log,TCGL,TCGLs} ->
+		    case erlang:is_process_alive(TCGL) of
 			true ->
 			    %% we have to build one io-list of all strings
 			    %% before printing, or other io printouts (made in
@@ -468,7 +468,7 @@ logger_loop(State) ->
 						[IoList,"\n",IoStr]
 					end
 				end,
-			    io:format(GL,"~s",[lists:foldl(Fun,[],List)]),
+			    io:format(TCGL,"~s",[lists:foldl(Fun,[],List)]),
 			    logger_loop(State#logger_state{tc_groupleaders=TCGLs});
 			false ->
 			    %% Group leader is dead, so write to the CtLog instead
@@ -477,9 +477,9 @@ logger_loop(State) ->
 				{Str,Args} <- List],
 			    logger_loop(State)			    
 		    end;
-		{ct_log,Fd} ->
+		{ct_log,Fd,TCGLs} ->
 		    [begin io:format(Fd,Str,Args),io:nl(Fd) end || {Str,Args} <- List],
-		    logger_loop(State)			    
+		    logger_loop(State#logger_state{tc_groupleaders=TCGLs})
 	    end;
 	{{init_tc,TCPid,GL},From} ->
 	    print_style(GL, State#logger_state.stylesheet),
@@ -525,21 +525,54 @@ logger_loop(State) ->
 %% first time it sends data and will be stored in the list until the
 %% last TC process associated with the same group leader gets 
 %% unregistered.
+%%
+%% If a process that has not been spawned by a test case process
+%% sends a log request, the data will be printed to a test case
+%% log file *if* there exists one registered process only in the 
+%% tc_groupleaders list. If multiple test case processes are
+%% running, the data gets printed to the CT framework log instead. 
+%%
+%% Note that an external process must not be registered as an IO
+%% process since it could then accidentally be associated with
+%% the first test case process that starts in a group of parallel
+%% cases (if the log request would come in between the registration
+%% of the first and second test case process).
 
 get_groupleader(Pid,GL,State) ->
     TCGLs = State#logger_state.tc_groupleaders,
+    %% check if Pid is registered either as a TC or IO process
     case proplists:get_value(Pid,TCGLs) of
 	undefined ->
 	    %% this could be a process spawned by the test case process,
 	    %% if so they have the same registered group leader
 	    case lists:keysearch({tc,GL},2,TCGLs) of
 		{value,_} ->
-		    {tc_log,[{Pid,{io,GL}}|TCGLs]};
+		    %% register the io process
+		    {tc_log,GL,[{Pid,{io,GL}}|TCGLs]};
 		false ->
-		    {ct_log,State#logger_state.ct_log_fd}
+		    %% check if only one test case is executing,
+		    %% if so return the group leader for it
+		    case [TCGL || {_,{Type,TCGL}} <- TCGLs, Type == tc] of
+			[TCGL] ->
+			    %% an external process sending the log
+			    %% request, don't register
+			    {tc_log,TCGL,TCGLs};
+			_ ->
+			    {ct_log,State#logger_state.ct_log_fd,TCGLs}
+		    end
 	    end;
 	{_,GL} ->
-	    {tc_log,TCGLs}
+	    {tc_log,GL,TCGLs};
+	_ ->
+	    %% special case where a test case io process has changed
+	    %% its group leader to an non-registered GL process
+	    TCGLs1 = proplists:delete(Pid,TCGLs),
+	    case [TCGL || {_,{Type,TCGL}} <- TCGLs1, Type == tc] of
+		[TCGL] ->
+		    {tc_log,TCGL,TCGLs1};
+		_ ->
+		    {ct_log,State#logger_state.ct_log_fd,TCGLs1}
+	    end    
     end.
 
 add_tc_gl(TCPid,GL,State) ->
@@ -548,17 +581,22 @@ add_tc_gl(TCPid,GL,State) ->
 
 rm_tc_gl(TCPid,State) ->
     TCGLs = State#logger_state.tc_groupleaders,
-    {tc,GL} = proplists:get_value(TCPid,TCGLs),
-    TCGLs1 = lists:keydelete(TCPid,1,TCGLs),
-    case lists:keysearch({tc,GL},2,TCGLs1) of
-	{value,_} ->
-	    %% test cases using GL remain, keep associated IO processes
-	    TCGLs1;
-	false ->
-	    %% last test case using GL, delete all associated IO processes
-	    lists:filter(fun({_,{io,GLPid}}) when GL == GLPid -> false;
-			    (_) -> true
-			 end, TCGLs1)
+    case proplists:get_value(TCPid,TCGLs) of	
+	{tc,GL} ->
+	    TCGLs1 = lists:keydelete(TCPid,1,TCGLs),
+	    case lists:keysearch({tc,GL},2,TCGLs1) of
+		{value,_} ->
+		    %% test cases using GL remain, keep associated IO processes
+		    TCGLs1;
+		false ->
+		    %% last test case using GL, delete all associated IO processes
+		    lists:filter(fun({_,{io,GLPid}}) when GL == GLPid -> false;
+				    (_) -> true
+				 end, TCGLs1)
+	    end;
+	_ ->
+	    %% add_tc_gl has not been called for this Pid, ignore
+	    TCGLs
     end.
 
 set_evmgr_gl(GL) ->
@@ -687,8 +725,8 @@ make_last_run_index1(StartTime,IndexName) ->
 	    {ok,Bin} -> binary_to_term(Bin);
 	    _ -> []
 	end,
-    {ok,Index0,Totals} = make_last_run_index(Logs1,index_header(StartTime),
-					     0,0,0,0,Missing),
+    {ok,Index0,Totals} = make_last_run_index(Logs1, index_header(StartTime),
+					     0, 0, 0, 0, 0, Missing),
     %% write current Totals to file, later to be used in all_runs log
     write_totals_file(?totals_name,Logs1,Totals),
     Index = [Index0|index_footer()],
@@ -711,41 +749,47 @@ insert_dir(D,[D1|Ds]) ->
 insert_dir(D,[]) ->
     [D].
 
-make_last_run_index([Name|Rest], Result, TotSucc,TotFail,TotSkip,TotNotBuilt, 
-		    Missing) ->
+make_last_run_index([Name|Rest], Result, TotSucc, TotFail, UserSkip, AutoSkip,
+		    TotNotBuilt, Missing) ->
     case last_test(Name) of
 	false ->
 	    %% Silently skip.
-	    make_last_run_index(Rest, Result, TotSucc,TotFail,TotSkip,TotNotBuilt,
-				Missing);
+	    make_last_run_index(Rest, Result, TotSucc, TotFail, UserSkip, AutoSkip,
+				TotNotBuilt, Missing);
 	LastLogDir ->
 	    SuiteName = filename:rootname(filename:basename(Name)),
-	    case make_one_index_entry(SuiteName,LastLogDir,false,Missing) of
-		{Result1,Succ,Fail,Skip,NotBuilt} ->
+	    case make_one_index_entry(SuiteName, LastLogDir, false, Missing) of
+		{Result1,Succ,Fail,USkip,ASkip,NotBuilt} ->
+		    %% for backwards compatibility
+		    AutoSkip1 = case catch AutoSkip+ASkip of
+				    {'EXIT',_} -> undefined;
+				    Res -> Res
+				end,
 		    make_last_run_index(Rest, [Result|Result1], TotSucc+Succ, 
-					TotFail+Fail, TotSkip+Skip, 
+					TotFail+Fail, UserSkip+USkip, AutoSkip1,
 					TotNotBuilt+NotBuilt, Missing);
 		error ->
-		    make_last_run_index(Rest, Result, TotSucc, TotFail, TotSkip, 
+		    make_last_run_index(Rest, Result, TotSucc, TotFail, UserSkip, AutoSkip, 
 					TotNotBuilt, Missing)
 	    end
     end;
-make_last_run_index([],Result,TotSucc,TotFail,TotSkip,TotNotBuilt,_) ->
-    {ok, [Result|total_row(TotSucc,TotFail,TotSkip,TotNotBuilt,false)],
-     {TotSucc,TotFail,TotSkip,TotNotBuilt}}.
+make_last_run_index([], Result, TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt, _) ->
+    {ok, [Result|total_row(TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt, false)],
+     {TotSucc,TotFail,UserSkip,AutoSkip,TotNotBuilt}}.
 
-make_one_index_entry(SuiteName,LogDir,All,Missing) ->
+make_one_index_entry(SuiteName, LogDir, All, Missing) ->
     case count_cases(LogDir) of
-	{Succ, Fail, Skip} ->
-	    NotBuilt = not_built(SuiteName,LogDir,All,Missing),
-	    NewResult = make_one_index_entry1(SuiteName,LogDir,Succ,Fail, 
-					      Skip,NotBuilt,All),
-	    {NewResult,Succ,Fail,Skip,NotBuilt};
+	{Succ,Fail,UserSkip,AutoSkip} ->
+	    NotBuilt = not_built(SuiteName, LogDir, All, Missing),
+	    NewResult = make_one_index_entry1(SuiteName, LogDir, Succ, Fail, 
+					      UserSkip, AutoSkip, NotBuilt, All),
+	    {NewResult,Succ,Fail,UserSkip,AutoSkip,NotBuilt};
 	error ->
 	    error
     end.
 
-make_one_index_entry1(SuiteName,Link,Success,Fail,Skipped,NotBuilt,All) ->
+make_one_index_entry1(SuiteName, Link, Success, Fail, UserSkip, AutoSkip, 
+		      NotBuilt, All) ->
     LogFile = filename:join(Link, ?suitelog_name ++ ".html"),
     CrashDumpName = SuiteName ++ "_erl_crash.dump",
     CrashDumpLink = 
@@ -786,17 +830,35 @@ make_one_index_entry1(SuiteName,Link,Success,Fail,Skipped,NotBuilt,All) ->
 		["<TD ALIGN=right><A HREF=\"",?ct_log_name,"\">",
 		integer_to_list(NotBuilt),"</A></TD>\n"]
 	end,
+    FailStr =
+	if Fail > 0 ->  
+		["<FONT color=\"red\">",
+		 integer_to_list(Fail),"</FONT>"];
+	   true ->
+		integer_to_list(Fail)
+	end,
+    {AllSkip,UserSkipStr,AutoSkipStr} = 
+	if AutoSkip == undefined -> {UserSkip,"?","?"};
+	   true ->
+		ASStr = if AutoSkip > 0 ->
+				["<FONT color=\"brown\">",
+				 integer_to_list(AutoSkip),"</FONT>"];
+			   true -> integer_to_list(AutoSkip)
+			end,
+		{UserSkip+AutoSkip,integer_to_list(UserSkip),ASStr}
+	end,
     ["<TR valign=top>\n",
      "<TD><A HREF=\"",LogFile,"\">",SuiteName,"</A>",CrashDumpLink,"</TD>\n",
      Timestamp,
      "<TD ALIGN=right>",integer_to_list(Success),"</TD>\n",
-     "<TD ALIGN=right>",integer_to_list(Fail),"</TD>\n",
-     "<TD ALIGN=right>",integer_to_list(Skipped),"</TD>\n",  
+     "<TD ALIGN=right>",FailStr,"</TD>\n",
+     "<TD ALIGN=right>",integer_to_list(AllSkip),
+     " (",UserSkipStr,"/",AutoSkipStr,")</TD>\n",  
      NotBuiltStr,
      Node,
      AllInfo,
      "</TR>\n"].
-total_row(Success,Fail,Skipped,NotBuilt,All) ->
+total_row(Success, Fail, UserSkip, AutoSkip, NotBuilt, All) ->
     {TimestampCell,AllInfo} = 
 	case All of
 	    true -> 
@@ -804,12 +866,19 @@ total_row(Success,Fail,Skipped,NotBuilt,All) ->
 	    false ->
 		{"",""}
 	end,
+
+    {AllSkip,UserSkipStr,AutoSkipStr} =
+	if AutoSkip == undefined -> {UserSkip,"?","?"};
+	   true -> {UserSkip+AutoSkip,
+		    integer_to_list(UserSkip),integer_to_list(AutoSkip)}
+	end,
     ["<TR valign=top>\n",
      "<TD><B>Total</B></TD>",
      TimestampCell,
      "<TD ALIGN=right><B>",integer_to_list(Success),"<B></TD>\n",
      "<TD ALIGN=right><B>",integer_to_list(Fail),"<B></TD>\n",
-     "<TD ALIGN=right><B>",integer_to_list(Skipped),"<B></TD>\n",
+     "<TD ALIGN=right>",integer_to_list(AllSkip),
+     " (",UserSkipStr,"/",AutoSkipStr,")</TD>\n",  
      "<TD ALIGN=right><B>",integer_to_list(NotBuilt),"<B></TD>\n",
      AllInfo,
      "</TR>\n"].
@@ -873,7 +942,7 @@ index_header(StartTime) ->
       "<th><B>Name</B></th>\n",
       "<th>Successful</th>\n",
       "<th>Failed</th>\n",
-      "<th>Skipped</th>\n"
+      "<th>Skipped (User/Auto)</th>\n"
       "<th>Missing Suites</th>\n"
       "\n"]].
 
@@ -887,7 +956,7 @@ all_suites_index_header() ->
       "<th>Test Run Started</th>\n",
       "<th>Successful</th>\n",
       "<th>Failed</th>\n",
-      "<th>Skipped</th>\n"
+      "<th>Skipped (User/Auto)</th>\n"
       "<th>Missing Suites</th>\n"
       "<th>Node</th>\n",
       "<th>CT Log</th>\n",
@@ -905,8 +974,8 @@ all_runs_header() ->
       "<th>Total</th>\n"
       "<th>Success</th>\n"
       "<th>Failed</th>\n"
-      "<th>Skipped</th>\n"
-      "<th>Missing</th>\n"
+      "<th>Skipped (User/Auto)</th>\n"
+      "<th>Missing Suites</th>\n"
       "\n"]].
 
 header(Title) ->
@@ -990,6 +1059,8 @@ year() ->
 count_cases(Dir) ->
     SumFile = filename:join(Dir, ?run_summary),
     case read_summary(SumFile, [summary]) of
+	{ok, [{Succ,Fail,Skip}]} ->
+	    {Succ,Fail,Skip,undefined};
 	{ok, [Summary]} ->
 	    Summary;
 	{error, _} ->
@@ -997,11 +1068,11 @@ count_cases(Dir) ->
 	    case file:read_file(LogFile) of
 		{ok, Bin} ->
 		    case count_cases1(binary_to_list(Bin), 
-				      {undefined,undefined,undefined}) of
+				      {undefined,undefined,undefined,undefined}) of
 			{error,not_complete} ->
 			    %% The test is not complete - dont write summary
 			    %% file yet.
-			    {0,0,0};
+			    {0,0,0,0};
 			Summary ->
 			    write_summary(SumFile, Summary),
 			    Summary
@@ -1016,12 +1087,6 @@ write_summary(Name, Summary) ->
     File = [term_to_text({summary, Summary})],
     force_write_file(Name, File).
 
-% XXX: This function doesn't do what the writer expect. It can't handle
-% the case if there are several different keys and I had to add a special
-% case for the empty file. The caller also expect just one tuple as
-% a result so this function is written way to general for no reason.
-% But it works sort of. /kgb
-
 read_summary(Name, Keys) ->
     case file:consult(Name) of
 	{ok, []} ->
@@ -1035,16 +1100,23 @@ read_summary(Name, Keys) ->
 	    {error, Reason}
     end.
 
-count_cases1("=failed" ++ Rest, {Success, _Fail, Skipped}) ->
+count_cases1("=failed" ++ Rest, {Success, _Fail, UserSkip,AutoSkip}) ->
     {NextLine, Count} = get_number(Rest),
-    count_cases1(NextLine, {Success, Count, Skipped});
-count_cases1("=successful" ++ Rest, {_Success, Fail, Skipped}) ->
+    count_cases1(NextLine, {Success, Count, UserSkip,AutoSkip});
+count_cases1("=successful" ++ Rest, {_Success, Fail, UserSkip,AutoSkip}) ->
     {NextLine, Count} = get_number(Rest),
-    count_cases1(NextLine, {Count, Fail, Skipped});
-count_cases1("=skipped" ++ Rest, {Success, Fail, _Skipped}) ->
+    count_cases1(NextLine, {Count, Fail, UserSkip,AutoSkip});
+count_cases1("=skipped" ++ Rest, {Success, Fail, _UserSkip,_AutoSkip}) ->
     {NextLine, Count} = get_number(Rest),
-    count_cases1(NextLine, {Success, Fail, Count});
-count_cases1([], {Su,F,Sk}) when Su==undefined;F==undefined;Sk==undefined ->
+    count_cases1(NextLine, {Success, Fail, Count,undefined});
+count_cases1("=user_skipped" ++ Rest, {Success, Fail, _UserSkip,AutoSkip}) ->
+    {NextLine, Count} = get_number(Rest),
+    count_cases1(NextLine, {Success, Fail, Count,AutoSkip});
+count_cases1("=auto_skipped" ++ Rest, {Success, Fail, UserSkip,_AutoSkip}) ->
+    {NextLine, Count} = get_number(Rest),
+    count_cases1(NextLine, {Success, Fail, UserSkip,Count});
+count_cases1([], {Su,F,USk,_ASk}) when Su==undefined;F==undefined;
+				       USk==undefined ->
     {error,not_complete};
 count_cases1([], Counters) ->
     Counters;
@@ -1097,7 +1169,8 @@ make_all_runs_index(When) ->
     Dirs = filelib:wildcard(logdir_prefix()++"*.*"),
     DirsSorted = (catch sort_all_runs(Dirs)),
     Header = all_runs_header(),
-    Index = [runentry(Dir) || Dir <- DirsSorted],
+    BasicHtml = basic_html(),
+    Index = [runentry(Dir, BasicHtml) || Dir <- DirsSorted],
     Result = file:write_file(AbsName,Header++Index++index_footer()),
     if When == start -> ok;
        true -> io:put_chars("done\n")
@@ -1132,11 +1205,28 @@ interactive_link() ->
 	      "Any CT activities will be logged here\n",
 	      [?abs("last_interactive.html")]).
 
-runentry(Dir) ->
+runentry(Dir, BasicHtml) ->
     TotalsFile = filename:join(Dir,?totals_name),
     TotalsStr =
 	case read_totals_file(TotalsFile) of
-	    {Node,Logs,{TotSucc,TotFail,TotSkip,NotBuilt}} ->
+	    {Node,Logs,{TotSucc,TotFail,UserSkip,AutoSkip,NotBuilt}} ->
+		TotFailStr =
+		    if TotFail > 0 ->  
+			    ["<FONT color=\"red\">",
+			     integer_to_list(TotFail),"</FONT>"];
+		       true ->
+			    integer_to_list(TotFail)
+		    end,
+		{AllSkip,UserSkipStr,AutoSkipStr} = 
+		    if AutoSkip == undefined -> {UserSkip,"?","?"};
+		       true ->
+			    ASStr = if AutoSkip > 0 ->
+					    ["<FONT color=\"brown\">",
+					     integer_to_list(AutoSkip),"</FONT>"];
+				       true -> integer_to_list(AutoSkip)
+				    end,
+			    {UserSkip+AutoSkip,integer_to_list(UserSkip),ASStr}
+		    end,
 		NoOfTests = case length(Logs) of
 				0 -> "-";
 				N -> integer_to_list(N)
@@ -1151,28 +1241,45 @@ runentry(Dir) ->
 		TestsStr1 =
 		    if TestList=="" -> 
 			    "";
-		       length(TestList)<(?testname_width+2)->	% incl ", "
+		       BasicHtml and (length(TestList)<(?testname_width+2)) ->	% incl ", "
 			    string:substr(TestList,1,length(TestList)-2);
 		       true ->
-			    Trunc = 
-				string:substr(TestList,1,?testname_width-3),
+			    Trunc = if BasicHtml ->
+					    string:substr(TestList,1,?testname_width-3);
+				       true ->
+					    TestList
+				    end,
 			    Trunc1 = 
 				case lists:reverse(Trunc) of
 				    [32,$,|Rev] -> lists:reverse(Rev);
 				    [$,|Rev] -> lists:reverse(Rev);
 				    _ -> Trunc
 				end,
-			    lists:flatten(io_lib:format("~s...",[Trunc1]))
+			    if BasicHtml ->
+				    lists:flatten(io_lib:format("~s...",[Trunc1]));
+			       true ->
+				    Trunc1
+			    end
 		    end,
-		Total = TotSucc+TotFail+TotSkip,
-		["<TD ALIGN=center><FONT SIZE=-1>",Node,"</FONT></TD>\n",
-		 "<TD ALIGN=right>",NoOfTests,"</TD>\n",
-		 "<TD ALIGN=center><FONT SIZE=-1>",TestsStr1,"</FONT></TD>\n",
-		 "<TD ALIGN=right>",integer_to_list(Total),"</TD>\n",
-		 "<TD ALIGN=right>",integer_to_list(TotSucc),"</TD>\n",
-		 "<TD ALIGN=right>",integer_to_list(TotFail),"</TD>\n",
-		 "<TD ALIGN=right>",integer_to_list(TotSkip),"</TD>\n",
-		 "<TD ALIGN=right>",integer_to_list(NotBuilt),"</TD>\n"];
+		Total = TotSucc+TotFail+AllSkip,
+		A = ["<TD ALIGN=center><FONT SIZE=-1>",Node,"</FONT></TD>\n",
+		     "<TD ALIGN=right>",NoOfTests,"</TD>\n"],
+		B = if BasicHtml ->
+			    ["<TD ALIGN=center><FONT SIZE=-1>",TestsStr1,"</FONT></TD>\n"];
+		       true ->		     
+			    ["<TD ALIGN=left STYLE=\"width:20%; height:0%\"><FONT SIZE=-1>"
+			     "<MARQUEE SCROLLAMOUNT=\"5\" SCROLLDELAY=\"30\" title='",
+			     TestsStr1,"' "
+			     "direction=\"left\" width=\"100%\">",TestsStr1,
+			     "</MARQUEE></FONT></TD>\n"]
+		    end,
+		C = ["<TD ALIGN=right>",integer_to_list(Total),"</TD>\n",
+		     "<TD ALIGN=right>",integer_to_list(TotSucc),"</TD>\n",
+		     "<TD ALIGN=right>",TotFailStr,"</TD>\n",
+		     "<TD ALIGN=right>",integer_to_list(AllSkip),
+		     " (",UserSkipStr,"/",AutoSkipStr,")</TD>\n",
+		     "<TD ALIGN=right>",integer_to_list(NotBuilt),"</TD>\n"],
+		A++B++C;
 	    _ ->
 		["<TD ALIGN=center><FONT size=-1 color=\"red\">",
 		 "Test data missing or corrupt","</FONT></TD>\n"]
@@ -1196,11 +1303,17 @@ read_totals_file(Name) ->
     Result = 
 	case file:read_file(AbsName) of
 	    {ok,Bin} ->
-		%% for backwards compatibility
 		case catch binary_to_term(Bin) of
 		    {'EXIT',_Reason} ->		% corrupt file
 			{"-",[],undefined};
-		    R = {_,_,_} -> R;		% latest
+		    R = {Node,Ls,Tot} -> 
+			case Tot of
+			    {_,_,_,_,_} ->	% latest format
+				R;		
+			    {TotSucc,TotFail,AllSkip,NotBuilt} ->
+				{Node,Ls,{TotSucc,TotFail,AllSkip,undefined,NotBuilt}}
+			end;
+		    %% for backwards compatibility
 		    {Ls,Tot}    -> {"-",Ls,Tot};
 		    Tot         -> {"-",[],Tot}
 		end;
@@ -1297,7 +1410,7 @@ make_all_suites_index1(When,AllSuitesLogDirs) ->
 make_all_suites_index2(IndexName,AllSuitesLogDirs) ->
     {ok,Index0,_Totals} = make_all_suites_index3(AllSuitesLogDirs,
 						 all_suites_index_header(),
-						 0,0,0,0),
+						 0, 0, 0, 0, 0),
     Index = [Index0|index_footer()],
     case force_write_file(IndexName, Index) of
 	ok ->
@@ -1307,25 +1420,31 @@ make_all_suites_index2(IndexName,AllSuitesLogDirs) ->
     end.
 
 make_all_suites_index3([{SuiteName,[LastLogDir|OldDirs]}|Rest],
-		       Result,TotSucc,TotFail,TotSkip,TotNotBuilt) ->
+		       Result, TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt) ->
     [EntryDir|_] = filename:split(LastLogDir),
     Missing = 
 	case file:read_file(filename:join(EntryDir,?missing_suites_info)) of
 	    {ok,Bin} -> binary_to_term(Bin);
 	    _ -> []
 	end,
-    case make_one_index_entry(SuiteName,LastLogDir,{true,OldDirs},Missing) of
-	{Result1,Succ,Fail,Skip,NotBuilt} ->
+    case make_one_index_entry(SuiteName, LastLogDir, {true,OldDirs}, Missing) of
+	{Result1,Succ,Fail,USkip,ASkip,NotBuilt} ->
+	    %% for backwards compatibility
+	    AutoSkip1 = case catch AutoSkip+ASkip of
+			    {'EXIT',_} -> undefined;
+			    Res -> Res
+			end,
 	    make_all_suites_index3(Rest, [Result|Result1], TotSucc+Succ, 
-				   TotFail+Fail, TotSkip+Skip, 
+				   TotFail+Fail, UserSkip+USkip, AutoSkip1,
 				   TotNotBuilt+NotBuilt);
 	error ->
-	    make_all_suites_index3(Rest, Result, TotSucc, TotFail, TotSkip, 
-				   TotNotBuilt)
+	    make_all_suites_index3(Rest, Result, TotSucc, TotFail, 
+				   UserSkip, AutoSkip, TotNotBuilt)
     end;
-make_all_suites_index3([], Result, TotSucc, TotFail, TotSkip, TotNotBuilt) ->
-    {ok, [Result|total_row(TotSucc, TotFail,TotSkip, TotNotBuilt,true)], 
-     {TotSucc,TotFail,TotSkip,TotNotBuilt}}.
+make_all_suites_index3([], Result, TotSucc, TotFail, UserSkip, AutoSkip, 
+		       TotNotBuilt) ->
+    {ok, [Result|total_row(TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt,true)], 
+     {TotSucc,TotFail,UserSkip,AutoSkip,TotNotBuilt}}.
 
 
 %%-----------------------------------------------------------------
@@ -1471,3 +1590,16 @@ last_test([_|Rest], Latest) ->
     last_test(Rest, Latest);
 last_test([], Latest) ->
     Latest.
+
+%%%-----------------------------------------------------------------
+%%% @spec basic_html() -> true | false
+%%%
+%%% @doc
+%%%
+basic_html() ->
+    case application:get_env(common_test, basic_html) of
+	{ok,true} ->
+	    true;
+	_ ->
+	    false
+    end.

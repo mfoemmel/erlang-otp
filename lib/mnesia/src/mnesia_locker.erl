@@ -192,27 +192,17 @@ loop(State) ->
 	    loop(State);
 
 	{From, {ix_read, Tid, Tab, IxKey, Pos}} ->
-	    case catch mnesia_index:get_index_table(Tab, Pos) of
-		{'EXIT', _} ->
-		    reply(From, {not_granted, {no_exists, Tab, {index, [Pos]}}}),
+	    case ?ets_lookup(mnesia_sticky_locks, Tab) of
+		[] ->
+		    set_read_lock_on_all_keys(Tid,From,Tab,IxKey,Pos),
 		    loop(State);
-		Index ->
-		    Rk = mnesia_lib:elems(2,mnesia_index:db_get(Index, IxKey)),
-		    %% list of real keys
-		    case ?ets_lookup(mnesia_sticky_locks, Tab) of
-			[] ->
-			    set_read_lock_on_all_keys(Tid, From,Tab,Rk,Rk, 
-						      []),
-			    loop(State);
-			[{_,N}] when N == node() ->
-			    set_read_lock_on_all_keys(Tid, From,Tab,Rk,Rk, 
-						      []),
-			    loop(State);
-			[{_,N}] ->
-			    Req = {From, {ix_read, Tid, Tab, IxKey, Pos}},
-			    From ! {?MODULE, node(), {switch, N, Req}},
-			    loop(State)
-		    end
+		[{_,N}] when N == node() ->
+		    set_read_lock_on_all_keys(Tid,From,Tab,IxKey,Pos),
+		    loop(State);
+		[{_,N}] ->
+		    Req = {From, {ix_read, Tid, Tab, IxKey, Pos}},
+		    From ! {?MODULE, node(), {switch, N, Req}},
+		    loop(State)	   
 	    end;
 
 	{From, {sync_release_tid, Tid}} ->
@@ -284,24 +274,32 @@ try_lock(Tid, Op, SimpleOp, Lock, Pid, Oid) ->
 	    ?ets_insert(mnesia_tid_locks, {Tid, Oid, {queued, Op}})
     end.
 
-grant_lock(Tid, read, Lock, {Tab, Key})
+grant_lock(Tid, read, Lock, Oid = {Tab, Key})
   when Key /= ?ALL, Tab /= ?GLOBAL ->
     case node(Tid#tid.pid) == node() of
 	true ->
-	    set_lock(Tid, {Tab, Key}, Lock),
+	    set_lock(Tid, Oid, Lock),
 	    {granted, lookup_in_client};
 	false ->
-	    case catch mnesia_lib:db_get(Tab, Key) of %% lookup as well
-		{'EXIT', _Reason} ->
+	    try
+		Val = mnesia_lib:db_get(Tab, Key), %% lookup as well
+		set_lock(Tid, Oid, Lock),
+		{granted, Val}
+	    catch _:_Reason ->
 		    %% Table has been deleted from this node,
 		    %% restart the transaction.
-		    C = #cyclic{op = read, lock = Lock, oid = {Tab, Key},
+		    C = #cyclic{op = read, lock = Lock, oid = Oid,
 				lucky = nowhere},
-		    {not_granted, C};
-		Val -> 
-		    set_lock(Tid, {Tab, Key}, Lock),
-		    {granted, Val}
+		    {not_granted, C}
 	    end
+    end;
+grant_lock(Tid, {ix_read,IxKey,Pos}, Lock, Oid = {Tab, _}) ->
+    try
+	Res = ix_read_res(Tab, IxKey,Pos),
+	set_lock(Tid, Oid, Lock),
+	{granted, Res, [?ALL]}
+    catch _:_ ->
+	    {not_granted, {no_exists, Tab, {index, [Pos]}}}
     end;
 grant_lock(Tid, read, Lock, Oid) ->
     set_lock(Tid, Oid, Lock),
@@ -450,35 +448,27 @@ max(L) ->
     [#queue{tid=Max}|_] = sort_queue(L),
     Max.
 
-%% We can't queue the ixlock requests since it
-%% becomes to complivated for little me :-)
-%% If we encounter an object with a wlock we reject the
-%% entire lock request
-%% 
-%% BUGBUG: this is actually a bug since we may starve
-
-set_read_lock_on_all_keys(Tid, From, Tab, [RealKey | Tail], Orig, Ack) ->
-    Oid = {Tab, RealKey},
-    case can_lock(Tid, read, Oid, {no, bad_luck}) of
+set_read_lock_on_all_keys(Tid, From, Tab, IxKey, Pos) ->
+    Oid = {Tab,?ALL},
+    Op = {ix_read,IxKey, Pos},
+    Lock = read,
+    case can_lock(Tid, Lock, Oid, {no, bad_luck}) of
 	yes ->
-	    {granted, Val} = grant_lock(Tid, read, read, Oid),
-	    case opt_lookup_in_client(Val, Oid, read) of  % Ought to be invoked
-		C = #cyclic{} ->               % in the client
-		    reply(From, {not_granted, C});
-		Val2 -> 
-		    Ack2 = lists:append(Val2, Ack),
-		    set_read_lock_on_all_keys(Tid, From, Tab, Tail, Orig, Ack2)
-	    end;
+	    Reply = grant_lock(Tid, Op, Lock, Oid),
+	    reply(From, Reply);
 	{no, Lucky} ->
-	    C = #cyclic{op = read, lock = read, oid = Oid, lucky = Lucky},
+	    C = #cyclic{op = Op, lock = Lock, oid = Oid, lucky = Lucky},
+	    ?dbg("Rejected ~p ~p ~p ~p ~n", [Tid, Oid, Lock, Lucky]),
 	    reply(From, {not_granted, C});
-	{queue, Lucky} ->
-	    C = #cyclic{op = read, lock = read, oid = Oid, lucky = Lucky},
-	    reply(From, {not_granted, C})
-    end;
-set_read_lock_on_all_keys(_Tid, From, _Tab, [], Orig, Ack) ->
-    reply(From, {granted, Ack, Orig}).
-
+    	{queue, Lucky} ->
+	    ?dbg("Queued ~p ~p ~p ~p ~n", [Tid, Oid, Lock, Lucky]),
+	    %% Append to queue: Nice place for trace output
+	    ?ets_insert(mnesia_lock_queue, 
+			#queue{oid = Oid, tid = Tid, op = Op, 
+			       pid = From, lucky = Lucky}),
+	    ?ets_insert(mnesia_tid_locks, {Tid, Oid, {queued, Op}})
+    end.
+       
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Release of locks
 
@@ -592,6 +582,8 @@ try_waiters_tab([]) ->
 
 try_waiter({queue, Oid, Tid, read_write, ReplyTo, _}) ->
     try_waiter(Oid, read_write, read, write, ReplyTo, Tid);
+try_waiter({queue, Oid, Tid, IXR = {ix_read,_,_}, ReplyTo, _}) ->
+    try_waiter(Oid, IXR, IXR, read, ReplyTo, Tid);
 try_waiter({queue, Oid, Tid, Op, ReplyTo, _}) ->
     try_waiter(Oid, Op, Op, Op, ReplyTo, Tid).
 
@@ -603,7 +595,7 @@ try_waiter(Oid, Op, SimpleOp, Lock, ReplyTo, Tid) ->
 			      #queue{oid=Oid, tid = Tid, op = Op,
 				     pid = ReplyTo, lucky = '_'}),
 	    Reply = grant_lock(Tid, SimpleOp, Lock, Oid),	    
-	    ReplyTo ! {?MODULE, node(), Reply},
+	    reply(ReplyTo,Reply),
 	    locked;
 	{queue, _Why} ->
 	    ?dbg("Keep ~p ~p ~p ~p~n", [Tid, Oid, Lock, _Why]),
@@ -616,7 +608,7 @@ try_waiter(Oid, Op, SimpleOp, Lock, ReplyTo, Tid) ->
 			      #queue{oid=Oid, tid = Tid, op = Op,
 				     pid = ReplyTo, lucky = '_'}),
 	    Reply = {not_granted, C},
-	    ReplyTo ! {?MODULE, node(), Reply},
+	    reply(ReplyTo,Reply),
 	    removed
     end.
 
@@ -629,6 +621,10 @@ key_delete_all(Key, Pos, [H|T], Ack) ->
 key_delete_all(_, _, [], Ack) ->
     lists:reverse(Ack).
 
+ix_read_res(Tab,IxKey,Pos) ->
+    Index = mnesia_index:get_index_table(Tab, Pos),
+    Rks = mnesia_lib:elems(2,mnesia_index:db_get(Index, IxKey)),
+    lists:append(lists:map(fun(Real) -> mnesia_lib:db_get(Tab, Real) end, Rks)).
 
 %% ********************* end server code ********************
 %% The following code executes at the client side of a transactions
@@ -1025,11 +1021,13 @@ rlock_get_reply(Node, Store, Oid, granted) ->
     ?ets_insert(Store, {nodes, Node}),
     return_granted_or_nodes(Oid, [Node]);
 rlock_get_reply(Node, Store, Tab, {granted, V, RealKeys}) ->
+    %% Kept for backwards compatibility, keep until no old nodes
+    %% are available
     L = fun(K) -> ?ets_insert(Store, {{locks, Tab, K}, read}) end,
     lists:foreach(L, RealKeys),
     ?ets_insert(Store, {nodes, Node}),
     V;
-rlock_get_reply(_Node, _Store, _Oid, {not_granted , Reason}) ->
+rlock_get_reply(_Node, _Store, _Oid, {not_granted, Reason}) ->
     exit({aborted, Reason});
 
 rlock_get_reply(_Node, Store, Oid, {switch, N2, Req}) ->    
@@ -1045,8 +1043,17 @@ ixrlock(Tid, Store, Tab, IxKey, Pos) ->
 	nowhere ->
 	    mnesia:abort({no_exists, Tab});
 	Node ->
-	    R = l_request(Node, {ix_read, Tid, Tab, IxKey, Pos}, Store),
-	    rlock_get_reply(Node, Store, Tab, R)
+	    %%% Old code
+	    %% R = l_request(Node, {ix_read, Tid, Tab, IxKey, Pos}, Store),
+	    %% rlock_get_reply(Node, Store, Tab, R)
+	    
+	    case need_lock(Store, Tab, ?ALL, read) of
+		no when Node =:= node() ->
+		    ix_read_res(Tab,IxKey,Pos);
+		_ -> %% yes or need to get the result from other node
+		    R = l_request(Node, {ix_read, Tid, Tab, IxKey, Pos}, Store),
+		    rlock_get_reply(Node, Store, Tab, R)
+	    end
     end.
 
 %% Grabs the locks or exits

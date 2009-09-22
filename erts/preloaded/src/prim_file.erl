@@ -26,7 +26,7 @@
 
 %% Generic file contents operations
 -export([open/2, close/1, sync/1, position/2, truncate/1,
-	 write/2, pwrite/2, pwrite/3, read/2, pread/2, pread/3, copy/3]).
+	 write/2, pwrite/2, pwrite/3, read/2, read_line/1, pread/2, pread/3, copy/3]).
 
 %% Specialized file operations
 -export([open/1, open/3]).
@@ -95,6 +95,7 @@
 -define(FILE_SETOPT,           26).
 -define(FILE_IPREAD,           27).
 -define(FILE_ALTNAME,          28).
+-define(FILE_READ_LINE,        29).
 
 %% Driver responses
 -define(FILE_RESP_OK,          0).
@@ -298,6 +299,27 @@ sync(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
     drv_command(Port, [?FILE_FSYNC]).
 
 %% Returns {ok, Data} | eof | {error, Reason}.
+read_line(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
+    case drv_command(Port, <<?FILE_READ_LINE>>) of
+	{ok, {0, _Data}} ->
+	    eof;
+	{ok, {_Size, Data}} ->
+	    {ok, Data};
+	{error, enomem} ->
+	    erlang:garbage_collect(),
+	    case drv_command(Port, <<?FILE_READ_LINE>>) of
+		{ok, {0, _Data}} ->
+		    eof;
+		{ok, {_Size, Data}} ->
+		    {ok, Data};
+		Other ->
+		    Other
+	    end;
+	Error ->
+	    Error
+    end.
+	
+%% Returns {ok, Data} | eof | {error, Reason}.
 read(#file_descriptor{module = ?MODULE, data = {Port, _}}, Size)
   when is_integer(Size), 0 =< Size ->
     if
@@ -477,7 +499,7 @@ write_file(File, Bin) ->
 %% Returns {ok, Port}, the Port should be used as first argument in all
 %% the following functions. Returns {error, Reason} upon failure.
 start() ->
-    try erlang:open_port({spawn, ?DRV}, []) of
+    try erlang:open_port({spawn, atom_to_list(?DRV)}, []) of
 	Port ->
 	    {ok, Port}
     catch

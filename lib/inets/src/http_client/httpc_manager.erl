@@ -221,6 +221,7 @@ init([ProfileName, CookiesConf | _]) ->
     SessionDb = list_to_atom(atom_to_list(ProfileName) ++ "_session_db"),
     ets:new(SessionDb, 
 	    [public, set, named_table, {keypos, #tcp_session.id}]),
+    ?hcri("starting", [{profile, ProfileName}]),
     {ok, #state{handler_db = ets:new(handler_db, [protected, set]),
 		cookie_db = 
 		http_cookie:open_cookie_db({CookiesConf, 
@@ -239,6 +240,7 @@ init([ProfileName, CookiesConf | _]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 handle_call({request, Request}, _, State) ->
+    ?hcri("request", [{request, Request}]),
     case (catch handle_request(Request, State)) of
 	{reply, Msg, NewState} ->
 	    {reply, Msg, NewState};
@@ -247,6 +249,7 @@ handle_call({request, Request}, _, State) ->
     end;
 	
 handle_call({cancel_request, RequestId}, From, State) ->
+    ?hcri("cancel_request", [{request_id, RequestId}]),
     case ets:lookup(State#state.handler_db, RequestId) of
 	[] ->
 	    ok, %% Nothing to cancel

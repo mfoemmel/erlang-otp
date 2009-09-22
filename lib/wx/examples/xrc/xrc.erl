@@ -251,6 +251,9 @@ prefDialog(Parent) ->
 		   end,
     wxDialog:connect(Dlg,update_ui,[{id,wxXmlResource:getXRCID("my_checkbox")},
 				    {callback,OnMyCheckBox}]),
+
+    %% Keep updateUI event interval at 250ms
+    wxUpdateUIEvent:setUpdateInterval(250),
     
     OnOk = fun(_,_) ->
 		   Str = 

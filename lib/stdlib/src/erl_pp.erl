@@ -22,8 +22,8 @@
 %%% the parser. It does not always produce pretty code.
 
 -export([form/1,form/2,
-	 attribute/1,attribute/2,function/1,function/2,rule/1,rule/2,
-	 guard/1,guard/2,exprs/1,exprs/2,exprs/3,expr/1,expr/2,expr/3,expr/4]).
+         attribute/1,attribute/2,function/1,function/2,rule/1,rule/2,
+         guard/1,guard/2,exprs/1,exprs/2,exprs/3,expr/1,expr/2,expr/3,expr/4]).
 
 -import(lists, [append/1,foldr/3,mapfoldl/3,reverse/1,reverse/2]).
 -import(io_lib, [write/1,format/2,write_char/1,write_string/1]).
@@ -104,6 +104,12 @@ lform({warning,W}, _Hook) ->
 lform({eof,_Line}, _Hook) ->
     $\n.
 
+lattribute({attribute,_Line,type,Type}, Hook) ->
+    [typeattr(type, Type, Hook),leaf(".\n")];
+lattribute({attribute,_Line,opaque,Type}, Hook) ->
+    [typeattr(opaque, Type, Hook),leaf(".\n")];
+lattribute({attribute,_Line,spec,Arg}, _Hook) ->
+    [specattr(Arg),leaf(".\n")];
 lattribute({attribute,_Line,Name,Arg}, Hook) ->
     [lattribute(Name, Arg, Hook),leaf(".\n")].
 
@@ -126,6 +132,120 @@ lattribute(record, {Name,Is}, Hook) ->
     [{first,Nl,record_fields(Is, Hook)},$)];
 lattribute(Name, Arg, _Hook) ->
     attr(write(Name), [erl_parse:abstract(Arg)]).
+
+typeattr(Tag, {TypeName,Type,Args}, _Hook) ->
+    {first,leaf("-"++atom_to_list(Tag)++" "),
+     typed(call({atom,0,TypeName}, Args, 0, none), Type)}.
+
+ltype({ann_type,_Line,[V,T]}) ->
+    typed(lexpr(V, none), T);
+ltype({paren_type,_Line,[T]}) ->
+    [$(,ltype(T),$)];    
+ltype({type,_Line,union,Ts}) ->
+    {seq,[],[],[' |'],ltypes(Ts)};
+ltype({type,_Line,list,[T]}) ->
+    {seq,$[,$],$,,[ltype(T)]};
+ltype({type,_Line,nonempty_list,[T]}) ->
+    {seq,$[,$],[$,],[ltype(T),leaf("...")]};
+ltype({type,Line,nil,[]}) ->
+    lexpr({nil,Line}, 0, none);
+ltype({type,Line,tuple,any}) ->
+    simple_type({atom,Line,tuple}, []);
+ltype({type,_Line,tuple,Ts}) ->
+    tuple_type(Ts, fun ltype/1);
+ltype({type,_Line,record,[N|Fs]}) ->
+    record_type(N, Fs);
+ltype({type,_Line,range,[_I1,_I2]=Es}) ->
+    expr_list(Es, '..', fun lexpr/2, none);
+ltype({type,_Line,binary,[I1,I2]}) ->
+    binary_type(I1, I2); % except binary()
+ltype({type,_Line,'fun',[]}) ->
+    leaf("fun()");
+ltype({type,_Line,'fun',_}=FunType) ->
+    [fun_type(['fun',$(], FunType),$)];
+ltype({type,Line,T,Ts}) ->
+    simple_type({atom,Line,T}, Ts);
+ltype({remote_type,Line,[M,F,Ts]}) ->
+    simple_type({remote,Line,M,F}, Ts);
+ltype({atom,_,T}) ->
+    %% Follow the convention to always quote atoms (in types):
+    leaf([$',atom_to_list(T),$']);
+ltype(E) ->
+    lexpr(E, 0, none).
+
+binary_type({integer,_,Int1}=I1, {integer,_,Int2}=I2) ->
+    E1 = [[leaf("_:"),lexpr(I1, 0, none)] || Int1 =/= 0],
+    E2 = [[leaf("_:_*"),lexpr(I2, 0, none)] || Int2 =/= 0],
+    {seq,'<<','>>',[$,],E1++E2}.
+
+record_type({atom,_,Name}, Fields) ->
+    {first,[record_name(Name)],field_types(Fields)}.
+
+field_types(Fs) ->
+    tuple_type(Fs, fun field_type/1).
+
+field_type({type,_Line,field_type,[Name,Type]}) ->
+    typed(lexpr(Name, none), Type).
+
+typed(B, {type,_,union,Ts}) ->
+    %% Special layout for :: followed by union.
+    {first,[B,$\s],{seq,[],[],[],union_type(Ts)}};
+typed(B, Type) ->
+    {list,[{cstep,[B,' ::'],ltype(Type)}]}.
+
+union_type([T|Ts]) ->
+    [[leaf(":: "),ltype(T)] | ltypes(Ts, fun union_elem/1)].
+
+union_elem(T) ->
+    [leaf(" | "),ltype(T)].
+
+tuple_type(Ts, F) ->
+    {seq,${,$},[$,],ltypes(Ts, F)}.
+
+specattr({FuncSpec,TypeSpecs}) ->
+    Func = case FuncSpec of
+               {F,_A} ->
+                   format("~w", [F]);
+               {M,F,_A} ->
+                   format("~w:~w", [M, F])
+           end,
+    {first,leaf("-spec "),
+     {list,[{first,leaf(Func),spec_clauses(TypeSpecs)}]}}.
+
+spec_clauses(TypeSpecs) ->
+    {prefer_nl,[$;],[sig_type(T) || T <- TypeSpecs]}.
+
+sig_type({type,_Line,bounded_fun,[T,Gs]}) ->
+    guard_type(fun_type([], T), Gs);
+sig_type(FunType) ->
+    fun_type([], FunType).
+
+guard_type(Before, Gs) ->
+    Gl = {list,[{step,'when',expr_list(Gs, [$,], fun constraint/2, none)}]},
+    {list,[{step,Before,Gl}]}.
+
+constraint({type,_Line,constraint,[Tag,As]}, _Hook) ->
+    simple_type(Tag, As).
+
+fun_type(Before, {type,_,'fun',[FType,Ret]}) ->
+    {first,Before,{step,[type_args(FType),' ->'],ltype(Ret)}}.
+
+type_args({type,_Line,any}) ->
+    leaf("(...)");
+type_args({type,_line,product,Ts}) ->
+    targs(Ts).
+
+simple_type(Tag, Types) ->
+    {first,lexpr(Tag, 0, none),targs(Types)}.
+
+targs(Ts) ->
+    {seq,$(,$),[$,],ltypes(Ts)}.
+
+ltypes(Ts) ->
+    ltypes(Ts, fun ltype/1).
+
+ltypes(Ts, F) ->
+    [F(T) || T <- Ts].
 
 attr(Name, Args) ->
     call({var,0,format("-~s", [Name])}, Args, 0, none).
@@ -194,7 +314,7 @@ body(Es, Hook) ->
 lexpr(E, Hook) ->
     lexpr(E, 0, Hook).
 
-lexpr({var,_,V}, _, _) when is_integer(V) ->	%Special hack for Robert
+lexpr({var,_,V}, _, _) when is_integer(V) ->    %Special hack for Robert
     leaf(format("_~w", [V]));
 lexpr({var,_,V}, _, _) -> leaf(format("~s", [V]));
 lexpr({char,_,C}, _, _) -> leaf(write_char(C));
@@ -207,22 +327,22 @@ lexpr({cons,_,H,T}, _, Hook) ->
     list(T, [H], Hook);
 lexpr({lc,_,E,Qs}, _Prec, Hook) ->
     Lcl = {list,[{step,[lexpr(E, Hook),leaf(" ||")],lc_quals(Qs, Hook)}]},
-    {seq,$[,$],[],[Lcl]};
+    {seq,$[,$],[[]],[Lcl]};
 lexpr({bc,_,E,Qs}, _Prec, Hook) ->
     Lcl = {list,[{step,[lexpr(E, Hook),leaf(" ||")],lc_quals(Qs, Hook)}]},
-    {seq,leaf("<< "),leaf(" >>"),[],[Lcl]};
+    {seq,leaf("<< "),leaf(" >>"),[[]],[Lcl]};
 lexpr({tuple,_,Elts}, _, Hook) ->
     tuple(Elts, Hook);
 %%lexpr({struct,_,Tag,Elts}, _, Hook) ->
 %%  {first,format("~w", [Tag]),tuple(Elts, Hook)};
 lexpr({record_index, _, Name, F}, Prec, Hook) ->
     {P,R} = preop_prec('#'),
-    Nl = leaf(format("#~w", [Name])),
+    Nl = record_name(Name),
     El = [Nl,$.,lexpr(F, R, Hook)],
     maybe_paren(P, Prec, El);
 lexpr({record, _, Name, Fs}, Prec, Hook) ->
     {P,_R} = preop_prec('#'),
-    Nl = leaf(format("#~w", [Name])),
+    Nl = record_name(Name),
     El = {first,Nl,record_fields(Fs, Hook)},
     maybe_paren(P, Prec, El);
 lexpr({record_field, _, Rec, Name, F}, Prec, Hook) ->
@@ -234,7 +354,7 @@ lexpr({record_field, _, Rec, Name, F}, Prec, Hook) ->
 lexpr({record, _, Rec, Name, Fs}, Prec, Hook) ->
     {L,P,_R} = inop_prec('#'),
     Rl = lexpr(Rec, L, Hook),
-    Nl = leaf(format("#~w", [Name])),
+    Nl = record_name(Name),
     El = {first,[Rl,Nl],record_fields(Fs, Hook)},
     maybe_paren(P, Prec, El);
 lexpr({record_field, _, {atom,_,''}, F}, Prec, Hook) ->
@@ -327,7 +447,7 @@ lexpr({op,_,Op,Larg,Rarg}, Prec, Hook)  when Op =:= 'orelse';
     Ll = lexpr(Larg, L, Hook),
     Ol = leaf(format("~s", [Op])),
     Lr = lexpr(Rarg, R, Hook),
-    El = {prefer_nl,[],[Ll,Ol,Lr]},
+    El = {prefer_nl,[[]],[Ll,Ol,Lr]},
     maybe_paren(P, Prec, El);
 lexpr({op,_,Op,Larg,Rarg}, Prec, Hook) ->
     {L,P,R} = inop_prec(Op),
@@ -375,7 +495,7 @@ bit_grp(Fs, Hook) ->
                  {string,S}
              catch _:_ ->
                  bit_elems(Fs, Hook)
-            end],
+             end],
             ['>>']]).
 
 bin_string([]) ->
@@ -399,7 +519,7 @@ bit_elem({bin_element,_,Expr,Sz,Types}, Hook) ->
         Types =/= default ->
             [SChars,$/|bit_elem_types(Types)];
         true ->
-	    SChars
+            SChars
     end.
 
 bit_elem_types([T]) ->
@@ -416,6 +536,9 @@ bit_elem_type(T) ->
 
 %% end of BITS
 
+record_name(Name) ->
+    leaf(format("#~w", [Name])).
+
 record_fields(Fs, Hook) ->
     tuple(Fs, fun record_field/2, Hook).
 
@@ -424,8 +547,21 @@ record_field({record_field,_,F,Val}, Hook) ->
     Fl = lexpr(F, L, Hook),
     Vl = lexpr(Val, R, Hook),
     {list,[{cstep,[Fl,' ='],Vl}]};
+record_field({typed_record_field,{record_field,_,F,Val},Type}, Hook) ->
+    {L,_P,R} = inop_prec('='),
+    Fl = lexpr(F, L, Hook),
+    Vl = typed(lexpr(Val, R, Hook), Type),
+    {list,[{cstep,[Fl,' ='],Vl}]};
+record_field({typed_record_field,Field,Type0}, Hook) ->
+    Type = remove_undefined(Type0),
+    typed(record_field(Field, Hook), Type);
 record_field({record_field,_,F}, Hook) ->
     lexpr(F, 0, Hook).
+
+remove_undefined({type,L,union,[{atom,_,undefined}|T]}) ->
+    {type,L,union,T};
+remove_undefined(T) -> % cannot happen
+    T.
 
 list({cons,_,H,T}, Es, Hook) ->
     list(T, [H|Es], Hook);
@@ -612,9 +748,9 @@ f({leaf,Length,Chars}, _I0, _ST, _WT) ->
 f([Item|Items], I0, ST, WT) ->
     consecutive(Items, f(Item, I0, ST, WT), I0, ST, WT);
 f({list,Items}, I0, ST, WT) ->
-    f({seq,[],[],[],Items}, I0, ST, WT);
+    f({seq,[],[],[[]],Items}, I0, ST, WT);
 f({first,E,Item}, I0, ST, WT) ->
-    f({seq,E,[],[],[Item]}, I0, ST, WT);
+    f({seq,E,[],[[]],[Item]}, I0, ST, WT);
 f({seq,Before,After,Sep,LItems}, I0, ST, WT) ->
     BCharsSize = f(Before, I0, ST, WT),
     I = indent(BCharsSize, I0),
@@ -623,8 +759,10 @@ f({seq,Before,After,Sep,LItems}, I0, ST, WT) ->
     {BCharsL,BSizeL} = unz1([BCharsSize]),
     Sizes = BSizeL ++ SizeL,
     NSepChars = if 
-                    is_list(Sep) -> erlang:max(0, length(CharsL)-1);
-                    true -> 0
+                    is_list(Sep), Sep =/= [] ->
+                        erlang:max(0, length(CharsL)-1);
+                    true ->
+                        0
                 end,
     case same_line(I0, Sizes, NSepChars) of
         {yes,Size} ->
@@ -827,7 +965,8 @@ spaces(N, T) ->
 wordtable() ->
     L = [begin {leaf,Sz,S} = leaf(W), {S,Sz} end || 
             W <- [" ->"," =","<<",">>","[]","after","begin","case","catch",
-                  "end","fun","if","of","receive","try","when"]],
+                  "end","fun","if","of","receive","try","when"," ::","..",
+                  " |"]],
     list_to_tuple(L).
 
 word(' ->', WT) -> element(1, WT);
@@ -845,4 +984,7 @@ word('if', WT) -> element(12, WT);
 word('of', WT) -> element(13, WT);
 word('receive', WT) -> element(14, WT);
 word('try', WT) -> element(15, WT);
-word('when', WT) -> element(16, WT).
+word('when', WT) -> element(16, WT);
+word(' ::', WT) -> element(17, WT);
+word('..', WT) -> element(18, WT);
+word(' |', WT) -> element(19, WT).

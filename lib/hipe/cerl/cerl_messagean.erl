@@ -1093,6 +1093,4 @@ is_imm_op(erlang, throw, 1) -> true;
 is_imm_op(erlang, exit, 1) -> true;
 is_imm_op(erlang, error, 1) -> true;
 is_imm_op(erlang, error, 2) -> true;
-is_imm_op(erlang, fault, 1) -> true;
-is_imm_op(erlang, fault, 2) -> true;
 is_imm_op(_, _, _) -> false.

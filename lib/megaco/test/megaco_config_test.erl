@@ -73,7 +73,8 @@ transaction_id_counter(suite) ->
 
 tickets(suite) ->
     [
-     otp_7216
+     otp_7216,
+     otp_8167
     ].
 
 
@@ -82,7 +83,7 @@ tickets(suite) ->
 
 config(suite) ->
     [];
-config(Config) when list(Config) ->
+config(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Mid = fake_mid,
     
@@ -697,7 +698,7 @@ delete_connections([#conn_data{conn_handle = CH} | CDs]) ->
 
 otp_7216(suite) ->
     [];
-otp_7216(Config) when list(Config) ->
+otp_7216(Config) when is_list(Config) ->
     put(tc, otp_7216),
     p("start"),
 
@@ -816,14 +817,130 @@ otp_7216(Config) when list(Config) ->
     ok.
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_8167(suite) ->
+    [];
+otp_8167(Config) when is_list(Config) ->
+    put(tc, otp_8167),
+    p("start"),
+
+    p("start the megaco config process"),
+    megaco_config:start_link(),
+
+    LocalMid1 = {deviceName, "local-mid-1"},
+    LocalMid2 = {deviceName, "local-mid-2"},
+    RemoteMid1 = {deviceName, "remote-mid-1"},
+    RemoteMid2 = {deviceName, "remote-mid-2"},
+    RH1 = #megaco_receive_handle{local_mid       = LocalMid1,
+				 encoding_mod    = dummy_codec_module,
+				 encoding_config = [],
+				 send_mod        = dummy_transport_module},
+    RH2 = #megaco_receive_handle{local_mid       = LocalMid2,
+				 encoding_mod    = dummy_codec_module,
+				 encoding_config = [],
+				 send_mod        = dummy_transport_module},
+
+    User1ConfigA = [{call_proxy_gc_timeout, 1}], 
+    User1ConfigB = [{call_proxy_gc_timeout, 0}], 
+    User2ConfigA = [{call_proxy_gc_timeout, -1}], 
+    User2ConfigB = [{call_proxy_gc_timeout, infinity}], 
+    User2ConfigC = [{call_proxy_gc_timeout, "1"}], 
+    User2ConfigD = [{call_proxy_gc_timeout, 1.0}], 
+
+    p("start local user (1A): ~p", [LocalMid1]),
+    ok = megaco_config:start_user(LocalMid1, User1ConfigA),
+    p("stop local user (1A): ~p", [LocalMid1]),
+    ok = megaco_config:stop_user(LocalMid1),
+
+    p("start local user (1B): ~p", [LocalMid1]),
+    ok = megaco_config:start_user(LocalMid1, User1ConfigB),
+    p("try (and fail) change value for item call_proxy_gc_timeout for local user: ~p -> ~p", 
+      [LocalMid1, -1]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, -1}} = 
+	megaco_config:update_user_info(LocalMid1, call_proxy_gc_timeout, -1),
+    p("try (and fail) change value for item call_proxy_gc_timeout for local user: ~p -> ~p", 
+      [LocalMid1, infinity]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, infinity}} = 
+	megaco_config:update_user_info(LocalMid1, call_proxy_gc_timeout, infinity),
+    p("try (and fail) change value for item call_proxy_gc_timeout for local user: ~p -> ~p", 
+      [LocalMid1, "1"]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, "1"}} = 
+	megaco_config:update_user_info(LocalMid1, call_proxy_gc_timeout, "1"),
+    p("try (and fail) change value for item call_proxy_gc_timeout for local user: ~p -> ~p", 
+      [LocalMid1, 1.0]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, 1.0}} = 
+	megaco_config:update_user_info(LocalMid1, call_proxy_gc_timeout, 1.0),
+    p("change value for item call_proxy_gc_timeout for local user: ~p", [LocalMid1]),
+    ok = megaco_config:update_user_info(LocalMid1, call_proxy_gc_timeout, 10101),
+    
+    p("connect"),
+    {ok, CD} = megaco_config:connect(RH1, RemoteMid1, 
+				     dummy_send_handle, self()),
+    p("connect ok: CD = ~n~p", [CD]),
+    CH = CD#conn_data.conn_handle,
+
+    p("get value for item call_proxy_gc_timeout for connection: ~p", [CH]),
+    10101 = megaco_config:conn_info(CH, call_proxy_gc_timeout),
+
+    p("change value for item call_proxy_gc_timeout for connection: ~p -> ~p", 
+      [CH, 20202]),
+    ok = megaco_config:update_conn_info(CH, call_proxy_gc_timeout, 20202),
+
+    p("try (and fail) change value for item call_proxy_gc_timeout for connection: ~p -> ~p", 
+      [CH, -1]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, -1}} = 
+	megaco_config:update_conn_info(CH, call_proxy_gc_timeout, -1),
+
+    p("try (and fail) change value for item call_proxy_gc_timeout for connection: ~p -> ~p", 
+      [CH, infinity]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, infinity}} = 
+	megaco_config:update_conn_info(CH, call_proxy_gc_timeout, infinity),
+
+    p("try (and fail) change value for item call_proxy_gc_timeout for connection: ~p -> ~p", 
+      [CH, "1"]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, "1"}} = 
+	megaco_config:update_conn_info(CH, call_proxy_gc_timeout, "1"),
+
+    p("try (and fail) change value for item call_proxy_gc_timeout for connection: ~p -> ~p", 
+      [CH, 1.0]),
+    {error, {bad_user_val, LocalMid1, call_proxy_gc_timeout, 1.0}} = 
+	megaco_config:update_conn_info(CH, call_proxy_gc_timeout, 1.0),
+
+    p("disconnect: ~p", [CH]),
+    {ok, _, _} = megaco_config:disconnect(CH),
+
+    p("stop local user (1B): ~p", [LocalMid1]),
+    ok = megaco_config:stop_user(LocalMid1),
+
+    p("try (and fail) start local user (2A): ~p", [LocalMid2]),
+    {error, {bad_user_val, LocalMid2, call_proxy_gc_timeout, -1}} = 
+	megaco_config:start_user(LocalMid2, User2ConfigA),
+
+    p("try (and fail) start local user (2B): ~p", [LocalMid2]),
+    {error, {bad_user_val, LocalMid2, call_proxy_gc_timeout, infinity}} = 
+	megaco_config:start_user(LocalMid2, User2ConfigB),
+
+    p("try (and fail) start local user (2C): ~p", [LocalMid2]),
+    {error, {bad_user_val, LocalMid2, call_proxy_gc_timeout, "1"}} = 
+	megaco_config:start_user(LocalMid2, User2ConfigC),
+
+    p("try (and fail) start local user (2D): ~p", [LocalMid2]),
+    {error, {bad_user_val, LocalMid2, call_proxy_gc_timeout, 1.0}} = 
+	megaco_config:start_user(LocalMid2, User2ConfigD),
+
+    p("done"),
+    ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 p(F) ->
     p(F, []).
 
 p(F, A) ->
     io:format("[~w] " ++ F ++ "~n", [get(tc)|A]).
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 i(F) ->
     i(F, []).

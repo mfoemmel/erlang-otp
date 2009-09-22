@@ -56,8 +56,10 @@
 
 -module(hipe_ls_regalloc).
 -export([regalloc/7]).
-%-define(DEBUG,1).
+
+%%-define(DEBUG,1).
 -define(HIPE_INSTRUMENT_COMPILER, true).
+
 -include("../main/hipe.hrl").
 
 
@@ -92,25 +94,22 @@
 %%   </ol>
 %% @end
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-regalloc(CFG,PhysRegs,Entrypoints, SpillIndex, DontSpill, Options, Target) ->
-  ?debug_msg("LinearScan: ~w\n",[erlang:statistics(runtime)]),
+regalloc(CFG, PhysRegs, Entrypoints, SpillIndex, DontSpill, Options, Target) ->
+  ?debug_msg("LinearScan: ~w\n", [erlang:statistics(runtime)]),
   %%     Step 1: Calculate liveness (Call external implementation.)
   Liveness = liveness(CFG, Target),
-  ?debug_msg("liveness (done)~w\n",[erlang:statistics(runtime)]),
+  ?debug_msg("liveness (done)~w\n", [erlang:statistics(runtime)]),
   USIntervals = calculate_intervals(CFG, Liveness,
-				    Entrypoints, Options,
-				    Target),
-  ?debug_msg("intervals (done) ~w\n",[erlang:statistics(runtime)]),
+				    Entrypoints, Options, Target),
+  ?debug_msg("intervals (done) ~w\n", [erlang:statistics(runtime)]),
   Intervals = sort_on_start(USIntervals),
-  ?debug_msg("sort intervals (done) ~w\n",[erlang:statistics(runtime)]),
-  %% ?debug_msg("Intervals ~w\n",[Intervals]),
+  ?debug_msg("sort intervals (done) ~w\n", [erlang:statistics(runtime)]),
+  %% ?debug_msg("Intervals ~w\n", [Intervals]),
   ?debug_msg("No intervals: ~w\n",[length(Intervals)]),
-
-  ?debug_msg("count intervals (done) ~w\n",[erlang:statistics(runtime)]),
-  Allocation = allocate(Intervals,PhysRegs, SpillIndex, DontSpill, Target),
-  ?debug_msg("allocation (done) ~w\n",[erlang:statistics(runtime)]),
+  ?debug_msg("count intervals (done) ~w\n", [erlang:statistics(runtime)]),
+  Allocation = allocate(Intervals, PhysRegs, SpillIndex, DontSpill, Target),
+  ?debug_msg("allocation (done) ~w\n", [erlang:statistics(runtime)]),
   Allocation.
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -129,9 +128,7 @@ calculate_intervals(CFG,Liveness,_Entrypoints, Options, Target) ->
   %% Add start point for the argument registers.
   Args = arg_vars(CFG, Target),
   Interval = 
-    add_def_point(Args, 0, 
-		  empty_interval(Target:number_of_temporaries(CFG))),
-
+    add_def_point(Args, 0, empty_interval(Target:number_of_temporaries(CFG))),
   %% Interval = add_livepoint(Args, 0, empty_interval()),
   Worklist =
     case proplists:get_value(ls_order, Options) of
@@ -154,7 +151,6 @@ calculate_intervals(CFG,Liveness,_Entrypoints, Options, Target) ->
       _ ->
 	Target:reverse_postorder(CFG)
     end,
-
   %% ?inc_counter(bbs_counter, length(Worklist)),
   %% ?debug_msg("No BBs ~w\n",[length(Worklist)]),
   intervals(Worklist, Interval, 1, CFG, Liveness, Target).
@@ -212,8 +208,6 @@ traverse_block([Instruction|Is],InstrNo,Intervals, Target) ->
 traverse_block([], InstrNo, Intervals, _) -> 
   %% Return the new intervals and the number of the next instruction.
   {Intervals,InstrNo}.
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -334,8 +328,6 @@ allocate([],_,_,Alloc,SpillIndex, _, _) ->
   %%  return the result.
   %%io:format("~nAlloc:~n~p", [Alloc]),
   {Alloc, SpillIndex}.
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -361,8 +353,7 @@ expire_old_intervals([Active|Actives], CurrentPos, Free, Target) ->
 	  true ->
 	    [{Reg,CurrentPos}|Free];
 	  false ->
-	    [{Reg,CurrentPos}|Free]
-			   
+	    [{Reg,CurrentPos}|Free]	   
 	    %% Here we could try appending the
 	    %% register to get a more widespread
 	    %% use of registers.
@@ -371,18 +362,14 @@ expire_old_intervals([Active|Actives], CurrentPos, Free, Target) ->
 	    %%  improve performance at all,
 	    %%  on the other hand, the cost is very low.
 	end,
-		
       expire_old_intervals(Actives, CurrentPos, NewFree, Target);
-
-
     false -> 
       %% No -> Then we cannot free any more registers.
       %%       (Since they are sorted on endpoints...)    
       {[Active|Actives],Free}
   end;
 expire_old_intervals([],_,Free,_) ->
-  {[],Free}.
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  {[], Free}.
 
 deactivate(Reg, [Active|Actives]) ->
   case Reg =:= active_reg(Active) of
@@ -483,7 +470,6 @@ spill(CurrentReg, _CurrentEndpoint, _CurrentStartpoint, [],
 can_spill(Name, DontSpill, Target) ->
   (Name < DontSpill) and (not is_precoloured(Name, Target)).
 
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -493,8 +479,6 @@ can_spill(Name, DontSpill, Target) ->
 %%               A U X I L I A R Y   F U N C T I O N S                %%
 %%                                                                    %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -523,8 +507,6 @@ spillalloc(Name,N,[{Name2,Binding}|Bindings]) when Name > Name2 ->
   [{Name2,Binding}|spillalloc(Name,N,Bindings)];
 spillalloc(Name,N,Bindings) ->
   [{Name,{spill,N}}|Bindings].
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -535,7 +517,6 @@ butlast_last([X]) ->
 butlast_last([X|Y]) ->
   {L,Last} = butlast_last(Y),
   {[X|L],Last}.
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -557,7 +538,7 @@ active_endpoint({EndPoint,_,_,_}) ->
   EndPoint.
 active_startpoint({_,_,_,StartPoint}) ->
   StartPoint.
-active_name({_,_,RegName,_})->
+active_name({_,_,RegName,_}) ->
   RegName.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -581,9 +562,8 @@ reg({RegName,_S,_E}) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% The Intervals data structure.
 
-sort_on_start(I)->
- lists:keysort(2,I).
-
+sort_on_start(I) ->
+ lists:keysort(2, I).
 
 -ifdef(gb_intervals).
 empty_interval(_) ->
@@ -612,19 +592,15 @@ add_use_point([Temp|Temps],Pos,Intervals) ->
       {value, Value} ->
 	%% ... extend it.
 	extend_interval(Pos, Value);
-
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
 	{Pos, Pos}
     end,
-
   %% Add or update the extended interval.
   Intervals2 = gb_trees:enter(Temp, NewInterval, Intervals),
-
   %% Add the rest of teh temporaries.
   add_use_point(Temps, Pos, Intervals2);
-
 add_use_point([], _, I) ->
   %% No more to add return the interval.
   I.
@@ -643,13 +619,10 @@ add_def_point([Temp|Temps],Pos,Intervals) ->
 	%% ... create a new interval
 	{Pos, Pos}
     end,
-
   %% Add or update the extended interval.
   Intervals2 = gb_trees:enter(Temp, NewInterval, Intervals),
-
   %% Add the rest of the temporaries.
   add_def_point(Temps, Pos, Intervals2);
-
 add_def_point([], _, I) ->
   %% No more to add return the interval.
   I.
@@ -658,50 +631,13 @@ extend_interval(Pos, {Beginning, End}) ->
   %% If this position occures before the beginning
   %%  of the interval, then extend the beginning to
   %%  this position.
-
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
+  NewBeginning = erlang:min(Pos, Beginning),
   %% If this position occures after the end
   %%  of the interval, then extend the end to
   %%  this position.
-  NewEnd = 
-    if Pos > End -> Pos;
-       true      -> End
-    end,
-
+  NewEnd = erlang:max(Pos, End),
   {NewBeginning, NewEnd}.
-%extend_use_interval(Pos, [{none,End}|More]) ->
-%  {[{none,Pos},{none,End}|More]};
-%extend_use_interval(Pos, Intervals) ->
-%  {Beginning,none} = lists:last(Intervals),
-%  {Beginning, Pos}.
 
-
-% extend_def_interval(Pos, {Beginning, End}) ->
-%   %% If this position occures before the beginning
-%   %%  of the interval, then extend the beginning to
-%   %%  this position.
-
-%   NewBeginning = 
-%     if Pos < Beginning -> Pos;
-%        true            -> Beginning
-%     end,
-%   %% If this position occures after the end
-%   %%  of the interval, then extend the end to
-%   %%  this position.
-%   NewEnd = 
-%     if Pos > End -> Pos;
-%        true      -> End
-%     end,
-%   {NewBeginning, NewEnd}; 
-% extend_def_interval(Pos, [{Beginning,none}|More]) ->
-%   [{Pos,none}, {Beginning,none}|More];
-% extend_def_interval(Pos, Intervals) ->
-%   {Pos, Pos}.
-
-%% ____________________________________________________________________
 -else. %% isdef gb_intervals
 
 empty_interval(N) ->
@@ -725,9 +661,6 @@ flatten([{Beg, none}|Rest], N ,More) ->
 flatten([],N,More) ->
   add_indices(More,N+1).
 
-
-
-
 add_use_point([Temp|Temps],Pos,Intervals) ->
   %% Extend the old interval...
   NewInterval =
@@ -741,13 +674,10 @@ add_use_point([Temp|Temps],Pos,Intervals) ->
 	%% ... extend it.
 	extend_interval(Pos, Value)
     end,
-
   %% Add or update the extended interval.
   Intervals2 = hipe_vectors:set(Intervals, Temp, NewInterval),
-
   %% Add the rest of the temporaries.
   add_use_point(Temps, Pos, Intervals2);
-
 add_use_point([], _, I) ->
   %% No more to add return the interval.
   I.
@@ -765,128 +695,27 @@ add_def_point([Temp|Temps],Pos,Intervals) ->
 	%% ... extend it.
 	extend_interval(Pos, Value)
     end,
-
   %% Add or update the extended interval.
   Intervals2 = hipe_vectors:set(Intervals, Temp, NewInterval), 
-
   %% Add the rest of teh temporaries.
   add_def_point(Temps, Pos, Intervals2);
-
 add_def_point([], _, I) ->
   %% No more to add return the interval.
   I.
 
 extend_interval(Pos, {Beginning, End}) ->
-  %% If this position occures before the beginning
-  %%  of the interval, then extend the beginning to
-  %%  this position.
-
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
-
+  %% If this position occurs before the beginning of the interval,
+  %% then extend the beginning to this position.
+  NewBeginning = erlang:min(Pos, Beginning),
   %% If this position occures after the end
   %%  of the interval, then extend the end to
   %%  this position.
-  NewEnd = 
-    if Pos > End -> Pos;
-       true      -> End
-    end,
-
+  NewEnd = erlang:max(Pos, End),
   {NewBeginning, NewEnd}.
-%extend_use_interval(Pos, [{none,End}|More]) ->
-%  {[{none,Pos},{none,End}|More]};
-%extend_use_interval(Pos, Intervals) ->
-%  {Beginning,none} = lists:last(Intervals),
-%  {Beginning, Pos}.
-
-
-%extend_def_interval(Pos, {Beginning, End}) ->
-%  %% If this position occures before the beginning
-%  %%  of the interval, then extend the beginning to
-%  %%  this position.
-
-%  NewBeginning = 
-%    if Pos < Beginning -> Pos;
-%       true            -> Beginning
-%    end,
-
-%  {NewBeginning, End}; 
-%extend_def_interval(Pos, [{Beginning,none}|More]) ->
-%  [{Pos,none}, {Beginning,none}|More];
-%extend_def_interval(Pos, [{none,End}|Intervals]) ->
-%  {End, Pos}.
 -endif. %% gb_intervals
-
-
-
-
-
-
-
-
-
-
-
-%%linarize(I) ->
-%%  linarize(I,[]).
-
-%%linarize({R,Beg,End,Lt,Rt},Acc) ->
-%%  linarize(Lt,[{R,Beg,End}|linarize(Rt,Acc)]);
-%%linarize([],Acc) -> Acc.
-
-%add_livepoint([Temp|Temps],Pos,Intervals) ->
-
-   
-%  %% Extend the old interval...
-%  NewInterval =
-%    case gb_trees:lookup(Temp, Intervals) of
-%      %% This temp has an old interval...
-%      {value, Value} ->
-%	%% ... extend it.
-%	extend_interval(Pos, Value);
-
-%      %% This is the first time we see this temp...
-%      none ->
-%	%% ... create a new interval
-%	{Pos, Pos}
-%    end,
-
-%  %% Add or update the extended interval.
-%  Intervals2 = gb_trees:enter(Temp, NewInterval, Intervals),
-
-%  %% Add the rest of teh temporaries.
-%  add_livepoint(Temps, Pos, Intervals2);
-
-%add_livepoint([], _, I) ->
-%  %% No more to add return the interval.
-%  I.
-
-%extend_interval(Pos, {Beginning, End}) ->
-%  %% If this position occures after the end
-%  %%  of the interval, then extend the end to
-%  %%  this position.
-%  NewEnd = 
-%    if Pos > End -> Pos;
-%       true      -> End
-%    end,
-
-%  %% If this position occures before the beginning
-%  %%  of the interval, then extend the beginning to
-%  %%  this position.
-
-%  NewBeginning = 
-%    if Pos < Beginning -> Pos;
-%       true            -> Beginning
-%    end,
-
-%  {NewBeginning, NewEnd}. 
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% The Freel data structure.
-%%
 %%
 %%-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
@@ -900,9 +729,6 @@ is_free(R, [X|Rs],Acc) ->
 is_free(_, [], _) ->
   false.
 
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
 exists_free_register(Start, Regs) ->
   exists_free_register(Start, Regs, []).
 
@@ -914,14 +740,11 @@ exists_free_register(Start, [Free|Rest], Acc) ->
 exists_free_register(_, [], _) ->
   false.
 
-%%^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 create_freeregs([Phys|Rest]) ->
   [{Phys,-1}|create_freeregs(Rest)];
 create_freeregs([]) ->
   [].
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Interface to external functions.
@@ -938,10 +761,10 @@ bb(CFG, L, Target) ->
 livein(Liveness,L, Target) ->
   regnames(Target:livein(Liveness,L), Target).
 
-liveout(Liveness,L, Target)->
+liveout(Liveness,L, Target) ->
   regnames(Target:liveout(Liveness,L), Target).
 
-uses(I, Target)->
+uses(I, Target) ->
   regnames(Target:uses(I), Target).
 
 defines(I, Target) ->

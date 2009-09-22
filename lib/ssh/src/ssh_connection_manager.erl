@@ -30,6 +30,7 @@
 
 -include("ssh.hrl").
 -include("ssh_connect.hrl").
+-include("ssh_transport.hrl").
 
 -export([start_link/1]).
 
@@ -275,6 +276,11 @@ handle_call({ssh_msg, Pid, Msg}, From,
 				   [ConnectionMsg, Reason]),
 	    error_logger:info_report(Report),
             {noreply, State};
+	error:Error ->
+	    Report = io_lib:format("Connection message returned:~n~p~n~p~n",
+				   [ConnectionMsg, Error]),
+	    error_logger:info_report(Report),
+	    {noreply, State};
 	exit:Exit ->
 	    Report = io_lib:format("Connection message returned:~n~p~n~p~n",
 				   [ConnectionMsg, Exit]),
@@ -393,6 +399,16 @@ handle_call({close, ChannelId}, _,
 	    {reply, ok, State}
     end;
 
+handle_call(stop, _, #state{role = _client, 
+			    client = ChannelPid,
+			    connection = Pid} = State) ->
+    DisconnectMsg = 
+	#ssh_msg_disconnect{code = ?SSH_DISCONNECT_BY_APPLICATION,
+			    description = "Application disconnect",
+			    language = "en"},
+    (catch gen_fsm:send_all_state_event(Pid, DisconnectMsg)),
+%    ssh_connection_handler:send(Pid, DisconnectMsg),
+    {stop, normal, ok, State};
 handle_call(stop, _, State) ->
     {stop, normal, ok, State};
 
@@ -476,13 +492,15 @@ handle_info({start_connection, server,
 	    #state{connection_state = CState} = State) ->
     {ok, Connection} = ssh_transport:accept(Address, Port, Socket, Options),
     Shell = proplists:get_value(shell, Options),
+    Exec = proplists:get_value(exec, Options),
     CliSpec = proplists:get_value(ssh_cli, Options, {ssh_cli, [Shell]}),
     {noreply, State#state{connection = Connection,
 			  connection_state = 
 			  CState#connection{address = Address,
 					    port = Port,
 					    cli_spec = CliSpec,
-					    options = Options}}};
+					    options = Options,
+					    exec = Exec}}};
 	    
 handle_info({start_connection, client, 
 	     [Parent, Address, Port, ChannelPid, SocketOpts, Options]},
@@ -585,14 +603,26 @@ decode_ssh_msg(BinMsg) when is_binary(BinMsg)->
 decode_ssh_msg(Msg) ->
     Msg.
 
-send_msg({channel_data, Pid, Data}) ->
+
+send_msg(Msg) ->
+    case catch do_send_msg(Msg) of
+	{'EXIT', Reason}->
+	    Report = io_lib:format("Connection Manager fail to send:~n~p~n"
+				   "Reason why it failed was:~n~p~n",
+				   [Msg, Reason]),
+	    error_logger:info_report(Report);
+	_ ->
+	    ok
+    end.
+
+do_send_msg({channel_data, Pid, Data}) ->
     Pid ! {ssh_cm, self(), Data};
-send_msg({channel_requst_reply, From, Data}) ->
+do_send_msg({channel_requst_reply, From, Data}) ->
     gen_server:reply(From, Data);
-send_msg({connection_reply, Pid, Data}) ->
+do_send_msg({connection_reply, Pid, Data}) ->
     Msg = ssh_bits:encode(Data),
     ssh_connection_handler:send(Pid, Msg);
-send_msg({flow_control, Cache, Channel, From, Msg}) ->
+do_send_msg({flow_control, Cache, Channel, From, Msg}) ->
     ssh_channel:cache_update(Cache, Channel#channel{flow_control = undefined}),
     gen_server:reply(From, Msg).
 
@@ -609,7 +639,7 @@ handle_request(ChannelPid, ChannelId, Type, Data, WantReply, From,
 	    State = add_request(WantReply, ChannelId, From, State0),
 	    {{replies, Replies}, State};
 	undefined ->
-	    {noreply, State0}
+	    {{replies, []}, State0}
     end.
 
 handle_request(ChannelId, Type, Data, WantReply, From, 
@@ -624,7 +654,7 @@ handle_request(ChannelId, Type, Data, WantReply, From,
 	    State = add_request(WantReply, ChannelId, From, State0),
 	    {{replies, Replies}, State};
 	undefined ->
-	    {noreply, State0}
+	    {{replies, []}, State0}
     end.
 
 handle_down({{replies, Replies}, State}) ->

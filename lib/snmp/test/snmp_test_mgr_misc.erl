@@ -51,7 +51,7 @@ start_link_packet(InHandler,
 start_link_packet(InHandler, 
 		  AgentIp, UdpPort, TrapUdp, 
 		  VsnHdr, Version, Dir, BufSz,
-		  Dbg) when integer(UdpPort) ->
+		  Dbg) when is_integer(UdpPort) ->
     Args = [self(), InHandler,
 	    AgentIp, UdpPort, TrapUdp, 
 	    VsnHdr, Version, Dir, BufSz, 
@@ -99,19 +99,19 @@ init_packet(Parent, SnmpMgr,
     init_usm(Version, Dir),
     packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, []).
 
-init_debug(Dbg) when atom(Dbg) ->
+init_debug(Dbg) when is_atom(Dbg) ->
     put(debug,Dbg),
     put(verbosity,silence);
     %% put(verbosity,trace);
-init_debug(DbgOptions) when list(DbgOptions) ->
+init_debug(DbgOptions) when is_list(DbgOptions) ->
     case lists:keysearch(debug, 1, DbgOptions) of
-	{value, {_, Dbg}} when atom(Dbg) ->
+	{value, {_, Dbg}} when is_atom(Dbg) ->
 	    put(debug, Dbg);
 	_ ->
 	    put(debug, false)
     end,
     case lists:keysearch(verbosity, 1, DbgOptions) of
-	{value, {_, Ver}} when atom(ver) ->
+	{value, {_, Ver}} when is_atom(Ver) ->
 	    put(verbosity, Ver);
 	_ ->
 	    put(verbosity, silence)
@@ -141,7 +141,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    case mk_msg(Version, Pdu, VsnHdr, MsgData) of
 		error ->
 		    ok;
-		B when list(B) -> 
+		B when is_list(B) -> 
 		    udp_send(UdpId, AgentIp, UdpPort, B)
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
@@ -156,7 +156,7 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 		    error("Encoding error:"
 			  "~n   Msg:    ~w"
 			  "~n   Reason: ~w",[Msg, Reason]);
-		B when list(B) -> 
+		B when is_list(B) -> 
 		    udp_send(UdpId, Ip, Udp, B)
 	    end,
 	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
@@ -229,7 +229,7 @@ handle_udp_packet(_V, undefined,
 		%% v1 or v2c
 		d("handle_udp_packet -> version v1 or v2c"),
 		case catch snmp_pdus:dec_pdu(Message#message.data) of
-		    Pdu when record(Pdu, pdu) ->
+		    Pdu when is_record(Pdu, pdu) ->
 			case SnmpMgr of
 			    {pdu, Pid} ->
 				d("handle_udp_packet -> "
@@ -243,7 +243,7 @@ handle_udp_packet(_V, undefined,
 				Msg = Message#message{data = Pdu},
 				Pid ! {snmp_msg, Msg, Ip, UdpPort}
 			end;
-		    Pdu when record(Pdu, trappdu) ->
+		    Pdu when is_record(Pdu, trappdu) ->
 			case SnmpMgr of
 			    {pdu, Pid} ->
 				d("handle_udp_packet -> "
@@ -402,7 +402,7 @@ generate_v3_report_msg(_MsgID, _MsgSecurityModel, Data, ErrorInfo) ->
       "~n   ErrorInfo: ~p", [ErrorInfo]),
     {Varbind, SecName, Opts} = ErrorInfo,
     ReqId =
-	if record(Data, scopedPdu) -> (Data#scopedPdu.data)#pdu.request_id;
+	if is_record(Data, scopedPdu) -> (Data#scopedPdu.data)#pdu.request_id;
 	   true -> 0
 	end,
     Pdu = #pdu{type = report, request_id = ReqId,
@@ -527,7 +527,7 @@ mk_msg(Version, Pdu, {Com, _User, _EngineID, _Ctx, _SecLevel}, _SecData) ->
 		  "~n   Pdu:    ~w"
 		  "~n   Reason: ~w",[Version, Pdu, Reason]),
 	    error;
-	B when list(B) -> 
+	B when is_list(B) -> 
 	    B
     end.
 
@@ -638,10 +638,10 @@ display_msgSecurityParameters(?SEC_USM,Params) ->
 display_msgSecurityParameters(_Model,Params) ->
     display_prop("msgSecurityParameters",Params).
 
-display_usmSecurityParameters(P) when list(P) ->
+display_usmSecurityParameters(P) when is_list(P) ->
     P1 = lists:flatten(P),
     display_usmSecurityParameters(snmp_pdus:dec_usm_security_parameters(P1));
-display_usmSecurityParameters(P) when record(P,usmSecurityParameters) ->
+display_usmSecurityParameters(P) when is_record(P,usmSecurityParameters) ->
     ID = P#usmSecurityParameters.msgAuthoritativeEngineID,
     display_msgAuthoritativeEngineID(ID),
     Boots = P#usmSecurityParameters.msgAuthoritativeEngineBoots,
@@ -675,9 +675,9 @@ display_msgAuthenticationParameters(V) ->
 display_msgPrivacyParameters(V) ->
     display_prop("msgPrivacyParameters",V).
 
-display_msg_data('version-3',Direction,D) when record(D,scopedPdu) ->
+display_msg_data('version-3',Direction,D) when is_record(D,scopedPdu) ->
     display_scoped_pdu(Direction,D);
-display_msg_data(_Version,Direction,D) when record(D,pdu) ->
+display_msg_data(_Version,Direction,D) when is_record(D,pdu) ->
     display_pdu(Direction,D);
 display_msg_data(_Version,_Direction,D) ->
     display_prop("Unknown message data",D).
@@ -693,9 +693,9 @@ display_contextEngineID(Id) ->
 display_contextName(Name) ->
     display_prop("contextName",Name).
 
-display_scoped_pdu_data(Direction,D) when record(D,pdu) ->
+display_scoped_pdu_data(Direction,D) when is_record(D,pdu) ->
     display_pdu(Direction,D);
-display_scoped_pdu_data(Direction,D) when record(D,trappdu) ->
+display_scoped_pdu_data(Direction,D) when is_record(D,trappdu) ->
     display_trappdu(Direction,D);
 display_scoped_pdu_data(_Direction,D) ->
     display_prop("Unknown scoped pdu data",D).
@@ -727,7 +727,7 @@ display_varbinds([H|T]) ->
 display_varbinds([]) ->
     ok.
 
-display_varbind(V) when record(V,varbind) ->
+display_varbind(V) when is_record(V,varbind) ->
     display_oid(V#varbind.oid),
     display_vtype(V#varbind.variabletype),
     display_value(V#varbind.value),
@@ -765,9 +765,9 @@ display_prop_hdr(S) ->
 %% Debug
 %%----------------------------------------------------------------------
 
-sz(L) when list(L) ->
+sz(L) when is_list(L) ->
     length(lists:flatten(L));
-sz(B) when binary(B) ->
+sz(B) when is_binary(B) ->
     size(B);
 sz(O) ->
     {unknown_size, O}.

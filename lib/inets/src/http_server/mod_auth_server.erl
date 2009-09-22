@@ -21,6 +21,7 @@
 -module(mod_auth_server).
 
 -include("httpd.hrl").
+-include("httpd_internal.hrl").
 
 -behaviour(gen_server).
 
@@ -37,7 +38,7 @@
 	 handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state,{tab}).
+-record(state, {tab}).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -50,14 +51,16 @@
 %% 
 %% NOTE: This is called by httpd_misc_sup when the process is started
 %% 
-start_link(Addr, Port)->
+start_link(Addr, Port) ->
+    ?hdrt("start_link", [{address, Addr}, {port, Port}]),
     Name = make_name(Addr, Port),
     gen_server:start_link({local, Name}, ?MODULE, [], [{timeout, infinity}]).
 
 
 %% start/2
 
-start(Addr, Port)->
+start(Addr, Port) ->
+    ?hdrd("start", [{address, Addr}, {port, Port}]),
     Name = make_name(Addr, Port),
     case whereis(Name) of
 	undefined ->
@@ -69,7 +72,8 @@ start(Addr, Port)->
 
 %% stop/2
 
-stop(Addr, Port)->
+stop(Addr, Port) ->
+    ?hdrd("stop", [{address, Addr}, {port, Port}]),
     Name = make_name(Addr, Port),
     case whereis(Name) of
 	undefined -> %% Already stopped
@@ -80,7 +84,8 @@ stop(Addr, Port)->
 
 %% add_password/4
 
-add_password(Addr, Port, Dir, Password)->
+add_password(Addr, Port, Dir, Password) ->
+    ?hdrt("add password", [{address, Addr}, {port, Port}]),
     Name = make_name(Addr, Port),
     Req  = {add_password, Dir, Password},
     call(Name, Req).
@@ -89,6 +94,8 @@ add_password(Addr, Port, Dir, Password)->
 %% update_password/6
 
 update_password(Addr, Port, Dir, Old, New) when is_list(New) ->
+    ?hdrt("update password", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, {old, Old}, {new, New}]),
     Name = make_name(Addr, Port),
     Req  = {update_password, Dir, Old, New},
     call(Name, Req).
@@ -97,6 +104,9 @@ update_password(Addr, Port, Dir, Old, New) when is_list(New) ->
 %% add_user/5
 
 add_user(Addr, Port, Dir, User, Password) ->
+    ?hdrt("add user", 
+	  [{address, Addr}, {port, Port}, 
+	   {dir, Dir}, {user, User}, {passwd, Password}]),
     Name = make_name(Addr, Port),
     Req  = {add_user, Addr, Port, Dir, User, Password},
     call(Name, Req).
@@ -105,6 +115,9 @@ add_user(Addr, Port, Dir, User, Password) ->
 %% delete_user/5
 
 delete_user(Addr, Port, Dir, UserName, Password) ->
+    ?hdrt("delete user", 
+	  [{address, Addr}, {port, Port}, 
+	   {dir, Dir}, {user, UserName}, {passwd, Password}]),
     Name = make_name(Addr, Port),
     Req  = {delete_user, Addr, Port, Dir, UserName, Password},
     call(Name, Req).
@@ -113,6 +126,9 @@ delete_user(Addr, Port, Dir, UserName, Password) ->
 %% get_user/5
 
 get_user(Addr, Port, Dir, UserName, Password) ->
+    ?hdrt("get user", 
+	  [{address, Addr}, {port, Port}, 
+	   {dir, Dir}, {user, UserName}, {passwd, Password}]),
     Name = make_name(Addr, Port),
     Req  = {get_user, Addr, Port, Dir, UserName, Password},
     call(Name, Req).
@@ -121,6 +137,8 @@ get_user(Addr, Port, Dir, UserName, Password) ->
 %% list_users/4
 
 list_users(Addr, Port, Dir, Password) ->
+    ?hdrt("list users", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, {passwd, Password}]),
     Name = make_name(Addr,Port),
     Req  = {list_users, Addr, Port, Dir, Password},
     call(Name, Req).
@@ -129,6 +147,9 @@ list_users(Addr, Port, Dir, Password) ->
 %% add_group_member/6
 
 add_group_member(Addr, Port, Dir, GroupName, UserName, Password) ->
+    ?hdrt("add group member", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, 
+	   {group, GroupName}, {user, UserName}, {passwd, Password}]),
     Name = make_name(Addr,Port),
     Req  = {add_group_member, Addr, Port, Dir, GroupName, UserName, Password},
     call(Name, Req).
@@ -137,6 +158,9 @@ add_group_member(Addr, Port, Dir, GroupName, UserName, Password) ->
 %% delete_group_member/6
 
 delete_group_member(Addr, Port, Dir, GroupName, UserName, Password) ->
+    ?hdrt("delete group member", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, 
+	   {group, GroupName}, {user, UserName}, {passwd, Password}]),
     Name = make_name(Addr,Port),
     Req  = {delete_group_member, Addr, Port, Dir, GroupName, UserName, Password},
     call(Name, Req).
@@ -145,6 +169,9 @@ delete_group_member(Addr, Port, Dir, GroupName, UserName, Password) ->
 %% list_group_members/4
 
 list_group_members(Addr, Port, Dir, Group, Password) ->
+    ?hdrt("list group members", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, 
+	   {group, Group}, {passwd, Password}]),
     Name = make_name(Addr, Port),
     Req  = {list_group_members, Addr, Port, Dir, Group, Password},
     call(Name, Req).
@@ -153,6 +180,9 @@ list_group_members(Addr, Port, Dir, Group, Password) ->
 %% delete_group/5
 
 delete_group(Addr, Port, Dir, GroupName, Password) ->
+    ?hdrt("delete group", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, 
+	   {group, GroupName}, {passwd, Password}]),
     Name = make_name(Addr, Port),
     Req  = {delete_group, Addr, Port, Dir, GroupName, Password},
     call(Name, Req).
@@ -161,6 +191,8 @@ delete_group(Addr, Port, Dir, GroupName, Password) ->
 %% list_groups/4
 
 list_groups(Addr, Port, Dir, Password) ->
+    ?hdrt("list groups", 
+	  [{address, Addr}, {port, Port}, {dir, Dir}, {passwd, Password}]),
     Name = make_name(Addr, Port),
     Req  = {list_groups, Addr, Port, Dir, Password},
     call(Name, Req).
@@ -175,6 +207,7 @@ list_groups(Addr, Port, Dir, Password) ->
 %% init
 
 init(_) ->
+    ?hdrv("initiating", []),
     {ok,#state{tab = ets:new(auth_pwd,[set,protected])}}.
 
 %% handle_call
@@ -182,6 +215,7 @@ init(_) ->
 %% Add a user
 handle_call({add_user, Addr, Port, Dir, User, AuthPwd}, _From, State) ->
     Reply = api_call(Addr, Port, Dir, add_user, User, AuthPwd, State),
+    ?hdrt("add user", [{reply, Reply}]),
     {reply, Reply, State};
 
 %% Get data about a user
@@ -198,48 +232,48 @@ handle_call({add_group_member, Addr, Port, Dir, Group, User, AuthPwd},
 
 %% delete a group
 handle_call({delete_group_member, Addr, Port, Dir, Group, User, AuthPwd},
-	    _From, State)->
+	    _From, State) ->
     Reply = api_call(Addr, Port, Dir, delete_group_member, [Group, User], 
 		     AuthPwd, State), 
     {reply, Reply, State};
 
 %% List all users thats standalone users
-handle_call({list_users, Addr, Port, Dir, AuthPwd}, _From, State)->
+handle_call({list_users, Addr, Port, Dir, AuthPwd}, _From, State) ->
     Reply = api_call(Addr, Port, Dir, list_users, [], AuthPwd, State),
     {reply, Reply, State};
 
 %% Delete a user
-handle_call({delete_user, Addr, Port, Dir, User, AuthPwd}, _From, State)->
+handle_call({delete_user, Addr, Port, Dir, User, AuthPwd}, _From, State) ->
     Reply = api_call(Addr, Port, Dir, delete_user, [User], AuthPwd, State),
     {reply, Reply, State};
 
 %% Delete a group
-handle_call({delete_group, Addr, Port, Dir, Group, AuthPwd}, _From, State)->
+handle_call({delete_group, Addr, Port, Dir, Group, AuthPwd}, _From, State) ->
     Reply = api_call(Addr, Port, Dir, delete_group, [Group], AuthPwd, State),
     {reply, Reply, State};
 
 %% List the current groups
-handle_call({list_groups, Addr, Port, Dir, AuthPwd}, _From, State)->
+handle_call({list_groups, Addr, Port, Dir, AuthPwd}, _From, State) ->
     Reply = api_call(Addr, Port, Dir, list_groups, [], AuthPwd, State),
     {reply, Reply, State};
 
 %% List the members of the given group
 handle_call({list_group_members, Addr, Port, Dir, Group, AuthPwd},
-	    _From, State)->
+	    _From, State) ->
     Reply = api_call(Addr, Port, Dir, list_group_members, [Group],
 		     AuthPwd, State), 
     {reply, Reply, State};
 
 
 %% Add password for a directory
-handle_call({add_password, Dir, Password}, _From, State)->
+handle_call({add_password, Dir, Password}, _From, State) ->
     Reply = do_add_password(Dir, Password, State),
     {reply, Reply, State};
 
 
 %% Update the password for a directory
   
-handle_call({update_password, Dir, Old, New},_From,State)->
+handle_call({update_password, Dir, Old, New},_From,State) ->
     Reply = 
 	case getPassword(State, Dir) of
 	    OldPwd when is_binary(OldPwd) ->
@@ -257,13 +291,13 @@ handle_call({update_password, Dir, Old, New},_From,State)->
     end,
     {reply, Reply, State};
 
-handle_call(stop, _From, State)->
+handle_call(stop, _From, State) ->
     {stop, normal, State}.
 
-handle_info(_Info, State)->
+handle_info(_Info, State) ->
     {noreply, State}.
 
-handle_cast(_Request, State)->
+handle_cast(_Request, State) ->
     {noreply, State}.
     
 
@@ -272,16 +306,10 @@ terminate(_Reason,State) ->
     ok.
 
 
-%% code_change({down, ToVsn}, State, Extra)
-%% 
-code_change({down, _}, #state{tab = Tab}, downgrade_to_2_6_0) ->
-    {ok, {state, Tab, undefined}};
-
-
-%% code_change(FromVsn, State, Extra)
+%% code_change(Vsn, State, Extra)
 %%
-code_change(_, {state, Tab, _}, upgrade_from_2_6_0) ->
-    {ok, #state{tab = Tab}}.
+code_change(_Vsn, State, _Extra) ->
+    {ok, State}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -294,9 +322,9 @@ code_change(_, {state, Tab, _}, upgrade_from_2_6_0) ->
 %% API gateway
 
 api_call(Addr, Port, Dir, Func, Args,Password,State) ->
-    case controlPassword(Password,State,Dir) of
+    case controlPassword(Password, State, Dir) of
 	ok->
-	    ConfigName = httpd_util:make_name("httpd_conf",Addr,Port),
+	    ConfigName = httpd_util:make_name("httpd_conf", Addr, Port),
 	    case ets:match_object(ConfigName, {directory, {Dir, '$1'}}) of
 		[{directory, {Dir, DirData}}] ->
 		    AuthMod = auth_mod_name(DirData),
@@ -311,7 +339,7 @@ api_call(Addr, Port, Dir, Func, Args,Password,State) ->
 controlPassword(Password, _State, _Dir) when Password =:= "DummyPassword" ->
     bad_password;
 
-controlPassword(Password,State,Dir)->
+controlPassword(Password,State,Dir) ->
     case getPassword(State,Dir) of
 	Pwd when is_binary(Pwd) ->
 	    case erlang:md5(Password) of
@@ -325,7 +353,7 @@ controlPassword(Password,State,Dir)->
     end.
 
     
-getPassword(State,Dir)->
+getPassword(State, Dir) ->
     case lookup(State#state.tab, Dir) of
 	[{_,Pwd}]->
 	    Pwd;

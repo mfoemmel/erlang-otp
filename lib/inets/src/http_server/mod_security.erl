@@ -31,12 +31,14 @@
 -export([do/1, load/2, store/2, remove/1]).
 
 -include("httpd.hrl").
+-include("httpd_internal.hrl").
 
 -define(VMODULE,"SEC").
 
 
 %% do/1
 do(Info) ->
+    ?hdrt("do", [{info, Info}]),
     %% Check and see if any user has been authorized.
     case proplists:get_value(remote_user, Info#mod.data,not_defined_user) of
 	not_defined_user ->
@@ -106,6 +108,7 @@ report_failed(Info, Auth, Event) ->
     mod_log:security_log(Info, String).
 
 take_failed_action(Info, Auth) ->
+    ?hdrd("take failed action", [{auth, Auth}]),
     Path = mod_alias:path(Info#mod.data, Info#mod.config_db, 
 			  Info#mod.request_uri),
     {_Dir, SDirData} = secretp(Path, Info#mod.config_db),
@@ -118,6 +121,7 @@ secretp(Path, ConfigDB) ->
     Directories = ets:match(ConfigDB,{directory,{'$1','_'}}),
     case secret_path(Path, Directories) of
 	{yes, Directory} ->
+	    ?hdrd("secretp - yes", [{dir, Directory}]),
 	    SDirs0 = httpd_util:multi_lookup(ConfigDB, security_directory),
 	    [SDir] = lists:filter(fun({Directory0, _}) 
 				     when Directory0 == Directory ->
@@ -135,57 +139,74 @@ secret_path(Path,Directories) ->
 
 secret_path(_Path, [], to_be_found) ->
     no;
-secret_path(_Path, [], Directory) ->
-    {yes, Directory};
-secret_path(Path, [[NewDirectory]|Rest], Directory) ->
-    case inets_regexp:match(Path, NewDirectory) of
-	{match, _, _} when Directory == to_be_found ->
-	    secret_path(Path, Rest, NewDirectory);
-	{match, _, Length} when Length > length(Directory)->
-	    secret_path(Path, Rest, NewDirectory);
+secret_path(_Path, [], Dir) ->
+    {yes, Dir};
+secret_path(Path, [[NewDir]|Rest], Dir) ->
+    case inets_regexp:match(Path, NewDir) of
+	{match, _, _} when Dir =:= to_be_found ->
+	    secret_path(Path, Rest, NewDir);
+	{match, _, Length} when Length > length(Dir) ->
+	    secret_path(Path, Rest, NewDir);
 	{match, _, _} ->
-	    secret_path(Path, Rest, Directory);
+	    secret_path(Path, Rest, Dir);
 	nomatch ->
-	    secret_path(Path, Rest, Directory)
+	    secret_path(Path, Rest, Dir)
     end.
 
 
-load("<Directory " ++ Directory,[]) ->
+load("<Directory " ++ Directory, []) ->
+    ?hdrt("load security directory - begin", [{directory, Directory}]),
     Dir = httpd_conf:custom_clean(Directory,"",">"),
     {ok, [{security_directory, {Dir, [{path, Dir}]}}]};
 load(eof,[{security_directory, {Directory, _DirData}}|_]) ->
     {error, ?NICE("Premature end-of-file in "++Directory)};
-load("SecurityDataFile " ++ FileName,
+load("SecurityDataFile " ++ FileName, 
      [{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory", 
+	  [{file, FileName}, {dir, Dir}, {dir_data, DirData}]),
     File = httpd_conf:clean(FileName),
     {ok, [{security_directory, {Dir, [{data_file, File}|DirData]}}]};
 load("SecurityCallbackModule " ++ ModuleName,
      [{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory", 
+	  [{module, ModuleName}, {dir, Dir}, {dir_data, DirData}]),
     Mod = list_to_atom(httpd_conf:clean(ModuleName)),
     {ok, [{security_directory, {Dir, [{callback_module, Mod}|DirData]}}]};
 load("SecurityMaxRetries " ++ Retries,
      [{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory", 
+	  [{max_retries, Retries}, {dir, Dir}, {dir_data, DirData}]),
     load_return_int_tag("SecurityMaxRetries", max_retries, 
 			httpd_conf:clean(Retries), Dir, DirData);
 load("SecurityBlockTime " ++ Time,
       [{security_directory, {Dir, DirData}}]) ->
-	    load_return_int_tag("SecurityBlockTime", block_time,
-				httpd_conf:clean(Time), Dir, DirData);
+    ?hdrt("load security directory", 
+	  [{block_time, Time}, {dir, Dir}, {dir_data, DirData}]),
+    load_return_int_tag("SecurityBlockTime", block_time,
+			httpd_conf:clean(Time), Dir, DirData);
 load("SecurityFailExpireTime " ++ Time,
      [{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory", 
+	  [{expire_time, Time}, {dir, Dir}, {dir_data, DirData}]),
     load_return_int_tag("SecurityFailExpireTime", fail_expire_time,
 			httpd_conf:clean(Time), Dir, DirData);
 load("SecurityAuthTimeout " ++ Time0,
      [{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory", 
+	  [{auth_timeout, Time0}, {dir, Dir}, {dir_data, DirData}]),
     Time = httpd_conf:clean(Time0),
     load_return_int_tag("SecurityAuthTimeout", auth_timeout,
 			httpd_conf:clean(Time), Dir, DirData);
 load("AuthName " ++ Name0,
      [{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory", 
+	  [{name, Name0}, {dir, Dir}, {dir_data, DirData}]),
     Name = httpd_conf:clean(Name0),
     {ok, [{security_directory, {Dir, [{auth_name, Name}|DirData]}}]};
-load("</Directory>",[{security_directory, {Directory, DirData}}]) ->
-    {ok, [], {security_directory, {Directory, DirData}}}.
+load("</Directory>",[{security_directory, {Dir, DirData}}]) ->
+    ?hdrt("load security directory - end", 
+	  [{dir, Dir}, {dir_data, DirData}]),
+    {ok, [], {security_directory, {Dir, DirData}}}.
 
 load_return_int_tag(Name, Atom, Time, Dir, DirData) ->
     case Time of
@@ -201,13 +222,13 @@ load_return_int_tag(Name, Atom, Time, Dir, DirData) ->
 	    end
     end.
 
-store({security_directory, {Dir, DirData}}, ConfigList) when is_list(Dir),
-							   is_list(DirData) ->
+store({security_directory, {Dir, DirData}}, ConfigList) 
+  when is_list(Dir) andalso is_list(DirData) ->
+    ?hdrt("store security directory", [{dir, Dir}, {dir_data, DirData}]),
     Addr = proplists:get_value(bind_address, ConfigList),
     Port = proplists:get_value(port, ConfigList),
     mod_security_server:start(Addr, Port),
     SR = proplists:get_value(server_root, ConfigList),
-    
     case proplists:get_value(data_file, DirData, no_data_file) of
 	no_data_file ->
 	    {error, {missing_security_data_file, {security_directory, {Dir, DirData}}}};
@@ -230,7 +251,7 @@ store({security_directory, {Dir, DirData}}, ConfigList) when is_list(Dir),
 					  [{port,Port},{bind_address,Addr}|
 					   NewDirData0]
 				  end,
-			    {ok, {security_directory, {Dir, NewDirData1}}};
+		    {ok, {security_directory, {Dir, NewDirData1}}};
 		{error, Err} ->
 		    {error, {{open_data_file, DataFile}, Err}}
 	    end

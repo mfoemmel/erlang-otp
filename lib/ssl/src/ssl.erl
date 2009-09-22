@@ -639,7 +639,7 @@ validate_inet_option(mode, Value)
   when Value =/= list, Value =/= binary ->
     throw({error, {eoptions, {mode,Value}}});
 validate_inet_option(packet, Value)
-  when not (is_atom(Value) or is_integer(Value)) ->
+  when not (is_atom(Value) orelse is_integer(Value)) ->
     throw({error, {eoptions, {packet,Value}}});
 validate_inet_option(packet_size, Value)
   when not is_integer(Value) ->

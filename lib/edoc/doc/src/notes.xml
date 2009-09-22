@@ -30,6 +30,21 @@
   <p>This document describes the changes made to the EDoc
     application.</p>
 
+<section><title>Edoc 0.7.6.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Miscellaneous updates.</p>
+          <p>
+	    Own Id: OTP-8190</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Edoc 0.7.6.3</title>
 
     <section><title>Improvements and New Features</title>

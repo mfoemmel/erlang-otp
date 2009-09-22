@@ -19,7 +19,7 @@
 
 {application, snmp,
  [{description, "SNMP  CXC 138 13"},
-  {vsn, "4.13.3"},
+  {vsn, "4.13.5"},
   {modules, [
              %% Compiler modules (not in the runtime part of the app)
 %             snmpc,

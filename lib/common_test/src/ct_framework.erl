@@ -446,11 +446,19 @@ end_tc(Mod,Func,TCPid,Result,Args) ->
 					  {skip,S} -> {skipped,S};
 					  _-> Result
 				      end}}),
-    case ct_logs:end_tc(TCPid) of
-	{error,Reason} ->
-	    exit({error,{logger,Reason}});
+
+    case Result of
+	{skip,{sequence_failed,_,_}} ->
+	    %% ct_logs:init_tc is never called for a skipped test case
+	    %% in a failing sequence, so neither should end_tc	    
+	    ok;
 	_ ->
-	    ok
+	    case ct_logs:end_tc(TCPid) of
+		{error,Reason} ->
+		    exit({error,{logger,Reason}});
+		_ ->
+		    ok
+	    end
     end,
     case Func of
 	end_per_suite -> 
@@ -565,11 +573,12 @@ error_notification(Mod,Func,_Args,{Error,Loc}) ->
 mark_as_failed(Seq,Mod,Func,[Func|TCs]) ->
     mark_as_failed1(Seq,Mod,Func,TCs);
 mark_as_failed(Seq,Mod,Func,[_TC|TCs]) ->
-    mark_as_failed1(Seq,Mod,Func,TCs);
+    mark_as_failed(Seq,Mod,Func,TCs);
 mark_as_failed(_,_,_,[]) ->
     ok;
 mark_as_failed(_,_,_,undefined) ->
     ok.
+
 %% mark rest of cases in seq to be skipped
 mark_as_failed1(Seq,Mod,Func,[TC|TCs]) ->
     ct_util:save_suite_data({seq,Mod,TC},{failed,Seq,Func}),
@@ -905,10 +914,14 @@ report(What,Data) ->
 			end,
 		    lists:foreach(
 		      fun(Imp) ->
-			      ct_logs:log("COVER INFO",
-					  "Importing cover data from: ~s",
-					  [Imp]), 
-			      cover:import(Imp)
+			      case cover:import(Imp) of
+				  ok -> 
+				      ok;
+				  {error,Reason} ->
+				      ct_logs:log("COVER INFO",
+						  "Importing cover data from: ~s fails! "
+						  "Reason: ~p", [Imp,Reason])
+			      end
 		      end, Imps)
 	    end;
 	tests_done ->

@@ -51,7 +51,7 @@
  	 tailcall_clobbered/0,
  	 temp0/0,
 	 temp1/0,
-% 	 %% fixed/0,
+	 %% fixed/0,
 	 wordsize/0
 	]).
 
@@ -192,8 +192,8 @@ is_fixed(?FCALLS) -> true;
 is_fixed(?HEAP_LIMIT) -> true;
 is_fixed(R) -> is_heap_pointer(R).
 
-% %% fixed() ->
-% %%     [?ESP, ?PROC_POINTER, ?FCALLS, ?HEAP_LIMIT | ?LIST_HP_FIXED].
+%% fixed() ->
+%%     [?ESP, ?PROC_POINTER, ?FCALLS, ?HEAP_LIMIT | ?LIST_HP_FIXED].
 
 allocatable() ->
   [?RDX, ?RCX, ?RBX, ?RAX, ?RSI, ?RDI,
@@ -235,8 +235,7 @@ is_arg(R) ->
   end.
 
 args(Arity) when is_integer(Arity), Arity >= 0 ->
-  Max = ?AMD64_NR_ARG_REGS,
-  N = if Arity > Max -> Max; true -> Arity end,
+  N = erlang:min(Arity, ?AMD64_NR_ARG_REGS),
   args(N-1, []).
 
 args(I, Rest) when I < 0 -> Rest;

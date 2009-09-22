@@ -41,6 +41,8 @@ static char *arg_tab[] = {
   "name", "n",
   "args", "ar",
   "debugtype", "d",
+  "internalservicename","i",
+  "comment","c",
   NULL, NULL
 };
 
@@ -242,6 +244,24 @@ static BOOL open_service_config(SC_HANDLE *scm, SC_HANDLE *service){
 	return FALSE;
     }
     return TRUE;
+}
+
+static BOOL set_service_comment(char *comment) {
+    SC_HANDLE scm; 
+    SC_HANDLE service;
+    SERVICE_DESCRIPTION sd;
+    BOOL ret = TRUE;
+    sd.lpDescription = comment;
+    if (!open_service_config(&scm,&service)) {
+	return FALSE;
+    }
+    if (!ChangeServiceConfig2(service,SERVICE_CONFIG_DESCRIPTION,&sd)) {
+	last_error = GetLastError();
+	ret = FALSE;
+    }
+    CloseServiceHandle(service);
+    CloseServiceHandle(scm);
+    return ret;
 }
 
 static BOOL wait_service_trans(DWORD initial, DWORD passes, DWORD goal,
@@ -472,6 +492,7 @@ BOOL fill_in_defaults(RegEntry *new){
   new[Args].data.bytes = new[Args].data.expand.unexpanded = "";
   new[DebugType].data.value = DEBUG_TYPE_NO_DEBUG;
   new[InternalServiceName].data.bytes = real_service_name;
+  new[Comment].data.bytes = "";
   return TRUE;
 }
 
@@ -600,6 +621,7 @@ int do_add_or_set(int argc, char **argv){
   int add = 0;
   int i;
   int current;
+  int set_comment = 0;
   new_entries = empty_reg_tab();
   default_entries = empty_reg_tab();
   if(argc < 3){
@@ -640,6 +662,8 @@ int do_add_or_set(int argc, char **argv){
 
   for(i = 3; i < argc; ++i){
     switch((current = lookup_arg(argv[i]))){
+    case Comment:
+	set_comment = 1;
     case Machine:
     case WorkDir:
     case Args:
@@ -740,6 +764,23 @@ int do_add_or_set(int argc, char **argv){
 		 new_entries[current].data.bytes);
       ++i;
       break;
+    case InternalServiceName:
+	if (!add) {
+	    fprintf(stderr,"%s: %s only allowed when adding a new service.\n",
+		    argv[0],argv[i]);
+	    return 1;
+	}
+	if(i+1 >= argc){
+	    fprintf(stderr,"%s: %s requires a parameter.\n",
+		    argv[0],argv[i]);
+	    return 1;
+	}
+	new_entries[InternalServiceName].data.expand.unexpanded =
+	    new_entries[InternalServiceName].data.bytes = argv[i+1];
+	++i;
+	/* Discard old, should maybe be fred' but we'll exit anyway */
+	real_service_name = new_entries[InternalServiceName].data.bytes;
+	break;
     default:
       fprintf(stderr,"%s: Unrecognized option %s.\n", argv[0],
 	      argv[i]);
@@ -778,6 +819,15 @@ int do_add_or_set(int argc, char **argv){
   /* Update registry */
   register_logkeys();
   set_keys(service_name, new_entries);
+  /* Update service comment if needed */
+  if(set_comment) {
+      if (!set_service_comment(new_entries[Comment].data.bytes)) {
+	  fprintf(stderr,"%s: Warning, could not set correct "
+		  "service description (comment)",
+		  argv[0], service_name);
+	  print_last_error();
+      }
+  }
 
   /* As I do this, I should also clean up the new entries, which is
      somewhat harder as I really dont know what is and what is not
@@ -981,6 +1031,10 @@ BOOL list_one(char *servicename, RegEntry *keys, BOOL longlist){
     printf("DebugType: %s\n",debugtype);
     printf("Args: %s\n",
 	   keys[Args].data.expand.unexpanded);
+    printf("InternalServiceName: %s\n",
+	   keys[InternalServiceName].data.bytes);
+    printf("Comment: %s\n",
+	   keys[Comment].data.bytes);
     printf("Env:\n");
     while(*pek){
       printf("\t%s\n",*pek);

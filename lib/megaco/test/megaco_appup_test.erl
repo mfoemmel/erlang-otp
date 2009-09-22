@@ -55,7 +55,7 @@ all(suite) ->
 
 appup_init(suite) -> [];
 appup_init(doc) -> [];
-appup_init(Config) when list(Config) ->
+appup_init(Config) when is_list(Config) ->
     AppFile   = file_name(?APPLICATION, ".app"),
     AppupFile = file_name(?APPLICATION, ".appup"),
     [{app_file, AppFile}, {appup_file, AppupFile}|Config].
@@ -68,7 +68,7 @@ file_name(App, Ext) ->
 
 appup_fin(suite) -> [];
 appup_fin(doc) -> [];
-appup_fin(Config) when list(Config) ->
+appup_fin(Config) when is_list(Config) ->
     Config.
 
 
@@ -78,7 +78,7 @@ appup(suite) ->
     [];
 appup(doc) ->
     "perform a simple check of the appup file";
-appup(Config) when list(Config) ->
+appup(Config) when is_list(Config) ->
     AppupFile = key1search(appup_file, Config),
     AppFile   = key1search(app_file, Config),
     Modules   = modules(AppFile),
@@ -166,14 +166,14 @@ check_instructions(UpDown, [Instr|Instrs], AllInstr, Good, Bad, Modules) ->
 
 %% A new module is added
 check_instruction(up, {add_module, Module}, _, Modules) 
-  when atom(Module) ->
+  when is_atom(Module) ->
     d("check_instruction -> entry when up-add_module instruction with"
       "~n   Module: ~p", [Module]),
     check_module(Module, Modules);
 
 %% An old module is re-added
 check_instruction(down, {add_module, Module}, _, Modules) 
-  when atom(Module) ->
+  when is_atom(Module) ->
     d("check_instruction -> entry when down-add_module instruction with"
       "~n   Module: ~p", [Module]),
     case (catch check_module(Module, Modules)) of
@@ -187,7 +187,7 @@ check_instruction(down, {add_module, Module}, _, Modules)
 %% - the module has been removed from the app-file.
 %% - check that no module depends on this (removed) module
 check_instruction(up, {remove, {Module, Pre, Post}}, _, Modules) 
-  when atom(Module), atom(Pre), atom(Post) ->
+  when is_atom(Module) andalso is_atom(Pre) andalso is_atom(Post) ->
     d("check_instruction -> entry when up-remove instruction with"
       "~n   Module: ~p"
       "~n   Pre:    ~p"
@@ -203,7 +203,7 @@ check_instruction(up, {remove, {Module, Pre, Post}}, _, Modules)
 %% Removing a module on downgrade: the module exist
 %% in the app-file.
 check_instruction(down, {remove, {Module, Pre, Post}}, AllInstr, Modules) 
-  when atom(Module), atom(Pre), atom(Post) ->
+  when is_atom(Module) andalso is_atom(Pre) andalso is_atom(Post) ->
     d("check_instruction -> entry when down-remove instruction with"
       "~n   Module: ~p"
       "~n   Pre:    ~p"
@@ -219,7 +219,7 @@ check_instruction(down, {remove, {Module, Pre, Post}}, AllInstr, Modules)
 
 check_instruction(_, {load_module, Module, Pre, Post, Depend}, 
 		  AllInstr, Modules) 
-  when atom(Module), atom(Pre), atom(Post), list(Depend) ->
+  when is_atom(Module) andalso is_atom(Pre) andalso is_atom(Post) andalso is_list(Depend) ->
     d("check_instruction -> entry when load_module instruction with"
       "~n   Module: ~p"
       "~n   Pre:    ~p"
@@ -233,7 +233,7 @@ check_instruction(_, {load_module, Module, Pre, Post, Depend},
 
 check_instruction(_, {update, Module, Change, Pre, Post, Depend}, 
 		  AllInstr, Modules) 
-  when atom(Module), atom(Pre), atom(Post), list(Depend) ->
+  when is_atom(Module) andalso is_atom(Pre) andalso is_atom(Post) andalso is_list(Depend) ->
     d("check_instruction -> entry when update instruction with"
       "~n   Module: ~p"
       "~n   Change: ~p"
@@ -252,7 +252,7 @@ check_instruction(_, {update, Module, supervisor}, _, Modules)
     check_module(Module, Modules);
 
 check_instruction(_, {apply, {Module, Function, Args}}, _, Modules)
-   when atom(Module), atom(Function), list(Args) ->
+   when is_atom(Module) andalso is_atom(Function) andalso is_list(Args) ->
      d("check_instruction -> entry when down-apply instruction with"
        "~n   Module:   ~p"
        "~n   Function: ~p"
@@ -370,7 +370,7 @@ module_of(_) ->
 %% The version is a string consting of numbers separated by dots: "."
 %% Example: "3.3.3"
 %% 
-check_version(V) when list(V) ->
+check_version(V) when is_list(V) ->
     case do_check_version(string:tokens(V, [$.])) of
 	ok ->
 	    ok;
@@ -390,7 +390,7 @@ do_check_version([H|T]) ->
 	    {error, H}
     end.
 	    
-check_module(M, Modules) when atom(M) ->
+check_module(M, Modules) when is_atom(M) ->
     case lists:member(M,Modules) of
         true ->
             ok;
@@ -401,11 +401,11 @@ check_module(M, _) ->
     error({bad_module, M}).
 
 
-check_module_depend(M, [], _) when atom(M) ->
+check_module_depend(M, [], _) when is_atom(M) ->
     d("check_module_depend -> entry with"
       "~n   M: ~p", [M]),    
     ok;
-check_module_depend(M, Deps, Modules) when atom(M), list(Deps) ->
+check_module_depend(M, Deps, Modules) when is_atom(M) andalso is_list(Deps) ->
     d("check_module_depend -> entry with"
       "~n   M: ~p"
       "~n   Deps: ~p"
@@ -464,7 +464,7 @@ check_purge(Purge) ->
 
 check_apply(Module, Function, Args) ->
      case (catch Module:module_info()) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    check_exported(Function, Args, Info);
 	{'EXIT', {undef, _}} ->
 	    error({not_existing_module, Module})

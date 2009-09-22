@@ -1800,7 +1800,7 @@ GetFileName(HWND hwnd, TCHAR *pFile)
     ofn.nMaxFileTitle     = MAXFILENAME;
     ofn.lpstrTitle        = TEXT("Open logfile");
     ofn.lpstrDefExt       = TEXT("log");
-    ofn.Flags             = OFN_CREATEPROMPT|OFN_HIDEREADONLY|OFN_EXPLORER|OFN_ENABLEHOOK;
+    ofn.Flags             = OFN_CREATEPROMPT|OFN_HIDEREADONLY|OFN_EXPLORER|OFN_ENABLEHOOK|OFN_NOCHANGEDIR; /* OFN_NOCHANGEDIR only works in Vista :( */
     ofn.lpfnHook          = OFNHookProc;
    
     if (!GetOpenFileName ((LPOPENFILENAME)&ofn)){

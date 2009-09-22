@@ -20,6 +20,12 @@
 include ../vsn.mk
 include ../config.mk
 
+# Darwin os have debug default install of wxWidgets 
+FORCED_DEBUG = @FORCED_DEBUG_BUILD@
+ifeq ($(FORCED_DEBUG),debug)
+override TYPE=debug
+endif
+
 ifneq ($(TYPE),debug)
 override TYPE=opt
 endif
@@ -162,6 +168,8 @@ ifeq ($(INSIDE_ERLSRC),true)
 include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/$(SYS_TYPE)
+	$(INSTALL_DATA) ../priv/erlang-logo32.png $(RELSYSDIR)/priv/
+	$(INSTALL_DATA) ../priv/erlang-logo64.png $(RELSYSDIR)/priv/
 	$(INSTALL_DATA) $(TARGET_DIR)/$(TARGET_API)$(SO_EXT) $(RELSYSDIR)/priv/$(SYS_TYPE)
 
 release_docs_spec:

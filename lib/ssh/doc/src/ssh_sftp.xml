@@ -45,7 +45,7 @@
     and/or abstractions to indicate the intended use of the data type:
     </p>
     <p><c>ssh_connection_ref() - opaque to the user
-    returned by ssh:connect/[1,2,3]</c></p>
+    returned by ssh:connect/3</c></p>
     <p><c>timeout() =  infinity | integer() - in milliseconds.</c></p>    
    </section>
 
@@ -88,7 +88,7 @@
 	  </item>
 	</taglist>
 	<p>All other options are  directly passed to
-	<seealso marker="ssh">ssh:connect[2/3]</seealso> or ignored if a
+	<seealso marker="ssh">ssh:connect/3</seealso> or ignored if a
 	connection is already provided. </p>
       </desc>
     </func>

@@ -49,7 +49,7 @@
 -define(REFUSED,  5).		%% query refused
 %%	non standard 
 -define(NOCHANGE, 16#f).		%% update failed to change db
-
+-define(BADVERS,  16).
 
 %%
 %% Type values for resources and queries
@@ -75,6 +75,7 @@
 -define(T_SRV,          33).            %% services
 %% NAPTR (RFC 2915)
 -define(T_NAPTR,        35).            %% naming authority pointer
+-define(T_OPT,          41).            %% EDNS pseudo-rr RFC2671(7)
 %% SPF (RFC 4408)
 -define(T_SPF,          99).            %% server policy framework
 %%      non standard
@@ -112,6 +113,7 @@
 -define(S_SRV,          srv).           %% services
 %% NAPTR (RFC 2915)
 -define(S_NAPTR,        naptr).         %% naming authority pointer
+-define(S_OPT,          opt).           %% EDNS pseudo-rr RFC2671(7)
 %% SPF (RFC 4408)
 -define(S_SPF,          spf).           %% server policy framework
 %%      non standard
@@ -173,20 +175,34 @@
 %% DNS resource record
 -record(dns_rr,
 	{
-	 domain,        %% resource domain
-	 class,         %% reource class (atom i.e c_in)
-	 type,          %% resource type (atom i.e t_any)
+	 domain = "",   %% resource domain
+	 type = any,    %% resource type
+	 class = in,    %% reource class
 	 cnt = 0,       %% access count
-	 tm,            %% creation time
-	 ttl,           %% time to live
-         bm = [],       %% Bitmap storing domain character case information.
+	 ttl = 0,       %% time to live
 	 data = [],     %% raw data
+	  %%
+	 tm,            %% creation time
+         bm = [],       %% Bitmap storing domain character case information.
          func = false   %% Optional function calculating the data field.
 	}).
+
+-define(DNS_UDP_PAYLOAD_SIZE, 1280).
+
+-record(dns_rr_opt,           %% EDNS RR OPT (RFC2671), dns_rr{type=opt}
+	{
+	  domain = "",        %% should be the root domain
+	  type = opt,
+	  udp_payload_size = ?DNS_UDP_PAYLOAD_SIZE, %% RFC2671(4.5 CLASS)
+	  ext_rcode = 0,      %% RFC2671(4.6 EXTENDED-RCODE)
+	  version = 0,        %% RFC2671(4.6 VERSION)
+	  z = 0,              %% RFC2671(4.6 Z)
+	  data = []           %% RFC2671(4.4)
+	 }).
 
 -record(dns_query,
 	{
 	 domain,     %% query domain
-	 type,       %% query type
-	 class       %% query class
+	 type,        %% query type
+	 class      %% query class
 	 }).

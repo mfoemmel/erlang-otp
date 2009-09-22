@@ -19,7 +19,7 @@
 -module(reltool_app_win).
 
 %% Public
--export([start/4, raise/1, refresh/1, open_mod/2]).
+-export([start_link/4, raise/1, refresh/1, open_mod/2]).
 
 %% Internal
 -export([init/5, loop/1]).
@@ -78,40 +78,20 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Client
 
-start(WxEnv, Xref, Common, AppName) ->
+start_link(WxEnv, Xref, Common, AppName) ->
     proc_lib:start_link(?MODULE, init, [self(), WxEnv, Xref, Common, AppName], infinity, []).
 
 raise(Pid) ->
-    cast(Pid, raise).
+    reltool_utils:cast(Pid, raise).
 
 refresh(Pid) ->
-    cast(Pid, refresh).
+    reltool_utils:cast(Pid, refresh).
 
 open_mod(Pid, ModName) ->
-    call(Pid, {open_mod, ModName}).
-
-call(Name, Msg) when is_atom(Name) ->
-    call(whereis(Name), Msg);
-call(Pid, Msg) when is_pid(Pid) ->
-    Ref = erlang:monitor(process, Pid),
-    Pid ! {call, self(), Ref, Msg},
-    receive
-        {Ref, Reply} ->
-            erlang:demonitor(Ref, [flush]),
-            Reply;
-        {'DOWN', Ref, _, _, Reason} ->
-            {error, Reason}
-    end.
-
-cast(Pid, Msg) ->
-    Pid ! {cast, self(), Msg},
-    ok.
+    reltool_utils:call(Pid, {open_mod, ModName}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Server
-
-reply(Pid, Ref, Msg) ->
-    Pid ! {Ref, Msg}.
 
 init(Parent, WxEnv, Xref, C, AppName) ->
     try
@@ -160,7 +140,7 @@ loop(#state{xref_pid = Xref, common = C, app = App} = S) ->
         {call, ReplyTo, Ref, {open_mod, ModName}} ->
 	    S2 = create_mod_window(S, ModName),
 	    {value, #mod_win{pid = ModPid}} = lists:keysearch(ModName, #mod_win.name, S2#state.mod_wins),
-	    reply(ReplyTo, Ref, {ok, ModPid}),
+	    reltool_utils:reply(ReplyTo, Ref, {ok, ModPid}),
 	    ?MODULE:loop(S2);
 	#wx{event = #wxSize{}} = Wx ->
 	    Wx2 = reltool_utils:get_latest_resize(Wx),
@@ -589,7 +569,7 @@ create_mod_window(#state{parent_pid = RelPid, xref_pid = Xref, common = C} = S, 
     case lists:keysearch(ModName, #mod_win.name, S#state.mod_wins) of
         false ->
             WxEnv = wx:get_env(),
-            {ok, Pid} = reltool_mod_win:start(WxEnv, Xref, RelPid, C, ModName),
+            {ok, Pid} = reltool_mod_win:start_link(WxEnv, Xref, RelPid, C, ModName),
             MW = #mod_win{name = ModName, pid = Pid},
             S#state{mod_wins = [MW | S#state.mod_wins]};
         {value, MW} ->
@@ -882,7 +862,7 @@ redraw_double_box(Global, Local, GlobalRadio, LocalRadio, LocalBox, GetChoice) -
                 Local
         end,
     Choice = GetChoice(AppCond),
-    wxListBox:setSelection(LocalBox, Choice).
+    wxRadioBox:setSelection(LocalBox, Choice).
 
 redraw_window(S) ->
     %% wx_misc:beginBusyCursor(),

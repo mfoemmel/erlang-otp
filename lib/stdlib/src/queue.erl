@@ -56,14 +56,14 @@
 new() -> {[],[]}. %{RearList,FrontList}
 
 %% O(1)
--spec is_queue(term()) -> bool().
+-spec is_queue(term()) -> boolean().
 is_queue({R,F}) when is_list(R), is_list(F) ->
     true;
 is_queue(_) ->
     false.
 
 %% O(1)
--spec is_empty(queue()) -> bool().
+-spec is_empty(queue()) -> boolean().
 is_empty({[],[]}) ->
     true;
 is_empty({In,Out}) when is_list(In), is_list(Out) ->
@@ -97,7 +97,7 @@ from_list(L) ->
 %% Return true or false depending on if element is in queue
 %% 
 %% O(length(Q)) worst case
--spec member(term(), queue()) -> bool().
+-spec member(term(), queue()) -> boolean().
 member(X, {R,F}) when is_list(R), is_list(F) ->
     lists:member(X, R) orelse lists:member(X, F);
 member(X, Q) ->
@@ -340,7 +340,7 @@ split_r1_to_f2(N, [X|R1], F1, R2, F2) ->
 %% 
 %% Fun(_) -> List: O(length(List) * len(Q))
 %% else:           O(len(Q)
--spec filter(fun((term()) -> bool() | list()), queue()) -> queue().
+-spec filter(fun((term()) -> boolean() | list()), queue()) -> queue().
 filter(Fun, {R0,F0}) when is_function(Fun, 1), is_list(R0), is_list(F0) ->
     F = filter_f(Fun, F0),
     R = filter_r(Fun, R0),

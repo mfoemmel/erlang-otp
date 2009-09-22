@@ -80,7 +80,7 @@ all(suite) ->
 
 simple(suite) ->
     [];
-simple(Config) when list(Config) ->
+simple(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     d("simple -> proxy start",[]),
     ProxyPid = megaco_test_lib:proxy_start({?MODULE, ?LINE}),
@@ -91,7 +91,7 @@ simple(Config) when list(Config) ->
     d("simple -> start mgc",[]),
     ?APPLY(ProxyPid, fun() -> megaco_simple_mgc:start() end),
     receive
-	{res, _, {ok, MgcAll}} when list(MgcAll) ->
+	{res, _, {ok, MgcAll}} when is_list(MgcAll) ->
 	    MgcBad = [MgcRes || MgcRes <- MgcAll, element(1, MgcRes) /= ok],
 	    ?VERIFY([], MgcBad),
 	    %% MgcGood = MgcAll -- MgcBad,
@@ -100,12 +100,12 @@ simple(Config) when list(Config) ->
 	    d("simple -> start mg",[]),
 	    ?APPLY(ProxyPid, fun() -> megaco_simple_mg:start() end),
 	    receive
-		{res, _, MgList} when list(MgList), length(MgList) == 4 ->
+		{res, _, MgList} when is_list(MgList) andalso (length(MgList) =:= 4) ->
 		    d("simple -> received res: ~p",[MgList]),		    
 		    Verify = 
-			fun({_MgMid, {TransId, Res}}) when TransId == 1 ->
+			fun({_MgMid, {TransId, Res}}) when TransId =:= 1 ->
 				case Res of
-				    {ok, [AR]} when record(AR, 'ActionReply') ->
+				    {ok, [AR]} when is_record(AR, 'ActionReply') ->
 					case AR#'ActionReply'.commandReply of
 					    [{serviceChangeReply, SCR}] ->
 						case SCR#'ServiceChangeReply'.serviceChangeResult of

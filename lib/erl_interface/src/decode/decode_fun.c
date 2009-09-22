@@ -59,7 +59,8 @@ int ei_decode_fun(const char *buf, int *index, erlang_fun *p)
 	if (p != NULL) {
 	    p->n_free_vars = n;
 	    p->free_var_len = ix - ix0;
-	    p->free_vars = ei_malloc(ix - ix0);	/* FIXME check result */
+	    p->free_vars = ei_malloc(ix - ix0);
+	    if (!(p->free_vars)) return -1;
 	    memcpy(p->free_vars, s + ix0, ix - ix0);
 	}
 	s += ix;
@@ -97,13 +98,16 @@ int ei_decode_fun(const char *buf, int *index, erlang_fun *p)
 	/* finally the free vars */
 	s += ix;
 	n = n - (s - s0) + 1;
+	if (n < 0) return -1;
 	if (p != NULL) {
 	    p->free_var_len = n;
 	    if (n > 0) {
-		p->free_vars = malloc(n); /* FIXME check result */
+		p->free_vars = malloc(n);
+		if (!(p->free_vars)) return -1;
 		memcpy(p->free_vars, s, n);
 	    }
 	}
+	s += n;
 	*index += s-s0;
         return 0;
 	break;

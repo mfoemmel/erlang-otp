@@ -113,9 +113,9 @@ create_window() ->
     wxSizer:addSpacer(Top,3),   
     wxSizer:add(Top, Hint,    wxSizerFlags:right(SF)),
 
-    wxSizer:addSpacer(MainSz,3),
+    wxSizer:addSpacer(MainSz,5),
     wxSizer:add(MainSz, Top, wxSizerFlags:center(wxSizerFlags:proportion(SF,0))),
-    wxSizer:addSpacer(MainSz,3),
+    wxSizer:addSpacer(MainSz,10),
 
     Board = sudoku_board:new(Panel),
 

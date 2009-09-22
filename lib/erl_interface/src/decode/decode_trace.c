@@ -22,17 +22,22 @@
 int ei_decode_trace(const char *buf, int *index, erlang_trace *p)
 {
   int arity = 0;
+  int tindex = *index;
   
+  /* use a temporary index if any function should fail */
+
   /* { Flags, Label, Serial, FromPid, Prev } */
-  if (ei_decode_tuple_header(buf,index,&arity)
+  if (ei_decode_tuple_header(buf, &tindex, &arity)
       || (arity != 5)
-      || ei_decode_long(buf,index,&p->flags)
-      || ei_decode_long(buf,index,&p->label)
-      || ei_decode_long(buf,index,&p->serial)
-      || ei_decode_pid(buf,index,&p->from)
-      || ei_decode_long(buf,index,&p->prev)) return -1;
+      || ei_decode_long(buf, &tindex, &p->flags)
+      || ei_decode_long(buf, &tindex, &p->label)
+      || ei_decode_long(buf, &tindex, &p->serial)
+      || ei_decode_pid( buf, &tindex, &p->from)
+      || ei_decode_long(buf, &tindex, &p->prev)) return -1;
 
   /* index is updated by the functions we called */
   
+  *index = tindex;
+
   return 0;
 }

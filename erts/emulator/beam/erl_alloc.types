@@ -182,7 +182,6 @@ type	LINEBUF		STANDARD	SYSTEM		line_buf
 type	IOQ		STANDARD	SYSTEM		io_queue
 type	BITS_BUF	STANDARD	SYSTEM		bits_buf
 type	TMP_DIST_BUF	TEMPORARY	SYSTEM		tmp_dist_buf
-type	ASYNC		SHORT_LIVED	SYSTEM		async
 type	ASYNC_Q		LONG_LIVED	SYSTEM		async_queue
 type	ESTACK		TEMPORARY	SYSTEM		estack
 type	PORT_CALL_BUF	TEMPORARY	SYSTEM		port_call_buf
@@ -242,6 +241,14 @@ type	PRTSD		STANDARD	SYSTEM		port_specific_data
 type	CPUDATA		LONG_LIVED	SYSTEM		cpu_data
 type	TMP_CPU_IDS	SHORT_LIVED	SYSTEM		tmp_cpu_ids
 type	EXT_TERM_DATA	SHORT_LIVED	PROCESSES	external_term_data
+type	ZLIB		STANDARD	SYSTEM		zlib
+
++if smp
+type	ASYNC		SHORT_LIVED	SYSTEM		async
++else
+# sl_alloc is not thread safe in non smp build; therefore, we use driver_alloc
+type	ASYNC		DRIVER		SYSTEM		async
++endif
 
 +if smp
 type	PORT_LOCK	STANDARD	SYSTEM		port_lock

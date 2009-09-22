@@ -66,11 +66,11 @@ log(Name, Flag) ->
 log(Name, Flag, Timeout) ->
     send_system_msg(Name, {debug, {log, Flag}}, Timeout).
 
--spec trace(name(), bool()) -> 'ok'.
+-spec trace(name(), boolean()) -> 'ok'.
 trace(Name, Flag) ->
     send_system_msg(Name, {debug, {trace, Flag}}).
 
--spec trace(name(), bool(), timeout()) -> 'ok'.
+-spec trace(name(), boolean(), timeout()) -> 'ok'.
 trace(Name, Flag, Timeout) ->
     send_system_msg(Name, {debug, {trace, Flag}}, Timeout).
 

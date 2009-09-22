@@ -18,7 +18,7 @@
 
 -module(ex_sizers).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -50,7 +50,7 @@ do_init(Config) ->
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "wxSizer"}]),
-    
+
     Choices = ["Vertical Example",
 	       "Horizontal Example",
 	       "Add A Strechable",
@@ -76,22 +76,12 @@ do_init(Config) ->
 
     %% Add to sizers
     wxSizer:add(Sizer, ListBox, [{flag, ?wxEXPAND}]),
-
     wxSizer:add(MainSizer, Sizer, [{flag, ?wxEXPAND}, {proportion, 1}]),
 
     wxPanel:setSizer(Panel, MainSizer),
     {Panel, #state{parent=Panel, config=Config}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxCommand{type = command_listbox_doubleclicked,
 				    cmdString = Choice}},
@@ -101,6 +91,15 @@ handle_event(#wx{event = #wxCommand{type = command_listbox_doubleclicked,
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

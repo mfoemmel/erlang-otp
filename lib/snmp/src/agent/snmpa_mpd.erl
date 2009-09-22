@@ -275,8 +275,8 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
     {SecEngineID, SecName, ScopedPDUBytes, SecData, DiscoOrPlain} =
 	check_sec_module_result(SecRes, V3Hdr, Data, IsReportable, Log),
     ?vtrace("v3_proc -> "
-	    "~n   DiscoOrPlain: ~p"
-	    "~n   SecEngineID:  ~p"
+	    "~n   DiscoOrPlain: ~w"
+	    "~n   SecEngineID:  ~w"
 	    "~n   SecName:      ~p", [DiscoOrPlain, SecEngineID, SecName]),
     %% 7.2.7
     #scopedPdu{contextEngineID = ContextEngineID,
@@ -301,7 +301,7 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
 	    ok
     end,
     ?vlog("7.2.7 result: "
-	  "~n   contextEngineID: \"~s\""
+	  "~n   contextEngineID: ~w"
 	  "~n   ContextName:     \"~s\"", [ContextEngineID, ContextName]),
     if
 	SecLevel =:= ?'SnmpSecurityLevel_authPriv' -> 
@@ -332,7 +332,7 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
     ?vdebug("v3_proc -> PDU type: ~p", [PDU#pdu.type]),
     case PDU#pdu.type of
 	report when DiscoOrPlain =:= discovery ->
-	    %% Discovery step 1 response
+	    %% Discovery stage 1 response
 	    Key  = {agent, MsgID}, 
 	    Note = snmp_note_store:get_note(NoteStore, Key), 
 	    case Note of
@@ -345,8 +345,8 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
                       disco         = true,
                       req_id        = _ReqId} ->
                     %% This is part of the discovery process initiated by us.
-                    %% Response to the discovery step 1 request
-                    ?vdebug("v3_proc -> discovery step 1 response", []),
+                    %% Response to the discovery stage 1 request
+                    ?vdebug("v3_proc -> discovery stage 1 response", []),
                     {ok, 'version-3', PDU, PduMMS, {discovery, SecEngineID}};
                 #note{sec_engine_id = SecEngineID,
                       sec_model     = _MsgSecModel,
@@ -357,12 +357,13 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
                       disco         = true,
                       req_id        = _ReqId} ->
                     %% This is part of the discovery process initiated by us.
-                    %% Response to the discovery step 2 request
-                    ?vdebug("v3_proc -> discovery step 2 response", []),
+                    %% Response to the discovery stage 2 request
+                    ?vdebug("v3_proc -> discovery stage 2 response", []),
                     {ok, 'version-3', PDU, PduMMS, discovery};
 		_ ->
 		    %% 7.2.11
-		    throw({discarded, report})
+		    DiscardReason = {bad_disco_note, Key, Note}, 
+		    throw({discarded, DiscardReason})
 	    end;
 	report ->
 	    %% 7.2.11
@@ -381,8 +382,8 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
                       disco         = true,
                       req_id        = _ReqId} ->
                     %% This is part of the discovery process initiated by us.
-                    %% Response to the discovery step 1 request
-                    ?vdebug("v3_proc -> discovery step 1 response", []),
+                    %% Response to the discovery stage 1 request
+                    ?vdebug("v3_proc -> discovery stage 1 response", []),
                     {ok, 'version-3', PDU, PduMMS, {discovery, SecEngineID}};
                 #note{sec_engine_id = SecEngineID,
                       sec_model     = _MsgSecModel,
@@ -393,8 +394,8 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
                       disco         = true,
                       req_id        = _ReqId} ->
                     %% This is part of the discovery process initiated by us.
-                    %% Response to the discovery step 2 request
-                    ?vdebug("v3_proc -> discovery step 2 response", []),
+                    %% Response to the discovery stage 2 request
+                    ?vdebug("v3_proc -> discovery stage 2 response", []),
                     {ok, 'version-3', PDU, PduMMS, discovery};
 		#note{sec_engine_id = SecEngineID, 
 		      sec_model     = MsgSecurityModel, 
@@ -415,11 +416,11 @@ v3_proc(NoteStore, Packet, V3Hdr, Data, Log) ->
 	Type ->
 	    %% 7.2.13
 	    SnmpEngineID = snmp_framework_mib:get_engine_id(),
-	    ?vtrace("v3_proc -> SnmpEngineID = ~p", [SnmpEngineID]),
+	    ?vtrace("v3_proc -> SnmpEngineID = ~w", [SnmpEngineID]),
 	    case SecEngineID of
 		SnmpEngineID when (DiscoOrPlain =:= discovery) ->
 		    %% This is a discovery step 2 message!
-		    ?vtrace("v3_proc -> discovery step 2", []),
+		    ?vtrace("v3_proc -> discovery stage 2", []),
 		    generate_discovery2_report_msg(MsgID, 
 						   MsgSecurityModel, 
 						   SecName, 
@@ -611,7 +612,7 @@ generate_response_msg(Vsn, RePdu, Type,
 			snmpa_usm
 		end,
 	    SecEngineID = snmp_framework_mib:get_engine_id(),
-	    ?vtrace("generate_response_msg -> SecEngineID: ~p", [SecEngineID]),
+	    ?vtrace("generate_response_msg -> SecEngineID: ~w", [SecEngineID]),
 	    case (catch SecModule:generate_outgoing_msg(Message, 
 							SecEngineID,
 							SecName, 
@@ -713,7 +714,7 @@ generate_v3_report_msg(MsgID, MsgSecurityModel, Data, ErrorInfo, Log) ->
 %% 	    ok;
 %% 	{error, Reason} ->
 	    
-%% Response to step 1 discovery message (from the manager)
+%% Response to stage 1 discovery message (terminating, i.e. from the manager)
 generate_discovery1_report_msg(MsgID, MsgSecurityModel, 
 			       SecName, SecLevel, 
 			       ContextEngineID, ContextName,
@@ -740,18 +741,20 @@ generate_discovery1_report_msg(MsgID, MsgSecurityModel,
 	    Error
     end.
 
-%% Response to step 2 discovery message (from the manager)
+%% Response to stage 2 discovery message (terminating, i.e. from the manager)
 generate_discovery2_report_msg(MsgID, MsgSecurityModel, 
 			       SecName, SecLevel, 
 			       ContextEngineID, ContextName,
 			       SecData, #pdu{request_id = ReqId}, Log) ->
     ?vtrace("generate_discovery2_report_msg -> entry with"
 	    "~n   ReqId: ~p", [ReqId]),
+    SecModule = get_security_module(MsgSecurityModel), 
+    Vb = SecModule:current_statsNotInTimeWindows_vb(), 
     PduOut = #pdu{type         = report, 
 		  request_id   = ReqId,
 		  error_status = noError, 
 		  error_index  = 0,
-		  varbinds     = []},
+		  varbinds     = [Vb]},
     case generate_response_msg('version-3', PduOut, report,
 			       {v3, MsgID, MsgSecurityModel, SecName, SecLevel,
 				ContextEngineID, ContextName, SecData}, Log) of
@@ -937,7 +940,7 @@ generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]},
 		       InitialUserName, 
 		       ContextName, Timeout) ->
     %% 7.1.7
-    ?vdebug("generate_discovery_msg -> 7.1.7 (~p)", [ManagerEngineID]),
+    ?vdebug("generate_discovery_msg -> 7.1.7 (~w)", [ManagerEngineID]),
     MsgID     = generate_msg_id(),
     PduType   = Pdu#pdu.type,
     MsgFlags  = mk_msg_flags(PduType, SecLevelFlag), 
@@ -953,7 +956,6 @@ generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]},
     %% 7.1.9b
     ?vdebug("generate_discovery_msg -> 7.1.9b", []),
     case generate_sec_discovery_msg(Message, SecModule, 
-				    ContextEngineID, 
 				    ManagerEngineID, 
 				    SecName, SecLevelFlag,
 				    InitialUserName) of
@@ -984,11 +986,9 @@ generate_discovery_msg(NoteStore, {?snmpUDPDomain, [A,B,C,D,U1,U2]},
     end.
 
 generate_sec_discovery_msg(Message, SecModule, 
-			   ContextEngineID, ManagerEngineID, 
-			   SecName, SecLevelFlag, 
+			   SecEngineID, SecName, SecLevelFlag, 
 			   InitialUserName) ->
-    case (catch SecModule:generate_discovery_msg(Message, ContextEngineID, 
-						 ManagerEngineID, 
+    case (catch SecModule:generate_discovery_msg(Message, SecEngineID, 
 						 SecName, SecLevelFlag,
 						 InitialUserName)) of
 	{'EXIT', Reason} ->

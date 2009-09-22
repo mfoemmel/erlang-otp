@@ -94,7 +94,7 @@ opt_dump_log(InitBy) ->
     Reg = case whereis(?REGULATOR_NAME) of
 	      undefined ->
 		  nopid; 
-	      Pid when pid(Pid) ->
+	      Pid when is_pid(Pid) ->
 		  Pid 
 	  end,
     perform_dump(InitBy, Reg).
@@ -189,7 +189,7 @@ do_perform_dump(Cont, InPlace, InitBy, Regulator, OldVersion) ->
 insert_recs([Rec | Recs], InPlace, InitBy, Regulator, LogV) ->
     regulate(Regulator),
     case insert_rec(Rec, InPlace, InitBy, LogV) of
- 	LogH when record(LogH, log_header) ->	    
+ 	LogH when is_record(LogH, log_header) ->	    
 	    insert_recs(Recs, InPlace, InitBy, Regulator, LogH#log_header.log_version);
 	_ -> 
 	    insert_recs(Recs, InPlace, InitBy, Regulator, LogV)
@@ -200,14 +200,14 @@ insert_recs([], _InPlace, _InitBy, _Regulator, Version) ->
 
 insert_rec(Rec, _InPlace, scan_decisions, _LogV) ->
     if 
-	record(Rec, commit) ->
+	is_record(Rec, commit) ->
 	    ignore;
-	record(Rec, log_header) ->
+	is_record(Rec, log_header) ->
 	    ignore;
 	true ->
 	    mnesia_recover:note_log_decision(Rec, scan_decisions)
     end;
-insert_rec(Rec, InPlace, InitBy, LogV) when record(Rec, commit) ->
+insert_rec(Rec, InPlace, InitBy, LogV) when is_record(Rec, commit) ->
     %% Determine the Outcome of the transaction and recover it
     D = Rec#commit.decision,
     case mnesia_recover:wait_for_decision(D, InitBy) of
@@ -216,7 +216,7 @@ insert_rec(Rec, InPlace, InitBy, LogV) when record(Rec, commit) ->
 	{Tid, aborted} ->
 	    mnesia_schema:undo_prepare_commit(Tid, Rec)
     end;
-insert_rec(H, _InPlace, _InitBy, _LogV) when record(H, log_header) ->
+insert_rec(H, _InPlace, _InitBy, _LogV) when is_record(H, log_header) ->
     CurrentVersion = mnesia_log:version(),
     if
         H#log_header.log_kind /= trans_log ->
@@ -343,7 +343,7 @@ dets_insert(Op,Tab,Key,Val) ->
 		true ->
 		    {RecName, Incr} = Val,
 		    case catch dets:update_counter(Tab, Key, Incr) of
-			CounterVal when integer(CounterVal) ->
+			CounterVal when is_integer(CounterVal) ->
 			    ok;
 			_ when Incr < 0 ->
 			    Zero = {RecName, Key, 0},

@@ -84,6 +84,9 @@ struct saved_calls {
 extern Export exp_send, exp_receive, exp_timeout;
 extern Uint erts_no_schedulers;
 extern Uint erts_no_run_queues;
+extern int erts_sched_thread_suggested_stack_size;
+#define ERTS_SCHED_THREAD_MIN_STACK_SIZE 4	/* Kilo words */
+#define ERTS_SCHED_THREAD_MAX_STACK_SIZE 8192	/* Kilo words */
 
 #ifdef ERTS_SMP
 #include "erl_bits.h"
@@ -318,19 +321,19 @@ typedef union {
 extern ErtsAlignedRunQueue *erts_aligned_run_queues;
 extern ErtsRunQueue *erts_common_run_queue;
 
-#define ERTS_PROC_REDUCTIONS_EXECUTED(RQ, PRIO, REDS)	\
-do {							\
-    (RQ)->procs.reductions += (REDS);			\
-    (RQ)->procs.prio_info[p->prio].reds += (REDS);	\
-    (RQ)->check_balance_reds -= (REDS);			\
-    (RQ)->wakeup_other_reds += (REDS);			\
+#define ERTS_PROC_REDUCTIONS_EXECUTED(RQ, PRIO, REDS, AREDS)	\
+do {								\
+    (RQ)->procs.reductions += (AREDS);				\
+    (RQ)->procs.prio_info[p->prio].reds += (REDS);		\
+    (RQ)->check_balance_reds -= (REDS);				\
+    (RQ)->wakeup_other_reds += (AREDS);				\
 } while (0)
 
-#define ERTS_PORT_REDUCTIONS_EXECUTED(RQ, REDS)		\
-do {							\
-    (RQ)->ports.info.reds += (REDS);			\
-    (RQ)->check_balance_reds -= (REDS);			\
-    (RQ)->wakeup_other_reds += (REDS);			\
+#define ERTS_PORT_REDUCTIONS_EXECUTED(RQ, REDS)			\
+do {								\
+    (RQ)->ports.info.reds += (REDS);				\
+    (RQ)->check_balance_reds -= (REDS);				\
+    (RQ)->wakeup_other_reds += (REDS);				\
 } while (0)
 
 struct ErtsSchedulerData_ {
@@ -943,8 +946,6 @@ int erts_init_scheduler_bind_type(char *how);
 
 int erts_init_cpu_topology(char *topology_str);
 
-void erts_init_enable_processor_node_topology(void);
-
 void erts_pre_init_process(void);
 void erts_late_init_process(void);
 void erts_early_init_scheduling(void);
@@ -1050,6 +1051,7 @@ void erts_deep_process_dump(int, void *);
 Sint erts_test_next_pid(int, Uint);
 Eterm erts_debug_processes(Process *c_p);
 Eterm erts_debug_processes_bif_info(Process *c_p);
+Uint erts_debug_nbalance(void);
 
 #ifdef ERTS_SMP
 #  define ERTS_GET_SCHEDULER_DATA_FROM_PROC(PROC) ((PROC)->scheduler_data)

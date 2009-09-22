@@ -90,5 +90,14 @@ int db_erase_bag_exact2(DbTable *tbl, Eterm key, Eterm value);
 /* not yet in method table */
 int db_mark_all_deleted_hash(DbTable *tbl);
 
+typedef struct {
+    float avg_chain_len;
+    float std_dev_chain_len;
+    float std_dev_expected;
+    int max_chain_len;
+    int min_chain_len;
+}DbHashStats;
+
+void db_calc_stats_hash(DbTableHash* tb, DbHashStats*);
 
 #endif /* _DB_HASH_H */

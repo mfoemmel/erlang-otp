@@ -1,7 +1,6 @@
 
 REQUIREMENTS:
-	At least Erlang-R12B-2 with smp enabled.
-	Erlang-R12B-4 fixes a bug which affects wxerlang
+	At least Erlang-R13B with smp enabled. It Requires unicode support.
 
         Linux, Mac, Solaris-10 or Windows.
 	
@@ -24,7 +23,8 @@ BUILDING:
         On mac I built wxwidgets with:
 
         mkdir MYBUILD; cd MYBUILD
-	../configure --with-opengl --enable-unicode \ 
+	../configure --with-opengl --enable-unicode --enable-graphics_ctx \ 
+                --enable-gnomeprint \    On unix only
                 --disable-shared
 	make && make install
         cd contrib/src/stc/
@@ -38,7 +38,7 @@ BUILDING:
 	On windows I used MinGW and Msys, I build wxwidgets with:
 
 	mkdir MYBUILD; cd MYBUILD
-	../configure --prefix=/c/local/ --with-opengl \ 
+	../configure --prefix=/c/local/ --with-opengl  --enable-graphics_ctx \ 
                      --enable-unicode --disable-shared --with-msw
 	make && make install	
         cd contrib/src/stc/
@@ -65,6 +65,8 @@ STATUS:
 	Most classes needs some argument tweaking (in wxapi.conf) to
 	work as expected, but I havn't read all the documentation and
 	gone through every argument on every function.
+
+	See (and run) the demo in the examples directory.
 
 	This library is (currently) a driver, so if the you (or I) make errors,
 	such as accessing deleted objects or other things wxWidgets didn't

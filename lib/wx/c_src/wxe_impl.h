@@ -124,7 +124,11 @@ class wxeRefData {
    wxeRefData(unsigned int dref, int ttype, int is_new, wxeMemEnv *menv) : 
    ref(dref), type(ttype), alloc_in_erl(is_new), memenv(menv), pid(NULL) { } ;
    int ref;
-   int type;
+   int type;  
+   // 0 = wxWindow subclasses, 1 = wxObject subclasses 
+   // 2 = wxDialog subclasses, 3 = allocated wxObjects but not returned from new
+   // > 3 classes which lack virtual destr, or are supposed to be allocated on
+   //     the stack
    bool alloc_in_erl;
    wxeMemEnv *memenv;
    wxeErlTerm *pid;
@@ -196,7 +200,7 @@ void activateGL(ErlDrvTermData caller);
 void setActiveGL(ErlDrvTermData caller, wxGLCanvas *canvas);
 void deleteActiveGL(wxGLCanvas *canvas);
 
-void send_msg(char *, wxString *);   // For debugging and error msgs
+void send_msg(const char *, wxString *);   // For debugging and error msgs
 
 extern wxeGLC glc;
 
@@ -240,5 +244,13 @@ class wxEPrintout : public wxPrintout
 
    ErlDrvPort port;
 };
+
+// Implementation of wxListCtrlCompare
+struct callbackInfo {
+   ErlDrvPort port;
+   int callbackID;
+};
+
+int wxCALLBACK wxEListCtrlCompare(long item1, long item2, long callbackInfoPtr);
 
 #endif  //_WXE_IMPL_H

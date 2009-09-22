@@ -53,6 +53,7 @@
 %% Include files
 %%----------------------------------------------------------------------
 -include("xmerl.hrl").
+-include("xmerl_internal.hrl").
 -include("xmerl_xsd.hrl").
 -include_lib("kernel/include/file.hrl").
 

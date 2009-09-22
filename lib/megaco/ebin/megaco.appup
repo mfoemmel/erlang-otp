@@ -105,18 +105,47 @@
 %%      |
 %%      v
 %%    3.11
+%%      |
+%%      v
+%%   3.11.1
+%%      |
+%%      v
+%%   3.11.2
+%%      |
+%%      v
+%%   3.11.3
 %%
 %%
-{"3.11",
+{"3.11.3",
  [
-  {"3.10.1", 
+  {"3.11.2", 
+   [
+    {restart_application, megaco}
+   ]
+  }, 
+  {"3.11.1", 
+   [
+    {restart_application, megaco}
+   ]
+  }, 
+  {"3.11", 
    [
     {restart_application, megaco}
    ]
   }
  ],
  [
-  {"3.10.1", 
+  {"3.11.2", 
+   [
+    {restart_application, megaco}
+   ]
+  }, 
+  {"3.11.1", 
+   [
+    {restart_application, megaco}
+   ]
+  }, 
+  {"3.11", 
    [
     {restart_application, megaco}
    ]

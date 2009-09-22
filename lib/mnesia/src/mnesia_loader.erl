@@ -396,7 +396,7 @@ tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
 	    finish_copy(Storage,Tab,Cs,SenderPid,DatBin,OrigTabRec);
 	
 	%% Protocol conversion hack
-	{SenderPid, {no_more, DatBin}} when pid(PConv) ->
+	{SenderPid, {no_more, DatBin}} when is_pid(PConv) ->
 	    PConv ! {SenderPid, no_more},
 	    receive 
 		{old_init_table_complete, ok} ->
@@ -410,7 +410,7 @@ tab_receiver(Node, Tab, Storage, Cs, PConv, OrigTabRec) ->
 	{actual_tabrec, Pid} ->	
 	    tab_receiver(Node, Tab, Storage, Cs, Pid,OrigTabRec);
 	
-	{SenderPid, {more, [Recs]}} when pid(PConv) ->  
+	{SenderPid, {more, [Recs]}} when is_pid(PConv) ->  
 	    PConv ! {SenderPid, {more, Recs}}, %% Forward Msg to OldNodes 
 	    tab_receiver(Node, Tab, Storage, Cs, PConv,OrigTabRec);
 
@@ -737,7 +737,7 @@ send_more(Pid, N, Chunk, DataState, Tab, OldNode) ->
     receive
 	{NewPid, more} ->
 	    case send_packet(N - 1, NewPid, Chunk, DataState, OldNode) of 
-		New when integer(New) -> 
+		New when is_integer(New) -> 
 		    New - 1;
 		NewData ->
 		    send_more(NewPid, ?MAX_NOPACKETS, Chunk, NewData, Tab, OldNode)

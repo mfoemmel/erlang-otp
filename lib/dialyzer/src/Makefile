@@ -118,19 +118,19 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 
 $(EBIN)/dialyzer.beam: dialyzer.hrl
 $(EBIN)/dialyzer_analysis_callgraph.beam: dialyzer.hrl dialyzer_callgraph.hrl
-$(EBIN)/dialyzer_callgraph.beam: dialyzer_callgraph.hrl
-$(EBIN)/dialyzer_cl.beam: dialyzer.hrl
+$(EBIN)/dialyzer_callgraph.beam: dialyzer.hrl dialyzer_callgraph.hrl
+$(EBIN)/dialyzer_cl.beam: dialyzer.hrl ../../kernel/include/file.hrl
 $(EBIN)/dialyzer_cl_parse.beam: dialyzer.hrl
 $(EBIN)/dialyzer_codeserver.beam: dialyzer.hrl
-$(EBIN)/dialyzer_contracts.beam: dialyzer.hrl dialyzer_callgraph.hrl
+$(EBIN)/dialyzer_contracts.beam: dialyzer.hrl
 $(EBIN)/dialyzer_dataflow.beam: dialyzer.hrl dialyzer_callgraph.hrl dialyzer_dataflow.hrl
 $(EBIN)/dialyzer_dep.beam: dialyzer.hrl
 $(EBIN)/dialyzer_gui.beam: dialyzer.hrl
 $(EBIN)/dialyzer_options.beam: dialyzer.hrl
 $(EBIN)/dialyzer_plt.beam: dialyzer.hrl
 $(EBIN)/dialyzer_races.beam: dialyzer.hrl dialyzer_callgraph.hrl dialyzer_dataflow.hrl
-$(EBIN)/dialyzer_succ_typings.beam: dialyzer.hrl dialyzer_callgraph.hrl
-$(EBIN)/dialyzer_typesig.beam: dialyzer.hrl dialyzer_callgraph.hrl
+$(EBIN)/dialyzer_succ_typings.beam: dialyzer.hrl
+$(EBIN)/dialyzer_typesig.beam: dialyzer.hrl
 $(EBIN)/dialyzer_utils.beam: dialyzer.hrl
 
 # ----------------------------------------------------

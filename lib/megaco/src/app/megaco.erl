@@ -494,7 +494,7 @@ format_versions(Versions) ->
 
 print_sys_info(Versions) ->
     case key1search(sys_info, Versions) of
-	{value, SysInfo} when list(SysInfo) ->
+	{value, SysInfo} when is_list(SysInfo) ->
 	    {value, Arch} = key1search(arch, SysInfo, "Not found"),
 	    {value, Ver}  = key1search(ver, SysInfo, "Not found"),
 	    io:format("System info: "
@@ -509,30 +509,30 @@ print_sys_info(Versions) ->
 	    
 print_os_info(Versions) ->
     case key1search(os_info, Versions) of
-	{value, OsInfo} when list(OsInfo) ->
+	{value, OsInfo} when is_list(OsInfo) ->
 	    Fam = 
 		case key1search(fam, OsInfo, "Not found") of
-		    {value, F} when atom(F) ->
+		    {value, F} when is_atom(F) ->
 			atom_to_list(F);
-		    {value, LF} when list(LF) ->
+		    {value, LF} when is_list(LF) ->
 			LF;
 		    {value, XF} ->
 			lists:flatten(io_lib:format("~p", [XF]))
 		end,
 	    Name = 
 		case key1search(name, OsInfo) of
-		    {value, N} when atom(N) ->
+		    {value, N} when is_atom(N) ->
 			"[" ++ atom_to_list(N) ++ "]";
-		    {value, LN} when list(LN) ->
+		    {value, LN} when is_list(LN) ->
 			"[" ++ LN ++ "]";
 		    not_found -> 
 			""
 		end,
 	    Ver = 
 		case key1search(ver, OsInfo, "Not found") of
-		    {value, T} when tuple(T) ->
+		    {value, T} when is_tuple(T) ->
 			tversion(T);
-		    {value, LV} when list(LV) ->
+		    {value, LV} when is_list(LV) ->
 			LV;
 		    {value, XV} ->
 			lists:flatten(io_lib:format("~p", [XV]))
@@ -562,7 +562,7 @@ lversion([A|R]) ->
 
 print_mods_info(Versions) ->
     case key1search(mod_info, Versions) of
-	{value, ModsInfo} when list(ModsInfo) ->
+	{value, ModsInfo} when is_list(ModsInfo) ->
 	    io:format("Module info: ~n", []),
 	    lists:foreach(fun print_mod_info/1, ModsInfo);
 	_ ->
@@ -586,21 +586,21 @@ print_mod_info({Module, Info}) ->
 	end,
     Vsn = 
 	case key1search(vsn, Info) of
-	    {value, I} when integer(I) ->
+	    {value, I} when is_integer(I) ->
 		integer_to_list(I);
 	    _ ->
 		"Not found"
 	end,
     AppVsn = 
 	case key1search(app_vsn, Info) of
-	    {value, S1} when list(S1) ->
+	    {value, S1} when is_list(S1) ->
 		S1;
 	    _ ->
 		"Not found"
 	end,
     CompVer = 
 	case key1search(compiler_version, Info) of
-	    {value, S2} when list(S2) ->
+	    {value, S2} when is_list(S2) ->
 		S2;
 	    _ ->
 		"Not found"
@@ -728,7 +728,7 @@ nc(all) ->
 	_ ->
 	    {error, not_found}
     end;
-nc(Mods) when list(Mods) ->
+nc(Mods) when is_list(Mods) ->
     [Mod || Mod <- Mods, ok /= load(Mod, compile)].
 
 ni() -> 
@@ -748,10 +748,10 @@ ni(all) ->
 	_ ->
 	    {error, not_found}
     end;
-ni(Mods) when list(Mods) ->
+ni(Mods) when is_list(Mods) ->
     [Mod || Mod <- Mods, ok /= load(Mod, interpret)].
 
-load(Mod, How) when atom(Mod) ->
+load(Mod, How) when is_atom(Mod) ->
     case try_load(Mod, How) of
 	ok ->
 	    ok;
@@ -841,7 +841,7 @@ find_file([], File) ->
 %% Severity withing Limit) will be written to stdout using io:format. 
 %% 
 %%-----------------------------------------------------------------
-enable_trace(Level, File) when list(File) ->
+enable_trace(Level, File) when is_list(File) ->
     case file:open(File, [write]) of
 	{ok, Fd} ->
 	    HandleSpec = {fun handle_trace/2, Fd},
@@ -850,14 +850,14 @@ enable_trace(Level, File) when list(File) ->
 	Err ->
 	    Err
     end;
-enable_trace(Level, Port) when integer(Port) ->
+enable_trace(Level, Port) when is_integer(Port) ->
     dbg:tracer(port, dbg:trace_port(ip, Port)),
     set_trace(Level);
 enable_trace(Level, io) ->
     HandleSpec = {fun handle_trace/2, standard_io},
     dbg:tracer(process, HandleSpec),
     set_trace(Level);
-enable_trace(Level, {Fun, _Data} = HandleSpec) when function(Fun) ->
+enable_trace(Level, {Fun, _Data} = HandleSpec) when is_function(Fun) ->
     dbg:tracer(process, HandleSpec),
     set_trace(Level).
 

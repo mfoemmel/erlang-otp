@@ -252,7 +252,7 @@ delete_transient_index(Tab, Pos, _Storage) ->
 %% assuming that the file exists.
 init_disc_index(_Tab, []) ->
     done;
-init_disc_index(Tab, [Pos | Tail]) when integer(Pos) ->
+init_disc_index(Tab, [Pos | Tail]) when is_integer(Pos) ->
     Fn = tab2filename(Tab, Pos),
     IxTag = {Tab, index, Pos},
     file:delete(Fn),
@@ -299,7 +299,7 @@ make_ram_index(Tab, [Pos | Tail]) ->
     add_ram_index(Tab, Pos),
     make_ram_index(Tab, Tail).
 
-add_ram_index(Tab, Pos) when integer(Pos) ->
+add_ram_index(Tab, Pos) when is_integer(Pos) ->
     verbose("Creating index for ~w ~n", [Tab]),
     Index = mnesia_monitor:mktab(mnesia_index, [bag, public]),
     Insert = fun(Rec, _Acc) ->

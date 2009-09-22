@@ -124,12 +124,12 @@ $1:
 #endif')
 
 /*
- * trap_bif_interface_0(nbif_name, cbif_name)
+ * fail_bif_interface_0(nbif_name, cbif_name)
  *
  * Generate native interface for a BIF with 0 parameters and
- * trap-only failure mode.
+ * standard failure mode.
  */
-define(trap_bif_interface_0,
+define(fail_bif_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
@@ -145,7 +145,7 @@ $1:
 	TEST_GOT_MBUF
 
 	/* Restore registers. Check for exception. */
-	__TEST_GOT_EXN(nbif_0_trap_exception)
+	TEST_GOT_EXN(0)
 	RESTORE_CONTEXT_BIF
 	NBIF_RET(0)
 	HANDLE_GOT_MBUF(0)

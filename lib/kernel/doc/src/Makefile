@@ -57,6 +57,7 @@ XML_REF3_FILES = application.xml \
 	global_group.xml \
 	heart.xml \
 	inet.xml \
+	inet_res.xml \
 	init_stub.xml \
 	net_adm.xml \
 	net_kernel.xml \

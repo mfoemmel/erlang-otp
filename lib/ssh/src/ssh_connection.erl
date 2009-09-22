@@ -945,7 +945,10 @@ encode_ip(Addr) when is_list(Addr) ->
     end.
 
 start_channel(Address, Port, Cb, Id, Args) ->
-    ChildSpec = child_spec(Cb, Id, Args),
+    start_channel(Address, Port, Cb, Id, Args, undefined).
+
+start_channel(Address, Port, Cb, Id, Args, Exec) ->
+    ChildSpec = child_spec(Cb, Id, Args, Exec),
     SystemSup = ssh_system_sup:system_supervisor(Address, Port),
     ChannelSup = ssh_system_sup:channel_supervisor(SystemSup),
     ssh_channel_sup:start_child(ChannelSup, ChildSpec).
@@ -993,9 +996,9 @@ check_subsystem(SsName, Options) ->
 	    Value
     end.
 
-child_spec(Callback, Id, Args) ->
+child_spec(Callback, Id, Args, Exec) ->
     Name = make_ref(),
-    StartFunc = {ssh_channel, start_link, [self(), Id, Callback, Args]},
+    StartFunc = {ssh_channel, start_link, [self(), Id, Callback, Args, Exec]},
     Restart = temporary, 
     Shutdown = 3600,
     Type = worker,
@@ -1013,8 +1016,8 @@ start_cli(#connection{address = Address, port = Port, cli_spec = {Fun, [Shell]},
     end;
 
 start_cli(#connection{address = Address, port = Port,
-		      cli_spec = {CbModule, Args}}, ChannelId) ->
-    start_channel(Address, Port, CbModule, ChannelId, Args).
+		      cli_spec = {CbModule, Args}, exec = Exec}, ChannelId) ->
+    start_channel(Address, Port, CbModule, ChannelId, Args, Exec).
 
 start_subsytem(BinName, #connection{address = Address, port = Port, 
 				    options = Options},

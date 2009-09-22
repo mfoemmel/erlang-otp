@@ -150,6 +150,21 @@ continue_create:
   	!insertmacro MUI_STARTMENU_WRITE_END
 ; And once again, the verbosity...
   	!verbose 1
+; Check that the registry could be written, we only check one key,
+; but it should be sufficient...
+  	ReadRegStr $MYTEMP ${MY_STARTMENUPAGE_REGISTRY_ROOT}  "${MY_STARTMENUPAGE_REGISTRY_KEY}" "${MY_STARTMENUPAGE_REGISTRY_VALUENAME}"
+
+  	StrCmp $MYTEMP "" 0 done_startmenu
+
+; If startmenu was skipped, this might be unnecessary, but wont hurt...	
+  	WriteRegStr HKCU "Software\Ericsson\Erlang\${ERTS_VERSION}" \
+		"" $INSTDIR
+  	WriteRegStr HKCU "${MY_STARTMENUPAGE_REGISTRY_KEY}" \
+		"${MY_STARTMENUPAGE_REGISTRY_VALUENAME}" \
+		"$STARTMENU_FOLDER"
+
+
+done_startmenu:
 ;Create uninstaller
   	WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -168,19 +183,15 @@ continue_create:
 
 ; Check that the registry could be written, we only check one key,
 ; but it should be sufficient...
-;  	ReadRegStr $MYTEMP ${MUI_STARTMENUPAGE_REGISTRY_ROOT} ${MUI_STARTMENUPAGE_REGISTRY_KEY} ${MUI_STARTMENUPAGE_REGISTRY_VALUENAME}
-  	ReadRegStr $MYTEMP ${MY_STARTMENUPAGE_REGISTRY_ROOT}  "${MY_STARTMENUPAGE_REGISTRY_KEY}" "${MY_STARTMENUPAGE_REGISTRY_VALUENAME}"
+  	ReadRegStr $MYTEMP HKLM \
+	"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Erlang OTP ${OTP_VERSION} (${ERTS_VERSION})" \
+	"NoRepair"
 
   	StrCmp $MYTEMP "" 0 done
 
 ; Now we're done if we are a superuser. If the registry stuff failed, we 
 ; do the things below...
 
-  	WriteRegStr HKCU "Software\Ericsson\Erlang\${ERTS_VERSION}" \
-		"" $INSTDIR
-  	WriteRegStr HKCU "${MY_STARTMENUPAGE_REGISTRY_KEY}" \
-		"${MY_STARTMENUPAGE_REGISTRY_VALUENAME}" \
-		"$STARTMENU_FOLDER"
   	WriteRegStr HKCU \
 		"Software\Microsoft\Windows\CurrentVersion\Uninstall\Erlang OTP ${OTP_VERSION} (${ERTS_VERSION})" \
 		"DisplayName" "Erlang OTP ${OTP_VERSION} (${ERTS_VERSION})"

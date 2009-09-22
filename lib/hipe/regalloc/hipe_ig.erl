@@ -291,7 +291,7 @@ adjset_print(U, V, IG) ->
 %% Function:    adj_set, adj_list, degree, spill_costs
 %%
 %% Description: Selector functions. Used to get one of the encapsulated 
-%%               data-structure contained in the IG structure.
+%%              data-structure contained in the IG structure.
 %% Parameters:
 %%   IG     --  An interference graph
 %%
@@ -314,7 +314,7 @@ number_of_temps(IG) -> IG#igraph.no_temps.
 %% Function:    set_adj_set, set_adj_list, set_degree, set_spill_costs
 %%
 %% Description: Modifier functions. Used to set one of the encapsulated 
-%%               data-structure contained in the IG structure.
+%%              data-structure contained in the IG structure.
 %% Parameters:
 %%   Data-structure --  Data-structure you want to set. An adj_set 
 %%                       data-structure for example.
@@ -383,8 +383,8 @@ build(CFG, Target) ->
 %% Function:    analyze_bbs
 %%
 %% Description: Looks up the code that exists in all basic blocks and
-%%               analyse instructions use and def's to see what 
-%%               temporaries that interfere with each other.
+%%              analyse instructions use and def's to see what 
+%%              temporaries that interfere with each other.
 %%
 %% Parameters:
 %%   L                    --  A label
@@ -424,15 +424,15 @@ analyze_bbs([L|Ls], BBs_in_out_liveness, IG, CFG, Target) ->
 %% Function:    analyze_bb_instructions
 %%
 %% Description: Analyzes all instructions that is contained in a basic
-%%               block in reverse order. 
+%%              block in reverse order. 
 %%
 %% Parameters:
-%%   Instruction    --  An instruction
-%%   Instructions   --  The remaining instructions
-%%   Live           --  All temporaries that are live at the time.
-%%                       Live is a set of temporary "numbers only".
-%%   IG             --  The interference graph in it's current state
-%%   Target         --  The mopdule containing the target-specific functions
+%%   Instruction   --  An instruction
+%%   Instructions  --  The remaining instructions
+%%   Live          --  All temporaries that are live at the time.
+%%                     Live is a set of temporary "numbers only".
+%%   IG            --  The interference graph in it's current state
+%%   Target        --  The mopdule containing the target-specific functions
 %%
 %% Returns: 
 %%   Live  --  Temporaries that are live at entery of basic block
@@ -489,9 +489,9 @@ analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
 %% Function:    analyze_move
 %%
 %% Description: If a move instructions is discovered, this function is
-%%               called. It is used to remember what move instructions
-%%               a temporary is associated with and all moves that exists
-%%               in the CFG. 
+%%              called. It is used to remember what move instructions
+%%              a temporary is associated with and all moves that exists
+%%              in the CFG. 
 %%
 %% Parameters:
 %%   Instruction  --  An instruction
@@ -525,13 +525,13 @@ analyze_move(Instruction, Live, Def_numbers, Use_numbers, IG, Target) ->
 %% Function:    interfere
 %%
 %% Description: A number of temporaries that are defined interfere with
-%%               everything in the current live set.
+%%              everything in the current live set.
 %%
 %% Parameters:
-%%   Define      --  A Define temporary
-%%   Defines     --  Rest of temporaries.
-%%   Live        --  Current live set
-%%   IG          --  An interference graph
+%%   Define     --  A Define temporary
+%%   Defines    --  Rest of temporaries.
+%%   Live       --  Current live set
+%%   IG         --  An interference graph
 %%
 %% Returns: 
 %%   An updated interference graph.
@@ -546,15 +546,14 @@ interfere([Define|Defines], Living, IG, Target) ->
 %% Function:    interfere_with_living
 %%
 %% Description: Let one temporary that is in the define set interfere 
-%%               with all live temporaries.
+%%              with all live temporaries.
 %%
 %% Parameters:
-%%   Define         --  A Define temporary
-%%   Live           --  Current live set
-%%   Lives          --  Rest of living temporaries.
-%%   IG             --  An interference graph
-%%   Target         --  The module containing the target-specific
-%%                       functions
+%%   Define     --  A Define temporary
+%%   Live       --  Current live set
+%%   Lives      --  Rest of living temporaries.
+%%   IG         --  An interference graph
+%%   Target     --  The module containing the target-specific functions
 %% Returns: 
 %%   An updated interference graph
 %%----------------------------------------------------------------------
@@ -568,7 +567,7 @@ interfere_with_living(Define, [Live|Living], IG, Target) ->
 %% nodes_are_adjacent(U, V, IG)
 %% returns true if nodes U and V are adjacent in interference graph IG
 %%
--spec nodes_are_adjacent(integer(), integer(), #igraph{}) -> bool().
+-spec nodes_are_adjacent(integer(), integer(), #igraph{}) -> boolean().
 nodes_are_adjacent(U, V, IG) ->
   adjset_are_adjacent(U, V, adj_set(IG)).
 
@@ -616,15 +615,14 @@ get_moves(IG) ->
 %% Function:    add_edge
 %%
 %% Description: Adds an edge to the adj_set data structure if it is
-%%               not already a part of it and if U is not precoloured
-%%               we add V to its adj_list. If V is not precoloured
-%%               we add U to its adj_list.
+%%              not already a part of it and if U is not precoloured
+%%              we add V to its adj_list. If V is not precoloured
+%%              we add U to its adj_list.
 %%
 %% Parameters:
-%%   U              --  A temporary number
-%%   V              --  A temporary number
-%%   Target         --  The module containing the target-specific
-%%                       functions
+%%   U          --  A temporary number
+%%   V          --  A temporary number
+%%   Target     --  The module containing the target-specific functions
 %% Returns: 
 %%   An updated interference graph.
 %%----------------------------------------------------------------------
@@ -635,7 +633,7 @@ add_edge(U, V, IG, Target) ->
     true ->
       IG;
     false ->
-      adjset_add_edge(U, V, adj_set(IG)),
+      _ = adjset_add_edge(U, V, adj_set(IG)),
       Degree = degree(IG),
       AdjList0 = interfere_if_uncolored(U, V, adj_list(IG), Degree, Target),
       AdjList1 = interfere_if_uncolored(V, U, AdjList0, Degree, Target),
@@ -646,15 +644,14 @@ add_edge(U, V, IG, Target) ->
 %% Function:    remove_edge
 %%
 %% Description: Removes an edge to the adj_set data-structure if it's
-%%               a part of it and if U is not precoloured
-%%               we remove V from it's adj_list. If V is not precoloured
-%%               we remove U from it's adj_list.
+%%              a part of it and if U is not precoloured
+%%              we remove V from it's adj_list. If V is not precoloured
+%%              we remove U from it's adj_list.
 %%
 %% Parameters:
-%%   U              --  A temporary number
-%%   V              --  A temporary number
-%%   Target         --  The module containing the target-specific
-%%                       functions
+%%   U          --  A temporary number
+%%   V          --  A temporary number
+%%   Target     --  The module containing the target-specific functions
 %% Returns: 
 %%   An updated interference graph.
 %%----------------------------------------------------------------------
@@ -665,7 +662,7 @@ remove_edge(U, V, IG, Target) ->
     false ->
       IG;
     true ->
-      adjset_remove_edge(U, V, adj_set(IG)),
+      _ = adjset_remove_edge(U, V, adj_set(IG)),
       Degree = degree(IG),
       AdjList0 = remove_if_uncolored(U, V, adj_list(IG), Degree, Target),
       AdjList1 = remove_if_uncolored(V, U, AdjList0, Degree, Target),
@@ -693,13 +690,11 @@ remove_edge(U, V, IG, Target) ->
 %%   Degree    --  An updated degree data structure (via side-effects)
 %%----------------------------------------------------------------------
 
-remove_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 
-		    Target) ->
-  case Target:is_precoloured(Temporary) of
+remove_if_uncolored(Temp, InterfereTemp, Adj_list, Degree, Target) ->
+  case Target:is_precoloured(Temp) of
     false ->
-      New_adj_list = hipe_adj_list:remove_edge(Temporary, Interfere_temporary, 
-					       Adj_list),
-      degree_dec(Temporary, Degree),
+      New_adj_list = hipe_adj_list:remove_edge(Temp, InterfereTemp, Adj_list),
+      degree_dec(Temp, Degree),
       New_adj_list;
     true ->
       Adj_list
@@ -726,13 +721,11 @@ remove_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree,
 %%   Degree    --  An updated degree data structure (via side-effects)
 %%----------------------------------------------------------------------
 
-interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 
-		       Target) ->
-  case Target:is_precoloured(Temporary) of
+interfere_if_uncolored(Temp, InterfereTemp, Adj_list, Degree, Target) ->
+  case Target:is_precoloured(Temp) of
     false ->
-      New_adj_list = hipe_adj_list:add_edge(Temporary, Interfere_temporary, 
-					    Adj_list),
-      degree_inc(Temporary, Degree),
+      New_adj_list = hipe_adj_list:add_edge(Temp, InterfereTemp, Adj_list),
+      degree_inc(Temp, Degree),
       New_adj_list;
     true ->
       Adj_list
@@ -742,11 +735,11 @@ interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree,
 %% Function:    reg_numbers
 %%
 %% Description: Converts a list of tuple with {something, reg_number}
-%%               to a list of register numbers.
+%%              to a list of register numbers.
 %%
 %% Parameters:
-%%   TRs            --  A list of temporary registers
-%%   Target         --  The module containing the target-specific functions
+%%   TRs     -- A list of temporary registers
+%%   Target  -- The module containing the target-specific functions
 %% Returns: 
 %%   A list of register numbers.
 %%----------------------------------------------------------------------

@@ -159,9 +159,9 @@ ensure_hex4_or_ip4addr({TokenTag, Line, Addr} = V) ->
     end.
 
 ensure_hex4({_TokenTag, Line, Hex4}) 
-  when length(Hex4) =< 4, length(Hex4) > 0 ->
+  when (length(Hex4) =< 4) andalso (length(Hex4) > 0) ->
     case (catch do_ensure_hex4(Hex4)) of
-	IL when list(IL), length(IL) == 2 ->
+	IL when is_list(IL) andalso (length(IL) =:= 2) ->
 	    IL;
 	Error ->
 	    return_error(Line, {bad_hex4, Hex4, Error})
@@ -1166,13 +1166,13 @@ ensure_pathName({_TokenTag, _Line, Text}) ->
 %     #'PropertyParm'{name  = lists:reverse(Name),
 %                     value = [lists:reverse(Value)]}.
 
-ensure_uint({_TokenTag, Line, Val}, Min, Max) when integer(Val) ->
+ensure_uint({_TokenTag, Line, Val}, Min, Max) when is_integer(Val) ->
     if
-        integer(Min), Val >= Min ->
+        is_integer(Min) andalso (Val >= Min) ->
             if
-                integer(Max), Val =< Max ->
+                is_integer(Max) andalso (Val =< Max) ->
                     Val;
-                Max == infinity ->
+                Max =:= infinity ->
                     Val;
                 true ->
                     return_error(Line, {too_large_integer, Val, Max})
@@ -1184,7 +1184,7 @@ ensure_uint({TokenTag, Line, Text}, Min, Max) ->
     case catch list_to_integer(Text) of
         {'EXIT', _} ->
             return_error(Line, {not_an_integer, Text});
-        Val when integer(Val) ->
+        Val when is_integer(Val) ->
             ensure_uint({TokenTag, Line, Val}, Min, Max)
    end;
 ensure_uint(Val, Min, Max) ->

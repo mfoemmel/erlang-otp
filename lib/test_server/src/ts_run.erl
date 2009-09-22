@@ -655,7 +655,23 @@ make_test_server_args(Args0,Options,Vars) ->
 	    false -> 
 		""
 	end,
-    Args0 ++ Parameters ++ Trace ++ Cover.
+    TCCallback =
+	case ts_lib:var(ts_testcase_callback, Vars) of
+	    "" -> 
+		"";
+	    {Mod,Func} ->
+		io:format("Function ~w:~w/4 will be called before and "
+			  "after each test case.\n", [Mod,Func]),
+		" TESTCASE_CALLBACK " ++ to_list(Mod) ++ " " ++ to_list(Func);	    
+	    ModFunc when is_list(ModFunc) ->
+		[Mod,Func]=string:tokens(ModFunc," "),
+		io:format("Function ~s:~s/4 will be called before and "
+			  "after each test case.\n", [Mod,Func]),			
+		" TESTCASE_CALLBACK " ++ ModFunc;		    
+	    _ ->
+		""
+	end,
+    Args0 ++ Parameters ++ Trace ++ Cover ++ TCCallback.
 
 to_list(X) when is_atom(X) ->
     atom_to_list(X);

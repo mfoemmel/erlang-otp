@@ -85,7 +85,7 @@ to_list(#icode_callgraph{codedict = Dict, ordered_sccs = SCCs}) ->
 
 -ifndef(NO_UNUSED).
 
--spec is_empty(#icode_callgraph{}) -> bool().
+-spec is_empty(#icode_callgraph{}) -> boolean().
 
 is_empty(#icode_callgraph{ordered_sccs = SCCs}) ->
   length(SCCs) =:= 0.

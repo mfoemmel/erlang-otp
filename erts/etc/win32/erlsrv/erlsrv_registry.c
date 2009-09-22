@@ -41,13 +41,8 @@
 
 static const char * const noString = "\0";
 
+#define MAX_MANDATORY_REG_ENTRY 10 /* InternalServiceName == reg_entries[10] */
 static RegEntry reg_entries[] = {
-#if defined(NOTYET)
-  {"Display", REG_SZ,NULL},
-  {"Output", REG_EXPAND_SZ,NULL},
-  {"User",REG_SZ,NULL},
-  {"After",REG_SZ,NULL},
-#endif
   {"StopAction",REG_SZ,NULL},
   {"OnFail",REG_DWORD,NULL},
   {"Machine",REG_EXPAND_SZ,NULL},
@@ -58,8 +53,11 @@ static RegEntry reg_entries[] = {
   {"Name",REG_SZ,NULL},
   {"Args",REG_EXPAND_SZ,NULL},
   {"DebugType",REG_DWORD,NULL},
-  {"InternalServiceName",REG_SZ,NULL}
+  {"InternalServiceName",REG_SZ,NULL},
+  /* Non mandatory follows */
+  {"Comment",REG_SZ,NULL}
 };
+
 
 int num_reg_entries = sizeof(reg_entries)/sizeof(RegEntry);
 
@@ -143,6 +141,24 @@ RegEntry *get_keys(char *servicename){
 	  goto error;
       } else if(ret == ERROR_MORE_DATA){
 	val_data = realloc(val_data,val_datasiz = val_datalen);
+      } else if (i > MAX_MANDATORY_REG_ENTRY && ret == ERROR_FILE_NOT_FOUND) {
+	  /* Non mandatory entries, look at the type... */
+	  switch (reg_entries[i].type){
+	  case REG_EXPAND_SZ:
+	  case REG_SZ:
+	  case REG_MULTI_SZ:
+	      val_datalen = 0;
+	      break;
+	  case REG_DWORD:
+	      { 
+		  DWORD dummy = 0;
+		  memcpy(val_data,&dummy,(val_datalen = sizeof(DWORD)));
+	      }
+	      break;
+	  default:
+	      goto error;
+	  }
+	  break; /* for(;;) */
       } else {
 	goto error;
       }

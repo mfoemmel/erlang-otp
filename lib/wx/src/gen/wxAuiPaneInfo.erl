@@ -26,26 +26,39 @@
 -include("wxe.hrl").
 -export([bestSize/2,bestSize/3,bottom/1,bottomDockable/1,bottomDockable/2,caption/2,
   captionVisible/1,captionVisible/2,centre/1,centrePane/1,closeButton/1,
-  closeButton/2,defaultPane/1,destroyOnClose/1,destroyOnClose/2,direction/2,
-  dock/1,dockable/1,dockable/2,fixed/1,float/1,floatable/1,floatable/2,
-  floatingPosition/2,floatingPosition/3,floatingSize/2,floatingSize/3,
-  gripper/1,gripper/2,gripperTop/1,gripperTop/2,hasBorder/1,hasCaption/1,
-  hasCloseButton/1,hasFlag/2,hasGripper/1,hasGripperTop/1,hasMaximizeButton/1,
-  hasMinimizeButton/1,hasPinButton/1,hide/1,isBottomDockable/1,isDocked/1,
-  isFixed/1,isFloatable/1,isFloating/1,isLeftDockable/1,isMovable/1,
+  closeButton/2,defaultPane/1,destroy/1,destroyOnClose/1,destroyOnClose/2,
+  direction/2,dock/1,dockable/1,dockable/2,fixed/1,float/1,floatable/1,
+  floatable/2,floatingPosition/2,floatingPosition/3,floatingSize/2,
+  floatingSize/3,gripper/1,gripper/2,gripperTop/1,gripperTop/2,hasBorder/1,
+  hasCaption/1,hasCloseButton/1,hasFlag/2,hasGripper/1,hasGripperTop/1,
+  hasMaximizeButton/1,hasMinimizeButton/1,hasPinButton/1,hide/1,isBottomDockable/1,
+  isDocked/1,isFixed/1,isFloatable/1,isFloating/1,isLeftDockable/1,isMovable/1,
   isOk/1,isResizable/1,isRightDockable/1,isShown/1,isToolbar/1,isTopDockable/1,
   layer/2,left/1,leftDockable/1,leftDockable/2,maxSize/2,maxSize/3,maximizeButton/1,
   maximizeButton/2,minSize/2,minSize/3,minimizeButton/1,minimizeButton/2,
-  movable/1,movable/2,name/2,paneBorder/1,paneBorder/2,pinButton/1,pinButton/2,
-  position/2,resizable/1,resizable/2,right/1,rightDockable/1,rightDockable/2,
-  row/2,safeSet/2,setFlag/3,show/1,show/2,toolbarPane/1,top/1,topDockable/1,
-  topDockable/2,window/2]).
+  movable/1,movable/2,name/2,new/0,new/1,paneBorder/1,paneBorder/2,pinButton/1,
+  pinButton/2,position/2,resizable/1,resizable/2,right/1,rightDockable/1,
+  rightDockable/2,row/2,safeSet/2,setFlag/3,show/1,show/2,toolbarPane/1,
+  top/1,topDockable/1,topDockable/2,window/2]).
 
 %% inherited exports
 -export([parent_class/1]).
 
 %% @hidden
 parent_class(_Class) -> erlang:error({badtype, ?MODULE}).
+
+%% @spec () -> wxAuiPaneInfo()
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxauipaneinfo.html#wxauipaneinfowxauipaneinfo">external documentation</a>.
+new() ->
+  wxe_util:construct(?wxAuiPaneInfo_new_0,
+  <<>>).
+
+%% @spec (C::wxAuiPaneInfo()) -> wxAuiPaneInfo()
+%% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxauipaneinfo.html#wxauipaneinfowxauipaneinfo">external documentation</a>.
+new(#wx_ref{type=CT,ref=CRef}) ->
+  ?CLASS(CT,wxAuiPaneInfo),
+  wxe_util:construct(?wxAuiPaneInfo_new_1,
+  <<CRef:32/?UI>>).
 
 %% @spec (This::wxAuiPaneInfo(), Size::{W::integer(),H::integer()}) -> wxAuiPaneInfo()
 %% @doc See <a href="http://www.wxwidgets.org/manuals/stable/wx_wxauipaneinfo.html#wxauipaneinfobestsize">external documentation</a>.
@@ -764,3 +777,9 @@ window(#wx_ref{type=ThisT,ref=ThisRef},#wx_ref{type=WT,ref=WRef}) ->
   wxe_util:call(?wxAuiPaneInfo_Window,
   <<ThisRef:32/?UI,WRef:32/?UI>>).
 
+%% @spec (This::wxAuiPaneInfo()) -> ok
+%% @doc Destroys this object, do not use object again
+destroy(Obj=#wx_ref{type=Type}) -> 
+  ?CLASS(Type,wxAuiPaneInfo),
+  wxe_util:destroy(?wxAuiPaneInfo_destruct,Obj),
+  ok.

@@ -18,7 +18,7 @@
 
 {application, common_test,
  [{description, "The OTP Common Test application"},
-  {vsn, "1.4.2"},
+  {vsn, "1.4.5"},
   {modules, [ct_cover,
 	     ct,
 	     ct_event,
@@ -41,7 +41,6 @@
 	     ct_telnet,
 	     ct_testspec,
 	     ct_util,
-	     ct_util.hrl,
 	     unix_telnet,
 	     vts
 	    ]},
@@ -50,7 +49,7 @@
 		ct_make_ref,
 		vts,
 		ct_master,
-		ct_master_logs]}
+		ct_master_logs]},
   {applications, [kernel,stdlib]},
   {env, []}]}.
-  
+

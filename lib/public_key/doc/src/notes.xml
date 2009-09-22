@@ -34,6 +34,36 @@
     <file>notes.sgml</file>
   </header>
 
+  <section><title>Public_Key 0.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Unknown attributes in certificates are left encoded
+            instead of crashing. Patch by Will "wglozer" thanks.</p>
+          <p>
+            Own Id: OTP-8100</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Allow public_key:pem_to_der/[1,2] to take a binary as
+            argument in addition to a filename. Patch by Geoff Cant,
+            thanks.</p>
+          <p>
+            Own Id: OTP-8142</p>
+        </item>
+      </list>
+    </section>
+
+  </section>
+
 <section><title>Public_Key 0.2</title>
 
     <section><title>Improvements and New Features</title>

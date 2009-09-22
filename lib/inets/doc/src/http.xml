@@ -174,64 +174,162 @@ ssl_options() = {verify,     code()}   |
       <fsummary>Sends a HTTP-request</fsummary>
       <type>
         <v>Method = method() </v>
-        <v>Request - request()</v>
-        <v>HTTPOptions - [HttpOption]</v>
-        <v>HTTPOption - {timeout, integer()} | {ssl, ssl_options()} | {autoredirect, boolean()} | {proxy_auth, {userstring(), passwordstring()}} | {version, http_version()} | {relaxed, boolean()}</v>
-        <v>autoredirect </v>
-        <d>This option is true by default i.e. the client will automatically retrive the information from the new URI and return that as the result instead of a 30X-result code. Note that for some 30X-result codes automatic redirect is not allowed in these cases the 30X-result will always be returned.</d>
-        <v>proxy_auth</v>
-        <d>A proxy-authorization header using the provided user name and password will be added to the request.</d>
-	<v>version</v>
-	<d>Can be used to make the client act as an <c>HTTP/1.0</c> or
-	<c>HTTP/0.9</c> client.
-	  By default this is an <c>HTTP/1.1</c> client. When
-      using <c>HTTP/1.0</c> persistent connections will not be used.</d>
-	<v>relaxed</v>
-	<d>If set to true workarounds for known server deviations from
-	the HTTP-standard are enabled, defaults to false.</d>
-        <v>Options - [option()]</v>
-        <v>Option - {sync, boolean()} | {stream, StreamTo} | {body_format, body_format()} | {full_result, boolean()} | {headers_as_is, boolean()}</v>
-        <d>The request function will be synchronous and return a full http response by default. </d>
-        <v>StreamTo = self | {self, once} | filename() </v>
-
-	<d>Streams the body of a 200 or 206 response to the calling process
-	  or to a file. When streaming to the calling process using
-	  the option <c>self</c> the the following stream messages
-	  will be sent to that process: {http, {RequestId,
-	  stream_start, Headers}, {http, {RequestId, stream,
-	  BinBodyPart}, {http, {RequestId, stream_end, Headers}. When
-	  streaming to to the calling processes using the option
-	  <c>{self once}</c> the first message will have an additional
-	  element e.i. {http, {RequestId, stream_start, Headers, Pid},
-	  this is the process id that should be used as an argument to
-	  http:stream_next/1 to trigger the next message to be sent to
-	  the calling process.
-	  Note that it is possible that chunked encoding will add
-	  headers so that there are more headers in the stream_end
-	  message than in the stream_start.
-	  When streaming to a file and the request is asynchronous the
-	  message {http, {RequestId, saved_to_file}} will be sent.</d>
-
+        <v>Request = request()</v>
+        <v>HTTPOptions = http_options()</v>
+        <v>http_options() = [http_option()]</v>
+        <v>http_option() = {timeout, timeout()} | 
+                           {connect_timeout, timeout()} | 
+                           {ssl, ssl_options()} | 
+                           {autoredirect, boolean()} | 
+                           {proxy_auth, {userstring(), passwordstring()}} | 
+                           {version, http_version()} | 
+                           {relaxed, boolean()}</v>
+        <v>timeout() = integer() >= 0 | infinity</v>
+        <v>Options = options()</v>
+        <v>options() = [option()]</v>
+        <v>option() = {sync, boolean()} | 
+                      {stream, stream_to()} | 
+                      {body_format, body_format()} | 
+                      {full_result, boolean()} | 
+                      {headers_as_is, boolean()}</v>
+        <v>stream_to() = self | {self, once} | filename() </v>
 	<v>body_format() = string() | binary() </v>
-
-	<d>The body_format option is only valid for the synchronous request and the default is string. When making an asynchronous request the body will always be received as a binary.</d>
-        <v>headers_as_is</v>
-        <d>The headers_as_is option is by default false, if set to true the headers provided by the user will be regarded as case sensitive.  Note that the http standard requires them to be case insenstive. This feature should only be used if there is no other way to communicate with the server or for testing purpose. Also note that when this option is used no headers will be
-	automatically  added, all necessary headers has to be provided by the user.  </d>
-        <v>Result = {status_line(), headers(), body()} | {status_code(), body()} | request_id() </v>
+        <v>Result = {status_line(), headers(), body()} | 
+                    {status_code(), body()} | request_id() </v>
 	<v>Profile = profile() </v>
         <v>Reason = term() </v>
       </type>
+
       <desc>
         <p>Sends a HTTP-request. The function can be both synchronous
-          and asynchronous in the later case the function will return
-          {ok, RequestId} and later on message/messages will be sent to the
-          calling process on the format {http, {RequestId, Result}}
-          {http, {RequestId, {error, Reason}}},
-          {http, {RequestId, stream_start, Headers},
-          {http, {RequestId, stream, BinBodyPart},
-          {http, {RequestId, stream_end, Headers} or
-          {http, {RequestId, saved_to_file}}.</p>
+          and asynchronous. In the later case the function will return
+          {ok, RequestId} and later on message(s) will be sent to the
+          calling process on the format: </p>
+<pre>
+          {http, {RequestId, Result}}
+          {http, {RequestId, {error, Reason}}}
+          {http, {RequestId, stream_start, Headers}
+          {http, {RequestId, stream, BinBodyPart}
+          {http, {RequestId, stream_end, Headers}
+          {http, {RequestId, saved_to_file}}.
+</pre>
+
+        <p>Http option (<c>http_option()</c>) details: </p>
+        <taglist>
+          <tag><c><![CDATA[timeout]]></c></tag>
+          <item>
+            <p>Timeout time for the request. </p>
+            <p>Defaults to <c>infinity</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[connect_timeout]]></c></tag>
+          <item>
+            <p>Connection timeout time, used during the initial request, 
+              when the client is connecting to the server. </p>
+            <p>Defaults to the value of the <c>timeout</c> option. </p>
+	  </item>
+
+          <tag><c><![CDATA[ssl]]></c></tag>
+          <item>
+            <p>If using SSL, these SSL-specific options are used. </p>
+            <p>Defaults to <c>[]</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[autoredirect]]></c></tag>
+          <item>
+            <p>Should the client automatically retreive the information 
+              from the new URI and return that as the result instead 
+              of a 30X-result code. </p>
+            <p>Note that for some 30X-result codes automatic redirect 
+              is not allowed in these cases the 30X-result will always 
+              be returned. </p>
+            <p>Defaults to <c>true</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[proxy_auth]]></c></tag>
+          <item>
+            <p>A proxy-authorization header using the provided user name and 
+              password will be added to the request. </p>
+	  </item>
+
+          <tag><c><![CDATA[version]]></c></tag>
+          <item>
+            <p>Can be used to make the client act as an <c>HTTP/1.0</c> or
+	      <c>HTTP/0.9</c> client. By default this is an <c>HTTP/1.1</c> 
+              client. When using <c>HTTP/1.0</c> persistent connections will 
+              not be used. </p>
+            <p>Defaults to the trsing <c>"HTTP/1.1"</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[relaxed]]></c></tag>
+          <item>
+            <p>If set to true workarounds for known server deviations from
+	      the HTTP-standard are enabled. </p>
+            <p>Defaults to <c>false</c>. </p>
+	  </item>
+
+        </taglist>
+
+        <p>Option (<c>option()</c>) details: </p>
+        <taglist>
+          <tag><c><![CDATA[sync]]></c></tag>
+          <item>
+            <p>Shall the request be synchronous or asynchronous. </p>
+            <p>Defaults to <c>true</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[stream]]></c></tag>
+          <item>
+            <p>Streams the body of a 200 or 206 response to the calling 
+	      process or to a file. When streaming to the calling process 
+	      using the option <c>self</c> the the following stream messages
+	      will be sent to that process: {http, {RequestId,
+	      stream_start, Headers}, {http, {RequestId, stream,
+	      BinBodyPart}, {http, {RequestId, stream_end, Headers}. When
+	      streaming to to the calling processes using the option
+	      <c>{self once}</c> the first message will have an additional
+	      element e.i. {http, {RequestId, stream_start, Headers, Pid},
+	      this is the process id that should be used as an argument to
+	      http:stream_next/1 to trigger the next message to be sent to
+	      the calling process. </p>
+	    <p>Note that it is possible that chunked encoding will add
+	      headers so that there are more headers in the stream_end
+	      message than in the stream_start.
+	      When streaming to a file and the request is asynchronous the
+	      message {http, {RequestId, saved_to_file}} will be sent. </p>
+            <p>Defaults to <c>none</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[body_format]]></c></tag>
+          <item>
+            <p>Defines if the body shall be delivered as a string or as a 
+              binary. This option is only valid for the synchronous 
+              request. </p>
+            <p>Defaults to <c>string</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[full_result]]></c></tag>
+          <item>
+            <p>Should a "full result" be returned to the caller (that is,
+              the body, the headers and the entire status-line) or not 
+              (the body and the status code). </p>
+            <p>Defaults to <c>true</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[header_as_is]]></c></tag>
+          <item>
+            <p>Shall the headers provided by the user be made 
+              lower case or be regarded as case sensitive. </p>
+            <p>Note that the http standard requires them to be 
+              case insenstive. This feature should only be used if there is 
+              no other way to communicate with the server or for testing 
+              purpose. Also note that when this option is used no headers 
+              will be automatically added, all necessary headers has to be 
+              provided by the user. </p>
+            <p>Defaults to <c>false</c>. </p>
+	  </item>
+
+        </taglist>
 
         <marker id="set_options"></marker>
       </desc>

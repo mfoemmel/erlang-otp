@@ -49,7 +49,7 @@
 %% API
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
+%% Function: start() -> #wx_env{}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
 start() ->
@@ -57,7 +57,7 @@ start() ->
 	undefined ->
 	    case gen_server:start(?MODULE, [], []) of
 		{ok, Pid}  ->
-		    {ok, Port} = gen_server:call(Pid, get_port),
+		    {ok, Port} = gen_server:call(Pid, get_port, infinity),
 		    wx:set_env(Env = #wx_env{port=Port,sv=Pid}),
 		    Env;
 		{error, {Reason, _Stack}} ->
@@ -75,11 +75,11 @@ start() ->
 
 stop() ->
     #wx_env{sv=Pid} = get(?WXE_IDENTIFIER),
-    catch gen_server:call(Pid, stop),
+    catch gen_server:call(Pid, stop, infinity),
     ok.
 
 register_me(Pid) ->
-    ok = gen_server:call(Pid, register_me).
+    ok = gen_server:call(Pid, register_me, infinity).
 
 set_debug(Pid, Level) ->
     gen_server:cast(Pid, {debug, Level}).
@@ -165,7 +165,6 @@ handle_info({wx_delete_cb, FunId}, State0 = #state{cb=CB}) when is_integer(FunId
 	    erase(FunId),
 	    {noreply, State0#state{cb=gb_trees:delete(Fun, CB)}}
     end;
-    
 handle_info({'DOWN',_,process,Pid,_}, State=#state{users=Users0,cleaners=Cs}) ->
     try 
 	User = gb_trees:get(Pid,Users0),
@@ -180,12 +179,12 @@ handle_info({'DOWN',_,process,Pid,_}, State=#state{users=Users0,cleaners=Cs}) ->
 handle_info(Msg = {'_wxe_destroy_', Pid}, State) ->
     case erlang:is_process_alive(Pid) of
 	true ->
-	    Pid ! Msg;
+	    Pid ! Msg,
+	    ok;
 	false ->
 	    ok
     end,
     {noreply, State};
-
 handle_info(_Info, State) ->
     ?log("Unknown message ~p sent to ~p~n",[_Info, ?MODULE]),
     {noreply, State}.
@@ -239,12 +238,12 @@ invoke_cb({{Ev=#wx{}, Ref=#wx_ref{}}, FunId,_}, _S) ->
     %% Event callbacks
     case get(FunId) of
 	Fun when is_function(Fun) ->
-	    invoke_callback(fun() ->			       
+	    invoke_callback(fun() ->
 			       wxe_util:cast(?WXE_CB_START, <<>>),
 			       Fun(Ev, Ref),
 			       <<>>
-		       end);
-	Err -> 
+		            end);
+	Err ->
 	    ?log("Internal Error ~p~n",[Err])
     end;
 invoke_cb({FunId, Args, _}, _S) when is_list(Args), is_integer(FunId) ->
@@ -252,7 +251,7 @@ invoke_cb({FunId, Args, _}, _S) when is_list(Args), is_integer(FunId) ->
     case get(FunId) of
 	Fun when is_function(Fun) ->
 	    invoke_callback(fun() -> Fun(Args) end);
-	Err -> 
+	Err ->
 	    ?log("Internal Error ~p ~p ~p~n",[Err, FunId, Args])
     end.
 	
@@ -263,18 +262,19 @@ invoke_callback(Fun) ->
 		 Res = try Return = Fun(),
 			   true = is_binary(Return),
 			   Return
-		       catch error:Reason ->
+		       catch _:Reason ->
 			       ?log("Callback fun crashed with {'EXIT, ~p, ~p}~n",
 				    [Reason, erlang:get_stacktrace()]),
 			       <<>>
 		       end,
 		 wxe_util:cast(?WXE_CB_RETURN, Res)
 	 end,
-    spawn(CB).
+    spawn(CB),
+    ok.
 
 new_evt_listener(State) ->
     #wx_env{port=Port} = wx:get_env(),
-    erlang:port_control(Port,98,<<>>),
+    _ = erlang:port_control(Port,98,<<>>),
     get_result(State).
 
 get_result(_State) ->

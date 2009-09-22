@@ -30,6 +30,42 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 2.0.0</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>There is a major addition to the capabilities of
+	    dialyzer, worthy of bumping the version number. Starting
+	    with this version, dialyzer not only accepts but also
+	    properly processes remote types (i.e., types of the form
+	    ModuleName:TypeName()). Previous dialyzer versions only
+	    accepted this notation in -type and -spec declarations,
+	    but effectively ignored its information by mapping remote
+	    types to the type any(). In contrast, starting with this
+	    version, remote types are used in the analysis and are
+	    also stored in the PLTs. (This addition changes the
+	    format of PLTs and requires rebuilding any PLTs created
+	    by an older dialyzer version.) Note that dialyzer will
+	    complain and abort the analysis of a set of modules if it
+	    needs to process a remote type without a definition
+	    (either because the module does not include a definition
+	    of the type or the module is not included in the
+	    analysis). We may relax this restriction in a future
+	    version.</p>
+	    <p>Fixed minor issue with dialyzer:run/1 crashing (upon
+	    its return) when used for adding type information to an
+	    existing PLT.</p>
+	    <p>Fixed minor but quite annoying issues in dialyzer's
+	    GUI.</p>
+          <p>
+	    Own Id: OTP-8187</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Dialyzer 1.9.2</title>
 
     <section><title>Improvements and New Features</title>

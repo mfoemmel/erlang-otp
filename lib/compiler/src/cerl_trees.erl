@@ -60,7 +60,7 @@
 
 %% ---------------------------------------------------------------------
 
-%% @spec depth(Tree::cerl) -> integer()
+%% @spec depth(Tree::cerl()) -> integer()
 %%
 %% @doc Returns the length of the longest path in the tree.  A leaf
 %% node has depth zero, the tree representing "<code>{foo,

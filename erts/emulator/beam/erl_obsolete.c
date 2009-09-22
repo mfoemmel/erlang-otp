@@ -33,6 +33,12 @@
 /* cut from ../obsolete/driver.h (since it doesn't mix well with other
  * headers from the emulator).
  */
+#ifdef __WIN32__
+#ifdef CONST
+#  undef CONST
+#endif
+#endif
+
 #if ((defined(__STDC__) || defined(SABER)) && !defined(NO_PROTOTYPE)) || defined(__cplusplus) || defined(USE_PROTOTYPE)
 #   define _USING_PROTOTYPES_ 1
 #   define _ANSI_ARGS_(x)	x

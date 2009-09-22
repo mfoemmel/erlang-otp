@@ -416,8 +416,8 @@ import({node, NodeName}, #mib{mes = IMES, name = MibName}) ->
     end;
 import({type, TypeName}, #mib{asn1_types = Types, name = MibName}) ->
     case lists:keysearch(TypeName, #asn1_type.aliasname, Types) of
-	{value, ASN1Type} when record(ASN1Type, asn1_type),
-                          ASN1Type#asn1_type.imported == false ->
+	{value, ASN1Type} when is_record(ASN1Type, asn1_type) andalso 
+                          (ASN1Type#asn1_type.imported =:= false) ->
 	    add_cdata(#cdata.asn1_types, [ASN1Type#asn1_type{imported=true,
 							aliasname=TypeName}]);
 	_X ->
@@ -567,21 +567,23 @@ resolve_defval(ME) ->
 has_complex_defval(#me{aliasname = N,
 		       assocList = AssocList, 
 		       asn1_type = #asn1_type{bertype = BT}}) 
-           when list(AssocList) ->
+           when is_list(AssocList) ->
     case snmpc_misc:assq(defval, AssocList) of
-	{value, Int} when integer(Int) ->
+	{value, Int} when is_integer(Int) ->
 	    false;
-	{value, Val} when atom(Val), BT == 'OBJECT IDENTIFIER' ->
+	{value, Val} when is_atom(Val) andalso (BT =:= 'OBJECT IDENTIFIER') ->
 	    false; % resolved in update_me_oids
-	{value, Val} when atom(Val), BT == 'INTEGER' ->
+	{value, Val} when is_atom(Val) andalso (BT =:= 'INTEGER') ->
 	    true;
-	{value, Bits} when list(Bits), BT == 'BITS' ->
+	{value, Bits} when is_list(Bits) andalso (BT =:= 'BITS') ->
 	    true;
-	{value, Str} when list(Str), BT == 'OCTET STRING' ->
+	{value, Str} when is_list(Str) andalso (BT =:= 'OCTET STRING') ->
 	    false; % but ok
-	{value, Str} when list(Str), BT == 'Opaque' ->
+	{value, Str} when is_list(Str) andalso (BT =:= 'Opaque') ->
 	    false; % but ok
-	{value, Str} when list(Str), length(Str) == 4, BT == 'IpAddress' ->
+	{value, Str} when is_list(Str) andalso 
+			  (length(Str) =:= 4) andalso 
+			  (BT =:= 'IpAddress') ->
 	    false; % but ok
 	{value, Shit} ->
 	    print_error("Bad default value for ~p: ~p [~p]",[N,Shit,BT]),
@@ -608,14 +610,14 @@ resolve_complex_defval(ME, _AllMEs)
 		    print_error("Enum '~w' not found. "
 				"Used in DEFVAL for '~w'.", [DefVal, MEName]),
 		    ME;
-		{value, IntVal} when integer(IntVal) ->
+		{value, IntVal} when is_integer(IntVal) ->
 		    ME#me{assocList = lists:keyreplace(defval, 1, AssocList,
 						       {defval, IntVal})}
 	    end
     end;
 
 resolve_complex_defval(ME, _AllMEs) 
-     when (ME#me.asn1_type)#asn1_type.bertype == 'BITS' ->
+     when (ME#me.asn1_type)#asn1_type.bertype =:= 'BITS' ->
     #me{aliasname = MEName, assocList = AssocList} = ME,
     {value, DefVal} = snmpc_misc:assq(defval, AssocList),
     #asn1_type{assocList = AssocListForASN1Type} = ME#me.asn1_type,
@@ -624,7 +626,7 @@ resolve_complex_defval(ME, _AllMEs)
 	error->
 	    print_error("Invalid default value ~w for ~w.",[DefVal, MEName]),
 	    ME;
-	IntVal when integer(IntVal) ->
+	IntVal when is_integer(IntVal) ->
 	    ME#me{assocList = lists:keyreplace(defval, 1, AssocList,
 					       {defval, IntVal})}
     end.
@@ -647,7 +649,7 @@ get_def(#asn1_type{bertype = BT, lo = LO, assocList = AL}) ->
       "~n   AL: ~p", [BT, LO, AL]),
     get_def(BT, LO, AL).
 
-get_def('INTEGER', Lo, _) when integer(Lo) -> Lo;
+get_def('INTEGER', Lo, _) when is_integer(Lo) -> Lo;
 get_def('INTEGER', _, AL) -> 
     case snmpc_misc:assq(enums, AL) of
 	{value, Enums} ->
@@ -669,7 +671,7 @@ get_def('NetworkAddress', _, _) -> [0,0,0,0];
 get_def('OBJECT IDENTIFIER', _, _) -> [0, 0];
 get_def('Opaque', _, _) -> "";
 %v2
-get_def('Integer32',Lo, _) when integer(Lo) -> Lo;
+get_def('Integer32',Lo, _) when is_integer(Lo) -> Lo;
 get_def('Integer32',_, _) -> 0;
 get_def('Counter32',_, _) -> 0;
 get_def('Gauge32',_, _) -> 0;
@@ -766,7 +768,7 @@ find_status_col(Line, TableName, [_ShitME | MEs]) ->
     end.
 
 list_not_accessible(none,_) -> [];
-list_not_accessible(NonIndexCol, ColMEs) when integer(NonIndexCol) ->
+list_not_accessible(NonIndexCol, ColMEs) when is_integer(NonIndexCol) ->
     list_not_accessible(lists:nthtail(NonIndexCol - 1,ColMEs)).
 
 list_not_accessible([#me{access='not-accessible', oid=Col}|ColMEs]) ->
@@ -832,10 +834,10 @@ column_and_defval(#me{oid = Oid, assocList = AssocList}) ->
 %% returns: an asn1_type if ColME is an indexfield, otherwise undefined.
 get_asn1_type({implied,ColumnName}, MEs, Line) ->
     case lookup(ColumnName, MEs) of
-	{value,#me{asn1_type=A}} when A#asn1_type.bertype ==
+	{value,#me{asn1_type=A}} when A#asn1_type.bertype =:=
 				      'OCTET STRING' ->
 	    A#asn1_type{implied = true};
-	{value,#me{asn1_type=A}} when A#asn1_type.bertype == 
+	{value,#me{asn1_type=A}} when A#asn1_type.bertype =:= 
 				      'OBJECT IDENTIFIER' ->
 	    A#asn1_type{implied = true};
 	Shit ->
@@ -1011,9 +1013,9 @@ update_trap_objects([_|Traps], MEs, Acc) ->
 translate_me_type(ME) ->
     ME#me{asn1_type = translate_type(ME#me.asn1_type)}.
 
-translate_trap_type(Trap) when record(Trap,notification)->
+translate_trap_type(Trap) when is_record(Trap,notification)->
     translate_trap_type_notif(Trap);
-translate_trap_type(Trap) when record(Trap,trap)->
+translate_trap_type(Trap) when is_record(Trap,trap)->
     translate_trap_type_trap(Trap).
 
 translate_trap_type_notif(Trap)->
@@ -1028,15 +1030,15 @@ translate_trap_type_trap(Trap)->
 		  Trap#trap.oidobjects),
     Trap#trap{oidobjects=NewOidobjects}.
     
-translate_type(ASN1type) when ASN1type#asn1_type.bertype == 'NetworkAddress' ->
+translate_type(ASN1type) when ASN1type#asn1_type.bertype =:= 'NetworkAddress' ->
     ASN1type#asn1_type{bertype = 'IpAddress'};
-translate_type(ASN1type) when ASN1type#asn1_type.bertype == 'Integer32' ->
+translate_type(ASN1type) when ASN1type#asn1_type.bertype =:= 'Integer32' ->
     ASN1type#asn1_type{bertype = 'INTEGER'};
-translate_type(ASN1type) when ASN1type#asn1_type.bertype == 'Counter' ->
+translate_type(ASN1type) when ASN1type#asn1_type.bertype =:= 'Counter' ->
     ASN1type#asn1_type{bertype = 'Counter32'};
-translate_type(ASN1type) when ASN1type#asn1_type.bertype == 'Gauge' ->
+translate_type(ASN1type) when ASN1type#asn1_type.bertype =:= 'Gauge' ->
     ASN1type#asn1_type{bertype = 'Unsigned32'};
-translate_type(ASN1type) when ASN1type#asn1_type.bertype == 'Gauge32' ->
+translate_type(ASN1type) when ASN1type#asn1_type.bertype =:= 'Gauge32' ->
     ASN1type#asn1_type{bertype = 'Unsigned32'};
 translate_type(ASN1type) -> ASN1type.
 
@@ -1047,7 +1049,7 @@ check_notification_group(Name, GroupObjects, Line, Status) ->
     Objects = get_notification_names(Traps),
     check_def(notification, Name, Line, Status, GroupObjects, Objects, Ets).
 
-get_notification_names(Traps) when list(Traps) ->
+get_notification_names(Traps) when is_list(Traps) ->
     [Name || #notification{trapname = Name} <- Traps].
 
 check_object_group(Name, GroupObjects, Line, Status) ->
@@ -1057,7 +1059,7 @@ check_object_group(Name, GroupObjects, Line, Status) ->
 
 get_object_names([])->[];
 get_object_names([#me{access=A, entrytype=T, aliasname=N}|MEs]) 
-  when A =/= 'not-accessible', T =/= 'internal' ->
+  when (A =/= 'not-accessible') andalso (T =/= 'internal') ->
     [N|get_object_names(MEs)];
 get_object_names([_ME|Rest]) ->
     get_object_names(Rest).
@@ -1117,15 +1119,15 @@ check_group_member_status(GroupName, current, Member, MemberStatus) ->
     group_member_status_error(GroupName, current, Member, MemberStatus,
 			      "current");
 check_group_member_status(_GroupName, deprecated, _Member, MemberStatus) 
-  when MemberStatus == deprecated; MemberStatus == current ->
+  when (MemberStatus =:= deprecated) orelse (MemberStatus =:= current) ->
     ok;
 check_group_member_status(GroupName, deprecated, Member, MemberStatus) ->
     group_member_status_error(GroupName, deprecated, Member, MemberStatus,
 			      "deprecated or current");
 check_group_member_status(_GroupName, obsolete, _Member, MemberStatus) 
-  when MemberStatus == obsolete; 
-       MemberStatus == deprecated; 
-       MemberStatus == current ->
+  when (MemberStatus =:= obsolete) orelse
+       (MemberStatus =:= deprecated) orelse
+       (MemberStatus =:= current) ->
     ok;
 check_group_member_status(GroupName, obsolete, Member, MemberStatus) ->
     group_member_status_error(GroupName, obsolete, Member, MemberStatus,
@@ -1165,7 +1167,7 @@ check_group([],_GroupObjects) ->
     t("check_group -> done", []),
     ok;
 check_group([#me{access=A, entrytype=T, aliasname=N}|MEs], GroupObjects) 
-  when A =/= 'not-accessible', T =/= 'internal' ->
+  when (A =/= 'not-accessible') andalso (T =/= 'internal') ->
     t("check_group -> "
       "~n   access:    ~p"
       "~n   entrytype: ~p"
@@ -1241,15 +1243,15 @@ resolve_oid({NameOrOid, X}, MEs) ->
 %% Pre: Fs, MEs are sorted (on Oid) (then we can traverse mib efficiently)
 %%----------------------------------------------------------------------
 insert_mfa(Fs, [ME | MEs], DBName, Mod) 
-  when ME#me.imported == true ->
+  when ME#me.imported =:= true ->
     [ME | insert_mfa(Fs, MEs, DBName, Mod)];
 
 insert_mfa(Fs, [ME | MEs], DBName, Mod) 
-  when ME#me.entrytype == internal ->
+  when ME#me.entrytype =:= internal ->
     [ME | insert_mfa(Fs, MEs, DBName, Mod)];
 
 insert_mfa([X | Fs], [ME | MEs], DBName, Mod) 
-  when ME#me.entrytype == variable ->
+  when ME#me.entrytype =:= variable ->
     {Oid, {M,F,A}} = X,
     case ME#me.oid of
 	Oid ->
@@ -1260,7 +1262,7 @@ insert_mfa([X | Fs], [ME | MEs], DBName, Mod)
     end;
 
 insert_mfa([X | Fs], [TableME | MEs], DBName, Mod) 
-  when TableME#me.entrytype == table ->
+  when TableME#me.entrytype =:= table ->
     {Oid, {M,F,A}} = X,
     {TableMEs, RestMEs} = collect_mes_for_table(TableME, [TableME | MEs]),
     [TableEntryME | ColMEs] = tl(TableMEs),
@@ -1282,11 +1284,11 @@ insert_mfa([X | Fs], [TableME | MEs], DBName, Mod)
     end;
 
 insert_mfa([], [ME|MEs], DBName, Mod) 
-  when ME#me.entrytype == variable ->
+  when ME#me.entrytype =:= variable ->
     [insert_default_mfa(ME, DBName, Mod) | insert_mfa([], MEs, DBName, Mod)];
 
 insert_mfa([], [ME|MEs], DBName, Mod) 
-  when ME#me.entrytype == table ->
+  when ME#me.entrytype =:= table ->
     {TableMEs, RestMEs} = collect_mes_for_table(ME, [ME|MEs]),
     [TableME, _TableEntryME | ColMEs] = TableMEs,
     DefVals = get_defvals(ColMEs),
@@ -1318,7 +1320,7 @@ collect_mes_for_table(TableME, [ME|MEs]) ->
     end.
 
 %% returns: MibEntry with access-functions.
-insert_default_mfa(ME, DBName, undefined) when record(ME, me)->
+insert_default_mfa(ME, DBName, undefined) when is_record(ME, me)->
     case lists:member(no_defs, get(options)) of
         true ->
             error("Missing access function for ~s", [ME#me.aliasname]);
@@ -1327,7 +1329,7 @@ insert_default_mfa(ME, DBName, undefined) when record(ME, me)->
 	    set_default_function(ME, DBName)
     end;
 
-insert_default_mfa(ME, _DBName, Mod) when record(ME, me)->
+insert_default_mfa(ME, _DBName, Mod) when is_record(ME, me)->
     ME#me{mfa = {Mod, ME#me.aliasname, []}};
 
 insert_default_mfa([TableME, EntryME | Columns], DBName, undefined) ->
@@ -1351,19 +1353,20 @@ is_same_table(Oid, TableOid) ->
     lists:prefix(Oid, TableOid).
 
 %% returns false | {value, ME}
-lookup(UniqName, MEs) when atom(UniqName) ->
+lookup(UniqName, MEs) when is_atom(UniqName) ->
     lists:keysearch(UniqName, #me.aliasname, MEs);
-lookup(Oid, MEs) when list(Oid) ->
+lookup(Oid, MEs) when is_list(Oid) ->
     lists:keysearch(Oid, #me.oid, MEs).
 
 search_for_dublettes(PrevME, [ME|_MEs])
-            when PrevME#me.oid==ME#me.oid ->
+            when PrevME#me.oid =:= ME#me.oid ->
     error("Multiple used object with OBJECT IDENTIFIER '~w'. "
 	  "Used in '~w' and '~w'.", [PrevME#me.oid,
 				     PrevME#me.aliasname,
 				     ME#me.aliasname]);
 search_for_dublettes(PrevME, [ME|MEs]) 
-       when PrevME#me.entrytype == variable, ME#me.entrytype == variable ->
+       when ((PrevME#me.entrytype =:= variable) andalso 
+	     (ME#me.entrytype =:= variable)) ->
     case lists:prefix(PrevME#me.oid, ME#me.oid) of
 	true ->
 	    error("Variable '~w' (~w) defined below other "
@@ -1379,7 +1382,7 @@ search_for_dublettes(_PrevME, []) ->
     ok.
 
 
-search_for_oid_conflicts([Rec|Traps],MEs) when record(Rec,notification) ->
+search_for_oid_conflicts([Rec|Traps],MEs) when is_record(Rec,notification) ->
     #notification{oid = Oid, trapname = Name} = Rec,
     case search_for_oid_conflicts1(Oid,MEs) of
 	{error,ME} ->
@@ -1762,7 +1765,7 @@ resolve_oid_defval(ME, OidEts)
   when (ME#me.asn1_type)#asn1_type.bertype == 'OBJECT IDENTIFIER' ->
     #me{aliasname = MEName, assocList = AssocList} = ME,
     case snmpc_misc:assq(defval, AssocList) of
-	{value, DefVal} when atom(DefVal) ->
+	{value, DefVal} when is_atom(DefVal) ->
 	    case ets:lookup(OidEts, DefVal) of
 		[{_, Oid, _}] ->
 		    ME#me{assocList = lists:keyreplace(defval, 1, AssocList,
@@ -1781,20 +1784,20 @@ resolve_oid_defval(ME, _OidEts) ->
 rnd_oid() ->
     [99,99].  %% '99' means "stop computer" in Y2Kish...
 
-error(FormatStr, Data) when list(FormatStr) ->
+error(FormatStr, Data) when is_list(FormatStr) ->
     print_error(FormatStr,Data),
     exit(error).
 
-error(FormatStr, Data, Line) when list(FormatStr) ->
+error(FormatStr, Data, Line) when is_list(FormatStr) ->
     print_error(FormatStr,Data,Line),
     exit(error).
 
-print_error(FormatStr, Data) when list(FormatStr) ->
+print_error(FormatStr, Data) when is_list(FormatStr) ->
     ok = io:format("~s: Error: " ++ FormatStr,[get(filename)|Data]),
     put(errors,yes),
     io:format("~n").
     
-print_error(FormatStr, Data,Line) when list(FormatStr) ->
+print_error(FormatStr, Data,Line) when is_list(FormatStr) ->
     ok = io:format("~s: ~w: Error: " ++ FormatStr,[get(filename), Line |Data]),
     put(errors,yes),
     io:format("~n").

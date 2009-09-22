@@ -151,6 +151,11 @@
 %% Callback event: {@link wxDateEvent}
 -record(wxDate,{type, date}). 
 
+%% @type wxHtmlLink() = #wxHtmlLink{type=wxEventType(),linkInfo=wx:wxHtmlLinkInfo()}.
+%% <dl><dt>EventType:</dt> <dd><em>command_html_link_clicked</em></dd></dl>
+%% Callback event: {@link wxHtmlLinkEvent}
+-record(wxHtmlLink,{type, linkInfo}). 
+
 %% @type wxHelp() = #wxHelp{type=wxEventType()}.
 %% <dl><dt>EventType:</dt> <dd><em>help</em>, <em>detailed_help</em></dd></dl>
 %% Callback event: {@link wxHelpEvent}
@@ -191,6 +196,11 @@
 %% Callback event: {@link wxIconizeEvent}
 -record(wxIconize, {type}). 
 
+%% @type wxAuiNotebook() = #wxAuiNotebook{type=wxEventType(),old_selection=integer(),selection=integer(),drag_source=wxAuiNotebook:wxAuiNotebook()}.
+%% <dl><dt>EventType:</dt> <dd><em>command_auinotebook_page_close</em>, <em>command_auinotebook_page_changed</em>, <em>command_auinotebook_page_changing</em>, <em>command_auinotebook_button</em>, <em>command_auinotebook_begin_drag</em>, <em>command_auinotebook_end_drag</em>, <em>command_auinotebook_drag_motion</em>, <em>command_auinotebook_allow_dnd</em>, <em>command_auinotebook_tab_middle_down</em>, <em>command_auinotebook_tab_middle_up</em>, <em>command_auinotebook_tab_right_down</em>, <em>command_auinotebook_tab_right_up</em>, <em>command_auinotebook_page_closed</em>, <em>command_auinotebook_drag_done</em>, <em>command_auinotebook_bg_dclick</em></dd></dl>
+%% Callback event: {@link wxAuiNotebookEvent}
+-record(wxAuiNotebook,{type, old_selection,selection,drag_source}). 
+
 %% @type wxClose() = #wxClose{type=wxEventType()}.
 %% <dl><dt>EventType:</dt> <dd><em>close_window</em>, <em>end_session</em>, <em>query_end_session</em></dd></dl>
 %% Callback event: {@link wxCloseEvent}
@@ -210,6 +220,11 @@
 %% <dl><dt>EventType:</dt> <dd><em>create</em></dd></dl>
 %% Callback event: {@link wxWindowCreateEvent}
 -record(wxWindowCreate, {type}). 
+
+%% @type wxAuiManager() = #wxAuiManager{type=wxEventType(),manager=wxAuiManager:wxAuiManager(),pane=wxAuiPaneInfo:wxAuiPaneInfo(),button=integer(),veto_flag=bool(),canveto_flag=bool(),dc=wxDC:wxDC()}.
+%% <dl><dt>EventType:</dt> <dd><em>aui_pane_button</em>, <em>aui_pane_close</em>, <em>aui_pane_maximize</em>, <em>aui_pane_restore</em>, <em>aui_render</em>, <em>aui_find_manager</em></dd></dl>
+%% Callback event: {@link wxAuiManagerEvent}
+-record(wxAuiManager,{type, manager,pane,button,veto_flag,canveto_flag,dc}). 
 
 %% @type wxCommand() = #wxCommand{type=wxEventType(),cmdString=string(),commandInt=integer(),extraLong=integer()}.
 %% <dl><dt>EventType:</dt> <dd><em>command_button_clicked</em>, <em>command_checkbox_clicked</em>, <em>command_choice_selected</em>, <em>command_listbox_selected</em>, <em>command_listbox_doubleclicked</em>, <em>command_text_updated</em>, <em>command_text_enter</em>, <em>command_menu_selected</em>, <em>command_slider_updated</em>, <em>command_radiobox_selected</em>, <em>command_radiobutton_selected</em>, <em>command_scrollbar_updated</em>, <em>command_vlbox_selected</em>, <em>command_combobox_selected</em>, <em>command_tool_rclicked</em>, <em>command_tool_enter</em>, <em>command_checklistbox_toggled</em>, <em>command_togglebutton_clicked</em>, <em>command_left_click</em>, <em>command_left_dclick</em>, <em>command_right_click</em>, <em>command_set_focus</em>, <em>command_kill_focus</em>, <em>command_enter</em></dd></dl>
@@ -251,12 +266,15 @@
 %% Callback event: {@link wxTreeEvent}
 -record(wxTree,{type, item,itemOld,pointDrag}). 
 
-%% @type wxEventType() = calendar_day_changed | calendar_doubleclicked | calendar_month_changed | calendar_sel_changed | calendar_weekday_clicked | calendar_year_changed | char | char_hook | child_focus | close_window | command_button_clicked | command_checkbox_clicked | command_checklistbox_toggled | command_choice_selected | command_colourpicker_changed | command_combobox_selected | command_dirpicker_changed | command_enter | command_filepicker_changed | command_fontpicker_changed | command_kill_focus | command_left_click | command_left_dclick | command_list_begin_drag | command_list_begin_label_edit | command_list_begin_rdrag | command_list_cache_hint | command_list_col_begin_drag | command_list_col_click | command_list_col_dragging | command_list_col_end_drag | command_list_col_right_click | command_list_delete_all_items | command_list_delete_item | command_list_end_label_edit | command_list_insert_item | command_list_item_activated | command_list_item_deselected | command_list_item_focused | command_list_item_middle_click | command_list_item_right_click | command_list_item_selected | command_list_key_down | command_listbox_doubleclicked | command_listbox_selected | command_menu_selected | command_notebook_page_changed | command_notebook_page_changing | command_radiobox_selected | command_radiobutton_selected | command_right_click | command_scrollbar_updated | command_set_focus | command_slider_updated | command_spinctrl_updated | command_splitter_doubleclicked | command_splitter_sash_pos_changed | command_splitter_sash_pos_changing | command_splitter_unsplit | command_text_enter | command_text_updated | command_togglebutton_clicked | command_tool_enter | command_tool_rclicked | command_tree_begin_drag | command_tree_begin_label_edit | command_tree_begin_rdrag | command_tree_delete_item | command_tree_end_drag | command_tree_end_label_edit | command_tree_get_info | command_tree_item_activated | command_tree_item_collapsed | command_tree_item_collapsing | command_tree_item_expanded | command_tree_item_expanding | command_tree_item_gettooltip | command_tree_item_menu | command_tree_item_middle_click | command_tree_item_right_click | command_tree_key_down | command_tree_sel_changed | command_tree_sel_changing | command_tree_set_info | command_tree_state_image_click | command_vlbox_selected | context_menu | create | date_changed | destroy | detailed_help | display_changed | end_session | enter_window | erase_background | grid_cell_begin_drag | grid_cell_change | grid_cell_left_click | grid_cell_left_dclick | grid_cell_right_click | grid_cell_right_dclick | grid_col_size | grid_editor_created | grid_editor_hidden | grid_editor_shown | grid_label_left_click | grid_label_left_dclick | grid_label_right_click | grid_label_right_dclick | grid_range_select | grid_row_size | grid_select_cell | help | iconize | idle | joy_button_down | joy_button_up | joy_move | joy_zmove | key_down | key_up | kill_focus | leave_window | left_dclick | left_down | left_up | maximize | menu_close | menu_highlight | menu_open | middle_dclick | middle_down | middle_up | motion | mouse_capture_changed | mousewheel | move | navigation_key | nc_enter_window | nc_leave_window | nc_left_dclick | nc_left_down | nc_left_up | nc_middle_dclick | nc_middle_down | nc_middle_up | nc_motion | nc_paint | nc_right_dclick | nc_right_down | nc_right_up | paint | paint_icon | palette_changed | query_end_session | query_new_palette | right_dclick | right_down | right_up | sash_dragged | scroll_bottom | scroll_changed | scroll_linedown | scroll_lineup | scroll_pagedown | scroll_pageup | scroll_thumbrelease | scroll_thumbtrack | scroll_top | scrollwin_bottom | scrollwin_linedown | scrollwin_lineup | scrollwin_pagedown | scrollwin_pageup | scrollwin_thumbrelease | scrollwin_thumbtrack | scrollwin_top | set_cursor | set_focus | show | size | spin | spin_down | spin_up | stc_autocomp_selection | stc_calltip_click | stc_change | stc_charadded | stc_do_drop | stc_doubleclick | stc_drag_over | stc_dwellend | stc_dwellstart | stc_hotspot_click | stc_hotspot_dclick | stc_key | stc_macrorecord | stc_marginclick | stc_modified | stc_needshown | stc_painted | stc_romodifyattempt | stc_savepointleft | stc_savepointreached | stc_start_drag | stc_styleneeded | stc_updateui | stc_uridropped | stc_userlistselection | stc_zoom | sys_colour_changed | update_ui.
+%% @type wxEventType() = aui_find_manager | aui_pane_button | aui_pane_close | aui_pane_maximize | aui_pane_restore | aui_render | calendar_day_changed | calendar_doubleclicked | calendar_month_changed | calendar_sel_changed | calendar_weekday_clicked | calendar_year_changed | char | char_hook | child_focus | close_window | command_auinotebook_allow_dnd | command_auinotebook_begin_drag | command_auinotebook_bg_dclick | command_auinotebook_button | command_auinotebook_drag_done | command_auinotebook_drag_motion | command_auinotebook_end_drag | command_auinotebook_page_changed | command_auinotebook_page_changing | command_auinotebook_page_close | command_auinotebook_page_closed | command_auinotebook_tab_middle_down | command_auinotebook_tab_middle_up | command_auinotebook_tab_right_down | command_auinotebook_tab_right_up | command_button_clicked | command_checkbox_clicked | command_checklistbox_toggled | command_choice_selected | command_colourpicker_changed | command_combobox_selected | command_dirpicker_changed | command_enter | command_filepicker_changed | command_fontpicker_changed | command_html_link_clicked | command_kill_focus | command_left_click | command_left_dclick | command_list_begin_drag | command_list_begin_label_edit | command_list_begin_rdrag | command_list_cache_hint | command_list_col_begin_drag | command_list_col_click | command_list_col_dragging | command_list_col_end_drag | command_list_col_right_click | command_list_delete_all_items | command_list_delete_item | command_list_end_label_edit | command_list_insert_item | command_list_item_activated | command_list_item_deselected | command_list_item_focused | command_list_item_middle_click | command_list_item_right_click | command_list_item_selected | command_list_key_down | command_listbox_doubleclicked | command_listbox_selected | command_menu_selected | command_notebook_page_changed | command_notebook_page_changing | command_radiobox_selected | command_radiobutton_selected | command_right_click | command_scrollbar_updated | command_set_focus | command_slider_updated | command_spinctrl_updated | command_splitter_doubleclicked | command_splitter_sash_pos_changed | command_splitter_sash_pos_changing | command_splitter_unsplit | command_text_enter | command_text_updated | command_togglebutton_clicked | command_tool_enter | command_tool_rclicked | command_tree_begin_drag | command_tree_begin_label_edit | command_tree_begin_rdrag | command_tree_delete_item | command_tree_end_drag | command_tree_end_label_edit | command_tree_get_info | command_tree_item_activated | command_tree_item_collapsed | command_tree_item_collapsing | command_tree_item_expanded | command_tree_item_expanding | command_tree_item_gettooltip | command_tree_item_menu | command_tree_item_middle_click | command_tree_item_right_click | command_tree_key_down | command_tree_sel_changed | command_tree_sel_changing | command_tree_set_info | command_tree_state_image_click | command_vlbox_selected | context_menu | create | date_changed | destroy | detailed_help | display_changed | end_session | enter_window | erase_background | grid_cell_begin_drag | grid_cell_change | grid_cell_left_click | grid_cell_left_dclick | grid_cell_right_click | grid_cell_right_dclick | grid_col_size | grid_editor_created | grid_editor_hidden | grid_editor_shown | grid_label_left_click | grid_label_left_dclick | grid_label_right_click | grid_label_right_dclick | grid_range_select | grid_row_size | grid_select_cell | help | iconize | idle | joy_button_down | joy_button_up | joy_move | joy_zmove | key_down | key_up | kill_focus | leave_window | left_dclick | left_down | left_up | maximize | menu_close | menu_highlight | menu_open | middle_dclick | middle_down | middle_up | motion | mouse_capture_changed | mousewheel | move | navigation_key | nc_enter_window | nc_leave_window | nc_left_dclick | nc_left_down | nc_left_up | nc_middle_dclick | nc_middle_down | nc_middle_up | nc_motion | nc_paint | nc_right_dclick | nc_right_down | nc_right_up | paint | paint_icon | palette_changed | query_end_session | query_new_palette | right_dclick | right_down | right_up | sash_dragged | scroll_bottom | scroll_changed | scroll_linedown | scroll_lineup | scroll_pagedown | scroll_pageup | scroll_thumbrelease | scroll_thumbtrack | scroll_top | scrollwin_bottom | scrollwin_linedown | scrollwin_lineup | scrollwin_pagedown | scrollwin_pageup | scrollwin_thumbrelease | scrollwin_thumbtrack | scrollwin_top | set_cursor | set_focus | show | size | spin | spin_down | spin_up | stc_autocomp_selection | stc_calltip_click | stc_change | stc_charadded | stc_do_drop | stc_doubleclick | stc_drag_over | stc_dwellend | stc_dwellstart | stc_hotspot_click | stc_hotspot_dclick | stc_key | stc_macrorecord | stc_marginclick | stc_modified | stc_needshown | stc_painted | stc_romodifyattempt | stc_savepointleft | stc_savepointreached | stc_start_drag | stc_styleneeded | stc_updateui | stc_uridropped | stc_userlistselection | stc_zoom | sys_colour_changed | update_ui.
 
 %% Hardcoded Records 
 -record(wxMouseState, {x, y,  %% integer() 
           leftDown, middleDown, rightDown, %% bool() 
           controlDown, shiftDown, altDown, metaDown, cmdDown %% bool()
+        }).
+-record(wxHtmlLinkInfo, { 
+          href, target %% string() 
         }).
 
 %% Hardcoded Defines 
@@ -348,6 +366,8 @@
 -define(wxC2S_HTML_SYNTAX, 4).
 -define(wxC2S_CSS_SYNTAX, 2).
 -define(wxC2S_NAME, 1).
+% From define::From confbase.h 
+-define(wxCONFIG_CASE_SENSITIVE, 0).
 % From define::From datetime.h 
 -define(wxInvalidDateTime, ?wxDefaultDateTime).
 % From define::From dcbuffer.h 
@@ -549,6 +569,11 @@
 -define(wxSPLASH_CENTRE_ON_PARENT, 1).
 % From define::From hash.h 
 -define(wxHASH_SIZE_DEFAULT, 1000).
+% From define::From htmlwin.h 
+-define(wxHW_DEFAULT_STYLE, ?wxHW_SCROLLBAR_AUTO).
+-define(wxHW_NO_SELECTION, 8).
+-define(wxHW_SCROLLBAR_AUTO, 4).
+-define(wxHW_SCROLLBAR_NEVER, 2).
 % From define::From imaglist.h 
 -define(wxIMAGELIST_DRAW_FOCUSED, 8).
 -define(wxIMAGELIST_DRAW_SELECTED, 4).
@@ -2112,33 +2137,33 @@
 -define(wxAuiManager_actionDragToolbarPane, 4).
 -define(wxAuiManager_actionDragFloatingPane, 5).
 % From wxAuiPaneInfo::wxAuiPaneState 
--define(wxAuiPaneInfo_optionFloating, 0).
--define(wxAuiPaneInfo_optionHidden, 1).
--define(wxAuiPaneInfo_optionLeftDockable, 2).
--define(wxAuiPaneInfo_optionRightDockable, 3).
--define(wxAuiPaneInfo_optionTopDockable, 4).
--define(wxAuiPaneInfo_optionBottomDockable, 5).
--define(wxAuiPaneInfo_optionFloatable, 6).
--define(wxAuiPaneInfo_optionMovable, 7).
--define(wxAuiPaneInfo_optionResizable, 8).
--define(wxAuiPaneInfo_optionPaneBorder, 9).
--define(wxAuiPaneInfo_optionCaption, 10).
--define(wxAuiPaneInfo_optionGripper, 11).
--define(wxAuiPaneInfo_optionDestroyOnClose, 12).
--define(wxAuiPaneInfo_optionToolbar, 13).
--define(wxAuiPaneInfo_optionActive, 14).
--define(wxAuiPaneInfo_optionGripperTop, 15).
--define(wxAuiPaneInfo_optionMaximized, 16).
--define(wxAuiPaneInfo_optionDockFixed, 17).
--define(wxAuiPaneInfo_buttonClose, 18).
--define(wxAuiPaneInfo_buttonMaximize, 19).
--define(wxAuiPaneInfo_buttonMinimize, 20).
--define(wxAuiPaneInfo_buttonPin, 21).
--define(wxAuiPaneInfo_buttonCustom1, 22).
--define(wxAuiPaneInfo_buttonCustom2, 23).
--define(wxAuiPaneInfo_buttonCustom3, 24).
--define(wxAuiPaneInfo_savedHiddenState, 25).
--define(wxAuiPaneInfo_actionPane, 26).
+-define(wxAuiPaneInfo_optionFloating, 1).
+-define(wxAuiPaneInfo_optionHidden, 2).
+-define(wxAuiPaneInfo_optionLeftDockable, 4).
+-define(wxAuiPaneInfo_optionRightDockable, 8).
+-define(wxAuiPaneInfo_optionTopDockable, 16).
+-define(wxAuiPaneInfo_optionBottomDockable, 32).
+-define(wxAuiPaneInfo_optionFloatable, 64).
+-define(wxAuiPaneInfo_optionMovable, 128).
+-define(wxAuiPaneInfo_optionResizable, 256).
+-define(wxAuiPaneInfo_optionPaneBorder, 512).
+-define(wxAuiPaneInfo_optionCaption, 1024).
+-define(wxAuiPaneInfo_optionGripper, 2048).
+-define(wxAuiPaneInfo_optionDestroyOnClose, 4096).
+-define(wxAuiPaneInfo_optionToolbar, 8192).
+-define(wxAuiPaneInfo_optionActive, 16384).
+-define(wxAuiPaneInfo_optionGripperTop, 32768).
+-define(wxAuiPaneInfo_optionMaximized, 65536).
+-define(wxAuiPaneInfo_optionDockFixed, 131072).
+-define(wxAuiPaneInfo_buttonClose, 2097152).
+-define(wxAuiPaneInfo_buttonMaximize, 4194304).
+-define(wxAuiPaneInfo_buttonMinimize, 8388608).
+-define(wxAuiPaneInfo_buttonPin, 16777216).
+-define(wxAuiPaneInfo_buttonCustom1, 67108864).
+-define(wxAuiPaneInfo_buttonCustom2, 134217728).
+-define(wxAuiPaneInfo_buttonCustom3, 268435456).
+-define(wxAuiPaneInfo_savedHiddenState, 1073741824).
+-define(wxAuiPaneInfo_actionPane, 2147483648).
 % From wxBitmap::Representation 
 -define(wxBitmap_Pixmap, 0).
 -define(wxBitmap_Pixbuf, 1).
@@ -2290,7 +2315,7 @@
 -define(wxDateTime_AKST, ?GMT_9).
 -define(wxDateTime_AKDT, ?GMT_8).
 -define(wxDateTime_A_WST, ?GMT8).
--define(wxDateTime_A_CST, (?GMT13 bor ?+ bor ?1)).
+-define(wxDateTime_A_CST, ?GMT13+1).
 -define(wxDateTime_A_EST, ?GMT10).
 -define(wxDateTime_A_ESST, ?GMT11).
 -define(wxDateTime_NZST, ?GMT12).
@@ -2354,6 +2379,9 @@
 % From wxHtmlEasyPrinting::FontMode 
 -define(wxHtmlEasyPrinting_FontMode_Explicit, 0).
 -define(wxHtmlEasyPrinting_FontMode_Standard, 1).
+% From wxHtmlWindow::ClipboardType 
+-define(wxHtmlWindow_Primary, 0).
+-define(wxHtmlWindow_Secondary, 1).
 % From class wxListbook 
 -define(wxListbook_SetSelection_SendEvent, 1).
 % From class wxNavigationKeyEvent 
@@ -2440,12 +2468,12 @@
 -define(wxFONTFLAG_DEFAULT, 0).
 -define(wxFONTFLAG_ITALIC, 1).
 -define(wxFONTFLAG_SLANT, 2).
--define(wxFONTFLAG_LIGHT, 3).
--define(wxFONTFLAG_BOLD, 4).
--define(wxFONTFLAG_ANTIALIASED, 5).
--define(wxFONTFLAG_NOT_ANTIALIASED, 6).
--define(wxFONTFLAG_UNDERLINED, 7).
--define(wxFONTFLAG_STRIKETHROUGH, 8).
+-define(wxFONTFLAG_LIGHT, 4).
+-define(wxFONTFLAG_BOLD, 8).
+-define(wxFONTFLAG_ANTIALIASED, 16).
+-define(wxFONTFLAG_NOT_ANTIALIASED, 32).
+-define(wxFONTFLAG_UNDERLINED, 64).
+-define(wxFONTFLAG_STRIKETHROUGH, 128).
 -define(wxFONTFLAG_MASK, (?wxFONTFLAG_ITALIC bor ?wxFONTFLAG_SLANT bor ?wxFONTFLAG_LIGHT bor ?wxFONTFLAG_BOLD bor ?wxFONTFLAG_ANTIALIASED bor ?wxFONTFLAG_NOT_ANTIALIASED bor ?wxFONTFLAG_UNDERLINED bor ?wxFONTFLAG_STRIKETHROUGH)).
 -define(wxSPLIT_DRAG_NONE, 0).
 -define(wxSPLIT_DRAG_DRAGGING, 1).
@@ -2799,38 +2827,39 @@
 -define(wxAUI_DOCK_CENTER, 5).
 -define(wxAUI_DOCK_CENTRE, ?wxAUI_DOCK_CENTER).
 % Type wxAuiManagerOption 
--define(wxAUI_MGR_ALLOW_FLOATING, 0).
--define(wxAUI_MGR_ALLOW_ACTIVE_PANE, 1).
--define(wxAUI_MGR_TRANSPARENT_DRAG, 2).
--define(wxAUI_MGR_TRANSPARENT_HINT, 3).
--define(wxAUI_MGR_VENETIAN_BLINDS_HINT, 4).
--define(wxAUI_MGR_RECTANGLE_HINT, 5).
--define(wxAUI_MGR_HINT_FADE, 6).
--define(wxAUI_MGR_NO_VENETIAN_BLINDS_FADE, 7).
+-define(wxAUI_MGR_ALLOW_FLOATING, 1).
+-define(wxAUI_MGR_ALLOW_ACTIVE_PANE, 2).
+-define(wxAUI_MGR_TRANSPARENT_DRAG, 4).
+-define(wxAUI_MGR_TRANSPARENT_HINT, 8).
+-define(wxAUI_MGR_VENETIAN_BLINDS_HINT, 16).
+-define(wxAUI_MGR_RECTANGLE_HINT, 32).
+-define(wxAUI_MGR_HINT_FADE, 64).
+-define(wxAUI_MGR_NO_VENETIAN_BLINDS_FADE, 128).
+-define(wxAUI_MGR_LIVE_RESIZE, 256).
 -define(wxAUI_MGR_DEFAULT, (?wxAUI_MGR_ALLOW_FLOATING bor ?wxAUI_MGR_TRANSPARENT_HINT bor ?wxAUI_MGR_HINT_FADE bor ?wxAUI_MGR_NO_VENETIAN_BLINDS_FADE)).
 % Type wxAuiNotebookOption 
--define(wxAUI_NB_TOP, 0).
--define(wxAUI_NB_LEFT, 1).
--define(wxAUI_NB_RIGHT, 2).
--define(wxAUI_NB_BOTTOM, 3).
--define(wxAUI_NB_TAB_SPLIT, 4).
--define(wxAUI_NB_TAB_MOVE, 5).
--define(wxAUI_NB_TAB_EXTERNAL_MOVE, 6).
--define(wxAUI_NB_TAB_FIXED_WIDTH, 7).
--define(wxAUI_NB_SCROLL_BUTTONS, 8).
--define(wxAUI_NB_WINDOWLIST_BUTTON, 9).
--define(wxAUI_NB_CLOSE_BUTTON, 10).
--define(wxAUI_NB_CLOSE_ON_ACTIVE_TAB, 11).
--define(wxAUI_NB_CLOSE_ON_ALL_TABS, 12).
--define(wxAUI_NB_MIDDLE_CLICK_CLOSE, 13).
+-define(wxAUI_NB_TOP, 1).
+-define(wxAUI_NB_LEFT, 2).
+-define(wxAUI_NB_RIGHT, 4).
+-define(wxAUI_NB_BOTTOM, 8).
+-define(wxAUI_NB_TAB_SPLIT, 16).
+-define(wxAUI_NB_TAB_MOVE, 32).
+-define(wxAUI_NB_TAB_EXTERNAL_MOVE, 64).
+-define(wxAUI_NB_TAB_FIXED_WIDTH, 128).
+-define(wxAUI_NB_SCROLL_BUTTONS, 256).
+-define(wxAUI_NB_WINDOWLIST_BUTTON, 512).
+-define(wxAUI_NB_CLOSE_BUTTON, 1024).
+-define(wxAUI_NB_CLOSE_ON_ACTIVE_TAB, 2048).
+-define(wxAUI_NB_CLOSE_ON_ALL_TABS, 4096).
+-define(wxAUI_NB_MIDDLE_CLICK_CLOSE, 8192).
 -define(wxAUI_NB_DEFAULT_STYLE, (?wxAUI_NB_TOP bor ?wxAUI_NB_TAB_SPLIT bor ?wxAUI_NB_TAB_MOVE bor ?wxAUI_NB_SCROLL_BUTTONS bor ?wxAUI_NB_CLOSE_ON_ACTIVE_TAB bor ?wxAUI_NB_MIDDLE_CLICK_CLOSE)).
 % Type wxAuiPaneButtonState 
 -define(wxAUI_BUTTON_STATE_NORMAL, 0).
--define(wxAUI_BUTTON_STATE_HOVER, 1).
--define(wxAUI_BUTTON_STATE_PRESSED, 2).
--define(wxAUI_BUTTON_STATE_DISABLED, 3).
--define(wxAUI_BUTTON_STATE_HIDDEN, 4).
--define(wxAUI_BUTTON_STATE_CHECKED, 5).
+-define(wxAUI_BUTTON_STATE_HOVER, 2).
+-define(wxAUI_BUTTON_STATE_PRESSED, 4).
+-define(wxAUI_BUTTON_STATE_DISABLED, 8).
+-define(wxAUI_BUTTON_STATE_HIDDEN, 16).
+-define(wxAUI_BUTTON_STATE_CHECKED, 32).
 % Type wxAuiPaneDockArtGradients 
 -define(wxAUI_GRADIENT_NONE, 0).
 -define(wxAUI_GRADIENT_VERTICAL, 1).
@@ -3131,6 +3160,10 @@
 -define(wxHT_WINDOW_HORZ_SCROLLBAR, (?wxHT_NOWHERE+12)).
 -define(wxHT_WINDOW_CORNER, (?wxHT_NOWHERE+13)).
 -define(wxHT_MAX, (?wxHT_NOWHERE+14)).
+% Type wxHtmlOpeningStatus 
+-define(wxHTML_OPEN, 0).
+-define(wxHTML_BLOCK, 1).
+-define(wxHTML_REDIRECT, 2).
 % Type wxIdleMode 
 -define(wxIDLE_PROCESS_ALL, 0).
 -define(wxIDLE_PROCESS_SPECIFIED, 1).
@@ -3548,6 +3581,7 @@
 -define(wxEXPAND, ?wxGROW).
 -define(wxSHAPED, 16384).
 -define(wxFIXED_MINSIZE, 32768).
+-define(wxRESERVE_SPACE_EVEN_IF_HIDDEN, 2).
 -define(wxTILE, 49152).
 -define(wxADJUST_MINSIZE, 0).
 % Type wxSystemColour 
@@ -3588,7 +3622,8 @@
 -define(wxSYS_COLOUR_GRADIENTINACTIVECAPTION, (?wxSYS_COLOUR_BTNHIGHLIGHT+8)).
 -define(wxSYS_COLOUR_MENUHILIGHT, (?wxSYS_COLOUR_BTNHIGHLIGHT+9)).
 -define(wxSYS_COLOUR_MENUBAR, (?wxSYS_COLOUR_BTNHIGHLIGHT+10)).
--define(wxSYS_COLOUR_MAX, (?wxSYS_COLOUR_BTNHIGHLIGHT+11)).
+-define(wxSYS_COLOUR_LISTBOXTEXT, (?wxSYS_COLOUR_BTNHIGHLIGHT+11)).
+-define(wxSYS_COLOUR_MAX, (?wxSYS_COLOUR_BTNHIGHLIGHT+12)).
 % Type wxSystemFeature 
 -define(wxSYS_CAN_DRAW_FRAME_DECORATIONS, 1).
 -define(wxSYS_CAN_ICONIZE_FRAME, 2).

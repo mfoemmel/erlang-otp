@@ -948,9 +948,9 @@ verify_engine_id(Name) -> {ok, Name}.
 
 verify_max_message_size(MMS) ->
     case (catch list_to_integer(MMS)) of
-	I when integer(I), I >= 484 ->
+	I when is_integer(I) andalso (I >= 484) ->
 	    {ok, I};
-	I when integer(I) ->
+	I when is_integer(I) ->
 	    {error, "invalid max message size (must be atleast 484): " ++ MMS};
 	_ ->
 	    {error, "invalid max message size: " ++ MMS}
@@ -959,7 +959,7 @@ verify_max_message_size(MMS) ->
  
 verify_port_number(P) ->
     case (catch list_to_integer(P)) of
-	N when integer(N), N > 0 ->
+	N when is_integer(N) andalso (N > 0) ->
 	    {ok, N};
 	_ ->
 	    {error, "invalid port number: " ++ P}
@@ -1078,7 +1078,7 @@ verify_dets_auto_save("infinity") ->
     {ok, infinity};
 verify_dets_auto_save(I0) ->
     case (catch list_to_integer(I0)) of
-	I when integer(I), I > 0 ->
+	I when is_integer(I) andalso (I > 0) ->
 	    {ok, I};
 	_ -> 
 	    {error, "invalid auto save timeout time: " ++ I0}
@@ -1088,7 +1088,7 @@ verify_dets_auto_save(I0) ->
 %% I know that this is a little of the edge, but...
 verify_module(M0) ->
     case (catch list_to_atom(M0)) of
-	M when atom(M) ->
+	M when is_atom(M) ->
 	    {ok, M};
 	_ ->
 	    {error, "invalid module: " ++ M0}
@@ -1113,7 +1113,7 @@ verify_bool(B) ->
 
 verify_timeout(T0) ->
     case (catch list_to_integer(T0)) of
-	T when integer(T), T > 0 ->
+	T when is_integer(T) andalso (T > 0) ->
 	    {ok, T};
 	_ ->
 	    {error, "invalid timeout time: '" ++ T0 ++ "'"}
@@ -1140,7 +1140,7 @@ verify_retransmission_timeout([${|R] = Timer) ->
     end;
 verify_retransmission_timeout(T0) ->
     case (catch list_to_integer(T0)) of
-	T when integer(T), T > 0 ->
+	T when is_integer(T) andalso (T > 0) ->
 	    {ok, T};
 	_ ->
 	    {error, "invalid timeout time: '" ++ T0 ++ "'"}
@@ -1148,9 +1148,9 @@ verify_retransmission_timeout(T0) ->
 
 incr_timer_value(Str, Min) ->
     case (catch list_to_integer(Str)) of
-	I when integer(I), I >= Min ->
+	I when is_integer(I) andalso (I >= Min) ->
 	    I;
-	I when integer(I) ->
+	I when is_integer(I) ->
 	    E = lists:flatten(io_lib:format("invalid incremental timer value "
 					    "(min value is ~w): " ++ Str, 
 					    [Min])),
@@ -1183,7 +1183,7 @@ verify_atl_repair(R) ->
 
 verify_pos_integer(I0) ->
     case (catch list_to_integer(I0)) of
-	I when integer(I), I > 0 ->
+	I when is_integer(I) andalso (I > 0) ->
 	    {ok, I};
 	_ ->
 	    {error, "invalid integer value: " ++ I0}
@@ -1194,7 +1194,7 @@ verify_netif_req_limit("infinity") ->
     {ok, infinity};
 verify_netif_req_limit(I0) ->
     case (catch list_to_integer(I0)) of
-	I when integer(I), I > 0 ->
+	I when is_integer(I) andalso (I > 0) ->
 	    {ok, I};
 	_ ->
 	    {error, "invalid network interface request limit: " ++ I0}
@@ -1210,7 +1210,7 @@ verify_netif_recbuf_or_sndbuf("default", _) ->
     {ok, default};
 verify_netif_recbuf_or_sndbuf(I0, Buf) ->
     case (catch list_to_integer(I0)) of
-	I when integer(I), I > 0 ->
+	I when is_integer(I) andalso (I > 0) ->
 	    {ok, I};
 	_ ->
 	    {error, "invalid network interface " ++ Buf ++ " size: " ++ I0}
@@ -1230,7 +1230,7 @@ verify_irb_user("default") ->
     {ok, default};
 verify_irb_user(TO) ->
     case (catch list_to_integer(TO)) of
-	I when integer(I), I > 0 ->
+	I when is_integer(I) andalso (I > 0) ->
 	    {ok, I*1000}; % Time is given in seconds
 	_ ->
 	    {error, "invalid IRB GC time: " ++ TO}
@@ -1238,14 +1238,14 @@ verify_irb_user(TO) ->
     
 
 
-verify_user_id(UserId) when list(UserId) ->
+verify_user_id(UserId) when is_list(UserId) ->
     case (catch list_to_atom(UserId)) of
-	A when atom(A) ->
+	A when is_atom(A) ->
 	    {ok, A};
 	_ ->
 	    {error, "invalid user id: " ++ UserId}
     end;
-verify_user_id(UserId) when atom(UserId) ->
+verify_user_id(UserId) when is_atom(UserId) ->
     {ok, UserId};
 verify_user_id(UserId) ->
     E = lists:flatten(io_lib:format("invalid user id: ~p", [UserId])),
@@ -1345,7 +1345,7 @@ verify_usm_priv_aes_key(Key) ->
 
 verify_usm_key(_What, "\"\"", _ExpectLength) ->
     {ok, ""};
-verify_usm_key(_What, Key, ExpectLength) when length(Key) == ExpectLength ->
+verify_usm_key(_What, Key, ExpectLength) when length(Key) =:= ExpectLength ->
     {ok, Key};
 verify_usm_key(What, [$[|RestKey] = Key0, ExpectLength) ->
     case lists:reverse(RestKey) of
@@ -1361,7 +1361,7 @@ verify_usm_key(What, Key, ExpectLength) ->
     
 verify_usm_key2(What, Key0, ExpectLength) ->
     case string:tokens(Key0, [$,]) of
-	Key when length(Key) == ExpectLength ->
+	Key when length(Key) =:= ExpectLength ->
 	    convert_usm_key(Key, []);
 	_ ->
 	    {error, "invalid " ++ What ++ " key length: " ++ Key0}
@@ -1371,7 +1371,7 @@ convert_usm_key([], Acc) ->
     {ok, lists:reverse(Acc)};
 convert_usm_key([I|Is], Acc) ->
     case (catch list_to_integer(I)) of
-	Int when integer(Int) ->
+	Int when is_integer(Int) ->
 	    convert_usm_key(Is, [Int|Acc]);
 	_Err ->
 	    {error, "invalid key number: " ++ I}
@@ -1394,16 +1394,16 @@ convert_usm_key([I|Is], Acc) ->
 
 print_q(Q, mandatory) ->
     io:format(Q ++ " ",[]);
-print_q(Q, Default) when list(Default) ->
+print_q(Q, Default) when is_list(Default) ->
     io:format(Q ++ " [~s] ",[Default]).
 
 %% Defval = string() | mandatory
-ask(Q, Default, Verify) when list(Q), function(Verify) ->
+ask(Q, Default, Verify) when is_list(Q) andalso is_function(Verify) ->
     print_q(Q, Default),
     PrelAnsw = io:get_line(''),
     Answer = 
 	case remove_newline(PrelAnsw) of
-	    "" when Default /= mandatory -> Default;
+	    "" when Default =/= mandatory -> Default;
 	    "" -> ask(Q, Default, Verify);
 	    A -> A
     end,
@@ -1420,7 +1420,7 @@ host() ->
     case (catch inet:gethostname()) of
 	{ok, Name} ->
 	    case (catch inet:getaddr(Name, inet)) of
-		{ok, Addr} when tuple(Addr) ->
+		{ok, Addr} when is_tuple(Addr) ->
 		    lists:flatten(
 		      io_lib:format("~w.~w.~w.~w", tuple_to_list(Addr)));
 		_ ->
@@ -1468,8 +1468,13 @@ remove_newline(Str) ->
 %%----------------------------------------------------------------------
 write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, 
 		       AgentIP, AgentUDP, SysName) 
-  when list(Dir), list(Vsns), list(ManagerIP), integer(TrapUdp), 
-       list(AgentIP), integer(AgentUDP), list(SysName) ->
+  when is_list(Dir) andalso 
+       is_list(Vsns) andalso 
+       is_list(ManagerIP) andalso 
+       is_integer(TrapUdp) andalso 
+       is_list(AgentIP) andalso 
+       is_integer(AgentUDP) andalso 
+       is_list(SysName) ->
     write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP,
 			   SysName, "trap", none, "", "agentEngine", 484).
 
@@ -2222,7 +2227,10 @@ header() ->
 
 
 write_config_file(Dir, FileName, Verify, Write) 
-  when list(Dir), list(FileName), function(Verify), function(Write) ->
+  when (is_list(Dir) andalso 
+	is_list(FileName) andalso 
+	is_function(Verify) andalso 
+	is_function(Write)) ->
     (catch do_write_config_file(Dir, FileName, Verify, Write)).
 
 do_write_config_file(Dir, FileName, Verify, Write) ->
@@ -2238,7 +2246,10 @@ do_write_config_file(Dir, FileName, Verify, Write) ->
 
 
 append_config_file(Dir, FileName, Verify, Write) 
-  when list(Dir), list(FileName), function(Verify), function(Write) ->
+  when (is_list(Dir) andalso 
+	is_list(FileName) andalso 
+	is_function(Verify) andalso 
+	is_function(Write)) ->
     (catch do_append_config_file(Dir, FileName, Verify, Write)).
 
 do_append_config_file(Dir, FileName, Verify, Write) ->
@@ -2255,7 +2266,7 @@ do_append_config_file(Dir, FileName, Verify, Write) ->
 
 
 read_config_file(Dir, FileName, Verify) 
-  when list(Dir), list(FileName), function(Verify) ->
+  when is_list(Dir) andalso is_list(FileName) andalso is_function(Verify) ->
     (catch do_read_config_file(Dir, FileName, Verify)).
 
 do_read_config_file(Dir, FileName, Verify) ->

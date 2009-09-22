@@ -19,8 +19,8 @@
 %%
 
 {application, dialyzer,
- [{description, "DIscrepancy AnaLYZer of ERlang programs, version 1.9.2"},
-  {vsn, "1.9.2"},
+ [{description, "DIscrepancy AnaLYZer of ERlang programs, version 2.0.0"},
+  {vsn, "2.0.0"},
   {modules, [dialyzer,
 	     dialyzer_analysis_callgraph,
 	     dialyzer_callgraph,

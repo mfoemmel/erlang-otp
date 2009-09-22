@@ -76,7 +76,8 @@ types() ->
      {"GLdouble",  "64/native-float"},    % double precision float 
      {"GLclampd",  "64/native-float"},    % double precision float in [0,1] 
      {"GLsizeiptr","64/native-unsigned"}, % 64 bits int, convert on c-side
-     {"GLintptr",  "64/native-unsigned"}, % 64 bits int, convert on c-side
+     {"GLintptr",  "64/native-unsigned"}, % 64 bits int, convert on c-sidew
+     {"GLUquadric", "64/native-unsigned"},% Handle 32bits aargh 64bits on mac64
      {"GLhandleARB","64/native-unsigned"} % Handle 32bits aargh 64bits on mac64
     ].
 
@@ -119,14 +120,14 @@ glu_api(Fs) ->
     w("%% See <a href=\"http://www.opengl.org/sdk/docs/man/\">www.opengl.org</a>~n",[]),
     w("%%~n", []),
     w("%% Booleans are represented by integers 0 and 1. ~n~n", []),
-%%    w("%% @type wx_mem(). see wx.erl on memory allocation functions~n", []),
+    w("%% @type wx_mem(). see wx.erl on memory allocation functions~n", []),
     w("%% @type enum().   An integer defined in gl.hrl~n", []),    
     w("%% @type offset(). An integer which is an offset in an array~n", []),
     w("%% @type clamp().  A float clamped between 0.0 - 1.0 ~n~n", []),
 
     w("-module(glu).~n",[]),    
     w("-compile(inline).~n", []),
-%%  w("-include(\"wxe.hrl\").~n", []),
+    w("-include(\"wxe.hrl\").~n", []),
     [w("-define(~s,~s).~n", [GL,Erl]) || {GL,Erl} <- types()],
 
     Exp = fun(F) -> gen_export(F) end,
@@ -229,7 +230,10 @@ gen_func(_F=#func{name=Name,type=T,params=As,id=MId}) ->
 func_arg(#arg{in=In,where=W,name=Name,type=Type}) 
   when In =/= false, W =/= c ->
     case Type of
-	#type{single={tuple,TSz}} when is_integer(TSz) ->
+	#type{single={tuple,TSz0}} when TSz0 =/= undefined ->
+	    TSz = if is_integer(TSz0) -> TSz0;
+		     TSz0 =:= matrix12 -> 12
+		  end,
 	    [NameId|_] = erl_arg_name(Name),
 	    Names = [[NameId|integer_to_list(Id)] || Id <- lists:seq(1,TSz)],
 	    "{" ++ args(fun(ElName) -> ElName end, ",", Names) ++ "}";
@@ -255,7 +259,12 @@ doc_return_types2(T, Ps) ->
     "{" ++ doc_arg_type2(T) ++ "," ++ args(fun doc_arg_type/1,",",Ps) ++ "}".
 
 doc_arg_type(#arg{name=Name,type=T}) ->
-    erl_arg_name(Name) ++ "::" ++ doc_arg_type2(T).
+    try  
+	erl_arg_name(Name) ++ "::" ++ doc_arg_type2(T)
+    catch _:Error ->
+	    io:format("Error: ~p ~p~n~p~n",[Name, Error, erlang:get_stacktrace()]),
+	    exit(error)
+    end.
 
 doc_arg_type2(T=#type{single=true}) ->
     doc_arg_type3(T);
@@ -349,6 +358,16 @@ marshal_arg(#type{size=BSz,name=Type,single={tuple,TSz}},Name,A0)
     All = args(fun(ElName) -> ElName ++ ":?" ++ Type end, ",", Names),
     align(BSz,TSz,A0,All);
 
+marshal_arg(#type{size=BSz,name=Type,single={tuple,matrix12}},Name,A0) ->
+    NameId = hd(Name),    
+    Ns0 = [[NameId|integer_to_list(Id)] || Id <- lists:seq(1,3)],
+    Ns1 = [[NameId|integer_to_list(Id)] || Id <- lists:seq(4,6)],
+    Ns2 = [[NameId|integer_to_list(Id)] || Id <- lists:seq(7,9)],
+    Ns3 = [[NameId|integer_to_list(Id)] || Id <- lists:seq(10,12)],
+    All = args(fun(ElName) -> ElName ++ ":?" ++ Type end, ",",
+	       Ns0 ++ ["0"] ++ Ns1 ++ ["0"] ++ Ns2 ++ ["0"] ++ Ns3 ++ ["1"]),
+    align(BSz,16,A0,All);
+
 marshal_arg(#type{size=Sz,name=Type,base=Base,single=list},Name,A0) 
   when Base =:= float; Base =:= int ->
     KeepA = case Sz of 8 -> "0:32,"; _ -> "" end,
@@ -363,6 +382,9 @@ marshal_arg(#type{base=guard_int},Name,A0) ->
 marshal_arg(#type{size=Sz,name=Type,single=true,
 		  by_val=true,ref=undefined},Name,A0) ->
     align(Sz,A0,Name ++ ":?" ++ Type);
+
+marshal_arg(#type{size=8,name="GLUquadric"=Type},Name,A0) ->
+    align(8,A0,Name ++ ":?" ++ Type);
 
 marshal_arg(#type{base=string,single=true,ref={pointer,1}},Name,A0) ->
     Str = "(list_to_binary(["++Name++"|[0]]))/binary", % Null terminate
@@ -560,17 +582,8 @@ gen_debug(GL, GLU) ->
     erl_copyright(),
     w("%% This file is generated DO NOT EDIT~n~n", []),
     w("gldebug_table() -> ~n[~n", []),
-    P = fun(F, Mod) ->
-		case get(F) of
-		    #func{alt={vector,_VecPos,_Vec}} -> ok;
-		    #func{id=Id, name=Method} ->
-			w(" {~p, {~s, ~s, 0}},~n", [Id, Mod, erl_func_name(Method)]);
-		    _Other ->  
-			io:format("F= ~p => ~p~n", [F, _Other])			
-		end
-	end,
     [printd(F,gl)  || F <- GL],
-    [P(F,glu) || F <- GLU],
+    [printd(F,glu) || F <- GLU],
     w(" {-1, {mod, func, -1}}~n",[]),
     w("].~n~n", []),
     close().
@@ -582,6 +595,7 @@ printd([],_) -> ok;
 printd(F,Mod) ->
     case get(F) of
 	#func{alt={vector,_VecPos,_Vec}} -> ok;
+	#func{where=erl} -> ok;
 	#func{id=Id, name=Method} ->
 	    w(" {~p, {~s, ~s, 0}},~n", [Id, Mod, erl_func_name(Method)]);
 	_Other ->  

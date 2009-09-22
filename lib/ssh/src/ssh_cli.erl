@@ -42,7 +42,8 @@
 	  pty,
 	  group,
 	  buf,
-	  shell
+	  shell,
+	  exec
 	 }).
 
 %%====================================================================
@@ -54,6 +55,8 @@
 %%                        
 %% Description: Initiates the CLI
 %%--------------------------------------------------------------------
+init([Shell, Exec]) ->
+    {ok, #state{shell = Shell, exec = Exec}};
 init([Shell]) ->
     {ok, #state{shell = Shell}}.
 
@@ -109,7 +112,7 @@ handle_ssh_msg({ssh_cm, ConnectionManager,
 			cm = ConnectionManager}};
 
 handle_ssh_msg({ssh_cm, ConnectionManager, 
-		{exec, ChannelId, WantReply, Cmd}}, State) ->
+		{exec, ChannelId, WantReply, Cmd}}, #state{exec=undefined} = State) ->
     {Reply, Status} = exec(Cmd),
     write_chars(ConnectionManager, 
 		ChannelId, io_lib:format("~p\n", [Reply])),
@@ -118,6 +121,13 @@ handle_ssh_msg({ssh_cm, ConnectionManager,
     ssh_connection:exit_status(ConnectionManager, ChannelId, Status),
     ssh_connection:send_eof(ConnectionManager, ChannelId),
     {stop, ChannelId, State#state{channel = ChannelId, cm = ConnectionManager}};
+handle_ssh_msg({ssh_cm, ConnectionManager,
+		{exec, ChannelId, WantReply, Cmd}}, State) ->
+    NewState = start_shell(ConnectionManager, Cmd, State),
+    ssh_connection:reply_request(ConnectionManager, WantReply,
+				 success, ChannelId),
+    {ok, NewState#state{channel = ChannelId,
+			cm = ConnectionManager}};
 
 handle_ssh_msg({ssh_cm, _ConnectionManager, {eof, _ChannelId}}, State) ->
     {ok, State};
@@ -429,6 +439,11 @@ start_shell(ConnectionManager, State) ->
     Echo = get_echo(State#state.pty),
     Group = group:start(self(), ShellFun, [{echo, Echo}]),
     State#state{group = Group, buf = empty_buf()}.
+
+start_shell(_ConnectionManager, Cmd, #state{exec={M, F, A}} = State) ->
+    Group = group:start(self(), {M, F, A++[Cmd]}, [{echo,false}]),
+    State#state{group = Group, buf = empty_buf()}.
+
 
 % Pty can be undefined if the client never sets any pty options before
 % starting the shell.

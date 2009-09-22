@@ -189,7 +189,7 @@ sent_timer_late_reply(suite) ->
     [];
 sent_timer_late_reply(doc) ->
     "...";
-sent_timer_late_reply(Config) when list(Config) ->
+sent_timer_late_reply(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        sent_timer_late_reply),
@@ -264,7 +264,7 @@ sent_timer_exceeded(suite) ->
     [];
 sent_timer_exceeded(doc) ->
     "...";
-sent_timer_exceeded(Config) when list(Config) ->
+sent_timer_exceeded(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        sent_timer_exceeded),
@@ -337,7 +337,7 @@ sent_timer_exceeded_long(suite) ->
     [];
 sent_timer_exceeded_long(doc) ->
     "...";
-sent_timer_exceeded_long(Config) when list(Config) ->
+sent_timer_exceeded_long(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        sent_timer_exceeded_long),
@@ -413,7 +413,7 @@ sent_resend_late_reply(suite) ->
     [];
 sent_resend_late_reply(doc) ->
     "...";
-sent_resend_late_reply(Config) when list(Config) ->
+sent_resend_late_reply(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        sent_resend_late_reply),
@@ -496,7 +496,7 @@ sent_resend_late_reply(suite) ->
     [];
 sent_resend_late_reply(doc) ->
     "...";
-sent_resend_late_reply(Config) when list(Config) ->
+sent_resend_late_reply(Config) when is_list(Config) ->
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
 -endif.
@@ -513,7 +513,7 @@ sent_resend_exceeded(suite) ->
     [];
 sent_resend_exceeded(doc) ->
     "...";
-sent_resend_exceeded(Config) when list(Config) ->
+sent_resend_exceeded(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        sent_resend_exceeded),
@@ -592,7 +592,7 @@ sent_resend_exceeded(suite) ->
     [];
 sent_resend_exceeded(doc) ->
     "...";
-sent_resend_exceeded(Config) when list(Config) ->
+sent_resend_exceeded(Config) when is_list(Config) ->
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
 -endif.
@@ -608,7 +608,7 @@ sent_resend_exceeded_long(suite) ->
     [];
 sent_resend_exceeded_long(doc) ->
     "...";
-sent_resend_exceeded_long(Config) when list(Config) ->
+sent_resend_exceeded_long(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        sent_resend_exceeded_long),
@@ -688,7 +688,7 @@ sent_resend_exceeded_long(suite) ->
     [];
 sent_resend_exceeded_long(doc) ->
     "...";
-sent_resend_exceeded_long(Config) when list(Config) ->
+sent_resend_exceeded_long(Config) when is_list(Config) ->
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
 -endif.
@@ -704,7 +704,7 @@ recv_limit_exceeded1(suite) ->
     [];
 recv_limit_exceeded1(doc) ->
     "Received pending limit exceeded (exactly)";
-recv_limit_exceeded1(Config) when list(Config) ->
+recv_limit_exceeded1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        rle1),
@@ -1084,7 +1084,7 @@ recv_limit_exceeded2(suite) ->
     [];
 recv_limit_exceeded2(doc) ->
     "Received pending limit exceeded";
-recv_limit_exceeded2(Config) when list(Config) ->
+recv_limit_exceeded2(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        rle2),
@@ -1105,7 +1105,7 @@ recv_limit_exceeded2(Config) when list(Config) ->
 
 otp_4956(suite) ->
     [];
-otp_4956(Config) when list(Config) ->
+otp_4956(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_4956),
@@ -1663,7 +1663,7 @@ otp_5310(suite) ->
     [];
 otp_5310(doc) ->
     "...";
-otp_5310(Config) when list(Config) ->
+otp_5310(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_5310),
@@ -1826,7 +1826,7 @@ otp_5619(suite) ->
     [];
 otp_5619(doc) ->
     "...";
-otp_5619(Config) when list(Config) ->
+otp_5619(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_5619),
@@ -1942,19 +1942,19 @@ cre_notifyReq(Tid, EvsDesc) ->
     #'NotifyRequest'{terminationID            = Tid, 
                      observedEventsDescriptor = EvsDesc}.
 
-cre_command(R) when record(R, 'NotifyRequest') ->
+cre_command(R) when is_record(R, 'NotifyRequest') ->
     {notifyReq, R};
-cre_command(R) when record(R, 'ServiceChangeRequest') ->
+cre_command(R) when is_record(R, 'ServiceChangeRequest') ->
     {serviceChangeReq, R}.
 
 cre_cmdReq(Cmd) ->
     #'CommandRequest'{command = Cmd}.
 
-cre_actionReq(CtxId, CmdReqs) when list(CmdReqs) ->
+cre_actionReq(CtxId, CmdReqs) when is_list(CmdReqs) ->
     #'ActionRequest'{contextId       = CtxId,
                      commandRequests = CmdReqs}.
 
-cre_transReq(TransId, ARs) when list(ARs) ->
+cre_transReq(TransId, ARs) when is_list(ARs) ->
     #'TransactionRequest'{transactionId = TransId,
 			  actions       = ARs}.
 
@@ -1967,18 +1967,18 @@ cre_serviceChangeResParm(Mid, V) ->
     #'ServiceChangeResParm'{serviceChangeMgcId   = Mid, 
 			    serviceChangeVersion = V}.
 
-cre_serviceChangeResult(SCRP) when record(SCRP, 'ServiceChangeResParm') ->
+cre_serviceChangeResult(SCRP) when is_record(SCRP, 'ServiceChangeResParm') ->
     {serviceChangeResParms, SCRP};
-cre_serviceChangeResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_serviceChangeResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {errorDescriptor, ED}.
 
 cre_serviceChangeReply(Tid, Res) ->
     #'ServiceChangeReply'{terminationID       = Tid, 
                           serviceChangeResult = Res}.
 
-cre_cmdReply(R) when record(R, 'NotifyReply') ->
+cre_cmdReply(R) when is_record(R, 'NotifyReply') ->
     {notifyReply, R};
-cre_cmdReply(R) when record(R, 'ServiceChangeReply') ->
+cre_cmdReply(R) when is_record(R, 'ServiceChangeReply') ->
     {serviceChangeReply, R}.
 
 cre_notifyReply(Tid) ->
@@ -1999,20 +1999,20 @@ cre_actionReply(CtxId, CmdRep) ->
 
 %% --
 
-cre_serviceChangeProf(Name, Ver) when list(Name), integer(Ver) ->
+cre_serviceChangeProf(Name, Ver) when is_list(Name) andalso is_integer(Ver) ->
     #'ServiceChangeProfile'{profileName = Name, 
                             version     = Ver}.
 
-cre_transaction(Trans) when record(Trans, 'TransactionRequest') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionRequest') ->
     {transactionRequest, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionPending') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionPending') ->
     {transactionPending, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionReply') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionReply') ->
     {transactionReply, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionAck') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionAck') ->
     {transactionResponseAck, Trans}.
 
-cre_transactions(Trans) when list(Trans) ->
+cre_transactions(Trans) when is_list(Trans) ->
     {transactions, Trans}.
 
 cre_message(Version, Mid, Body) ->

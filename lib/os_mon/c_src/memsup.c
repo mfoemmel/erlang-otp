@@ -81,7 +81,7 @@
  *  the preprocessor (usually by a -D option).
  */
 
-#ifdef sgi
+#if defined(sgi) || defined(__sgi) || defined(__sgi__)
 #include <sys/types.h>
 #include <sys/sysmp.h>
 #endif
@@ -425,7 +425,7 @@ get_extended_mem_bsd4(memory_ext *me) {
 }
 #endif
 
-#if defined(__sgi__)
+#if defined(sgi) || defined(__sgi) || defined(__sgi__)
 static int
 get_extended_mem_sgi(memory_ext *me) {
     struct rminfo rmi;
@@ -456,7 +456,7 @@ get_extended_mem(memory_ext *me) {
     if (get_extended_mem_bsd4(me))    return;
 
 /* sgi */
-#elif defined(sgi)
+#elif defined(sgi) || defined(__sgi) || defined(__sgi__)
     if (get_extended_mem_sgi(me))     return;
 #endif
 
@@ -512,7 +512,7 @@ get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
 fail:
     print_error("%s", strerror(errno));
     exit(1);
-#elif defined(sgi)
+#elif defined(sgi) || defined(__sgi) || defined(__sgi__)
     struct rminfo rmi;
     if (sysmp(MP_SAGET, MPSA_RMINFO, &rmi, sizeof(rmi)) != -1) {
 	*tot = (unsigned long)(rmi.physmem);

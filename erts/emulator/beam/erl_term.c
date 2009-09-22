@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static void __noreturn
+__decl_noreturn static void __noreturn
 et_abort(const char *expr, const char *file, unsigned line)
 {
 #ifdef EXIT_ON_ET_ABORT

@@ -20,7 +20,7 @@
 
 -include_lib("wx/include/wx.hrl").
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 -export([start/1, init/1, terminate/2,  code_change/3,
 	 handle_info/2, handle_call/3, handle_event/2]).
@@ -38,6 +38,7 @@ start(Config) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init(Config) ->
         wx:batch(fun() -> do_init(Config) end).
+
 do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxPanel:new(Parent, []),
@@ -80,14 +81,15 @@ do_init(Config) ->
     wxListCtrl:setItemBackgroundColour(ListCtrl3,3,?wxGREEN),
     wxListCtrl:setItemBackgroundColour(ListCtrl3,0,?wxCYAN),
 
+    wxListCtrl:connect(ListCtrl1, command_list_item_selected, []),
+    wxListCtrl:connect(ListCtrl2, command_list_item_selected, []),
+    wxListCtrl:connect(ListCtrl3, command_list_item_selected, []),
+
+    %% Add to sizers
     wxNotebook:addPage(Notebook, ListCtrl1, "List", []),
     wxNotebook:addPage(Notebook, ListCtrl2, "Report", []),
     wxNotebook:addPage(Notebook, ListCtrl3, "Colored multiselect", []),
 
-    wxListCtrl:connect(ListCtrl1, command_list_item_selected, []),
-    wxListCtrl:connect(ListCtrl2, command_list_item_selected, []),
-    wxListCtrl:connect(ListCtrl3, command_list_item_selected, []),
-    %% Add to sizers
     wxSizer:add(MainSizer, Notebook, [{proportion, 1},
 				      {flag, ?wxEXPAND}]),
 
@@ -96,7 +98,14 @@ do_init(Config) ->
 		   notebook = Notebook}}.
 
 
-%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Async Events are handled in handle_event as in handle_info
+handle_event(#wx{obj = _ListCtrl,
+		 event = #wxList{itemIndex = Item}},
+	     State = #state{}) ->
+    demo:format(State#state.config,"Item ~p selected.\n",[Item]),
+    {noreply,State}.
+
 %% Callbacks handled as normal gen_server callbacks
 handle_info(Msg, State) ->
     demo:format(State#state.config, "Got Info ~p\n",[Msg]),
@@ -106,25 +115,15 @@ handle_call(Msg, _From, State) ->
     demo:format(State#state.config,"Got Call ~p\n",[Msg]),
     {reply,ok,State}.
 
-%% Async Events are handled in handle_event as in handle_info
-handle_event(#wx{obj = _ListCtrl,
-		 event = #wxList{itemIndex = Item}},
-	     State = #state{}) ->
-    demo:format(State#state.config,"Item ~p selected.\n",[Item]),
-    {noreply,State};
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config,"Got Event ~p\n",[Ev]),
-    {noreply,State}.
-
 code_change(_, _, State) ->
     {stop, ignore, State}.
 
 terminate(_Reason, _State) ->
     ok.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%% Local functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(FIRST_COL, 0).
 -define(SECOND_COL, 1).
 -define(THIRD_COL, 2).

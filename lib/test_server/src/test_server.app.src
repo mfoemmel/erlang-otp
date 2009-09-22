@@ -30,7 +30,7 @@
 	    ]},
   {registered, [test_server_ctrl,
 		test_server,
-		test_server_break_process]}
+		test_server_break_process]},
   {applications, [kernel,stdlib]},
   {env, []}]}.
   

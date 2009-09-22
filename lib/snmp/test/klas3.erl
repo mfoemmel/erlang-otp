@@ -56,17 +56,17 @@ fname(delete) -> ok;
 fname(get) ->
     Str2 = (catch begin
         case snmpa:current_request_id() of
-	    {value, Int} when integer(Int) -> ok;
+	    {value, Int} when is_integer(Int) -> ok;
 	    {value, _} -> throw("bad_int");
 	    _ -> throw("bad_req")
 	end,
 	case snmpa:current_community() of
-	    {value, Str} when list(Str) -> Str;
+	    {value, Str} when is_list(Str) -> Str;
 	    {value, _} -> throw("bad_str");
 	    _ -> throw("bad_com")
 	end,
 	case snmpa:current_address() of
-	    {value, {[_A,_B,_C,_D], E}} when integer(E) -> ok;
+	    {value, {[_A,_B,_C,_D], E}} when is_integer(E) -> ok;
 	    {value, _} -> throw("bad_ip");
 	    _ -> throw("bad_adr")
 	end,

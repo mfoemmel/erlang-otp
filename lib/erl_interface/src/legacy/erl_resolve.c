@@ -39,7 +39,7 @@ struct hostent *erl_gethostbyname(const char *name)
 
 void erl_init_resolve(void)
 {
-    return ei_init_resolve();
+    ei_init_resolve();
 }
 
 

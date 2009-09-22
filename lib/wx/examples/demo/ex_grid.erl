@@ -18,7 +18,7 @@
 
 -module(ex_grid).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -32,7 +32,8 @@
 -record(state, 
 	{
 	  parent,
-	  config
+	  config,
+	  grid
 	}).
 
 start(Config) ->
@@ -50,30 +51,35 @@ do_init(Config) ->
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "wxGrid"}]),
-    Grid1 = create_grid1(Panel),
+
+    Grid = create_grid(Panel),
+
     %% Add to sizers
     Options = [{flag, ?wxEXPAND}, {proportion, 1}],
 
-    wxSizer:add(Sizer, Grid1, Options),
+    wxSizer:add(Sizer, Grid, Options),
     wxSizer:add(MainSizer, Sizer, Options),
 
     wxPanel:setSizer(Panel, MainSizer),
-    {Panel, #state{parent=Panel, config=Config}}.
+    {Panel, #state{parent=Panel, config=Config,
+		  grid = Grid}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
+handle_event(#wx{event = #wxGrid{type = grid_cell_change,
+				 row = Row, col = Col}},
+	     State = #state{}) ->
+    Val = wxGrid:getCellValue(State#state.grid, Row, Col),
+    demo:format(State#state.config, "Cell {~p,~p} changed to ~p.\n",
+		[Row,Col,Val]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(_Msg, State) ->
+    {noreply, State}.
+
+handle_call(_Msg, _From, State) ->
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.
@@ -85,45 +91,49 @@ terminate(_Reason, _State) ->
 %% Local functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-create_grid1(Panel) ->
+create_grid(Panel) ->
+    %% Create the grid with 100 * 5 cells
     Grid = wxGrid:new(Panel, 2, []),
     wxGrid:createGrid(Grid, 100, 5),
+
     Font = wxFont:new(16, ?wxFONTFAMILY_SWISS,
 		      ?wxFONTSTYLE_NORMAL,
 		      ?wxFONTWEIGHT_NORMAL, []),
+    %% Fun to set the values and flags of the cells
     Fun =
-	fun(Int) ->
-		wxGrid:setCellValue(Grid, Int, 0, "Value"),
-		wxGrid:setCellValue(Grid, Int, 1, "Value"),
-		wxGrid:setCellValue(Grid, Int, 2, "Value"),
-		wxGrid:setCellValue(Grid, Int, 3, "Read only"),
-		wxGrid:setCellTextColour(Grid, Int, 3, ?wxWHITE),
-		wxGrid:setReadOnly(Grid, Int, 3, [{isReadOnly,true}]),
-		wxGrid:setCellValue(Grid, Int, 4, "Value"),
-		case Int rem 4 of
-		    0 -> wxGrid:setCellBackgroundColour(Grid, Int, 3, ?wxRED);
-		    1 -> wxGrid:setCellBackgroundColour(Grid, Int, 3, ?wxGREEN),
-			 wxGrid:setCellTextColour(Grid, Int, 2, {255,215,0,255});
-		    2 -> wxGrid:setCellBackgroundColour(Grid, Int, 3, ?wxBLUE);
-		    _ -> wxGrid:setCellBackgroundColour(Grid, Int, 1, ?wxCYAN),
-			 wxGrid:setCellValue(Grid, Int, 1,
+	fun(Row) ->
+		wxGrid:setCellValue(Grid, Row, 0, "Editable"),
+		wxGrid:setCellValue(Grid, Row, 1, "Editable"),
+		wxGrid:setCellValue(Grid, Row, 2, "Editable"),
+		wxGrid:setCellValue(Grid, Row, 3, "Read only"),
+		wxGrid:setCellTextColour(Grid, Row, 3, ?wxWHITE),
+		wxGrid:setReadOnly(Grid, Row, 3, [{isReadOnly,true}]),
+		wxGrid:setCellValue(Grid, Row, 4, "Editable"),
+		case Row rem 4 of
+		    0 -> wxGrid:setCellBackgroundColour(Grid, Row, 3, ?wxRED);
+		    1 -> wxGrid:setCellBackgroundColour(Grid, Row, 3, ?wxGREEN),
+			 wxGrid:setCellTextColour(Grid, Row, 2, {255,215,0,255});
+		    2 -> wxGrid:setCellBackgroundColour(Grid, Row, 3, ?wxBLUE);
+		    _ -> wxGrid:setCellBackgroundColour(Grid, Row, 1, ?wxCYAN),
+			 wxGrid:setCellValue(Grid, Row, 1,
 					     "Centered\nhorizontally"),
-			 wxGrid:setCellAlignment(Grid, Int, 4,
+			 wxGrid:setCellAlignment(Grid, Row, 4,
 						 0,?wxALIGN_CENTER),
-			 wxGrid:setCellValue(Grid, Int, 4,
+			 wxGrid:setCellValue(Grid, Row, 4,
 					     "Centered\nvertically"),
-			 wxGrid:setCellAlignment(Grid, Int, 1,
+			 wxGrid:setCellAlignment(Grid, Row, 1,
 						 ?wxALIGN_CENTER,0),
-			 wxGrid:setCellTextColour(Grid, Int, 3, ?wxBLACK),
-			 wxGrid:setCellAlignment(Grid, Int, 2,
+			 wxGrid:setCellTextColour(Grid, Row, 3, ?wxBLACK),
+			 wxGrid:setCellAlignment(Grid, Row, 2,
 						 ?wxALIGN_CENTER,
 						 ?wxALIGN_CENTER),
-			 wxGrid:setCellFont(Grid, Int, 0, Font),
-			 wxGrid:setCellValue(Grid, Int, 2,
+			 wxGrid:setCellFont(Grid, Row, 0, Font),
+			 wxGrid:setCellValue(Grid, Row, 2,
 					     "Centered vertically\nand horizontally"),
-			 wxGrid:setRowSize(Grid, Int, 80)
+			 wxGrid:setRowSize(Grid, Row, 80)
 		end
 	end,
+    %% Apply the fun to each row
     wx:foreach(Fun, lists:seq(0,99)),
     wxGrid:setColSize(Grid, 2, 150),
     wxGrid:connect(Grid, grid_cell_change),

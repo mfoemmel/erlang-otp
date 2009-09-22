@@ -289,7 +289,7 @@ handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests) ->
 	[AR] ->
 	    ContextId = AR#'ActionRequest'.contextId,
 	    case AR#'ActionRequest'.commandRequests of
-		[CR] when ContextId == ?megaco_null_context_id ->
+		[CR] when ContextId =:= ?megaco_null_context_id ->
 		    case CR#'CommandRequest'.command of
 			{serviceChangeReq, Req} ->
 			    Rep = service_change(ConnHandle, ProtocolVersion, Req),
@@ -414,7 +414,7 @@ init_batch(ReplyTo, Trace, Debug) ->
 
 parse_args([], Acc) ->
     Acc;
-parse_args([Arg|Args], Acc) when atom(Arg) ->
+parse_args([Arg|Args], Acc) when is_atom(Arg) ->
     case string:tokens(atom_to_list(Arg),"{},") of
 	["trace",Trace] ->
 	    parse_args(Args, parse_args(trace, list_to_atom(Trace), Acc));

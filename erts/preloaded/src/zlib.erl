@@ -132,7 +132,7 @@
 %% open a z_stream
 -spec open() -> zstream().
 open() ->
-    open_port({spawn, zlib_drv}, [binary]).
+    open_port({spawn, "zlib_drv"}, [binary]).
 
 %% close and release z_stream
 -spec close(zstream()) -> 'ok'.

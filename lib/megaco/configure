@@ -803,8 +803,8 @@ if test -n "$ac_init_help"; then
 Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
-  --enable-megaco-reentrant-flex-scanner  enable reentrans megaco flex scanner
-  --disable-megaco-reentrant-flex-scanner  disable reentrans megaco flex scanner
+  --enable-megaco-reentrant-flex-scanner  enable reentrant megaco flex scanner
+  --disable-megaco-reentrant-flex-scanner  disable reentrant megaco flex scanner
   --enable-megaco-flex-scanner-lineno  enable megaco flex scanner lineno
   --disable-megaco-flex-scanner-lineno  disable megaco flex scanner lineno
 
@@ -3624,6 +3624,7 @@ case $host_os in
 		DED_LDFLAGS="-shared"
 	;;
 esac
+DED_LDFLAGS="$LDFLAGS $DED_LDFLAGS"
 echo "$as_me:$LINENO: result: $DED_LDFLAGS" >&5
 echo "${ECHO_T}$DED_LDFLAGS" >&6
 

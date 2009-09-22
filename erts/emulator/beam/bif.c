@@ -37,6 +37,7 @@
 #include "erl_db_util.h"
 #include "register.h"
 
+static Export* flush_monitor_message_trap = NULL;
 static Export* set_cpu_topology_trap = NULL;
 Export* erts_format_cpu_topology_trap = NULL;
 
@@ -238,14 +239,20 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, EXC_NOPROC);
 }
 
-static BIF_RETTYPE
+#define ERTS_DEMONITOR_FALSE		2
+#define ERTS_DEMONITOR_TRUE		1
+#define ERTS_DEMONITOR_BADARG		0
+#define ERTS_DEMONITOR_YIELD_TRUE	-1
+#define ERTS_DEMONITOR_INTERNAL_ERROR	-2
+
+static int
 remote_demonitor(Process *c_p, DistEntry *dep, Eterm ref, Eterm to)
 {
     ErtsDSigData dsd;
     ErtsMonitor *dmon;
     ErtsMonitor *mon;
     int code;
-    BIF_RETTYPE ret;
+    int res;
 #ifndef ERTS_SMP
     int stale_mon = 0;
 #endif
@@ -278,7 +285,7 @@ remote_demonitor(Process *c_p, DistEntry *dep, Eterm ref, Eterm to)
 	mon = erts_remove_monitor(&c_p->monitors, ref);
 	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_LINK);
 
-	ERTS_BIF_PREP_RET(ret, am_true);
+	res = ERTS_DEMONITOR_TRUE;
 	break;
 
     case ERTS_DSIG_PREP_CONNECTED:
@@ -302,7 +309,7 @@ remote_demonitor(Process *c_p, DistEntry *dep, Eterm ref, Eterm to)
 	     * This is possible when smp support is enabled.
 	     * 'DOWN' message just arrived.
 	     */
-	    ERTS_BIF_PREP_RET(ret, am_true);
+	    res = ERTS_DEMONITOR_TRUE;
 	}
 	else {
 	    /*
@@ -317,17 +324,16 @@ remote_demonitor(Process *c_p, DistEntry *dep, Eterm ref, Eterm to)
 					     : mon->pid), 
 					    ref,
 					    0);
-	    if (code == ERTS_DSIG_SEND_YIELD)
-		ERTS_BIF_PREP_YIELD_RETURN(ret, c_p, am_true);
-	    else
-		ERTS_BIF_PREP_RET(ret, am_true);
+	    res = (code == ERTS_DSIG_SEND_YIELD
+		   ? ERTS_DEMONITOR_YIELD_TRUE
+		   : ERTS_DEMONITOR_TRUE);
 	    erts_destroy_monitor(dmon);
 
 	}
 	break;
     default:
 	ASSERT(! "Invalid dsig prepare result");
-	ERTS_BIF_PREP_ERROR(ret, c_p, EXC_INTERNAL_ERROR);
+	res = ERTS_DEMONITOR_INTERNAL_ERROR;
 	break;
     }
 
@@ -348,42 +354,42 @@ remote_demonitor(Process *c_p, DistEntry *dep, Eterm ref, Eterm to)
      * We aren't allowed to destroy 'mon' until now, since 'to'
      * may refer into 'mon' (external pid).
      */
-    ASSERT(mon);
+    ASSERT(mon); /* Since link lock wasn't released between
+		    lookup and remove */
     erts_destroy_monitor(mon);
 
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(c_p));
-    return ret;
+    return res;
 }
 
-BIF_RETTYPE demonitor_1(BIF_ALIST_1)
+static int demonitor(Process *c_p, Eterm ref)
 {
    ErtsMonitor *mon = NULL;  /* The monitor entry to delete */
    Process  *rp;    /* Local target process */
-   Eterm     ref;   /* BIF_ARG_1 */
    Eterm     to = NIL;    /* Monitor link traget */
    Eterm     ref_p; /* Pid of this end */
    DistEntry *dep = NULL;  /* Target's distribution entry */
    int deref_de = 0;
-   BIF_RETTYPE res;
+   int res;
    int unlock_link = 1;
 
-   ERTS_BIF_PREP_RET(res, am_true); /* Prepare for success */
 
-   erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
+   erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_LINK);
 
-   ref = BIF_ARG_1;
    if (is_not_internal_ref(ref)) {
-       ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
+       res = ERTS_DEMONITOR_BADARG;
        goto done; /* Cannot be this monitor's ref */
    }
-   ref_p = BIF_P->id;
+   ref_p = c_p->id;
 
-   mon = erts_lookup_monitor(BIF_P->monitors, ref);
-   if (mon == NULL)
+   mon = erts_lookup_monitor(c_p->monitors, ref);
+   if (!mon) {
+       res = ERTS_DEMONITOR_FALSE;
        goto done;
+   }
 
    if (mon->type != MON_ORIGIN) {
-       ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
+       res = ERTS_DEMONITOR_BADARG;
        goto done;
    }
    to = mon->pid;
@@ -400,8 +406,8 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
        dep = pid_dist_entry(to);
    }
    if (dep != erts_this_dist_entry) {
-       res = remote_demonitor(BIF_P, dep, ref, to);
-       /* remote_demonitor() unlocks link lock on BIF_P */
+       res = remote_demonitor(c_p, dep, ref, to);
+       /* remote_demonitor() unlocks link lock on c_p */
        unlock_link = 0;
    }
    else { /* Local monitor */
@@ -410,28 +416,33 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 	   erts_deref_dist_entry(dep);
        }
        dep = NULL;
-       rp = erts_pid2proc_opt(BIF_P,
+       rp = erts_pid2proc_opt(c_p,
 			      ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
 			      to,
 			      ERTS_PROC_LOCK_LINK,
 			      ERTS_P2P_FLG_ALLOW_OTHER_X);
-       mon = erts_remove_monitor(&BIF_P->monitors, ref);
+       mon = erts_remove_monitor(&c_p->monitors, ref);
 #ifndef ERTS_SMP
        ASSERT(mon);
 #else
-       if (mon)
+       if (!mon)
+	   res = ERTS_DEMONITOR_FALSE;
+       else
 #endif
+       {
+	   res = ERTS_DEMONITOR_TRUE;
 	   erts_destroy_monitor(mon);
+       }
        if (rp) {
 	   ErtsMonitor *rmon;
 	   rmon = erts_remove_monitor(&(rp->monitors), ref);
-	   if (rp != BIF_P)
+	   if (rp != c_p)
 	       erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
 	   if (rmon != NULL)
 	       erts_destroy_monitor(rmon);
        }
        else {
-	   ERTS_SMP_ASSERT_IS_NOT_EXITING(BIF_P);
+	   ERTS_SMP_ASSERT_IS_NOT_EXITING(c_p);
        }
 
    }
@@ -439,15 +450,77 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
  done:
 
    if (unlock_link)
-       erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+       erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_LINK);
 
    if (deref_de) {
        ASSERT(dep);
        erts_deref_dist_entry(dep);
    }
 
-   ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(BIF_P));
+   ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN == erts_proc_lc_my_proc_locks(c_p));
    return res;
+}
+
+BIF_RETTYPE demonitor_1(BIF_ALIST_1)
+{
+    switch (demonitor(BIF_P, BIF_ARG_1)) {
+    case ERTS_DEMONITOR_FALSE:
+    case ERTS_DEMONITOR_TRUE:
+	BIF_RET(am_true);
+    case ERTS_DEMONITOR_YIELD_TRUE:
+	ERTS_BIF_YIELD_RETURN(BIF_P, am_true);
+    case ERTS_DEMONITOR_BADARG:
+	BIF_ERROR(BIF_P, BADARG);
+    case ERTS_DEMONITOR_INTERNAL_ERROR:
+    default:
+	ASSERT(! "demonitor(): internal error");
+	BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR);
+    }
+}
+
+BIF_RETTYPE demonitor_2(BIF_ALIST_2)
+{
+    Eterm res = am_true;
+    int info = 0;
+    int flush = 0;
+    Eterm list = BIF_ARG_2;
+
+    while (is_list(list)) {
+	Eterm* consp = list_val(list);
+	switch (CAR(consp)) {
+	case am_flush:
+	    flush = 1;
+	    break;
+	case am_info:
+	    info = 1;
+	    break;
+	default:
+	    goto badarg;
+	}
+	list = CDR(consp);	
+    }
+
+    if (is_not_nil(list))
+	goto badarg;
+
+    switch (demonitor(BIF_P, BIF_ARG_1)) {
+    case ERTS_DEMONITOR_FALSE:
+	if (info)
+	    res = am_false;
+	if (flush)
+	    BIF_TRAP2(flush_monitor_message_trap, BIF_P, BIF_ARG_1, res);
+    case ERTS_DEMONITOR_TRUE:
+	BIF_RET(res);
+    case ERTS_DEMONITOR_YIELD_TRUE:
+	ERTS_BIF_YIELD_RETURN(BIF_P, am_true);
+    case ERTS_DEMONITOR_BADARG:
+    badarg:
+	BIF_ERROR(BIF_P, BADARG);
+    case ERTS_DEMONITOR_INTERNAL_ERROR:
+    default:
+	ASSERT(! "demonitor(): internal error");
+	BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR);
+    }
 }
 
 /* Type must be atomic object! */
@@ -3789,7 +3862,7 @@ BIF_RETTYPE hash_2(BIF_ALIST_2)
     if (range > ((1L << 27) - 1))
 	BIF_ERROR(BIF_P, BADARG);
 #endif
-    hash = make_broken_hash(BIF_ARG_1, 0);
+    hash = make_broken_hash(BIF_ARG_1);
     BIF_RET(make_small(1 + (hash % range)));   /* [1..range] */
 }
 
@@ -3809,7 +3882,7 @@ BIF_RETTYPE phash_2(BIF_ALIST_2)
 	}
 	range = (Uint32) u;
     }
-    hash = make_hash(BIF_ARG_1, 0);
+    hash = make_hash(BIF_ARG_1);
     if (range) {
 	final_hash = 1 + (hash % range); /* [1..range] */
     } else if ((final_hash = hash + 1) == 0) {
@@ -3939,6 +4012,10 @@ void erts_init_bif(void)
 #endif
     bif_return_trap_export.code[3] = (Eterm) em_apply_bif;
     bif_return_trap_export.code[4] = (Eterm) &bif_return_trap;
+
+    flush_monitor_message_trap = erts_export_put(am_erlang,
+						 am_flush_monitor_message,
+						 2);
 
     set_cpu_topology_trap = erts_export_put(am_erlang,
 					    am_set_cpu_topology,

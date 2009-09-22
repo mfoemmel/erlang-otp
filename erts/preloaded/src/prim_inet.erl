@@ -103,9 +103,9 @@ open0(Protocol) ->
 	error:Reason -> {error,Reason}
     end.
 
-protocol2drv(tcp)  -> tcp_inet;
-protocol2drv(udp)  -> udp_inet;
-protocol2drv(sctp) -> sctp_inet;
+protocol2drv(tcp)  -> "tcp_inet";
+protocol2drv(udp)  -> "udp_inet";
+protocol2drv(sctp) -> "sctp_inet";
 protocol2drv(_) ->
     erlang:error(eprotonosupport).
 

@@ -59,13 +59,10 @@
  * BIF failure modes:
  * - none: may not signal any exception
  *   The BIF wrapper needs no checks before returning.
- * - trap: may signal TRAP exceptions
- *   The BIF wrapper must check for an exception before returning.
- *   Zero-arity BIFs never signal Erlang-level exceptions,
- *   but may signal internal implementaton-level exceptions,
- *   currently only TRAP.
  * - standard: may signal any exception
  *   The BIF wrapper must check for an exception before returning.
+ *   Zero-arity BIFs signal no exceptions, except in a small number
+ *   of cases explicitly enumerated here.
  */
 
 /****************************************************************
@@ -84,10 +81,10 @@
  */
 
 /*
- * trap_bif_interface_0(nbif_name, cbif_name)
+ * fail_bif_interface_0(nbif_name, cbif_name)
  *
- * A BIF which may fail with TRAP, otherwise
- * identical to nofail_primop_interface_N.
+ * A zero-arity BIF which may fail, otherwise
+ * identical to standard_bif_interface_N.
  */
 
 /*
@@ -151,9 +148,10 @@
  ****************************************************************/
 
 /*
- * BIFs with trap-only failure modes.
+ * Zero-arity BIFs that can fail.
  */
-trap_bif_interface_0(nbif_processes_0, processes_0)
+fail_bif_interface_0(nbif_memory_0, memory_0)
+fail_bif_interface_0(nbif_processes_0, processes_0)
 
 /*
  * BIFs and primops that may do a GC (change heap limit and walk the native stack).

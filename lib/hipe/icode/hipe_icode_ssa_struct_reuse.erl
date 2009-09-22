@@ -128,7 +128,7 @@ maps_expr_key_enter(Expr, Maps) ->
 -record(expr, {id 	      = none        :: 'none' | non_neg_integer(),
 	       key	      = none        :: 'none' | tuple(), % illegal_icode_instr()
 	       defs 	      = none        :: 'none' | [icode_var()],
-	       direct_replace = false       :: bool(),
+	       direct_replace = false       :: boolean(),
 	       inserts 	      = ?SETS:new() :: ?SET(_),
 	       use 	      = ?SETS:new() :: ?SET(_)}).
 
@@ -213,7 +213,7 @@ varinfo_use_add(I = #varinfo{use = UseSet}, Use) ->
   code     		= []               :: [tuple()], % [illegal_icode_instr()]
   phi			= gb_trees:empty() :: gb_tree(),
   varmap		= []               :: [{icode_var(), icode_var()}],
-  pre_loop		= false            :: bool(),
+  pre_loop		= false            :: boolean(),
   non_struct_defs 	= gb_sets:new()    :: gb_set(),
   up_expr     		= none             :: 'none' | ?SET(_),
   killed_expr 		= none             :: 'none' | ?SET(_),
@@ -357,7 +357,7 @@ nodes_create() -> #nodes{}.
 %% 	has been inserted is used to move the reduction test.
 
 -record(update, {inserted     = gb_trees:empty() :: gb_tree(),
-		 del_red_test = false            :: bool()}).
+		 del_red_test = false            :: boolean()}).
 
 update_inserted_lookup(#update{inserted = Inserted}, ExprId) ->
   gb_trees:lookup(ExprId, Inserted).

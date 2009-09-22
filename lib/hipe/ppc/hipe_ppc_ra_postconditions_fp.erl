@@ -99,9 +99,7 @@ fix_src(Src, TempMap) ->
   case temp_is_spilled(Src, TempMap) of
     true ->
       NewSrc = clone(Src),
-      {[hipe_ppc:mk_pseudo_fmove(NewSrc, Src)],
-       NewSrc,
-       true};
+      {[hipe_ppc:mk_pseudo_fmove(NewSrc, Src)], NewSrc, true};
     _ ->
       {[], Src, false}
   end.
@@ -110,9 +108,7 @@ fix_dst(Dst, TempMap) ->
   case temp_is_spilled(Dst, TempMap) of
     true ->
       NewDst = clone(Dst),
-      {[hipe_ppc:mk_pseudo_fmove(Dst, NewDst)],
-       NewDst,
-       true};
+      {[hipe_ppc:mk_pseudo_fmove(Dst, NewDst)], NewDst, true};
     _ ->
       {[], Dst, false}
   end.
@@ -123,10 +119,7 @@ temp_is_spilled(Temp, TempMap) ->
   case hipe_ppc:temp_is_allocatable(Temp) of
     true ->
       Reg = hipe_ppc:temp_reg(Temp),
-      case tuple_size(TempMap) > Reg of
-	true -> hipe_temp_map:is_spilled(Reg, TempMap);
-	false -> false
-      end;
+      tuple_size(TempMap) > Reg andalso hipe_temp_map:is_spilled(Reg, TempMap);
     false -> true
   end.
 

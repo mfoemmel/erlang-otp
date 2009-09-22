@@ -491,6 +491,10 @@ CSYM(nbif_3_gc_after_bif):
  * The heap pointer was just read from P.
  * TEMP_LR contains a copy of LR
  */
+	GLOBAL(CSYM(nbif_0_simple_exception))
+CSYM(nbif_0_simple_exception):
+	li	r4, 0
+	b	.nbif_simple_exception
 	GLOBAL(CSYM(nbif_1_simple_exception))
 CSYM(nbif_1_simple_exception):
 	li	r4, 1
@@ -532,9 +536,6 @@ CSYM(nbif_3_simple_exception):
 	 * - the native RA was saved in TEMP_LR before the BIF call
 	 * - the native heap/stack/reds registers are saved in P
 	 */
-	GLOBAL(CSYM(nbif_0_trap_exception))
-CSYM(nbif_0_trap_exception):
-	li	r4, 0
 .handle_trap:
 	li	r3, HIPE_MODE_SWITCH_RES_TRAP
 	STORE	NSP, P_NSP(P)

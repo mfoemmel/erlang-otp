@@ -419,10 +419,10 @@ is_expr(I) ->
 %%=============================================================================
 %% Replaces destination of RTL expression with empty list.
 %% 
-expr_set_dst(I, [Dst|Dsts]) ->
+expr_set_dst(I, [Dst|_Dsts] = DstList) ->
   case I of
     #alu{} -> hipe_rtl:alu_dst_update(I, Dst);
-    #call{} -> hipe_rtl:call_dstlist_update(I, [Dst|Dsts]);
+    #call{} -> hipe_rtl:call_dstlist_update(I, DstList);
     #fconv{} -> hipe_rtl:fconv_dst_update(I, Dst);
     #fixnumop{} -> hipe_rtl:fixnumop_dst_update(I, Dst);
     #fload{} -> hipe_rtl:fload_dst_update(I, Dst);
@@ -1425,12 +1425,12 @@ mk_expr_move_instr([Reg], [Define]) ->
       %% FIXME Check is_var() orelse is_reg() ?
       hipe_rtl:mk_move(Reg, Define)
   end;
-mk_expr_move_instr([Reg|Regs], Defines) ->
+mk_expr_move_instr([_Reg|_Regs] = RegList, Defines) ->
   %% FIXME Does this really work? What about floats...
   %% (Multiple defines does not seem to be used by any of the 
   %%  instructions considered by rtl_lcm at the moment so this is pretty much
   %%  untested/unused.)
-  hipe_rtl:mk_multimove([Reg|Regs], Defines);
+  hipe_rtl:mk_multimove(RegList, Defines);
 mk_expr_move_instr(_, []) ->
   exit({?MODULE, mk_expr_move_instr, "bad match"}).
 

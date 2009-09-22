@@ -1393,7 +1393,7 @@ void erts_alloc_reg_scheduler_id(Uint id)
     erts_tsd_set(thr_ix_key, (void *)(long) ix);
 }
 
-void
+__decl_noreturn void
 erts_alc_fatal_error(int error, int func, ErtsAlcType_t n, ...)
 {
     char buf[10];
@@ -1459,25 +1459,25 @@ erts_alc_fatal_error(int error, int func, ErtsAlcType_t n, ...)
     }
 }
 
-void
+__decl_noreturn void
 erts_alloc_enomem(ErtsAlcType_t type, Uint size)
 {
     erts_alloc_n_enomem(ERTS_ALC_T2N(type), size);
 }
 
-void
+__decl_noreturn void
 erts_alloc_n_enomem(ErtsAlcType_t n, Uint size)
 {
     erts_alc_fatal_error(ERTS_ALC_E_NOMEM, ERTS_ALC_O_ALLOC, n, size);
 }
 
-void
+__decl_noreturn void
 erts_realloc_enomem(ErtsAlcType_t type, void *ptr, Uint size)
 {
     erts_realloc_n_enomem(ERTS_ALC_T2N(type), ptr, size);
 }
 
-void
+__decl_noreturn void
 erts_realloc_n_enomem(ErtsAlcType_t n, void *ptr, Uint size)
 {
     erts_alc_fatal_error(ERTS_ALC_E_NOMEM, ERTS_ALC_O_REALLOC, n, size);
@@ -1555,11 +1555,12 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
     int length;
     Eterm res = THE_NON_VALUE;
     ErtsAlcType_t ai;
+    int only_one_value = 0;
 
     /* Figure out whats wanted... */
 
     length = 0;
-    if (earg == THE_NON_VALUE) { /* i.e. wants all */
+    if (is_non_value(earg)) { /* i.e. wants all */
 	want.total = 1;
 	atoms[length] = am_total;
 	uintps[length++] = &size.total;
@@ -1604,10 +1605,19 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 
     }
     else {
+	Eterm tmp_heap[2];
 	Eterm wanted_list;
+
 	if (is_nil(earg))
 	    return NIL;
-	wanted_list = earg;
+
+	if (is_not_atom(earg))
+	    wanted_list = earg;
+	else {
+	    wanted_list = CONS(&tmp_heap[0], earg, NIL);
+	    only_one_value = 1;
+	}
+	    
 	while (is_list(wanted_list)) {
 	    switch (CAR(list_val(wanted_list))) {
 	    case am_total:
@@ -1703,8 +1713,7 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	default:
 	    if (!erts_allctrs_info[ai].enabled
 		|| !erts_allctrs_info[ai].alloc_util) {
-		ERTS_DECL_AM(notsup);
-		return AM_notsup;
+		return am_notsup;
 	    }
 	    break;
 	}
@@ -1863,26 +1872,33 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
     if (proc) {
 	/* Build erlang term result... */
 	Uint *hp;
-	Uint **hpp;
 	Uint hsz;
-	Uint *hszp;
 
 	erts_smp_proc_lock(proc, ERTS_PROC_LOCK_MAIN);
 
-	hpp = NULL;
-	hsz = 0;
-	hszp = &hsz;
+	if (only_one_value) {
+	    ASSERT(length == 1);
+	    hsz = 0;
+	    erts_bld_uint(NULL, &hsz, *uintps[0]);
+	    hp = hsz ? HAlloc((Process *) proc, hsz) : NULL;
+	    res = erts_bld_uint(&hp, NULL, *uintps[0]);
+	}
+	else {
+	    Uint **hpp = NULL;
+	    Uint *hszp = &hsz;
+	    hsz = 0;
 
-	while (1) {
-	    int i;
-	    for (i = 0; i < length; i++)
-		euints[i] = erts_bld_uint(hpp, hszp, *uintps[i]);
-	    res = erts_bld_2tup_list(hpp, hszp, length, atoms, euints);
-	    if (hpp)
-		break;
-	    hp = HAlloc((Process *) proc, hsz);
-	    hpp = &hp;
-	    hszp = NULL;
+	    while (1) {
+		int i;
+		for (i = 0; i < length; i++)
+		    euints[i] = erts_bld_uint(hpp, hszp, *uintps[i]);
+		res = erts_bld_2tup_list(hpp, hszp, length, atoms, euints);
+		if (hpp)
+		    break;
+		hp = HAlloc((Process *) proc, hsz);
+		hpp = &hp;
+		hszp = NULL;
+	    }
 	}
     }
 

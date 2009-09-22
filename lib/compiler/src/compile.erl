@@ -325,12 +325,16 @@ comp_ret_err(#compile{warnings=Warn0,errors=Err0}=St) ->
 %% messages_per_file([{File,[Message]}]) -> [{File,[Message]}]
 messages_per_file(Ms) ->
     T = lists:sort([{File,M} || {File,Messages} <- Ms, M <- Messages]),
-    PMs = [epp, erl_parse],
-    {Prio, Rest} = lists:partition(fun({_,{_,M,_}}) -> 
-					   member(M, PMs);
-				      (_) -> false
-				   end, T),
-    mpf(Prio) ++ mpf(Rest).
+    PrioMs = [erl_scan, epp, erl_parse],
+    {Prio0, Rest} = 
+        lists:mapfoldl(fun(M, A) ->
+                               lists:partition(fun({_,{_,Mod,_}}) -> Mod =:= M;
+                                                  (_) -> false
+                                               end, A)
+                       end, T, PrioMs),
+    Prio = lists:sort(fun({_,{L1,_,_}}, {_,{L2,_,_}}) -> L1 =< L2 end, 
+                      lists:append(Prio0)),
+    flatmap(fun mpf/1, [Prio, Rest]).
 
 mpf(Ms) ->
     [{File,[M || {F,M} <- Ms, F =:= File]} || 
@@ -1156,8 +1160,13 @@ report_warnings(#compile{options=Opts,warnings=Ws0}) ->
 	false -> ok
     end.
 
+format_message(F, [{{Line,Column}=Loc,Mod,E}|Es]) ->
+    M = {{F,Loc},io_lib:format("~s:~w:~w Warning: ~s\n",
+                                [F,Line,Column,Mod:format_error(E)])},
+    [M|format_message(F, Es)];
 format_message(F, [{Line,Mod,E}|Es]) ->
-    M = {{F,Line},io_lib:format("~s:~w: Warning: ~s\n", [F,Line,Mod:format_error(E)])},
+    M = {{F,{Line,0}},io_lib:format("~s:~w: Warning: ~s\n",
+                                [F,Line,Mod:format_error(E)])},
     [M|format_message(F, Es)];
 format_message(F, [{Mod,E}|Es]) ->
     M = {none,io_lib:format("~s: Warning: ~s\n", [F,Mod:format_error(E)])},
@@ -1166,6 +1175,9 @@ format_message(_, []) -> [].
 
 %% list_errors(File, ErrorDescriptors) -> ok
 
+list_errors(F, [{{Line,Column},Mod,E}|Es]) ->
+    io:fwrite("~s:~w:~w: ~s\n", [F,Line,Column,Mod:format_error(E)]),
+    list_errors(F, Es);
 list_errors(F, [{Line,Mod,E}|Es]) ->
     io:fwrite("~s:~w: ~s\n", [F,Line,Mod:format_error(E)]),
     list_errors(F, Es);
@@ -1223,7 +1235,8 @@ src_listing(Ext, St) ->
 		(Lf, Fs) -> do_src_listing(Lf, Fs) end,
 	    Ext, St).
 
-do_src_listing(Lf, Fs) ->
+do_src_listing(Lf, Fs0) ->
+    Fs = epp:restore_typed_record_fields(Fs0),
     foreach(fun (F) -> io:put_chars(Lf, [erl_pp:form(F),"\n"]) end,
 	    Fs).
 

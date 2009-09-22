@@ -56,7 +56,7 @@
         principles</p>
       </item>
     </list>
-    <p>The application requires Erlang/OTP release R13A or later.</p>
+    <p>The application requires Erlang/OTP release R13B02 or later.</p>
   </section>
 
   <section>

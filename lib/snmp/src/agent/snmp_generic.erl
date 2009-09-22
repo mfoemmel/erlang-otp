@@ -629,11 +629,11 @@ collect_keys([#asn1_type{bertype = 'IpAddress'} | Indexes],
     [[A, B, C, D] | collect_keys(Indexes, Keys)];
 %% Otherwise, check if it has constant size
 collect_keys([#asn1_type{lo = X, hi = X} | Indexes], Keys)
-   when integer(X), length(Keys) >= X ->
+   when is_integer(X) andalso (length(Keys) >= X) ->
     {StrKey, Rest} = collect_length(X, Keys, []),
     [StrKey | collect_keys(Indexes, Rest)];
 collect_keys([#asn1_type{lo = X, hi = X} | _Indexes], Keys)
-   when integer(X) ->
+   when is_integer(X) ->
     exit({error, {size_mismatch, X, Keys}});
 %% Otherwise, its a dynamic-length type => its a list
 %% OBJECT IDENTIFIER, OCTET STRING or BITS (or derivatives)
@@ -756,7 +756,7 @@ variable_info(Name) ->
 table_try_make_consistent(Name, RowIndex, _Cols) ->
     TableInfo = table_info(Name),
     case TableInfo#table_info.status_col of
-	StatusCol when integer(StatusCol) ->
+	StatusCol when is_integer(StatusCol) ->
 	    {value, StatusVal} = table_get_element(Name, RowIndex, StatusCol),
 	    table_try_make_consistent(Name, RowIndex, StatusVal, TableInfo);
 	_ ->

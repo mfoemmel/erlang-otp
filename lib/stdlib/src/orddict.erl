@@ -35,7 +35,7 @@
 
 new() -> [].
 
--spec is_key(Key::term(), Dictionary::orddict()) -> bool().
+-spec is_key(Key::term(), Dictionary::orddict()) -> boolean().
 
 is_key(Key, [{K,_}|_]) when Key < K -> false;
 is_key(Key, [{K,_}|Dict]) when Key > K -> is_key(Key, Dict);

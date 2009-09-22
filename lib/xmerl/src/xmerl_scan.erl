@@ -121,6 +121,7 @@
 
 %-define(debug, 1).
 -include("xmerl.hrl").		% record def, macros
+-include("xmerl_internal.hrl").
 -include_lib("kernel/include/file.hrl").
 
 

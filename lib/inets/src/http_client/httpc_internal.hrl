@@ -18,7 +18,15 @@
 %%
 %%
 
+-include("inets_internal.hrl").
+-define(SERVICE, httpc).
+-define(hcri(Label, Data), ?report_important(Label, ?SERVICE, Data)).
+-define(hcrv(Label, Data), ?report_verbose(Label,   ?SERVICE, Data)).
+-define(hcrd(Label, Data), ?report_debug(Label,     ?SERVICE, Data)).
+-define(hcrt(Label, Data), ?report_trace(Label,     ?SERVICE, Data)).
+
 -define(HTTP_REQUEST_TIMEOUT,    infinity).
+-define(HTTP_REQUEST_CTIMEOUT,   ?HTTP_REQUEST_TIMEOUT).
 -define(HTTP_PIPELINE_TIMEOUT,   0).
 -define(HTTP_PIPELINE_LENGTH,    2).
 -define(HTTP_MAX_TCP_SESSIONS,   2).
@@ -29,13 +37,26 @@
 %%% HTTP Client per request settings
 -record(http_options,
 	{
-	  version,       % string() - "HTTP/1.1" | "HTTP/1.0" | "HTTP/0.9"
-	  %% Milliseconds before a request times out
+	  %% string() - "HTTP/1.1" | "HTTP/1.0" | "HTTP/0.9"
+	  version, 
+
+	  %% integer() | infinity - ms before a request times out
 	  timeout = ?HTTP_REQUEST_TIMEOUT,  
-	  autoredirect = true, % bool() - true if auto redirect on 30x response
-	  ssl = [],            % Ssl socket options
-	  proxy_auth,          % {User, Password} = {strring(), string()} 
-	  relaxed = false      % bool() - true if not strictly std compliant
+
+	  %% bool() - true if auto redirect on 30x response
+	  autoredirect = true, 
+
+	  %% Ssl socket options
+	  ssl = [], 
+
+	  %% {User, Password} = {string(), string()} 
+	  proxy_auth, 
+
+	  %% bool() - true if not strictly std compliant
+	  relaxed = false, 
+
+	  %% integer() - ms before a connect times out
+	  connect_timeout = ?HTTP_REQUEST_CTIMEOUT  
 	 }
        ).
 
@@ -79,7 +100,8 @@
 	 }
        ).               
 
--record(tcp_session,{
+-record(tcp_session,
+	{
 	  id,           % {{Host, Port}, HandlerPid}
 	  client_close, % true | false
 	  scheme,       % http (HTTP/TCP) | https (HTTP/SSL/TCP)
@@ -88,7 +110,8 @@
 	  type         % pipeline | keep_alive (wait for response before sending new request) 
 	 }).
 
--record(http_cookie,{
+-record(http_cookie,
+	{
 	  domain,
 	  domain_default = false,
 	  name,
@@ -101,3 +124,13 @@
 	  version = "0" 
 	 }).
 
+
+%% -record(parsed_uri, 
+%% 	{
+%% 	  scheme, % http | https
+%% 	  uinfo,  % string()
+%% 	  host,   % string()
+%% 	  port,   % integer()
+%% 	  path,   % string()
+%% 	  q       % query: string()
+%% 	 }).

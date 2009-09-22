@@ -278,7 +278,7 @@ logfile(filename) ->
 %% Possibly turn off all tty printouts, maybe we only want the errors
 %% to go to a file
 
--spec tty(Flag :: bool()) -> 'ok'.
+-spec tty(Flag :: boolean()) -> 'ok'.
 
 tty(true) ->
     Hs = gen_event:which_handlers(error_logger),

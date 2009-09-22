@@ -29,6 +29,336 @@
   </header>
   <p>This document describes the changes made to the ERTS application.</p>
 
+<section><title>Erts 5.7.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    On Windows, open_port({spawn,Command},Opts) could not run
+	    executables with spaces in the path or filename,
+	    regardless of quoting efforts. While
+	    open_port({spawn_executable,Exec},Opts) can run any
+	    executable, it was still impossible to use 'spawn' to do
+	    the same thing. This is now corrected.</p>
+          <p>
+	    Own Id: OTP-8055</p>
+        </item>
+        <item>
+          <p>
+	    The scheduler bind type <c>processor_spread</c> spread
+	    schedulers too much on large NUMA systems.</p>
+          <p>
+	    The new scheduler bind type <c>spread</c> spreads
+	    schedulers as much as possible, and behaves as
+	    <c>processor_spread</c> previously did. For more
+	    information see the documentation of the <c>+sbt</c>
+	    command line argument in the <c>erl(1)</c> documentation,
+	    and the documentation of
+	    <c>erlang:system_flag(scheduler_bind_type,
+	    SchedulerBindType)</c>.</p>
+          <p>
+	    Own Id: OTP-8063</p>
+        </item>
+        <item>
+          <p>
+	    Automatically detected CPU topology on Linux system could
+	    erroneously contain logical processors with <c>-1</c> as
+	    identifiers. This happened when
+	    <c>sysconf(_SC_NPROCESSORS_CONF)</c> returned a value
+	    larger than the amount of logical processors found.</p>
+          <p>
+	    Own Id: OTP-8064</p>
+        </item>
+        <item>
+          <p>
+	    When the minimal term [] (end of list) was sent as the
+	    complete message to a process on another node, and
+	    received there, it could not be decoded. This bug is now
+	    corrected. Fortunately [] is uncommon as the complete
+	    message in real applications but it is a serious bug
+	    anyway.</p>
+          <p>
+	    Own Id: OTP-8092</p>
+        </item>
+        <item>
+	    <p>A bug when the floating point exception pointer was
+	    not initialized has been corrected. It manifested itself
+	    on CentOS 5.1 sometimes when a floating point value was
+	    sent to a remote node. Bug reported and patch suggested
+	    by David Reiss, confirmed by Mikael Pettersson.</p>
+	    <p>Some build problems on IRIX was also corrected.
+	    Problem reported by Patrick Baggett, patch by Mikael
+	    Pettersson.</p>
+          <p>
+	    Own Id: OTP-8095</p>
+        </item>
+        <item>
+          <p>
+	    A terminating process could erroneously unregister a name
+	    for another process. This could occur under the following
+	    conditions: The name of the terminating process was
+	    unregistered and then registered for another process
+	    simultaneously as the process that first had the name was
+	    terminating.</p>
+          <p>
+	    Own Id: OTP-8099 Aux Id: seq11344 </p>
+        </item>
+        <item>
+          <p>
+	    Running erlc in a very deep directory (with a path length
+	    of more 256 or more characters) would cause the emulator
+	    to crash in a call to <c>list_to_atom/1</c>. (Thanks to
+	    Chris Newcombe.)</p>
+          <p>
+	    Own Id: OTP-8124</p>
+        </item>
+        <item>
+          <p>
+	    A deadlock of the runtime system could occur when
+	    unregistering the name of a port.</p>
+          <p>
+	    Own Id: OTP-8145</p>
+        </item>
+        <item>
+          <p>
+	    <c>Makefile.in</c> has been updated to use the LDFLAGS
+	    environment variable (if set). (Thanks to Davide
+	    Pesavento.)</p>
+          <p>
+	    Own Id: OTP-8157</p>
+        </item>
+        <item>
+          <p>
+	    The pthread rwlock implemention on Linux could cause
+	    starvation of writers. We, therefore, now use our own
+	    rwlock implementation on Linux.</p>
+          <p>
+	    Own Id: OTP-8158</p>
+        </item>
+        <item>
+          <p>
+	    Open source Erlang builds are updated to work well on
+	    Snow Leopard (MacOS X 10.6)</p>
+          <p>
+	    Own Id: OTP-8168</p>
+        </item>
+        <item>
+          <p>
+	    A call to <c>erlang:system_info(schedulers_online)</c>
+	    could end up in an infinite loop. This happened if the
+	    amount of schedulers was larger than one, the amount of
+	    schedulers online was one, and someone was blocking
+	    multi-scheduling.</p>
+          <p>
+	    Own Id: OTP-8169</p>
+        </item>
+        <item>
+          <p>
+	    An error in erlang:system_profile/2 could cause
+	    timestamped messages to arrive out of order in the SMP
+	    case. This has now been fixed.</p>
+          <p>
+	    Own Id: OTP-8171</p>
+        </item>
+	<item>
+	  <p>
+	    <c>binary_to_atom/2</c> and
+	    <c>binary_to_existing_atom/2</c> would leak memory if the
+	    binary contained unaligned data.</p>
+          <p>
+	    Own Id: OTP-8192</p>
+        </item>
+        <item>
+          <p>
+	    The async thread pool in the runtime system without SMP
+	    support used a memory allocator that was not thread safe
+	    for async jobs.</p>
+          <p>
+	    Own Id: OTP-8194</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Processor internal NUMA nodes are now supported in the
+	    ERTS internal CPU topology representation. For more
+	    information see the documentation of the <c>+sct</c>
+	    command line argument in the <c>erl(1)</c> documentation,
+	    and the documentation of
+	    <c>erlang:system_info(cpu_topology)</c>.</p>
+          <p>
+	    Own Id: OTP-8041</p>
+        </item>
+        <item>
+          <p>
+	    Documentation for ets improved about concurrency.</p>
+          <p>
+	    Own Id: OTP-8050</p>
+        </item>
+        <item>
+          <p>
+	    Emulator flags in an escript were earlier inherited to
+	    emulators started from from the emulator running the
+	    escript. For example when an escript invoked
+	    <c>os:cmd("erl")</c>, the new emulator were given
+	    erroneous emulator flags. This bug has now been fixed</p>
+          <p>
+	    Escript filenames may now contain dots.</p>
+          <p>
+	    Own Id: OTP-8060</p>
+        </item>
+        <item>
+          <p>
+	    Made some BIFs non-recursive (relational operators,hash
+	    and phash) to limit internal stack usage.</p>
+          <p>
+	    Own Id: OTP-8065</p>
+        </item>
+        <item>
+          <p>
+	    Fixed Windows specific bug in erl_prim_loader. Now it
+	    handles the root directory (e.g. c:/) better. This bug
+	    affected the directory listing in the debugger.</p>
+          <p>
+	    Own Id: OTP-8080</p>
+        </item>
+        <item>
+          <p>
+	    A TCP socket with option <c>{packet,4}</c> could crash
+	    the emulator if it received a packet header with a very
+	    large size value (>2Gb). The same bug caused
+	    <c>erlang:decode_packet/3</c> to return faulty values.
+	    (Thanks to Georgos Seganos.)</p>
+          <p>
+	    Own Id: OTP-8102</p>
+        </item>
+        <item>
+          <p>
+	    The maximum size of the export table has been raised from
+	    65536 to 524288 entries.</p>
+          <p>
+	    Own Id: OTP-8104 Aux Id: seq11345 </p>
+        </item>
+        <item>
+          <p>
+	    The file module has now a read_line/1 function similar to
+	    the io:get_line/2, but with byte oriented semantics. The
+	    function file:read_line/1 works for raw files as well,
+	    but for good performance it is recommended to use it
+	    together with the 'read_ahead' option for raw file
+	    access.</p>
+          <p>
+	    Own Id: OTP-8108</p>
+        </item>
+        <item>
+          <p>
+	    Fixed bug causing emulator crash when reading a term in
+	    external format containing a corrupt list with a negative
+	    length.</p>
+          <p>
+	    Own Id: OTP-8117</p>
+        </item>
+        <item>
+          <p>
+	    New emulator flag <c>+sss</c>, to set stack size of
+	    scheduler threads.</p>
+          <p>
+	    Own Id: OTP-8119</p>
+        </item>
+        <item>
+          <p>
+	    The Windows utility Erlsrv, run in interactive mode now
+	    accepts options for registering internal service name and
+	    description field of Windows registry database.</p>
+          <p>
+	    Own Id: OTP-8132</p>
+        </item>
+        <item>
+          <p>
+	    <c>erlang:demonitor(Mon, [flush])</c> has been optimized.
+	    Previously it always searched the message queue of the
+	    caller for a <c>'DOWN'</c> message. Current
+	    implementation only search the message queue when
+	    necessary. It is quite common that the search is not
+	    necessary.</p>
+          <p>
+	    A new option <c>info</c> has been added to
+	    <c>erlang:demonitor/2</c>. For more information see the
+	    <c>erlang(3)</c> documentation.</p>
+          <p>
+	    Own Id: OTP-8143</p>
+        </item>
+        <item>
+          <p>
+	    I/O tasks could unnecessarily be rescheduled. This was
+	    harmless, but not useful work.</p>
+          <p>
+	    Own Id: OTP-8148</p>
+        </item>
+        <item>
+          <p>
+	    Minor improvements of <c>erlang:memory/[1,2]</c>.</p>
+          <p>
+	    Own Id: OTP-8152</p>
+        </item>
+        <item>
+          <p>
+	    New configuration option to enable use of shared zlib.</p>
+          <p>
+	    Own Id: OTP-8155</p>
+        </item>
+        <item>
+          <p>
+	    Fixed smp bug in ETS that could cause emulator crash when
+	    table with more than 1000 objects accessed by several
+	    processes, including calls to variants of <c>select</c>
+	    or <c>match</c> combined with concurrent object deletion.</p>
+          <p>
+	    Own Id: OTP-8166 Aux Id: seq11392 </p>
+        </item>
+        <item>
+          <p>
+	    The code path interpretation is now more relaxed. The
+	    flag -code_path_choice now defaults to relaxed instead of
+	    strict. See the documentation of code and init for more
+	    info.</p>
+          <p>
+	    Own Id: OTP-8170</p>
+        </item>
+        <item>
+          <p>
+	    Load balancing of run queues and check for I/O are
+	    triggered more often than before in situations where
+	    processes are scheduled often but are doing very little
+	    work each time they execute.</p>
+          <p>
+	    Own Id: OTP-8172</p>
+        </item>
+        <item>
+          <p>
+	    Call tracing binary comprehensions would cause an
+	    emulator crash. (Thanks to Paul Mineiro.)</p>
+          <p>
+	    Own Id: OTP-8179</p>
+        </item>
+        <item>
+          <p>
+	    <c>binary_to_term/1</c> would crash the emulator instead
+	    of generating a <c>badarg</c> exception when given
+	    certain invalid terms. (Thanks to Scott Lystig Fritchie.)</p>
+          <p>
+	    Own Id: OTP-8180</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erts 5.7.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

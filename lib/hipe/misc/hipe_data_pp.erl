@@ -37,14 +37,13 @@
 
 -include("hipe_consttab.hrl").
 
--type io_device()      :: atom() | pid().	% XXX: DOES NOT BELONG HERE
 -type hipe_code_type() :: 'icode' | 'rtl' | 'arm' | 'ppc' | 'sparc' | 'x86'.
 
 %%-----------------------------------------------------------------------------
 %%
 %% Pretty print
 
--spec pp(io_device(), hipe_consttab(), hipe_code_type(), string()) -> 'ok'.
+-spec pp(io:device(), hipe_consttab(), hipe_code_type(), string()) -> 'ok'.
 
 pp(Dev, Table, CodeType, Pre) ->
   Ls = hipe_consttab:labels(Table),

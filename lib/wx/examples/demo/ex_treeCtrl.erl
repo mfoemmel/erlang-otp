@@ -18,7 +18,7 @@
 
 -module(ex_treeCtrl).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -60,10 +60,11 @@ do_init(Config) ->
     %% Create the first items in the treeCtrl
     SubItems = [{wxTreeCtrl:appendItem(TreeCtrl, RootId, Item), Item}||
 		   Item <- Items],
-    %% Create sub items and append them
-    [[wxTreeCtrl:appendItem(TreeCtrl, ItemId, Item++" sub item "++integer_to_list(Int))||
-	 {ItemId, Item} <- SubItems] || Int <- lists:seq(1,10)],
+    %% Create sub items
+    [wxTreeCtrl:appendItem(TreeCtrl, ItemId, Item++" sub item "++integer_to_list(Int))||
+	 {ItemId, Item} <- SubItems, Int <- lists:seq(1,10)],
     wxTreeCtrl:expand(TreeCtrl, RootId),
+
     %% Add to sizers
     Options = [{flag, ?wxEXPAND}, {proportion, 1}],
     wxSizer:add(Sizer, TreeCtrl, Options),
@@ -76,15 +77,6 @@ do_init(Config) ->
     {Panel, #state{parent=Panel, config=Config}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxTree{type = command_tree_item_collapsed,
 				 item = Item},
@@ -106,10 +98,16 @@ handle_event(#wx{event = #wxTree{type = command_tree_sel_changed,
 	     State = #state{}) ->
     ItemText = wxTreeCtrl:getItemText(TreeCtrl, Item),
     demo:format(State#state.config, "You have selected ~p.\n", [ItemText]),
-    {noreply, State};
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

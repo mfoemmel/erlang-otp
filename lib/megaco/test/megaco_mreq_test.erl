@@ -91,7 +91,7 @@ req_and_rep(suite) ->
     [];
 req_and_rep(doc) ->
     [];
-req_and_rep(Config) when list(Config) ->
+req_and_rep(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("req_and_rep -> starting"),
@@ -273,7 +273,7 @@ req_and_pending(suite) ->
     [];
 req_and_pending(doc) ->
     [];
-req_and_pending(Config) when list(Config) ->
+req_and_pending(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("req_and_pending -> starting"),
@@ -332,7 +332,7 @@ req_and_cancel(suite) ->
     [];
 req_and_cancel(doc) ->
     [];
-req_and_cancel(Config) when list(Config) ->
+req_and_cancel(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("req_and_cancel -> starting"),

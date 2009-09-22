@@ -21,6 +21,7 @@ include $(ERL_TOP)/make/target.mk
 EBIN = ../../ebin
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
+
 # ----------------------------------------------------
 # Application version
 # ----------------------------------------------------
@@ -28,10 +29,12 @@ include ../../vsn.mk
 
 VSN = $(INETS_VSN)
 
+
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
 RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
+
 
 # ----------------------------------------------------
 # Target Specs
@@ -79,11 +82,12 @@ MODULES = \
 	mod_security \
 	mod_security_server
 
-HRL_FILES = httpd.hrl mod_auth.hrl 
+HRL_FILES = httpd.hrl httpd_internal.hrl mod_auth.hrl 
 
 ERL_FILES = $(MODULES:%=%.erl)
 
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) 
+
 
 # ----------------------------------------------------
 # INETS FLAGS
@@ -100,6 +104,8 @@ ERL_COMPILE_FLAGS += $(INETS_ERL_FLAGS) \
 		     $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'
+
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
@@ -111,6 +117,8 @@ clean:
 	rm -f core
 
 docs:
+
+
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -128,12 +136,4 @@ info:
 	@echo "INETS_DEBUG       = $(INETS_DEBUG)"
 	@echo "INETS_FLAGS       = $(INETS_FLAGS)"
 	@echo "ERL_COMPILE_FLAGS = $(ERL_COMPILE_FLAGS)"
-
-
-
-
-
-
-
-
 

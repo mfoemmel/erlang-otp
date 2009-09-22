@@ -69,6 +69,8 @@ void * wxe_ps_init();
 extern ErlDrvPort WXE_DRV_PORT; 
 extern int wxe_debug; 
 
+extern char * erl_wx_privdir;
+
 #define WXE_BATCH_BEGIN     0
 #define WXE_BATCH_END       1
 #define WXE_CREATE_PORT     2
@@ -79,6 +81,10 @@ extern int wxe_debug;
 #define WXE_REGISTER_OBJECT 7
 #define WXE_CB_START        8
 #define WXE_DEBUG_DRIVER    9
+#define WXE_DEBUG_PING      10
+#define WXE_BIN_INCR        5001
+#define WXE_BIN_DECR        5002
+
 #define OPENGL_START        5000
 
 #endif

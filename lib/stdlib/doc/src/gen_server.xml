@@ -203,7 +203,12 @@ gen_server:abcast     -----> Module:handle_cast/2
           specifies how many milliseconds to wait for a reply, or
           the atom <c>infinity</c> to wait indefinitely. Default value
           is 5000. If no reply is received within the specified time,
-          the function call fails.</p>
+          the function call fails. If the caller catches the failure
+          and continues running, and the server is just late with the reply,
+          it may arrive at any time later into the caller's message queue.
+          The caller must in this case be prepared for this
+          and discard any such garbage messages that are two element
+          tuples with a reference as the first element.</p>
         <p>The return value <c>Reply</c> is defined in the return value
           of <c>Module:handle_call/3</c>.</p>
         <p>The call may fail for several reasons, including timeout and

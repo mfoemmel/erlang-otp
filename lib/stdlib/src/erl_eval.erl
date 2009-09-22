@@ -316,12 +316,8 @@ expr({op,_,Op,L0,R0}, Bs0, Lf, Ef, RBs) ->
     eval_op(Op, L, R, merge_bindings(Bs1, Bs2), Ef, RBs);
 expr({bin,_,Fs}, Bs0, Lf, Ef, RBs) ->
     EvalFun = fun(E, B) -> expr(E, B, Lf, Ef, none) end,
-    case catch eval_bits:expr_grp(Fs, Bs0, EvalFun) of
-	{value,V,Bs} -> 
-	    ret_expr(V, Bs, RBs);
-	{'EXIT',{Reason,_}} ->
-	    erlang:raise(error, Reason, stacktrace())
-    end;    
+    {value,V,Bs} = eval_bits:expr_grp(Fs, Bs0, EvalFun),
+    ret_expr(V, Bs, RBs);
 expr({remote,_,_,_}, _Bs, _Lf, _Ef, _RBs) ->
     erlang:raise(error, {badexpr,':'}, stacktrace());
 expr({value,_,Val}, Bs, _Lf, _Ef, RBs) ->    % Special case straight values.
@@ -741,6 +737,8 @@ receive_clauses(T, Cs, TB, Bs, Lf, Ef, Ms, RBs) ->
 	    exprs(B, Bs1, Lf, Ef, RBs)
     end.
 
+merge_queue([]) -> 
+    true;
 merge_queue(Ms) ->
     send_all(recv_all(Ms), self()).
 

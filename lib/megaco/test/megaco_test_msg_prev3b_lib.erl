@@ -176,12 +176,12 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cre_MegacoMessage(M) when record(M, 'Message') ->
+cre_MegacoMessage(M) when is_record(M, 'Message') ->
     #'MegacoMessage'{mess = M}.
 
 cre_MegacoMessage(AH, M) 
-  when record(AH, 'AuthenticationHeader'), 
-       record(M, 'Message') ->
+  when is_record(AH, 'AuthenticationHeader') andalso 
+       is_record(M, 'Message') ->
     #'MegacoMessage'{authHeader = AH,
 		     mess       = M}.
 
@@ -190,53 +190,53 @@ cre_AuthenticationHeader(SPI, SN, AD) ->
 			    seqNum       = SN, 
 			    ad           = AD}.
 
-cre_Message(V, Mid, ED) when record(ED, 'ErrorDescriptor') ->
+cre_Message(V, Mid, ED) when is_record(ED, 'ErrorDescriptor') ->
     Body = {errorDescriptor, ED},
     #'Message'{version     = V,
 	       mId         = Mid,
 	       messageBody = Body};
-cre_Message(V, Mid, Transactions) when list(Transactions) ->
+cre_Message(V, Mid, Transactions) when is_list(Transactions) ->
     Body = {transactions, Transactions},
     #'Message'{version     = V,
 	       mId         = Mid,
 	       messageBody = Body};
-cre_Message(V, Mid, {transactions, T} = Body) when list(T) ->
+cre_Message(V, Mid, {transactions, T} = Body) when is_list(T) ->
     #'Message'{version     = V,
 	       mId         = Mid,
 	       messageBody = Body};
 cre_Message(V, Mid, {errorDescriptor, ED} = Body) 
-  when record(ED, 'ErrorDescriptor') ->
+  when is_record(ED, 'ErrorDescriptor') ->
     #'Message'{version     = V,
 	       mId         = Mid,
 	       messageBody = Body}.
 
 
-cre_ErrorDescriptor(EC) when integer(EC) ->
+cre_ErrorDescriptor(EC) when is_integer(EC) ->
     #'ErrorDescriptor'{errorCode = EC}.
 
-cre_ErrorDescriptor(EC, ET) when integer(EC), list(ET) ->
+cre_ErrorDescriptor(EC, ET) when is_integer(EC) andalso is_list(ET) ->
     #'ErrorDescriptor'{errorCode = EC, errorText = ET}.
 
-cre_ErrorCode(C) when integer(C), 0 =< C, C =< 65535 ->
+cre_ErrorCode(C) when is_integer(C) andalso (0 =< C) andalso (C =< 65535) ->
     C;
 cre_ErrorCode(C) ->
     exit({invalid_ErrorCode, C}).
 
-cre_ErrorText(T) when list(T) ->
+cre_ErrorText(T) when is_list(T) ->
     T.
 
-cre_ContextID(Val) when 0 =< Val, Val =< 4294967295 ->
+cre_ContextID(Val) when (0 =< Val) andalso (Val =< 4294967295) ->
     Val;
 cre_ContextID(Val) ->
     exit({invalid_ContextID, Val}).
 
-cre_Transaction(TR) when record(TR, 'TransactionRequest') ->
+cre_Transaction(TR) when is_record(TR, 'TransactionRequest') ->
     {transactionRequest, TR};
-cre_Transaction(TP) when record(TP, 'TransactionPending') ->
+cre_Transaction(TP) when is_record(TP, 'TransactionPending') ->
     {transactionPending, TP};
-cre_Transaction(TR) when record(TR, 'TransactionReply') ->
+cre_Transaction(TR) when is_record(TR, 'TransactionReply') ->
     {transactionReply, TR};
-cre_Transaction(TRA) when list(TRA) ->
+cre_Transaction(TRA) when is_list(TRA) ->
     {transactionResponseAck, TRA}.
 
 cre_TransactionId(Val) when 0 =< Val, Val =< 4294967295 ->
@@ -244,20 +244,20 @@ cre_TransactionId(Val) when 0 =< Val, Val =< 4294967295 ->
 cre_TransactionId(Val) ->
     exit({invalid_TransactionId, Val}).
 
-cre_TransactionRequest(TransID, ARs) when integer(TransID), list(ARs) -> 
+cre_TransactionRequest(TransID, ARs) when is_integer(TransID) andalso is_list(ARs) -> 
     #'TransactionRequest'{transactionId = TransID, 
 			  actions       = ARs}.
 
-cre_TransactionPending(TransID) when integer(TransID) ->
+cre_TransactionPending(TransID) when is_integer(TransID) ->
     #'TransactionPending'{transactionId = TransID}.
 
 cre_TransactionReply(TransID, ED) 
-  when integer(TransID), record(ED, 'ErrorDescriptor') ->
+  when is_integer(TransID) andalso is_record(ED, 'ErrorDescriptor') ->
     Res = {transactionError, ED},
     #'TransactionReply'{transactionId     = TransID,
 			transactionResult = Res};
 cre_TransactionReply(TransID, ARs) 
-  when integer(TransID), list(ARs) ->
+  when is_integer(TransID) andalso is_list(ARs) ->
     Res = {actionReplies, ARs},
     #'TransactionReply'{transactionId     = TransID,
 			transactionResult = Res}.
@@ -319,30 +319,30 @@ cre_ActionRequest(CtxID, CtxReq, CAAR, CmdReqs)
 		     commandRequests     = CmdReqs}.
 
 cre_ActionReply(CtxID, CmdReps) 
-  when integer(CtxID), 
-       list(CmdReps) ->
+  when is_integer(CtxID) andalso 
+       is_list(CmdReps) ->
     #'ActionReply'{contextId    = CtxID,
 		   commandReply = CmdReps}.
 
 cre_ActionReply(CtxID, ED, CmdReps) 
-  when integer(CtxID), 
-       record(ED, 'ErrorDescriptor'), 
-       list(CmdReps) ->
+  when is_integer(CtxID) andalso 
+       is_record(ED, 'ErrorDescriptor') andalso 
+       is_list(CmdReps) ->
     #'ActionReply'{contextId       = CtxID,
 		   errorDescriptor = ED, 
 		   commandReply    = CmdReps};
 cre_ActionReply(CtxID, CtxReq, CmdReps) 
-  when is_integer(CtxID) and
-       is_record(CtxReq, 'ContextRequest') and
+  when is_integer(CtxID) andalso
+       is_record(CtxReq, 'ContextRequest') andalso
        is_list(CmdReps) ->
     #'ActionReply'{contextId    = CtxID,
 		   contextReply = CtxReq, 
 		   commandReply = CmdReps}.
 
 cre_ActionReply(CtxID, ED, CtxReq, CmdReps) 
-  when is_integer(CtxID) and
-       (is_record(ED, 'ErrorDescriptor') or (ED == asn1_NOVALUE)) and
-       (is_record(CtxReq, 'ContextRequest') or (CtxReq == asn1_NOVALUE)) and
+  when is_integer(CtxID) andalso
+       (is_record(ED, 'ErrorDescriptor') orelse (ED =:= asn1_NOVALUE)) andalso
+       (is_record(CtxReq, 'ContextRequest') orelse (CtxReq =:= asn1_NOVALUE)) andalso
        is_list(CmdReps) ->
     #'ActionReply'{contextId       = CtxID,
 		   errorDescriptor = ED, 
@@ -352,11 +352,11 @@ cre_ActionReply(CtxID, ED, CtxReq, CmdReps)
 cre_ContextRequest() ->
     strip_ContextRequest(#'ContextRequest'{}).
 
-cre_ContextRequest(Prio) when integer(Prio), 0 =< Prio, Prio =< 15 ->
+cre_ContextRequest(Prio) when is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15) ->
     strip_ContextRequest(#'ContextRequest'{priority = Prio});
-cre_ContextRequest(Em) when Em == true; Em == false; Em == asn1_NOVALUE ->
+cre_ContextRequest(Em) when (Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE) ->
     strip_ContextRequest(#'ContextRequest'{emergency = Em});
-cre_ContextRequest(Top) when list(Top) ->
+cre_ContextRequest(Top) when is_list(Top) ->
     strip_ContextRequest(#'ContextRequest'{topologyReq = Top}).
 
 cre_ContextRequest(Prio, Em) 
@@ -366,7 +366,7 @@ cre_ContextRequest(Prio, Em)
 			   emergency = Em},
     strip_ContextRequest(CR);
 cre_ContextRequest(Prio, Top) 
-  when integer(Prio), 0 =< Prio, Prio =< 15, list(Top) ->
+  when is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15) andalso is_list(Top) ->
     CR = #'ContextRequest'{priority    = Prio,
 			   topologyReq = Top},
     strip_ContextRequest(CR).
@@ -507,53 +507,53 @@ cre_CommandRequest(Cmd, Opt, WR)
 		      wildcardReturn = WR}.
 
 cre_Command(addReq = Tag, Req) 
-  when record(Req, 'AmmRequest') ->
+  when is_record(Req, 'AmmRequest') ->
     {Tag, Req};
 cre_Command(moveReq = Tag, Req) 
-  when record(Req, 'AmmRequest') ->
+  when is_record(Req, 'AmmRequest') ->
     {Tag, Req};
 cre_Command(modReq = Tag, Req) 
-  when record(Req, 'AmmRequest') ->
+  when is_record(Req, 'AmmRequest') ->
     {Tag, Req};
 cre_Command(subtractReq = Tag, Req) 
-  when record(Req, 'SubtractRequest') ->
+  when is_record(Req, 'SubtractRequest') ->
     {Tag, Req};
 cre_Command(auditCapRequest = Tag, Req) 
-  when record(Req, 'AuditRequest') ->
+  when is_record(Req, 'AuditRequest') ->
     {Tag, Req};
 cre_Command(auditValueRequest = Tag, Req) 
-  when record(Req, 'AuditRequest') ->
+  when is_record(Req, 'AuditRequest') ->
     {Tag, Req};
 cre_Command(notifyReq = Tag, Req) 
-  when record(Req, 'NotifyRequest') ->
+  when is_record(Req, 'NotifyRequest') ->
     {Tag, Req};
 cre_Command(serviceChangeReq = Tag, Req) 
-  when record(Req, 'ServiceChangeRequest') ->
+  when is_record(Req, 'ServiceChangeRequest') ->
     {Tag, Req}.
     
 cre_CommandReply(addReply = Tag, Rep) 
-  when record(Rep, 'AmmsReply') ->
+  when is_record(Rep, 'AmmsReply') ->
     {Tag, Rep};
 cre_CommandReply(moveReply = Tag, Rep) 
-  when record(Rep, 'AmmsReply') ->
+  when is_record(Rep, 'AmmsReply') ->
     {Tag, Rep};
 cre_CommandReply(modReply = Tag, Rep) 
-  when record(Rep, 'AmmsReply') ->
+  when is_record(Rep, 'AmmsReply') ->
     {Tag, Rep};
 cre_CommandReply(subtractReply = Tag, Rep) 
-  when record(Rep, 'AmmsReply') ->
+  when is_record(Rep, 'AmmsReply') ->
     {Tag, Rep};
 cre_CommandReply(auditCapReply = Tag, Rep) 
-  when tuple(Rep) ->
+  when is_tuple(Rep) ->
     {Tag, Rep};
 cre_CommandReply(auditValueReply = Tag, Rep) 
-  when tuple(Rep) ->
+  when is_tuple(Rep) ->
     {Tag, Rep};
 cre_CommandReply(notifyReply = Tag, Rep) 
-  when record(Rep, 'NotifyReply') ->
+  when is_record(Rep, 'NotifyReply') ->
     {Tag, Rep};
 cre_CommandReply(serviceChangeReply = Tag, Rep) 
-  when record(Rep, 'ServiceChangeReply') ->
+  when is_record(Rep, 'ServiceChangeReply') ->
     {Tag, Rep}.
     
 cre_TopologyRequest(From, To, Dir) 
@@ -591,19 +591,19 @@ cre_AmmRequest(TermIDs, Descs) ->
 	    error({invalid_AmmRequest, {TermIDs, Descs}})
     end.
 
-cre_AmmDescriptor(D) when record(D, 'MediaDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'MediaDescriptor') ->
     {mediaDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'ModemDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'ModemDescriptor') ->
     {modemDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'MuxDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'MuxDescriptor') ->
     {muxDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'EventsDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'EventsDescriptor') ->
     {eventsDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'DigitMapDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'DigitMapDescriptor') ->
     {digitMapDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'AuditDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'AuditDescriptor') ->
     {auditDescriptor, D};
-cre_AmmDescriptor(D) when list(D) ->
+cre_AmmDescriptor(D) when is_list(D) ->
     case is_EventBufferDescriptor(D) of
 	true ->
 	    {eventBufferDescriptor, D};
@@ -621,35 +621,35 @@ cre_AmmDescriptor(D) when list(D) ->
 	    end
     end.
 
-cre_AmmsReply(TermIDs) when list(TermIDs) ->
+cre_AmmsReply(TermIDs) when is_list(TermIDs) ->
     #'AmmsReply'{terminationID = TermIDs}.
 
-cre_AmmsReply(TermIDs, TAs) when list(TermIDs), list(TAs) ->
+cre_AmmsReply(TermIDs, TAs) when is_list(TermIDs) andalso is_list(TAs) ->
     #'AmmsReply'{terminationID    = TermIDs, 
 		 terminationAudit = TAs}.
 
-cre_SubtractRequest(TermIDs) when list(TermIDs) ->
+cre_SubtractRequest(TermIDs) when is_list(TermIDs) ->
     #'SubtractRequest'{terminationID = TermIDs}.
 
 cre_SubtractRequest(TermIDs, Audit) 
-  when list(TermIDs), record(Audit, 'AuditDescriptor') ->
+  when is_list(TermIDs) andalso is_record(Audit, 'AuditDescriptor') ->
     #'SubtractRequest'{terminationID   = TermIDs, 
 		       auditDescriptor = Audit}.
 
 cre_AuditRequest(TermID, Audit) 
-  when record(TermID, megaco_term_id), record(Audit, 'AuditDescriptor') ->
+  when is_record(TermID, megaco_term_id) andalso is_record(Audit, 'AuditDescriptor') ->
     #'AuditRequest'{terminationID   = TermID, 
 		    auditDescriptor = Audit}.
 
-cre_AuditReply(TermIDs) when list(TermIDs) ->
+cre_AuditReply(TermIDs) when is_list(TermIDs) ->
     {contextAuditResult, TermIDs};
-cre_AuditReply(ED) when record(ED, 'ErrorDescriptor') ->
+cre_AuditReply(ED) when is_record(ED, 'ErrorDescriptor') ->
     {error, ED};
-cre_AuditReply(Audit) when record(Audit, 'AuditResult') ->
+cre_AuditReply(Audit) when is_record(Audit, 'AuditResult') ->
     {auditResult, Audit}.
 
 cre_AuditResult(TermID, TAs) 
-  when record(TermID, megaco_term_id), list(TAs) ->
+  when is_record(TermID, megaco_term_id) andalso is_list(TAs) ->
     #'AuditResult'{terminationID          = TermID, 
 		   terminationAuditResult = TAs}.
 
@@ -657,35 +657,35 @@ cre_TerminationAudit(D) ->
     true = is_TerminationAudit(D),
     D.
 
-cre_AuditReturnParameter(D) when record(D, 'ErrorDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'ErrorDescriptor') ->
     {errorDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'MediaDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'MediaDescriptor') ->
     {mediaDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'ModemDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'ModemDescriptor') ->
     {modemDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'MuxDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'MuxDescriptor') ->
     {muxDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'EventsDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'EventsDescriptor') ->
     {eventsDescriptor, D};
-cre_AuditReturnParameter([H|_] = D) when record(H, 'EventSpec') ->
+cre_AuditReturnParameter([H|_] = D) when is_record(H, 'EventSpec') ->
     {eventBufferDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'DigitMapDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'DigitMapDescriptor') ->
     {digitMapDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'ObservedEventsDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'ObservedEventsDescriptor') ->
     {observedEventsDescriptor, D};
-cre_AuditReturnParameter([H|_] = D) when record(H, 'StatisticsParameter') ->
+cre_AuditReturnParameter([H|_] = D) when is_record(H, 'StatisticsParameter') ->
     {statisticsDescriptor, D};
-cre_AuditReturnParameter([H|_] = D) when record(H, 'PackagesItem') ->
+cre_AuditReturnParameter([H|_] = D) when is_record(H, 'PackagesItem') ->
     {packagesDescriptor, D};
-cre_AuditReturnParameter(D) when record(D, 'AuditDescriptor') ->
+cre_AuditReturnParameter(D) when is_record(D, 'AuditDescriptor') ->
     {emptyDescriptors, D};
-cre_AuditReturnParameter([H|_] = D) when tuple(H) ->
+cre_AuditReturnParameter([H|_] = D) when is_tuple(H) ->
     {signalsDescriptor, D}.
 
 cre_AuditDescriptor() ->
     #'AuditDescriptor'{}.
 
-cre_AuditDescriptor([H|_] = AT) when atom(H) ->
+cre_AuditDescriptor([H|_] = AT) when is_atom(H) ->
     #'AuditDescriptor'{auditToken = AT};
 cre_AuditDescriptor(APT) ->
     #'AuditDescriptor'{auditPropertyToken = APT}.
@@ -694,74 +694,74 @@ cre_AuditDescriptor(AT, APT) ->
     #'AuditDescriptor'{auditToken         = AT, 
 		       auditPropertyToken = APT}.
 
-cre_IndAuditParameter(D) when record(D, 'IndAudMediaDescriptor') ->
+cre_IndAuditParameter(D) when is_record(D, 'IndAudMediaDescriptor') ->
     {indAudMediaDescriptor, D};
-cre_IndAuditParameter(D) when record(D, 'IndAudEventsDescriptor') ->
+cre_IndAuditParameter(D) when is_record(D, 'IndAudEventsDescriptor') ->
     {indAudEventsDescriptor, D};
-cre_IndAuditParameter(D) when record(D, 'IndAudEventBufferDescriptor') ->
+cre_IndAuditParameter(D) when is_record(D, 'IndAudEventBufferDescriptor') ->
     {indAudEventBufferDescriptor, D};
 cre_IndAuditParameter({signal, _} = D) ->
     {indAudSignalsDescriptor, D};
 cre_IndAuditParameter({seqSigList, _} = D) ->
     {indAudSignalsDescriptor, D};
-cre_IndAuditParameter(D) when record(D, 'IndAudDigitMapDescriptor') ->
+cre_IndAuditParameter(D) when is_record(D, 'IndAudDigitMapDescriptor') ->
     {indAudDigitMapDescriptor, D};
-cre_IndAuditParameter(D) when record(D, 'IndAudStatisticsDescriptor') ->
+cre_IndAuditParameter(D) when is_record(D, 'IndAudStatisticsDescriptor') ->
     {indAudStatisticsDescriptor, D};
-cre_IndAuditParameter(D) when record(D, 'IndAudPackagesDescriptor') ->
+cre_IndAuditParameter(D) when is_record(D, 'IndAudPackagesDescriptor') ->
     {indAudPackagesDescriptor, D}.
 
 cre_IndAudMediaDescriptor() ->
     #'IndAudMediaDescriptor'{}.
 
 cre_IndAudMediaDescriptor(TSD) 
-  when record(TSD, 'IndAudTerminationStateDescriptor') ->
+  when is_record(TSD, 'IndAudTerminationStateDescriptor') ->
     #'IndAudMediaDescriptor'{termStateDescr = TSD};
-cre_IndAudMediaDescriptor(Parms) when record(Parms, 'IndAudStreamParms') ->
+cre_IndAudMediaDescriptor(Parms) when is_record(Parms, 'IndAudStreamParms') ->
     Streams = {oneStream, Parms},
     #'IndAudMediaDescriptor'{streams = Streams};
-cre_IndAudMediaDescriptor(Descs) when list(Descs) ->
+cre_IndAudMediaDescriptor(Descs) when is_list(Descs) ->
     Streams = {multiStream, Descs},
     #'IndAudMediaDescriptor'{streams = Streams}.
 
 cre_IndAudMediaDescriptor(TSD, Parms) 
-  when record(TSD, 'IndAudTerminationStateDescriptor'),
-       record(Parms, 'IndAudStreamParms') ->
+  when is_record(TSD, 'IndAudTerminationStateDescriptor') andalso 
+       is_record(Parms, 'IndAudStreamParms') ->
     Streams = {oneStream, Parms},
     #'IndAudMediaDescriptor'{termStateDescr = TSD,
 			     streams        = Streams};
 cre_IndAudMediaDescriptor(TSD, Descs) 
-  when record(TSD, 'IndAudTerminationStateDescriptor'), list(Descs) ->
+  when is_record(TSD, 'IndAudTerminationStateDescriptor') andalso is_list(Descs) ->
     Streams = {multiStream, Descs},
     #'IndAudMediaDescriptor'{termStateDescr = TSD,
 			     streams        = Streams}.
 
 cre_IndAudStreamDescriptor(SID, Parms) 
-  when integer(SID), record(Parms, 'IndAudStreamParms') ->
+  when is_integer(SID) andalso is_record(Parms, 'IndAudStreamParms') ->
     #'IndAudStreamDescriptor'{streamID    = SID,
 			      streamParms = Parms}.
 
 cre_IndAudStreamParms() ->
     #'IndAudStreamParms'{}.
 
-cre_IndAudStreamParms(LCD) when record(LCD, 'IndAudLocalControlDescriptor') ->
+cre_IndAudStreamParms(LCD) when is_record(LCD, 'IndAudLocalControlDescriptor') ->
     #'IndAudStreamParms'{localControlDescriptor = LCD};
-cre_IndAudStreamParms(SD) when record(SD, 'IndAudStatisticsDescriptor') ->
+cre_IndAudStreamParms(SD) when is_record(SD, 'IndAudStatisticsDescriptor') ->
     #'IndAudStreamParms'{statisticsDescriptor = SD}.
 
 cre_IndAudStreamParms(LC, L, R) 
-  when record(LC, 'IndAudLocalControlDescriptor'),
-       record(L,  'IndAudLocalRemoteDescriptor'),
-       record(R,  'IndAudLocalRemoteDescriptor') ->
+  when is_record(LC, 'IndAudLocalControlDescriptor') andalso 
+       is_record(L,  'IndAudLocalRemoteDescriptor') andalso 
+       is_record(R,  'IndAudLocalRemoteDescriptor') ->
     #'IndAudStreamParms'{localControlDescriptor = LC,
 			 localDescriptor        = L,
 			 remoteDescriptor       = R}.
 
 cre_IndAudStreamParms(LC, L, R, S) 
-  when record(LC, 'IndAudLocalControlDescriptor'),
-       record(L,  'IndAudLocalRemoteDescriptor'),
-       record(R,  'IndAudLocalRemoteDescriptor'),
-       record(S,  'IndAudStatisticsDescriptor') ->
+  when is_record(LC, 'IndAudLocalControlDescriptor') andalso 
+       is_record(L,  'IndAudLocalRemoteDescriptor') andalso 
+       is_record(R,  'IndAudLocalRemoteDescriptor') andalso 
+       is_record(S,  'IndAudStatisticsDescriptor') ->
     #'IndAudStreamParms'{localControlDescriptor = LC,
 			 localDescriptor        = L,
 			 remoteDescriptor       = R,
@@ -780,28 +780,28 @@ cre_IndAudLocalControlDescriptor(SM, RV, RG, PP)
 				    reserveGroup  = RG, 
 				    propertyParms = PP}.
 
-cre_IndAudPropertyParm(PkgdName) when list(PkgdName) ->
+cre_IndAudPropertyParm(PkgdName) when is_list(PkgdName) ->
     #'IndAudPropertyParm'{name = PkgdName}.
 
 cre_IndAudLocalRemoteDescriptor(Grps) 
-  when list(Grps) ->
+  when is_list(Grps) ->
     #'IndAudLocalRemoteDescriptor'{propGrps = Grps}.
 
 cre_IndAudLocalRemoteDescriptor(GrpID, Grps) 
-  when integer(GrpID), 0 =< GrpID, GrpID =< 65535, list(Grps) ->
+  when is_integer(GrpID) andalso (0 =< GrpID) andalso (GrpID =< 65535) andalso is_list(Grps) ->
     #'IndAudLocalRemoteDescriptor'{propGroupID = GrpID,
 				   propGrps    = Grps}.
 
 cre_IndAudPropertyGroup([]) ->
     [];
 cre_IndAudPropertyGroup([H|_] = PG) 
-  when record(H, 'IndAudPropertyParm') ->
+  when is_record(H, 'IndAudPropertyParm') ->
     PG.
 
 cre_IndAudTerminationStateDescriptor([] = PP) ->
     #'IndAudTerminationStateDescriptor'{propertyParms = PP};
 cre_IndAudTerminationStateDescriptor([H|_] = PP) 
-  when record(H, 'IndAudPropertyParm') ->
+  when is_record(H, 'IndAudPropertyParm') ->
     #'IndAudTerminationStateDescriptor'{propertyParms = PP}.
 
 cre_IndAudTerminationStateDescriptor([] = PP, EBC, SS) 
@@ -819,109 +819,118 @@ cre_IndAudTerminationStateDescriptor([H|_] = PP, EBC, SS)
 					serviceState       = SS}.
 
 cre_IndAudEventsDescriptor(PkgdName) 
-  when list(PkgdName) ->
+  when is_list(PkgdName) ->
     #'IndAudEventsDescriptor'{pkgdName = PkgdName}.
 
 cre_IndAudEventsDescriptor(RID, PkgdName) 
-  when integer(RID), list(PkgdName) ->
+  when is_integer(RID) andalso is_list(PkgdName) ->
     #'IndAudEventsDescriptor'{requestID = RID, pkgdName = PkgdName};
 cre_IndAudEventsDescriptor(PkgdName, SID) 
-  when list(PkgdName), integer(SID) ->
+  when is_list(PkgdName) andalso is_integer(SID) ->
     #'IndAudEventsDescriptor'{pkgdName = PkgdName, streamID = SID}.
 
 cre_IndAudEventsDescriptor(RID, PkgdName, SID) 
-  when integer(RID), list(PkgdName), integer(SID)  ->
+  when is_integer(RID) andalso is_list(PkgdName) andalso is_integer(SID)  ->
     #'IndAudEventsDescriptor'{requestID = RID, 
 			      pkgdName  = PkgdName, 
 			      streamID  = SID}.
 
-cre_IndAudEventBufferDescriptor(EventName) when list(EventName) ->
+cre_IndAudEventBufferDescriptor(EventName) when is_list(EventName) ->
     #'IndAudEventBufferDescriptor'{eventName = EventName}.
 
 cre_IndAudEventBufferDescriptor(EventName, SID) 
-  when list(EventName), integer(SID)  ->
+  when is_list(EventName) andalso is_integer(SID)  ->
     #'IndAudEventBufferDescriptor'{eventName = EventName, streamID = SID}.
 
-cre_IndAudSignalsDescriptor(S) when record(S, 'IndAudSignal') ->
+cre_IndAudSignalsDescriptor(S) when is_record(S, 'IndAudSignal') ->
     {signal, S};
-cre_IndAudSignalsDescriptor(S) when record(S, 'IndAudSeqSigList') ->
+cre_IndAudSignalsDescriptor(S) when is_record(S, 'IndAudSeqSigList') ->
     {seqSigList, S}.
 
-cre_IndAudSeqSigList(ID) when integer(ID), 0=< ID, ID =< 65535 ->
+cre_IndAudSeqSigList(ID) when is_integer(ID) andalso (0=< ID) andalso (ID =< 65535) ->
     #'IndAudSeqSigList'{id = ID}.
 
 cre_IndAudSeqSigList(ID, S) 
-  when integer(ID), 0=< ID, ID =< 65535,
-       record(S, 'IndAudSignal') ->
+  when is_integer(ID) andalso 
+       (0=< ID) andalso 
+       (ID =< 65535) andalso 
+       is_record(S, 'IndAudSignal') ->
     #'IndAudSeqSigList'{id = ID, signalList = S}.
 
-cre_IndAudSignal(SigName) when list(SigName) ->
+cre_IndAudSignal(SigName) 
+  when is_list(SigName) ->
     #'IndAudSignal'{signalName = SigName}.
 
-cre_IndAudSignal(SigName, SID) when list(SigName), integer(SID) ->
+cre_IndAudSignal(SigName, SID) 
+  when is_list(SigName) andalso is_integer(SID) ->
     #'IndAudSignal'{signalName = SigName, streamID = SID}.
 
 cre_IndAudDigitMapDescriptor() ->
     #'IndAudDigitMapDescriptor'{}.
 
-cre_IndAudDigitMapDescriptor(DMN) when list(DMN) ->
+cre_IndAudDigitMapDescriptor(DMN) when is_list(DMN) ->
     #'IndAudDigitMapDescriptor'{digitMapName = DMN}.
 
-cre_IndAudStatisticsDescriptor(StatName) when list(StatName) ->
+cre_IndAudStatisticsDescriptor(StatName) when is_list(StatName) ->
     #'IndAudStatisticsDescriptor'{statName = StatName}.
 
 cre_IndAudPackagesDescriptor(N, V) 
-  when list(N), 
-       integer(V), 0 =< V, V =< 99 ->
+  when is_list(N) andalso is_integer(V) andalso (0 =< V) andalso (V =< 99) ->
     #'IndAudPackagesDescriptor'{packageName    = N, 
 				packageVersion = V}.
 
 cre_NotifyRequest(TermIDs, D) 
-  when list(TermIDs), record(D, 'ObservedEventsDescriptor') ->
+  when is_list(TermIDs) andalso is_record(D, 'ObservedEventsDescriptor') ->
     #'NotifyRequest'{terminationID            = TermIDs,
 		     observedEventsDescriptor = D}.
 
 cre_NotifyRequest(TermIDs, D, ED) 
-  when list(TermIDs), 
-       record(D, 'ObservedEventsDescriptor'),
-       record(ED, 'ErrorDescriptor') ->
+  when is_list(TermIDs) andalso 
+       is_record(D, 'ObservedEventsDescriptor') andalso 
+       is_record(ED, 'ErrorDescriptor') ->
     #'NotifyRequest'{terminationID            = TermIDs,
 		     observedEventsDescriptor = D,
 		     errorDescriptor          = ED}.
     
-cre_NotifyReply(TermIDs) when list(TermIDs) ->
+cre_NotifyReply(TermIDs) when is_list(TermIDs) ->
     #'NotifyReply'{terminationID = TermIDs}.
 
 cre_NotifyReply(TermIDs, ED) 
-  when list(TermIDs), 
-       record(ED, 'ErrorDescriptor') ->
+  when is_list(TermIDs) andalso 
+       is_record(ED, 'ErrorDescriptor') ->
     #'NotifyReply'{terminationID   = TermIDs,
 		   errorDescriptor = ED}.
 
 cre_ObservedEventsDescriptor(RID, [H|_] = L) 
-  when integer(RID), record(H, 'ObservedEvent') ->
+  when is_integer(RID) andalso is_record(H, 'ObservedEvent') ->
     #'ObservedEventsDescriptor'{requestId        = RID, 
 				observedEventLst = L}.
 
-cre_ObservedEvent(EN, EPL) when list(EN), list(EPL) ->
+cre_ObservedEvent(EN, EPL) when is_list(EN) andalso is_list(EPL) ->
     #'ObservedEvent'{eventName    = EN, 
 		     eventParList = EPL};
-cre_ObservedEvent(EN, TN) when list(EN), record(TN, 'TimeNotation') ->
+cre_ObservedEvent(EN, TN) when is_list(EN) andalso is_record(TN, 'TimeNotation') ->
     #'ObservedEvent'{eventName    = EN, 
 		     timeNotation = TN}.
 
-cre_ObservedEvent(EN, SID, EPL) when list(EN), integer(SID), list(EPL) ->
+cre_ObservedEvent(EN, SID, EPL) 
+  when is_list(EN) andalso is_integer(SID) andalso is_list(EPL) ->
     #'ObservedEvent'{eventName    = EN, 
 		     streamID     = SID, 
 		     eventParList = EPL};
 cre_ObservedEvent(EN, EPL, TN) 
-  when list(EN), list(EPL), record(TN, 'TimeNotation') ->
+  when is_list(EN) andalso 
+       is_list(EPL) andalso 
+       is_record(TN, 'TimeNotation') ->
     #'ObservedEvent'{eventName    = EN, 
 		     eventParList = EPL,
 		     timeNotation = TN}.
 
 cre_ObservedEvent(EN, SID, EPL, TN) 
-  when list(EN), integer(SID), list(EPL), record(TN, 'TimeNotation') ->
+  when is_list(EN) andalso 
+       is_integer(SID) andalso 
+       is_list(EPL) andalso 
+       is_record(TN, 'TimeNotation') ->
     #'ObservedEvent'{eventName    = EN, 
 		     streamID     = SID, 
 		     eventParList = EPL,
@@ -930,93 +939,92 @@ cre_ObservedEvent(EN, SID, EPL, TN)
 cre_EventName(N) when is_list(N) ->
     N.
 
-cre_EventParameter(N, V) when list(N), list(V) ->
+cre_EventParameter(N, V) when is_list(N) andalso is_list(V) ->
     #'EventParameter'{eventParameterName = N, 
 		      value              = V}.
 
 cre_EventParameter(N, V, relation = Tag, R) 
-  when list(N), list(V), atom(R) ->
+  when is_list(N) andalso is_list(V) andalso is_atom(R) ->
     EI = {Tag, R},
     #'EventParameter'{eventParameterName = N, 
 		      value              = V,
 		      extraInfo          = EI};
 cre_EventParameter(N, V, range = Tag, B) 
-  when list(N), list(V), atom(B) ->
+  when is_list(N) andalso is_list(V) andalso is_atom(B) ->
     EI = {Tag, B},
     #'EventParameter'{eventParameterName = N, 
 		      value              = V,
 		      extraInfo          = EI};
 cre_EventParameter(N, V, sublist = Tag, B) 
-  when list(N), list(V), atom(B) ->
+  when is_list(N) andalso is_list(V) andalso is_atom(B) ->
     EI = {Tag, B},
     #'EventParameter'{eventParameterName = N, 
 		      value              = V,
 		      extraInfo          = EI}.
 
 cre_ServiceChangeRequest(TermIDs, SCP) 
-  when list(TermIDs),
-       record(SCP, 'ServiceChangeParm') ->
+  when is_list(TermIDs) andalso 
+       is_record(SCP, 'ServiceChangeParm') ->
     #'ServiceChangeRequest'{terminationID      = TermIDs, 
 			    serviceChangeParms = SCP}.
 
 cre_ServiceChangeReply(TermIDs, {Tag, R} = SCR) 
-  when list(TermIDs), atom(Tag), tuple(R) ->
+  when is_list(TermIDs) andalso is_atom(Tag) andalso is_tuple(R) ->
     #'ServiceChangeReply'{terminationID       = TermIDs, 
 			  serviceChangeResult = SCR}.
 
-cre_ServiceChangeResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_ServiceChangeResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {errorDescriptor, ED};
-cre_ServiceChangeResult(SCRP) when record(SCRP, 'ServiceChangeResParm') ->
+cre_ServiceChangeResult(SCRP) when is_record(SCRP, 'ServiceChangeResParm') ->
     {serviceChangeResParms, SCRP}.
 
 %% cre_WildcardField(L) when list(L), length(L) == 1 -> L.
 
 cre_TerminationID(W, ID) 
-  when list(W), 
-       list(ID), 1 =< length(ID), length(ID) =< 8 ->
+  when is_list(W) andalso is_list(ID) andalso (1 =< length(ID)) andalso (length(ID) =< 8) ->
     #'TerminationID'{wildcard = W, 
 		     id       = ID}.
 
-cre_TerminationIDList(L) when list(L) ->
+cre_TerminationIDList(L) when is_list(L) ->
     L.
 
 cre_MediaDescriptor() ->
     #'MediaDescriptor'{}.
 
-cre_MediaDescriptor(TSD) when record(TSD, 'TerminationStateDescriptor') ->
+cre_MediaDescriptor(TSD) when is_record(TSD, 'TerminationStateDescriptor') ->
     #'MediaDescriptor'{termStateDescr = TSD};
-cre_MediaDescriptor(SP) when record(SP, 'StreamParms') ->
+cre_MediaDescriptor(SP) when is_record(SP, 'StreamParms') ->
     Streams = {oneStream, SP},
     #'MediaDescriptor'{streams = Streams};
-cre_MediaDescriptor([H|_] = SDs) when record(H, 'StreamDescriptor') ->
+cre_MediaDescriptor([H|_] = SDs) when is_record(H, 'StreamDescriptor') ->
     Streams = {multiStream, SDs},
     #'MediaDescriptor'{streams = Streams}.
 
 cre_MediaDescriptor(TSD, SP) 
-  when record(TSD, 'TerminationStateDescriptor'), 
-       record(SP, 'StreamParms') ->
+  when is_record(TSD, 'TerminationStateDescriptor') andalso 
+       is_record(SP, 'StreamParms') ->
     Streams = {oneStream, SP},
     #'MediaDescriptor'{termStateDescr = TSD,
 		       streams        = Streams};
 cre_MediaDescriptor(TSD, [H|_] = SDs) 
-  when record(TSD, 'TerminationStateDescriptor'), 
-       record(H, 'StreamDescriptor') ->
+  when is_record(TSD, 'TerminationStateDescriptor') andalso 
+       is_record(H, 'StreamDescriptor') ->
     Streams = {multiStream, SDs},
     #'MediaDescriptor'{termStateDescr = TSD,
 		       streams        = Streams}.
 
-cre_StreamDescriptor(SID, SP) when integer(SID), record(SP, 'StreamParms') ->
+cre_StreamDescriptor(SID, SP) when is_integer(SID) andalso is_record(SP, 'StreamParms') ->
     #'StreamDescriptor'{streamID    = SID, 
 			streamParms = SP}.
 
 cre_StreamParms() ->
     #'StreamParms'{}.
 
-cre_StreamParms(LCD) when record(LCD, 'LocalControlDescriptor') ->
+cre_StreamParms(LCD) when is_record(LCD, 'LocalControlDescriptor') ->
     #'StreamParms'{localControlDescriptor = LCD};
-cre_StreamParms(LD) when record(LD, 'LocalRemoteDescriptor') ->
+cre_StreamParms(LD) when is_record(LD, 'LocalRemoteDescriptor') ->
     #'StreamParms'{localDescriptor = LD};
-cre_StreamParms(SD) when list(SD) ->
+cre_StreamParms(SD) when is_list(SD) ->
     #'StreamParms'{statisticsDescriptor = SD}.
 
 cre_StreamParms(LCD, LD) 
@@ -1050,13 +1058,13 @@ cre_StreamParms(LCD, LD, RD, SD)
 		   remoteDescriptor       = RD,
 		   statisticsDescriptor   = SD}.
 
-cre_LocalControlDescriptor(SM) when atom(SM) ->
+cre_LocalControlDescriptor(SM) when is_atom(SM) ->
     #'LocalControlDescriptor'{streamMode = SM, propertyParms = []};
-cre_LocalControlDescriptor([H|_] = PP) when record(H, 'PropertyParm') ->
+cre_LocalControlDescriptor([H|_] = PP) when is_record(H, 'PropertyParm') ->
     #'LocalControlDescriptor'{propertyParms = PP}.
 
 cre_LocalControlDescriptor(SM, [H|_] = PP) 
-  when atom(SM), record(H, 'PropertyParm') ->
+  when is_atom(SM) andalso is_record(H, 'PropertyParm') ->
     #'LocalControlDescriptor'{streamMode    = SM,
 			      propertyParms = PP}.
 
@@ -1081,19 +1089,19 @@ cre_StreamMode(inactive = M) ->
 cre_StreamMode(loopBack = M) ->
     M.
 
-cre_PropertyParm(N, [H|_] = V) when list(N), list(H) ->
+cre_PropertyParm(N, [H|_] = V) when is_list(N) andalso is_list(H) ->
     #'PropertyParm'{name = N, value = V}.
 
 cre_PropertyParm(N, [H|_] = V, relation = Tag, R) 
-  when list(N), list(H), atom(R) ->
+  when is_list(N) andalso is_list(H) andalso is_atom(R) ->
     EI = {Tag, R},
     #'PropertyParm'{name = N, value = V, extraInfo = EI};
 cre_PropertyParm(N, [H|_] = V, range = Tag, B) 
-  when list(N), list(H), atom(B) ->
+  when is_list(N) andalso is_list(H) andalso is_atom(B) ->
     EI = {Tag, B},
     #'PropertyParm'{name = N, value = V, extraInfo = EI};
 cre_PropertyParm(N, [H|_] = V, sublist = Tag, B) 
-  when list(N), list(H), atom(B) ->
+  when is_list(N) andalso is_list(H) andalso is_atom(B) ->
     EI = {Tag, B},
     #'PropertyParm'{name = N, value = V, extraInfo = EI}.
 
@@ -1127,40 +1135,40 @@ cre_Relation(smallerThan = R) ->
 cre_Relation(unequalTo = R) ->
     R.
 
-cre_LocalRemoteDescriptor([H|_] = PGs) when list(H) ->
+cre_LocalRemoteDescriptor([H|_] = PGs) when is_list(H) ->
     #'LocalRemoteDescriptor'{propGrps = PGs}.
 
-cre_PropertyGroup([H|_] = PG) when record(H, 'PropertyParm') ->
+cre_PropertyGroup([H|_] = PG) when is_record(H, 'PropertyParm') ->
     PG.
     
-cre_TerminationStateDescriptor([H|_] = PPs) when record(H, 'PropertyParm') ->
+cre_TerminationStateDescriptor([H|_] = PPs) when is_record(H, 'PropertyParm') ->
     #'TerminationStateDescriptor'{propertyParms = PPs}.
 
 cre_TerminationStateDescriptor([H|_] = PPs, off = EBC) 
-  when record(H, 'PropertyParm') ->
+  when is_record(H, 'PropertyParm') ->
     #'TerminationStateDescriptor'{propertyParms      = PPs,
 				  eventBufferControl = EBC};
 cre_TerminationStateDescriptor([H|_] = PPs, lockStep = EBC) 
-  when record(H, 'PropertyParm') ->
+  when is_record(H, 'PropertyParm') ->
     #'TerminationStateDescriptor'{propertyParms      = PPs,
 				  eventBufferControl = EBC};
 cre_TerminationStateDescriptor([H|_] = PPs, test = SS) 
-  when record(H, 'PropertyParm') ->
+  when is_record(H, 'PropertyParm') ->
     #'TerminationStateDescriptor'{propertyParms = PPs,
 				  serviceState  = SS};
 cre_TerminationStateDescriptor([H|_] = PPs, outOfSvc = SS) 
-  when record(H, 'PropertyParm') ->
+  when is_record(H, 'PropertyParm') ->
     #'TerminationStateDescriptor'{propertyParms = PPs,
 				  serviceState  = SS};
 cre_TerminationStateDescriptor([H|_] = PPs, inSvc = SS) 
-  when record(H, 'PropertyParm') ->
+  when is_record(H, 'PropertyParm') ->
     #'TerminationStateDescriptor'{propertyParms = PPs,
 				  serviceState  = SS}.
 
 cre_TerminationStateDescriptor([H|_] = PPs, EMC, SS) 
-  when record(H, 'PropertyParm'),
-       ((EMC == off)  or (EMC == lockStep)) and
-       ((SS  == test) or (SS  == outOfSvc) or (SS == inSvc)) ->
+  when is_record(H, 'PropertyParm') andalso 
+       ((EMC =:= off)  orelse (EMC =:= lockStep)) andalso 
+       ((SS  =:= test) orelse (SS  =:= outOfSvc) orelse (SS =:= inSvc)) ->
     #'TerminationStateDescriptor'{propertyParms      = PPs,
 				  eventBufferControl = EMC,
 				  serviceState       = SS}.
@@ -1178,7 +1186,7 @@ cre_ServiceState(inSvc = SS) ->
     SS.
 
 cre_MuxDescriptor(MT, [H|_] = TL) 
-  when atom(MT), record(H, 'TerminationID') ->
+  when is_atom(MT) andalso is_record(H, 'TerminationID') ->
     #'MuxDescriptor'{muxType = MT, termList = TL}.
 
 %% cre_MuxDescriptor(MT, [H|_] = TL, NSD) 
@@ -1206,44 +1214,44 @@ cre_EventsDescriptor() ->
     #'EventsDescriptor'{eventList = []}.
 
 cre_EventsDescriptor(RID, [H|_] = EL) 
-  when integer(RID), record(H, 'RequestedEvent') ->
+  when is_integer(RID) andalso is_record(H, 'RequestedEvent') ->
     #'EventsDescriptor'{requestID = RID, eventList = EL}.
     
 cre_RequestedEvent(N) ->
     #'RequestedEvent'{pkgdName = N}.
 
 cre_RequestedEvent(N, [H|_] = EPL) 
-  when list(N),
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_record(H, 'EventParameter') ->
     #'RequestedEvent'{pkgdName  = N,
 		      evParList = EPL};
 cre_RequestedEvent(N, EA) 
-  when list(N), 
-       record(EA, 'RequestedActions')->
+  when is_list(N) andalso 
+       is_record(EA, 'RequestedActions')->
     #'RequestedEvent'{pkgdName    = N,
 		      eventAction = EA}.
 
 
 cre_RequestedEvent(N, SID, [H|_] = EPL) 
-  when list(N), 
-       integer(SID), 
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_integer(SID) andalso 
+       is_record(H, 'EventParameter') ->
     #'RequestedEvent'{pkgdName  = N,
 		      streamID  = SID, 
 		      evParList = EPL};
 cre_RequestedEvent(N, EA, [H|_] = EPL) 
-  when list(N), 
-       record(EA, 'RequestedActions'), 
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_record(EA, 'RequestedActions') andalso 
+       is_record(H, 'EventParameter') ->
     #'RequestedEvent'{pkgdName     = N,
 		      eventAction  = EA, 
 		      evParList    = EPL}.
 
 cre_RequestedEvent(N, SID, EA, [H|_] = EPL) 
-  when list(N), 
-       integer(SID), 
-       record(EA, 'RequestedActions'), 
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_integer(SID) andalso 
+       is_record(EA, 'RequestedActions') andalso 
+       is_record(H, 'EventParameter') ->
     #'RequestedEvent'{pkgdName     = N,
 		      streamID     = SID, 
 		      eventAction  = EA, 
@@ -1275,45 +1283,45 @@ cre_RequestedActions(KA, {Tag, _} = EDM, SE, SD)
 			secondEvent       = SE, 
 			signalsDescriptor = SD}.
 
-cre_EventDM(N) when list(N) ->
+cre_EventDM(N) when is_list(N) ->
     {digitMapName, N};
-cre_EventDM(V) when record(V, 'DigitMapValue') ->
+cre_EventDM(V) when is_record(V, 'DigitMapValue') ->
     {digitMapValue, V}.
 
 cre_SecondEventsDescriptor([H|_] = EL) 
-  when record(H, 'SecondRequestedEvent') ->
+  when is_record(H, 'SecondRequestedEvent') ->
     #'SecondEventsDescriptor'{eventList = EL}.
     
 cre_SecondEventsDescriptor(RID, [H|_] = EL) 
-  when integer(RID), record(H, 'SecondRequestedEvent') ->
+  when is_integer(RID) andalso is_record(H, 'SecondRequestedEvent') ->
     #'SecondEventsDescriptor'{requestID = RID, eventList = EL}.
     
 cre_SecondRequestedEvent(N, [H|_] = EPL) 
-  when list(N),
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_record(H, 'EventParameter') ->
     #'SecondRequestedEvent'{pkgdName  = N,
 			    evParList = EPL}.
 
 cre_SecondRequestedEvent(N, SID, [H|_] = EPL) 
-  when list(N), 
-       integer(SID), 
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_integer(SID) andalso 
+       is_record(H, 'EventParameter') ->
     #'SecondRequestedEvent'{pkgdName  = N,
 			    streamID  = SID, 
 			    evParList = EPL};
 cre_SecondRequestedEvent(N, EA, [H|_] = EPL) 
-  when list(N), 
-       record(EA, 'SecondRequestedActions'), 
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_record(EA, 'SecondRequestedActions') andalso
+       is_record(H, 'EventParameter') ->
     #'SecondRequestedEvent'{pkgdName     = N,
 			    eventAction  = EA, 
 			    evParList    = EPL}.
 
 cre_SecondRequestedEvent(N, SID, EA, [H|_] = EPL) 
-  when list(N), 
-       integer(SID), 
-       record(EA, 'SecondRequestedActions'), 
-       record(H, 'EventParameter') ->
+  when is_list(N) andalso 
+       is_integer(SID) andalso 
+       is_record(EA, 'SecondRequestedActions') andalso 
+       is_record(H, 'EventParameter') ->
     #'SecondRequestedEvent'{pkgdName     = N,
 			    streamID     = SID, 
 			    eventAction  = EA, 
@@ -1323,38 +1331,39 @@ cre_SecondRequestedActions() ->
     #'SecondRequestedActions'{}.
 
 cre_SecondRequestedActions(KA) 
-  when ((KA == true) or (KA == false) or (KA == asn1_NOVALUE)) ->
+  when ((KA =:= true) orelse (KA =:= false) orelse (KA =:= asn1_NOVALUE)) ->
     #'SecondRequestedActions'{keepActive = KA};
-cre_SecondRequestedActions(SD) when list(SD) ->
+cre_SecondRequestedActions(SD) when is_list(SD) ->
     #'SecondRequestedActions'{signalsDescriptor = SD};
-cre_SecondRequestedActions({Tag, _} = EDM) when atom(Tag) ->
+cre_SecondRequestedActions({Tag, _} = EDM) when is_atom(Tag) ->
     #'SecondRequestedActions'{eventDM = EDM}.
 
 cre_SecondRequestedActions(KA, SD) 
-  when ((KA == true) or (KA == false) or (KA == asn1_NOVALUE)) and
+  when ((KA =:= true) orelse (KA =:= false) orelse (KA =:= asn1_NOVALUE)) andalso 
        is_list(SD) ->
     #'SecondRequestedActions'{keepActive = KA, signalsDescriptor = SD};
 cre_SecondRequestedActions(KA, {Tag, _} = EDM) 
-  when ((KA == true) or (KA == false) or (KA == asn1_NOVALUE)) and
+  when ((KA =:= true) orelse (KA =:= false) orelse (KA =:= asn1_NOVALUE)) andalso 
        is_atom(Tag) ->
     #'SecondRequestedActions'{keepActive = KA, eventDM = EDM}.
 
 cre_SecondRequestedActions(KA, {Tag, _} = EDM, SD) 
-  when ((KA == true) or (KA == false) or (KA == asn1_NOVALUE)) and
-       is_atom(Tag), 
+  when ((KA =:= true) orelse (KA =:= false) orelse (KA =:= asn1_NOVALUE)) andalso 
+       is_atom(Tag) andalso 
        is_list(SD) ->
     #'SecondRequestedActions'{keepActive        = KA, 
 			      eventDM           = EDM, 
 			      signalsDescriptor = SD}.
 
-cre_EventBufferDescriptor([H|_] = D) when record(H, 'EventSpec') ->
+cre_EventBufferDescriptor([H|_] = D) when is_record(H, 'EventSpec') ->
     D.
 
-cre_EventSpec(N, [H|_] = EPL) when list(N), record(H, 'EventParameter') ->
+cre_EventSpec(N, [H|_] = EPL) 
+  when is_list(N) andalso is_record(H, 'EventParameter') ->
     #'EventSpec'{eventName = N, eventParList = EPL}.
 
 cre_EventSpec(N, SID, [H|_] = EPL) 
-  when list(N), integer(SID), record(H, 'EventParameter') ->
+  when is_list(N) andalso is_integer(SID) andalso is_record(H, 'EventParameter') ->
     #'EventSpec'{eventName = N, streamID = SID, eventParList = EPL}.
     
 cre_SignalsDescriptor(D) ->
@@ -1365,19 +1374,19 @@ cre_SignalsDescriptor(D) ->
 	    error({invalid_SignalsDescriptor, D})
     end.
 
-cre_SignalRequest(S) when record(S, 'Signal') ->
+cre_SignalRequest(S) when is_record(S, 'Signal') ->
     {signal, S};
-cre_SignalRequest(S) when record(S, 'SeqSigList') ->
+cre_SignalRequest(S) when is_record(S, 'SeqSigList') ->
     {seqSigList, S}.
 
 cre_SeqSigList(ID, [H|_] = SL) 
-  when integer(ID), 0 =< ID, ID =< 65535, record(H, 'Signal') ->
+  when is_integer(ID) andalso (0 =< ID) andalso (ID =< 65535) andalso is_record(H, 'Signal') ->
     #'SeqSigList'{id = ID, signalList = SL}.
 
-cre_Signal(N) when list(N) ->
+cre_Signal(N) when is_list(N) ->
     #'Signal'{signalName = N}.
 
-cre_Signal(N, SPL) when list(N), list(SPL) ->
+cre_Signal(N, SPL) when is_list(N) andalso is_list(SPL) ->
     #'Signal'{signalName = N,
 	      sigParList = SPL}.
 
@@ -1439,7 +1448,7 @@ cre_SignalDirection(both = SD) ->
 cre_SignalName(N) ->
     cre_PkgdName(N).
 
-cre_NotifyCompletion(L) when list(L) ->
+cre_NotifyCompletion(L) when is_list(L) ->
     Vals = [onTimeOut, onInterruptByEvent, 
 	    onInterruptByNewSignalDescr, otherReason],
     F = fun(E) -> case lists:member(E, Vals) of
@@ -1452,7 +1461,7 @@ cre_NotifyCompletion(L) when list(L) ->
     lists:foreach(F, L),
     L.
 
-cre_SigParameter(N, V) when list(N), list(V) ->
+cre_SigParameter(N, V) when is_list(N) andalso is_list(V) ->
     #'SigParameter'{sigParameterName = N, value = V}.
 
 cre_SigParameter(N, V, relation = Tag, R) 
@@ -1473,7 +1482,7 @@ cre_RequestID(Val) when 0 =< Val, Val =< 4294967295 ->
 cre_RequestID(Val) ->
     exit({invalid_RequestID, Val}).
 
-cre_ModemDescriptor(MTL, MPL) when list(MTL), list(MPL) ->
+cre_ModemDescriptor(MTL, MPL) when is_list(MTL) andalso is_list(MPL) ->
     #'ModemDescriptor'{mtl = MTL, mpl = MPL}.
 
 %% cre_ModemDescriptor(MTL, MPL, NSD) 
@@ -1502,18 +1511,18 @@ cre_ModemType(synchISDN = MT) ->
 cre_DigitMapDescriptor() ->
     #'DigitMapDescriptor'{}.
 
-cre_DigitMapDescriptor(N) when list(N) ->
+cre_DigitMapDescriptor(N) when is_list(N) ->
     #'DigitMapDescriptor'{digitMapName = N};
-cre_DigitMapDescriptor(V) when record(V, 'DigitMapValue') ->
+cre_DigitMapDescriptor(V) when is_record(V, 'DigitMapValue') ->
     #'DigitMapDescriptor'{digitMapValue = V}.
 
-cre_DigitMapDescriptor(N, V) when list(N), record(V, 'DigitMapValue') ->
+cre_DigitMapDescriptor(N, V) when is_list(N) andalso is_record(V, 'DigitMapValue') ->
     #'DigitMapDescriptor'{digitMapName = N, digitMapValue = V}.
 
 cre_DigitMapName(N) ->
     cre_Name(N).
 
-cre_DigitMapValue(DMB) when list(DMB) ->
+cre_DigitMapValue(DMB) when is_list(DMB) ->
     #'DigitMapValue'{digitMapBody = DMB}.
 
 cre_DigitMapValue(Start, Short, Long, DMB) ->
@@ -1535,7 +1544,7 @@ cre_DigitMapValue(Start, Short, Long, DMB, Dur)
 		     digitMapBody  = DMB,
 		     durationTimer = Dur}.
 
-cre_ServiceChangeParm(M, R) when atom(M), list(R) ->
+cre_ServiceChangeParm(M, R) when is_atom(M) andalso is_list(R) ->
     #'ServiceChangeParm'{serviceChangeMethod = M,
 			 serviceChangeReason = R}.
 
@@ -1581,17 +1590,17 @@ cre_ServiceChangeParm(M, Addr, Ver, Prof, R, D, Mid, TS, I, IF)
     end.
 		
 cre_ServiceChangeAddress(portNumber = Tag, P) 
-  when integer(P), 0 =< P, P =< 65535 ->
+  when is_integer(P) andalso (0 =< P) andalso (P =< 65535) ->
     {Tag, P};
-cre_ServiceChangeAddress(ip4Address = Tag, A) when record(A, 'IP4Address') ->
+cre_ServiceChangeAddress(ip4Address = Tag, A) when is_record(A, 'IP4Address') ->
     {Tag, A};
-cre_ServiceChangeAddress(ip6Address = Tag, A) when record(A, 'IP6Address') ->
+cre_ServiceChangeAddress(ip6Address = Tag, A) when is_record(A, 'IP6Address') ->
     {Tag, A};
-cre_ServiceChangeAddress(domainName = Tag, N) when record(N, 'DomainName') ->
+cre_ServiceChangeAddress(domainName = Tag, N) when is_record(N, 'DomainName') ->
     {Tag, N};
-cre_ServiceChangeAddress(deviceName = Tag, N) when list(N) ->
+cre_ServiceChangeAddress(deviceName = Tag, N) when is_list(N) ->
     {Tag, N};
-cre_ServiceChangeAddress(mtpAddress = Tag, A) when list(A) ->
+cre_ServiceChangeAddress(mtpAddress = Tag, A) when is_list(A) ->
     {Tag, A}.
 
 cre_ServiceChangeResParm() ->
@@ -1600,12 +1609,12 @@ cre_ServiceChangeResParm(Addr, Prof) ->
     cre_ServiceChangeResParm(asn1_NOVALUE, Addr, asn1_NOVALUE, 
 			     Prof, asn1_NOVALUE).
 cre_ServiceChangeResParm(Mid, Addr, Ver, Prof, TS)
-  when ((is_integer(Ver) and (0 =< Ver) and (Ver =< 99)) or 
-	(Ver == asn1_NOVALUE)) and 
-       (is_record(Prof, 'ServiceChangeProfile') or (Prof == asn1_NOVALUE)) and
-       (is_record(TS, 'TimeNotation') or (TS == asn1_NOVALUE)) ->
+  when ((is_integer(Ver) and (0 =< Ver) andalso (Ver =< 99)) orelse 
+	(Ver =:= asn1_NOVALUE)) andalso 
+       (is_record(Prof, 'ServiceChangeProfile') orelse (Prof =:= asn1_NOVALUE)) andalso 
+       (is_record(TS, 'TimeNotation') orelse (TS =:= asn1_NOVALUE)) ->
     F = fun(A) -> 
-		(A == asn1_NOVALUE) orelse 
+		(A =:= asn1_NOVALUE) orelse 
 				      (is_tuple(A) 
 				       andalso is_atom(element(1, A))) 
 	end,
@@ -1638,13 +1647,14 @@ cre_ServiceChangeProfile(N) ->
     cre_ServiceChangeProfile(N, 1).
 
 cre_ServiceChangeProfile(N, V) 
-  when is_list(N) and is_integer(V) and (0 =< V) and (V =< 99) ->
+  when is_list(N) andalso is_integer(V) andalso (0 =< V) andalso (V =< 99) ->
     #'ServiceChangeProfile'{profileName = N, version = V}.
     
-cre_PackagesDescriptor([H|_] = D) when record(H, 'PackagesItem') ->
+cre_PackagesDescriptor([H|_] = D) when is_record(H, 'PackagesItem') ->
     D.
 
-cre_PackagesItem(N, Ver) when list(N), integer(Ver), 0 =< Ver, Ver =< 99 ->
+cre_PackagesItem(N, Ver) 
+  when is_list(N) andalso is_integer(Ver) andalso (0 =< Ver) andalso (Ver =< 99) ->
     #'PackagesItem'{packageName    = N, 
 		    packageVersion = Ver}.
 
@@ -1652,10 +1662,10 @@ cre_StatisticsDescriptor(D) ->
     true = is_StatisticsDescriptor(D),
     D.
 
-cre_StatisticsParameter(N) when list(N) ->
+cre_StatisticsParameter(N) when is_list(N) ->
     #'StatisticsParameter'{statName = N}.
 
-cre_StatisticsParameter(N, V) when list(N), list(V) ->
+cre_StatisticsParameter(N, V) when is_list(N) andalso is_list(V) ->
     #'StatisticsParameter'{statName = N, statValue = V}.
 
 %% cre_NonStandardData({Tag, _} = Id, Data) when atom(Tag), list(Data) ->
@@ -1679,10 +1689,10 @@ cre_StatisticsParameter(N, V) when list(N), list(V) ->
 %% 		       manufacturerCode = MC}.
        
 cre_TimeNotation(D, T) 
-  when list(D), length(D) == 8, list(T), length(T) == 8 ->
+  when is_list(D) andalso (length(D) =:= 8) andalso is_list(T) andalso (length(T) =:= 8) ->
     #'TimeNotation'{date = D, time = T}.
     
-cre_Value([H|_] = V) when list(H) ->
+cre_Value([H|_] = V) when is_list(H) ->
     V.
 
 cre_BOOLEAN(true = B) ->
@@ -2962,7 +2972,7 @@ is_TopologyRequest_topologyDirection(D) ->
     lists:member(D, [bothway, isolate, oneway]).
 
 
-chk_TopologyRequest(T, T) when record(T,'TopologyRequest') ->
+chk_TopologyRequest(T, T) when is_record(T,'TopologyRequest') ->
     ok;
 chk_TopologyRequest(#'TopologyRequest'{terminationFrom   = F1,
                                        terminationTo     = T1,
@@ -3034,7 +3044,7 @@ is_AmmRequest_descriptors(Descs, _) ->
     wrong_type('AmmRequest_descriptors', Descs).
 
 	    
-chk_AmmRequest(R, R) when record(R, 'AmmRequest') ->
+chk_AmmRequest(R, R) when is_record(R, 'AmmRequest') ->
     d("chk_AmmRequest -> entry when equal"),
     chk_type(fun is_AmmRequest/1, 'AmmRequest', R);
 chk_AmmRequest(#'AmmRequest'{terminationID = Tids1,
@@ -6395,12 +6405,12 @@ chk_RequestID(ID1, ID2) ->
 
 %% -- ModemDescriptor -- 
 
-is_ModemDescriptor(D) when record(D, 'ModemDescriptor') ->
+is_ModemDescriptor(D) when is_record(D, 'ModemDescriptor') ->
     true;
 is_ModemDescriptor(_) ->
     false.
 
-chk_ModemDescriptor(D, D) when record(D, 'ModemDescriptor') ->
+chk_ModemDescriptor(D, D) when is_record(D, 'ModemDescriptor') ->
     ok;
 chk_ModemDescriptor(#'ModemDescriptor'{mtl             = MTL1,
 				       mpl             = MPL1,
@@ -7233,7 +7243,7 @@ chk_BOOLEAN(B1, B2) ->
     end.
 
 
-is_IA5String(S) when list(S) ->
+is_IA5String(S) when is_list(S) ->
     true;
 is_IA5String(_) ->
     false.
@@ -7248,7 +7258,7 @@ is_IA5String(_) ->
 % 	    wrong_type('IA5String', S1, S2)
 %     end.
 
-is_IA5String(S, _) when list(S) ->
+is_IA5String(S, _) when is_list(S) ->
     true;
 is_IA5String(_, _) ->
     false.
@@ -7266,16 +7276,16 @@ chk_IA5String(S1, S2, R) ->
 
 is_OCTET_STRING(L) -> is_OCTET_STRING(L, any).
 
-is_OCTET_STRING(L, any) when list(L) ->
+is_OCTET_STRING(L, any) when is_list(L) ->
     true;
-is_OCTET_STRING(L, {exact, Len}) when list(L), length(L) == Len ->
+is_OCTET_STRING(L, {exact, Len}) when is_list(L) andalso (length(L) =:= Len) ->
     true;
-is_OCTET_STRING(L, {atleast, Len}) when list(L), Len =< length(L) ->
+is_OCTET_STRING(L, {atleast, Len}) when is_list(L) andalso (Len =< length(L)) ->
     true;
-is_OCTET_STRING(L, {atmost, Len}) when list(L), length(L) =< Len ->
+is_OCTET_STRING(L, {atmost, Len}) when is_list(L) andalso (length(L) =< Len) ->
     true;
 is_OCTET_STRING(L, {range, Min, Max}) 
-  when list(L), Min =< length(L), length(L) =< Max ->
+  when is_list(L) andalso (Min =< length(L)) andalso (length(L) =< Max) ->
     true;
 is_OCTET_STRING(_, _) ->
     false.
@@ -7328,16 +7338,19 @@ chk_NULL(N1, N2) ->
 is_opt_INTEGER(I, R) ->
     is_OPTIONAL(fun(X) -> is_INTEGER(X, R) end, I).
 
-is_INTEGER(I, any) when integer(I) ->
+is_INTEGER(I, any) when is_integer(I) ->
     true;
-is_INTEGER(I, {exact, I}) when integer(I) ->
+is_INTEGER(I, {exact, I}) when is_integer(I) ->
     true;
-is_INTEGER(I, {atleast, Min}) when integer(I), integer(Min), Min =< I ->
+is_INTEGER(I, {atleast, Min}) when is_integer(I) andalso is_integer(Min) andalso (Min =< I) ->
     true;
-is_INTEGER(I, {atmost, Max}) when integer(I), integer(Max), I =< Max ->
+is_INTEGER(I, {atmost, Max}) when is_integer(I) andalso is_integer(Max) andalso (I =< Max) ->
     true;
 is_INTEGER(I, {range, Min, Max}) 
-  when integer(I), integer(Min), integer(Max), Min =< I, I =< Max ->
+  when is_integer(I) andalso 
+       is_integer(Min) andalso 
+       is_integer(Max) andalso 
+       (Min =< I) andalso (I =< Max) ->
     true;
 is_INTEGER(_, _) ->
     false.
@@ -7363,7 +7376,7 @@ chk_INTEGER(I1, I2, R) ->
 %% ----------------------------------------------------------------------
 
 
-to_lower([C|Cs]) when C >= $A, C =< $Z ->
+to_lower([C|Cs]) when (C >= $A) andalso (C =< $Z) ->
     [C+($a-$A)|to_lower(Cs)];
 to_lower([C|Cs]) ->
     [C|to_lower(Cs)];
@@ -7371,7 +7384,7 @@ to_lower([]) ->
     [].
 
 
-validate(F, Type) when function(F) ->
+validate(F, Type) when is_function(F) ->
     case (catch F()) of
 	{error, Reason} ->
 	    error({Type, Reason});
@@ -7380,7 +7393,7 @@ validate(F, Type) when function(F) ->
     end.
 
 	    
-chk_type(F, T, V) when function(F), atom(T) ->
+chk_type(F, T, V) when is_function(F) andalso is_atom(T) ->
     case F(V) of
 	true ->
 	    ok;
@@ -7388,7 +7401,7 @@ chk_type(F, T, V) when function(F), atom(T) ->
 	    wrong_type(T, V)
     end.
 
-chk_type(F, T, V1, V2) when function(F), atom(T) ->
+chk_type(F, T, V1, V2) when is_function(F) andalso is_atom(T) ->
     case F(V1, V2) of
 	true ->
 	    ok;
@@ -7399,26 +7412,26 @@ chk_type(F, T, V1, V2) when function(F), atom(T) ->
 
 is_OPTIONAL(_, asn1_NOVALUE) ->
     true;
-is_OPTIONAL(F, Val) when function(F) ->
+is_OPTIONAL(F, Val) when is_function(F) ->
     F(Val).
 
 chk_OPTIONAL(_, asn1_NOVALUE, asn1_NOVALUE, _, _) ->
     ok;
-chk_OPTIONAL(Type, asn1_NOVALUE = V1, V2, IS, _CHK) when function(IS) ->
+chk_OPTIONAL(Type, asn1_NOVALUE = V1, V2, IS, _CHK) when is_function(IS) ->
     case IS(V2) of
 	true ->
 	    not_equal(Type, V1, V2);
 	false ->
 	    wrong_type(Type, V1, V2)
     end;
-chk_OPTIONAL(Type, V1, asn1_NOVALUE = V2, IS, _CHK) when function(IS) ->
+chk_OPTIONAL(Type, V1, asn1_NOVALUE = V2, IS, _CHK) when is_function(IS) ->
     case IS(V1) of
 	true ->
 	    not_equal(Type, V1, V2);
 	false ->
 	    wrong_type(Type, V1, V2)
     end;
-chk_OPTIONAL(_Type, V1, V2, _IS, CHK) when function(CHK) ->
+chk_OPTIONAL(_Type, V1, V2, _IS, CHK) when is_function(CHK) ->
     CHK(V1, V2).
 
 

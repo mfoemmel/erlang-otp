@@ -1021,8 +1021,6 @@ static void mfs_load_property_groups(MfsErlDrvData* dataP)
   // MfsErlDrvData* dataP = &mfs_drv_data;
 #endif
 
-  DBG( ("mfs_load_property_groups -> entry\n") );
-
   /* 
    * Process the property groups string 
    * v= is a property group delimiter
@@ -1043,6 +1041,8 @@ static void mfs_load_property_groups(MfsErlDrvData* dataP)
   char* value;        // Pointer to the value buffer
   int valueStart = 0; // Start position of the property parm name
   int valueLen   = 0; // Length of the value part
+
+  DBG( ("mfs_load_property_groups -> entry\n") );
 
   mfs_ensure_term_spec(dataP, 10);  /* Just in case... */
  
@@ -1498,13 +1498,13 @@ DRIVER_INIT(mfs_drv)
 
 static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
 {
-  DBG( ("mfs_start -> entry\n") );
-
 #if defined(MEGACO_REENTRANT_FLEX_SCANNER)
   MfsErlDrvData* dataP = ALLOC(sizeof(MfsErlDrvData));
 #else
   MfsErlDrvData* dataP = &mfs_drv_data;
 #endif
+
+  DBG( ("mfs_start -> entry\n") );
 
   dataP->port                   = port;
   dataP->digit_map_name_ptr     = NULL;

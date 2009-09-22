@@ -142,7 +142,22 @@ add_vars(Vars0, Opts0) ->
 	    {rsh_name, get_rsh_name()},
 	    {platform_label, PlatformLabel},
 	    {erl_flags, []},
-	    {erl_release, Version}|Vars0]}.
+	    {erl_release, Version},
+	    {ts_testcase_callback, get_testcase_callback()} | Vars0]}.
+
+get_testcase_callback() ->
+    case os:getenv("TS_TESTCASE_CALLBACK") of
+	ModFunc when is_list(ModFunc), ModFunc /= "" ->
+	    case string:tokens(ModFunc, " ") of
+		[_Mod,_Func] -> ModFunc;
+		_ -> ""
+	    end;
+	_ ->
+	    case init:get_argument(ts_testcase_callback) of
+		{ok,[[Mod,Func]]} -> Mod ++ " " ++ Func;
+		_ -> ""
+	    end
+    end.
 
 get_rsh_name() ->
     case os:getenv("ERL_RSH") of

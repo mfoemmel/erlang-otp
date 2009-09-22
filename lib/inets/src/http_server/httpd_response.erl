@@ -25,6 +25,7 @@
 
 -include("httpd.hrl").
 -include("http_internal.hrl").
+-include("httpd_internal.hrl").
 
 -define(VMODULE,"RESPONSE").
 
@@ -67,8 +68,10 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
 traverse_modules(ModData,[]) ->
   {proceed,ModData#mod.data};
 traverse_modules(ModData,[Module|Rest]) ->
-    case (catch apply(Module,do,[ModData])) of
+    ?hdrd("traverse modules", [{callback_module, Module}]), 
+    case (catch apply(Module, do, [ModData])) of
 	{'EXIT', Reason} ->
+	    ?hdrd("traverse modules - exit", [{reason, Reason}]), 
 	    String = 
 		lists:flatten(
 		  io_lib:format("traverse exit from apply: ~p:do => ~n~p",
@@ -77,11 +80,14 @@ traverse_modules(ModData,[Module|Rest]) ->
 	    report_error(mod_disk_log, ModData#mod.config_db, String),
 	    done;
 	done ->
+	    ?hdrt("traverse modules - done", []), 
 	    done;
-	{break,NewData} ->
-	    {proceed,NewData};
-	{proceed,NewData} ->
-	    traverse_modules(ModData#mod{data=NewData},Rest)
+	{break, NewData} ->
+	    ?hdrt("traverse modules - break", [{new_data, NewData}]), 
+	    {proceed, NewData};
+	{proceed, NewData} ->
+	    ?hdrt("traverse modules - proceed", [{new_data, NewData}]), 
+	    traverse_modules(ModData#mod{data = NewData}, Rest)
     end.
 
 %% send_status %%

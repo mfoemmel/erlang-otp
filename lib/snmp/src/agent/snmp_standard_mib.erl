@@ -279,7 +279,7 @@ snmp_set_serial_no(set, NewVal) ->
 sys_or_table(Op, RowIndex, Cols) ->
     snmp_generic:table_func(Op, RowIndex, Cols, {sysORTable, volatile}).
 
-add_agent_caps(Oid, Descr) when list(Oid), list(Descr) ->
+add_agent_caps(Oid, Descr) when is_list(Oid) andalso is_list(Descr) ->
     {value, Next} = snmpa_local_db:variable_get({next_sys_or_index, volatile}),
     snmpa_local_db:variable_set({next_sys_or_index, volatile}, Next+1),
     SysUpTime = sys_up_time(),

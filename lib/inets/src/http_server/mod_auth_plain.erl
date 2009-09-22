@@ -21,6 +21,7 @@
 
 -include("httpd.hrl").
 -include("mod_auth.hrl").
+-include("httpd_internal.hrl").
 
 -define(VMODULE,"AUTH_PLAIN").
 
@@ -49,6 +50,7 @@
 %%
 
 add_user(DirData, #httpd_user{username = User} = UStruct) ->
+    ?hdrt("add user", [{user, UStruct}]),
     PWDB = proplists:get_value(auth_user_file, DirData),
     Record = {User,
 	      UStruct#httpd_user.password, 
@@ -62,11 +64,14 @@ add_user(DirData, #httpd_user{username = User} = UStruct) ->
     end.
 
 get_user(DirData, User) ->
+    ?hdrt("get user", [{dir_data, DirData}, {user, User}]),
     PWDB = proplists:get_value(auth_user_file, DirData),
     case ets:lookup(PWDB, User) of
 	[{User, PassWd, Data}] ->
-	    {ok, #httpd_user{username=User, password=PassWd, user_data=Data}};
-	_ ->
+	    {ok, #httpd_user{username  = User, 
+			     password  = PassWd, 
+			     user_data = Data}};
+	_Other ->
 	    {error, no_such_user}
     end.
 
@@ -77,6 +82,7 @@ list_users(DirData) ->
 		     [], lists:flatten(Records))}.
 
 delete_user(DirData, UserName) ->
+    ?hdrt("delete user", [{dir_data, DirData}, {user, UserName}]),
     PWDB = proplists:get_value(auth_user_file, DirData),
     case ets:lookup(PWDB, UserName) of
 	[{UserName, _SomePassword, _SomeData}] ->
@@ -155,12 +161,17 @@ delete_group(DirData, Group) ->
     end.
 
 store_directory_data(_Directory, DirData, Server_root) ->
+    ?hdrt("store directory data", 
+	  [{dir_data, DirData}, {server_root, Server_root}]),
     PWFile = absolute_file_name(auth_user_file, DirData, Server_root),
     GroupFile = absolute_file_name(auth_group_file, DirData, Server_root),
     case load_passwd(PWFile) of
 	{ok, PWDB} ->
+	    ?hdrt("password file loaded", [{file, PWFile}, {pwdb, PWDB}]),
 	    case load_group(GroupFile) of
 		{ok, GRDB} ->
+		    ?hdrt("group file loaded", 
+			  [{file, GroupFile}, {grdb, GRDB}]),
 		    %% Address and port is included in the file names...
 		    Addr = proplists:get_value(bind_address, DirData),
 		    Port = proplists:get_value(port, DirData),
@@ -187,10 +198,10 @@ load_passwd(AuthUserFile) ->
 	{ok,Stream} ->
 	    parse_passwd(Stream, []);
 	{error, _} ->
-	    {error, ?NICE("Can't open "++AuthUserFile)}
+	    {error, ?NICE("Can't open " ++ AuthUserFile)}
     end.
 
-parse_passwd(Stream,PasswdList) ->
+parse_passwd(Stream, PasswdList) ->
     Line =
 	case io:get_line(Stream, '') of
 	    eof ->
@@ -222,11 +233,11 @@ load_group(AuthGroupFile) ->
 	{ok, Stream} ->
 	    parse_group(Stream,[]);
 	{error, _} ->
-	    {error, ?NICE("Can't open "++AuthGroupFile)}
+	    {error, ?NICE("Can't open " ++ AuthGroupFile)}
     end.
 
 parse_group(Stream, GroupList) ->
-    Line=
+    Line =
 	case io:get_line(Stream,'') of
 	    eof ->
 		eof;
@@ -275,7 +286,7 @@ store_group(Addr,Port,GroupList) ->
 
 store_group(GroupDB,[]) ->
     {ok, GroupDB};
-store_group(GroupDB,[User|Rest]) ->
+store_group(GroupDB, [User|Rest]) ->
     ets:insert(GroupDB, User),
     store_group(GroupDB, Rest).
 

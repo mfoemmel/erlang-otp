@@ -57,7 +57,7 @@ get_const(Id) ->
 
 cast(Op,Args) ->
     #wx_env{port=Port,debug=Dbg} = wx:get_env(),
-    erlang:port_control(Port,Op,Args),
+    _ = erlang:port_control(Port,Op,Args),
     case Dbg > 0 of
 	true ->  debug_cast(Dbg band 15, Op,Args,Port);
 	false -> ok
@@ -68,7 +68,7 @@ call(Op, Args) ->
     #wx_env{port=Port,debug=Dbg} = wx:get_env(),
     case Dbg > 0 of
 	false ->	    
-	    erlang:port_control(Port,Op,Args),
+	    _ = erlang:port_control(Port,Op,Args),
 	    rec(Op);
 	true ->
 	    debug_call(Dbg band 15, Op, Args, Port)
@@ -106,7 +106,7 @@ send_bin(Bin) when is_binary(Bin) ->
     end.
 
 get_cbId(Fun) ->
-    gen_server:call((wx:get_env())#wx_env.sv,{register_cb, Fun}).   
+    gen_server:call((wx:get_env())#wx_env.sv,{register_cb, Fun}, infinity).   
 
 connect_cb(Object,EvData) ->
     handle_listener(connect_cb, Object, EvData).
@@ -115,7 +115,7 @@ disconnect_cb(Object,EvData) ->
     handle_listener(disconnect_cb, Object, EvData).
 
 handle_listener(Op,Object,EvData) ->
-    Listener = gen_server:call((wx:get_env())#wx_env.sv, {Op,Object,EvData}),
+    Listener = gen_server:call((wx:get_env())#wx_env.sv, {Op,Object,EvData}, infinity),
     case Listener of
 	{call_impl, connect_cb, EvtList} ->
 	    wxEvtHandler:connect_impl(EvtList,Object,EvData);
@@ -153,9 +153,8 @@ debug_call(1, Op, Args, Port) ->
 	[] ->
 	    io:format("WX ~p: unknown(~p) -> ",[self(),Op])
     end,
-    erlang:port_control(Port,Op,Args),    
+    _ = erlang:port_control(Port,Op,Args),    
     debug_rec(1);
-
 debug_call(2, Op, Args, Port) ->
     check_previous(),
     case ets:lookup(wx_debug_info,Op) of
@@ -166,14 +165,12 @@ debug_call(2, Op, Args, Port) ->
 	    io:format("WX ~p(~p): unknown(~p) (~p) -> ",
 		      [self(), Port, Op, Args])
     end,
-    erlang:port_control(Port,Op,Args),
+    _ = erlang:port_control(Port,Op,Args),
     debug_rec(2);
 debug_call(_, Op, Args, Port) ->
     check_previous(),
-    erlang:port_control(Port,Op,Args),
+    _ = erlang:port_control(Port,Op,Args),
     rec(Op).
-
-    
 
 debug_rec(1) ->
     receive 

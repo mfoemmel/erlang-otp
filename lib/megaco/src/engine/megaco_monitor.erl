@@ -117,11 +117,11 @@ delete_reply(Key) ->
 apply_after(M, F, A, Time) ->
     apply_after(spawn_method, M, F, A, Time).
 
-apply_after(Method, M, F, A, Time) when atom(M), atom(F), list(A) ->
+apply_after(Method, M, F, A, Time) when is_atom(M) andalso is_atom(F) andalso is_list(A) ->
     if
-	Time == infinity ->
+	Time =:= infinity ->
 	    apply_after_infinity;
-	integer(Time) ->
+	is_integer(Time) ->
 	    Msg = {apply_after, Method, M, F, A},
 	    Ref = erlang:send_after(Time, whereis(?SERVER), Msg),
 	    {apply_after, Ref}
@@ -129,7 +129,7 @@ apply_after(Method, M, F, A, Time) when atom(M), atom(F), list(A) ->
 
 cancel_apply_after({apply_after, Ref}) ->
     case erlang:cancel_timer(Ref) of
-	TimeLeft when integer(TimeLeft) ->
+	TimeLeft when is_integer(TimeLeft) ->
 	    {ok, TimeLeft};
 	_ ->
 	    {ok, 0}
@@ -141,7 +141,7 @@ cancel_apply_after(BadRef) ->
 
 %% Performs apply(M, F, [Reason | A]) when process Pid dies
 apply_at_exit(M, F, A, Pid) 
-  when atom(M), atom(F), list(A), pid(Pid) ->
+  when is_atom(M) andalso is_atom(F) andalso is_list(A) andalso is_pid(Pid) ->
     Ref = call({apply_at_exit, M, F, A, Pid}),
     {apply_at_exit, Ref}.
 

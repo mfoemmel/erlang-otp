@@ -1156,7 +1156,7 @@ static void gen_digest(unsigned challenge, char cookie[],
 {
     MD5_CTX c;
     
-    char chbuf[20];
+    char chbuf[21];
     
     sprintf(chbuf,"%u", challenge);
     ei_MD5Init(&c);

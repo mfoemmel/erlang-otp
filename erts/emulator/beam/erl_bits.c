@@ -1414,7 +1414,6 @@ erts_bs_private_append(Process* p, Eterm bin, Eterm build_size_term, Uint unit)
 
     pb = (ProcBin *) boxed_val(sb->orig);
     ASSERT(pb->thing_word == HEADER_PROC_BIN);
-    ASSERT(pb->flags & PB_IS_WRITABLE);
 
     /*
      * Calculate new size in bytes.
@@ -1430,10 +1429,38 @@ erts_bs_private_append(Process* p, Eterm bin, Eterm build_size_term, Uint unit)
     binp = pb->val;
     if (binp->orig_size < pb->size) {
 	Uint new_size = 2*pb->size;
-	binp = erts_bin_realloc(binp, new_size);
-	binp->orig_size = new_size;
-	pb->val = binp;
-	pb->bytes = (byte *) binp->orig_bytes;
+
+	if (pb->flags & PB_IS_WRITABLE) {
+	    /*
+	     * This is the normal case - the binary is writable.
+	     * There are no other references to the binary, so it
+	     * is safe to reallocate it.
+	     */
+	    binp = erts_bin_realloc(binp, new_size);
+	    binp->orig_size = new_size;
+	    pb->val = binp;
+	    pb->bytes = (byte *) binp->orig_bytes;
+	} else {
+	    /*
+	     * The binary is NOT writable. The only way that is
+	     * supposed to happen if is call trace has been turned
+	     * on. That means that a trace process now has (or have
+	     * had) a reference to the binary, so we are not allowed
+	     * to reallocate the binary. Instead, we must allocate a new
+	     * binary and copy the contents of the old binary into it.
+	     */
+	    Binary* bptr = erts_bin_nrml_alloc(new_size);
+	    bptr->flags = 0;
+	    bptr->orig_size = new_size;
+	    erts_refc_init(&bptr->refc, 1);
+	    sys_memcpy(bptr->orig_bytes, binp->orig_bytes, pb->size);
+	    pb->flags |= PB_IS_WRITABLE | PB_ACTIVE_WRITER;
+	    pb->val = bptr;
+	    pb->bytes = (byte *) bptr->orig_bytes;
+	    if (erts_refc_dectest(&binp->refc, 0) == 0) {
+		erts_bin_free(binp);
+	    }
+	}
     }
     erts_current_bin = pb->bytes;
 

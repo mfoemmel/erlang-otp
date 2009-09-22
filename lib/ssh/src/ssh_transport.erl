@@ -228,8 +228,8 @@ kexinit_messsage(client, Random, Compression) ->
 		  cookie = Random,
 		  kex_algorithms = ["diffie-hellman-group1-sha1"],
 		  server_host_key_algorithms = ["ssh-rsa", "ssh-dss"],
-		  encryption_algorithms_client_to_server = ["3des-cbc"],
-		  encryption_algorithms_server_to_client = ["3des-cbc"],
+		  encryption_algorithms_client_to_server = ["aes128-cbc","3des-cbc"],
+		  encryption_algorithms_server_to_client = ["aes128-cbc","3des-cbc"],
 		  mac_algorithms_client_to_server = ["hmac-sha1"],
 		  mac_algorithms_server_to_client = ["hmac-sha1"],
 		  compression_algorithms_client_to_server = Compression,
@@ -243,8 +243,8 @@ kexinit_messsage(server, Random, Compression) ->
 		  cookie = Random,
 		  kex_algorithms = ["diffie-hellman-group1-sha1"],
 		  server_host_key_algorithms = ["ssh-dss"],
-		  encryption_algorithms_client_to_server = ["3des-cbc"],
-		  encryption_algorithms_server_to_client = ["3des-cbc"],
+		  encryption_algorithms_client_to_server = ["aes128-cbc","3des-cbc"],
+		  encryption_algorithms_server_to_client = ["aes128-cbc","3des-cbc"],
 		  mac_algorithms_client_to_server = ["hmac-sha1"],
 		  mac_algorithms_server_to_client = ["hmac-sha1"],
 		  compression_algorithms_client_to_server = Compression,
@@ -715,7 +715,12 @@ unpack(EncodedSoFar, ReminingLenght, #ssh{recv_mac_size = MacSize} = Ssh0) ->
 				 {NoMac0, Mac0, Rest0}
 			 end,
     {Ssh1, DecData, <<>>} = 
-	ssh_transport:decrypt_blocks(NoMac, SshLength, Ssh0),
+	case SshLength of
+	    0 ->
+		{Ssh0, <<>>, <<>>};
+	    _ ->
+		decrypt_blocks(NoMac, SshLength, Ssh0)
+	end,
     {Ssh1, DecData, Rest, Mac}.
 
 msg_data(PacketData) ->
@@ -800,7 +805,19 @@ encrypt_init(#ssh{encrypt = '3des-cbc', role = server} = Ssh) ->
     <<K1:8/binary, K2:8/binary, K3:8/binary>> = hash(Ssh, "D", 192),
     {ok, Ssh#ssh{encrypt_keys = {K1,K2,K3},
 		 encrypt_block_size = 8,
-		 encrypt_ctx = IV}}.
+		 encrypt_ctx = IV}};
+encrypt_init(#ssh{encrypt = 'aes128-cbc', role = client} = Ssh) ->
+    IV = hash(Ssh, "A", 128),
+    <<K:16/binary>> = hash(Ssh, "C", 128),
+    {ok, Ssh#ssh{encrypt_keys = K,
+		 encrypt_block_size = 16,
+		 encrypt_ctx = IV}};
+encrypt_init(#ssh{encrypt = 'aes128-cbc', role = server} = Ssh) ->
+    IV = hash(Ssh, "B", 128),
+    <<K:16/binary>> = hash(Ssh, "D", 128),
+    {ok, Ssh#ssh{encrypt_keys = K,
+		 encrypt_block_size = 16,
+                 encrypt_ctx = IV}}.
 
 encrypt_final(Ssh) ->
     {ok, Ssh#ssh{encrypt = none, 
@@ -819,6 +836,15 @@ encrypt(#ssh{encrypt = '3des-cbc',
     Enc = crypto:des3_cbc_encrypt(K1,K2,K3,IV0,Data),
     %%?dbg(?DBG_CRYPTO, "encrypt: ~p -> ~p ~n", [Data, Enc]),
     IV = crypto:des_cbc_ivec(Enc),
+    {Ssh#ssh{encrypt_ctx = IV}, Enc};
+encrypt(#ssh{encrypt = 'aes128-cbc',
+            encrypt_keys = K,
+            encrypt_ctx = IV0} = Ssh, Data) ->
+    %%?dbg(?DBG_CRYPTO, "encrypt: IV=~p K=~p ~n",
+    %%     [IV0,K]),
+    Enc = crypto:aes_cbc_128_encrypt(K,IV0,Data),
+    %%?dbg(?DBG_CRYPTO, "encrypt: ~p -> ~p ~n", [Data, Enc]),
+    IV = crypto:aes_cbc_ivec(Enc),
     {Ssh#ssh{encrypt_ctx = IV}, Enc}.
   
 
@@ -834,13 +860,25 @@ decrypt_init(#ssh{decrypt = '3des-cbc', role = client} = Ssh) ->
     <<K1:8/binary, K2:8/binary, K3:8/binary>> = KD,
     {ok, Ssh#ssh{decrypt_keys = {K1,K2,K3}, decrypt_ctx = IV,
 			 decrypt_block_size = 8}}; 
-
 decrypt_init(#ssh{decrypt = '3des-cbc', role = server} = Ssh) ->
     {IV, KD} = {hash(Ssh, "A", 64),
 		hash(Ssh, "C", 192)},
     <<K1:8/binary, K2:8/binary, K3:8/binary>> = KD,
     {ok, Ssh#ssh{decrypt_keys = {K1, K2, K3}, decrypt_ctx = IV,
-		 decrypt_block_size = 8}}.
+		 decrypt_block_size = 8}};
+decrypt_init(#ssh{decrypt = 'aes128-cbc', role = client} = Ssh) ->
+    {IV, KD} = {hash(Ssh, "B", 128),
+		hash(Ssh, "D", 128)},
+    <<K:16/binary>> = KD,
+    {ok, Ssh#ssh{decrypt_keys = K, decrypt_ctx = IV,
+		 decrypt_block_size = 16}};
+decrypt_init(#ssh{decrypt = 'aes128-cbc', role = server} = Ssh) ->
+    {IV, KD} = {hash(Ssh, "A", 128),
+		hash(Ssh, "C", 128)},
+    <<K:16/binary>> = KD,
+    {ok, Ssh#ssh{decrypt_keys = K, decrypt_ctx = IV,
+		 decrypt_block_size = 16}}.
+
   
 decrypt_final(Ssh) ->
     {ok, Ssh#ssh {decrypt = none, 
@@ -858,7 +896,16 @@ decrypt(#ssh{decrypt = '3des-cbc', decrypt_keys = Keys,
     Dec = crypto:des3_cbc_decrypt(K1,K2,K3,IV0,Data),
     %%?dbg(?DBG_CRYPTO, "decrypt: ~p -> ~p ~n", [Data, Dec]),
     IV = crypto:des_cbc_ivec(Data),
+    {Ssh#ssh{decrypt_ctx = IV}, Dec};
+decrypt(#ssh{decrypt = 'aes128-cbc', decrypt_keys = Key,
+	     decrypt_ctx = IV0} = Ssh, Data) ->
+    %%?dbg(?DBG_CRYPTO, "decrypt: IV=~p Key=~p ~n",
+    %%     [IV0,Key]),
+    Dec = crypto:aes_cbc_128_decrypt(Key,IV0,Data),
+    %%?dbg(?DBG_CRYPTO, "decrypt: ~p -> ~p ~n", [Data, Dec]),
+    IV = crypto:aes_cbc_ivec(Data),
     {Ssh#ssh{decrypt_ctx = IV}, Dec}.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Compression

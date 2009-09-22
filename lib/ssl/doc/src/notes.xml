@@ -31,6 +31,22 @@
   <p>This document describes the changes made to the SSL application.
     </p>
 
+<section><title>SSL 3.10.4</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            A client could avoid a certificate check if the client
+            code didn't send the requested certificate.</p>
+          <p>
+            Own Id: OTP-8137</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>SSL 3.10.3</title>
 
     <section><title>Improvements and New Features</title>

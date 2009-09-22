@@ -80,7 +80,7 @@ new() ->
     Empty = mk_seg(?seg_size),
     #dict{empty=Empty,segs={Empty}}.
 
--spec is_key(term(), dict()) -> bool().
+-spec is_key(term(), dict()) -> boolean().
 
 is_key(Key, D) ->
     Slot = get_slot(D, Key),
@@ -310,7 +310,7 @@ fold(F, Acc, D) -> fold_dict(F, Acc, D).
 
 map(F, D) -> map_dict(F, D).
 
--spec filter(fun((term(), term()) -> bool()), dict()) -> dict().
+-spec filter(fun((term(), term()) -> boolean()), dict()) -> dict().
 
 filter(F, D) -> filter_dict(F, D).
 

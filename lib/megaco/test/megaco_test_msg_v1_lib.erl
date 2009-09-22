@@ -175,12 +175,12 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cre_MegacoMessage(M) when record(M, 'Message') ->
+cre_MegacoMessage(M) when is_record(M, 'Message') ->
     #'MegacoMessage'{mess = M}.
 
 cre_MegacoMessage(AH, M) 
-  when record(AH, 'AuthenticationHeader'), 
-       record(M, 'Message') ->
+  when is_record(AH, 'AuthenticationHeader') andalso 
+       is_record(M, 'Message') ->
     #'MegacoMessage'{authHeader = AH,
 		     mess       = M}.
 
@@ -229,21 +229,21 @@ cre_ContextID(Val) when (0 =< Val) and (Val =< 4294967295) ->
 cre_ContextID(Val) ->
     exit({invalid_ContextID, Val}).
 
-cre_Transaction(TR) when record(TR, 'TransactionRequest') ->
+cre_Transaction(TR) when is_record(TR, 'TransactionRequest') ->
     {transactionRequest, TR};
-cre_Transaction(TP) when record(TP, 'TransactionPending') ->
+cre_Transaction(TP) when is_record(TP, 'TransactionPending') ->
     {transactionPending, TP};
-cre_Transaction(TR) when record(TR, 'TransactionReply') ->
+cre_Transaction(TR) when is_record(TR, 'TransactionReply') ->
     {transactionReply, TR};
-cre_Transaction(TRA) when list(TRA) ->
+cre_Transaction(TRA) when is_list(TRA) ->
     {transactionResponseAck, TRA}.
 
-cre_TransactionId(Val) when 0 =< Val, Val =< 4294967295 ->
+cre_TransactionId(Val) when (0 =< Val) andalso (Val =< 4294967295) ->
     Val;
 cre_TransactionId(Val) ->
     exit({invalid_TransactionId, Val}).
 
-cre_TransactionRequest(TransID, ARs) when integer(TransID), list(ARs) -> 
+cre_TransactionRequest(TransID, ARs) when is_integer(TransID) andalso is_list(ARs) -> 
     #'TransactionRequest'{transactionId = TransID, 
 			  actions       = ARs}.
 
@@ -790,24 +790,24 @@ cre_AmmDescriptor(D) when is_list(D) ->
 cre_EventName(N) when is_list(N) ->
     N.
 
-cre_EventParameter(N, V) when list(N), list(V) ->
+cre_EventParameter(N, V) when is_list(N) andalso is_list(V) ->
     #'EventParameter'{eventParameterName = N, 
 		      value              = V}.
 
 cre_EventParameter(N, V, relation = Tag, R) 
-  when list(N), list(V), atom(R) ->
+  when is_list(N) andalso is_list(V) andalso is_atom(R) ->
     EI = {Tag, R},
     #'EventParameter'{eventParameterName = N, 
 		      value              = V,
 		      extraInfo          = EI};
 cre_EventParameter(N, V, range = Tag, B) 
-  when list(N), list(V), atom(B) ->
+  when is_list(N) andalso is_list(V) andalso is_atom(B) ->
     EI = {Tag, B},
     #'EventParameter'{eventParameterName = N, 
 		      value              = V,
 		      extraInfo          = EI};
 cre_EventParameter(N, V, sublist = Tag, B) 
-  when list(N), list(V), atom(B) ->
+  when is_list(N) andalso is_list(V) andalso is_atom(B) ->
     EI = {Tag, B},
     #'EventParameter'{eventParameterName = N, 
 		      value              = V,
@@ -1188,14 +1188,16 @@ cre_PkgdName(PackageName, ItemID) ->
 %% 			      eventDM           = EDM, 
 %% 			      signalsDescriptor = SD}.
 
-cre_EventBufferDescriptor([H|_] = D) when record(H, 'EventSpec') ->
+cre_EventBufferDescriptor([H|_] = D) 
+  when is_record(H, 'EventSpec') ->
     D.
 
-cre_EventSpec(N, [H|_] = EPL) when list(N), record(H, 'EventParameter') ->
+cre_EventSpec(N, [H|_] = EPL) 
+  when is_list(N) andalso is_record(H, 'EventParameter') ->
     #'EventSpec'{eventName = N, eventParList = EPL}.
 
 cre_EventSpec(N, SID, [H|_] = EPL) 
-  when list(N), integer(SID), record(H, 'EventParameter') ->
+  when is_list(N) andalso is_integer(SID) andalso is_record(H, 'EventParameter') ->
     #'EventSpec'{eventName = N, streamID = SID, eventParList = EPL}.
     
 %% cre_SignalsDescriptor(D) when list(D) ->
@@ -6808,16 +6810,16 @@ is_BOOLEAN(B) ->
 
 is_OCTET_STRING(L) -> is_OCTET_STRING(L, any).
 
-is_OCTET_STRING(L, any) when list(L) ->
+is_OCTET_STRING(L, any) when is_list(L) ->
     true;
-is_OCTET_STRING(L, {exact, Len}) when list(L), length(L) == Len ->
+is_OCTET_STRING(L, {exact, Len}) when is_list(L) andalso (length(L) =:= Len) ->
     true;
-is_OCTET_STRING(L, {atleast, Len}) when list(L), Len =< length(L) ->
+is_OCTET_STRING(L, {atleast, Len}) when is_list(L) andalso (Len =< length(L)) ->
     true;
-is_OCTET_STRING(L, {atmost, Len}) when list(L), length(L) =< Len ->
+is_OCTET_STRING(L, {atmost, Len}) when is_list(L) andalso (length(L) =< Len) ->
     true;
 is_OCTET_STRING(L, {range, Min, Max}) 
-  when list(L), Min =< length(L), length(L) =< Max ->
+  when is_list(L) andalso (Min =< length(L)) andalso (length(L) =< Max) ->
     true;
 is_OCTET_STRING(_, _) ->
     false.
@@ -6870,16 +6872,20 @@ is_OCTET_STRING(_, _) ->
 is_opt_INTEGER(I, R) ->
     is_OPTIONAL(fun(X) -> is_INTEGER(X, R) end, I).
 
-is_INTEGER(I, any) when integer(I) ->
+is_INTEGER(I, any) when is_integer(I) ->
     true;
-is_INTEGER(I, {exact, I}) when integer(I) ->
+is_INTEGER(I, {exact, I}) when is_integer(I) ->
     true;
-is_INTEGER(I, {atleast, Min}) when integer(I), integer(Min), Min =< I ->
+is_INTEGER(I, {atleast, Min}) when is_integer(I) andalso is_integer(Min) andalso (Min =< I) ->
     true;
-is_INTEGER(I, {atmost, Max}) when integer(I), integer(Max), I =< Max ->
+is_INTEGER(I, {atmost, Max}) when is_integer(I) andalso is_integer(Max) andalso (I =< Max) ->
     true;
 is_INTEGER(I, {range, Min, Max}) 
-  when integer(I), integer(Min), integer(Max), Min =< I, I =< Max ->
+  when is_integer(I) andalso 
+       is_integer(Min) andalso 
+       is_integer(Max) andalso 
+       (Min =< I) andalso 
+       (I =< Max) ->
     true;
 is_INTEGER(_, _) ->
     false.
@@ -6941,7 +6947,7 @@ is_INTEGER(_, _) ->
 
 is_OPTIONAL(_, asn1_NOVALUE) ->
     true;
-is_OPTIONAL(F, Val) when function(F) ->
+is_OPTIONAL(F, Val) when is_function(F) ->
     F(Val).
 
 %% chk_OPTIONAL(_, asn1_NOVALUE, asn1_NOVALUE, _, _) ->

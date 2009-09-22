@@ -439,6 +439,7 @@ INTERNAL_RELEASE_INCLUDES= \
 	$(ERTS_INCL_INT)/README \
 	$(ERTS_INCL_INT)/ethread.h \
 	$(ERTS_INCL_INT)/$(TARGET)/ethread.mk \
+	$(ERTS_INCL_INT)/$(TARGET)/erts_internal.mk \
 	$(ERTS_INCL_INT)/$(TARGET)/ethread_header_config.h \
 	$(ERTS_INCL_INT)/erl_printf.h \
 	$(ERTS_INCL_INT)/erl_printf_format.h \

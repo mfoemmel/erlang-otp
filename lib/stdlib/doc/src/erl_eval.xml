@@ -226,7 +226,9 @@ Func(FuncSpec, Arguments)        </code>
         handler <em>will</em> however be called with the evaluated
         arguments of the call to <c>erlang:apply/2,3</c>: <c>Func(Fun, Args)</c> or <c>Func({Module, Function}, Args)</c> (assuming
         that <c>{Module, Function}</c> is not <c>{erlang, apply}</c>).</p>
-    </note>
+      <p>Calls to functions defined by evaluating fun expressions
+        <c>"fun ... end"</c> are also hidden from non-local function
+        handlers.</p> </note>
     <p>The nonlocal function handler argument is probably not used as
       frequently as the local function handler argument. A possible
       use is to call <c>exit/1</c> on calls to functions that for some

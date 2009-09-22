@@ -129,6 +129,8 @@ rename_service(EVer, FromName, ToName) ->
 %%% sname | name : The short name of the node
 %%% priority : The OS priority of the erlang process
 %%% args : All arguments correctly parsed into a list of strings
+%%% comment : The service description
+%%% internalservicename : The windows internal service name
 %%% env : A list of environment variables and values [{"VAR", "VALUE"}]
 %%% Example:
 %%% [{servicename,"kalle_R4A"},
@@ -154,7 +156,9 @@ get_service(EVer, ServiceName) ->
 		     {"Name",name, []},
 		     {"Priority",priority, "default"},
 		     {"DebugType",debugtype, "none"},
-		     {"Args",args,[]}], 
+		     {"Args",args,[]},
+		     {"InternalServiceName",internalservicename,[]},
+		     {"Comment",comment,[]}], 
 	    %% Env has special treatment...
 	    F = fun(X) ->
 			{Name,Value} = splitline(X),
@@ -204,13 +208,14 @@ store_service(EmulatorVersion,Service) ->
 	false ->
 	    {error, no_servicename};
 	{value, {_,Name}} ->
-	    Action = case get_service(Name) of
+	    {Action,Service1} = case get_service(Name) of
 			 {error, no_such_service} ->
-			     "add";
+			     {"add",Service};
 			 _ ->
-			     "set"
+			     {"set",
+			      lists:keydelete(internalservicename,1,Service)}
 		     end,
-	    Commands = [Action | build_commands(Name, Service)],
+	    Commands = [Action | build_commands(Name, Service1)],
 	    case run_erlsrv_interactive(EmulatorVersion,Commands) of
 		{ok, _} ->
 		    ok;
@@ -250,16 +255,20 @@ concat_args2([H|T]) ->
 new_service(NewServiceName, OldService, Data) ->
     new_service(NewServiceName, OldService, Data, []).
 new_service(NewServiceName, OldService, Data, RestartName) -> 
-    Tmp0 = lists:keyreplace(servicename, 1, OldService, {servicename, NewServiceName}),
-    Tmp = case lists:keysearch(env,1,Tmp0) of
+    Tmp0 = lists:keydelete(internalservicename,1,OldService), %Remove when 
+						% creating new service from 
+						% old.
+    Tmp1 = lists:keyreplace(servicename, 1, Tmp0, 
+			    {servicename, NewServiceName}),
+    Tmp = case lists:keysearch(env,1,Tmp1) of
 	      {value, {env,Env0}} ->
 		  Env1 = lists:keydelete("ERLSRV_SERVICE_NAME",1,Env0),
-		  lists:keyreplace(env,1,Tmp0,
+		  lists:keyreplace(env,1,Tmp1,
 				   {env, [{"ERLSRV_SERVICE_NAME", 
 					   RestartName} | 
 					  Env1]});
 	      _ ->
-		  Tmp0
+		  Tmp1
 	  end,
 
     ArgsTmp = case lists:keysearch(args, 1, Tmp) of

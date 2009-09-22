@@ -337,6 +337,49 @@ get_target_addr_ext_mms(TDomain, TAddress, Key) ->
 %%-----------------------------------------------------------------
 %% Instrumentation Functions
 %%-----------------------------------------------------------------
+%% Op = print - Used for debugging purposes
+snmpCommunityTable(print) ->
+    Table = snmpCommunityTable, 
+    DB    = db(Table),
+    FOI   = foi(Table),
+    PrintRow = 
+	fun(Prefix, Row) ->
+		lists:flatten(
+		  io_lib:format("~sIndex:             ~p"
+				"~n~sName:            ~p"
+				"~n~sSecurityName:    ~p"
+				"~n~sContextEngineID: ~p"
+				"~n~sContextName:     ~p"
+				"~n~sTransportTag:    ~p"
+				"~n~sStorageType:     ~p (~w)"
+				"~n~sStatus:          ~p (~w)", 
+				[Prefix, element(?snmpCommunityIndex, Row),
+				 Prefix, element(?snmpCommunityName, Row),
+				 Prefix, element(?snmpCommunitySecurityName, Row),
+				 Prefix, element(?snmpCommunityContextEngineID, Row),
+				 Prefix, element(?snmpCommunityContextName, Row),
+				 Prefix, element(?snmpCommunityTransportTag, Row),
+				 Prefix, element(?snmpCommunityStorageType, Row),
+				 case element(?snmpCommunityStorageType, Row) of
+				     ?'snmpCommunityStorageType_readOnly' -> readOnly;
+				     ?'snmpCommunityStorageType_permanent' -> permanent;
+				     ?'snmpCommunityStorageType_nonVolatile' -> nonVolatile;
+				     ?'snmpCommunityStorageType_volatile' -> volatile;
+				     ?'snmpCommunityStorageType_other' -> other;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?snmpCommunityStatus, Row),
+				 case element(?snmpCommunityStatus, Row) of
+				     ?'snmpCommunityStatus_destroy' -> destroy;
+				     ?'snmpCommunityStatus_createAndWait' -> createAndWait;
+				     ?'snmpCommunityStatus_createAndGo' -> createAndGo;
+				     ?'snmpCommunityStatus_notReady' -> notReady;
+				     ?'snmpCommunityStatus_notInService' -> notInService;
+				     ?'snmpCommunityStatus_active' -> active;
+				     _ -> undefined
+				 end]))
+	end,
+    snmpa_mib_lib:print_table(Table, DB, FOI, PrintRow);
 %% Op == new | delete
 snmpCommunityTable(Op) ->
     snmp_generic:table_func(Op, db(snmpCommunityTable)).

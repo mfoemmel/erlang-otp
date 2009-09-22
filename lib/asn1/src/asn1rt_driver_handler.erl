@@ -78,15 +78,18 @@ init(FromPid,FromRef) ->
 	    Result = open_named_ports(),
 	    catch (FromPid ! {FromRef,Result}),
 	    loop(Result);
-	{error,_Err} -> % if erl_ddll:load_driver fails
+	{error,Err} -> % if erl_ddll:load_driver fails
+	    ForErr = erl_ddll:format_error(Err),
 	    OSDir = filename:join(Dir,erlang:system_info(system_architecture)),
 	    case catch erl_ddll:load_driver(OSDir,asn1_erl_drv) of
 		ok ->
 		    Result = open_named_ports(),
 		    catch (FromPid ! {FromRef,Result}),
 		    loop(Result);
-		Error ->
-		    catch (FromPid ! {FromRef,Error})
+		{error,Err2} ->
+%		    catch (FromPid ! {FromRef,Error})
+		    ForErr2 = erl_ddll:format_error(Err2),
+		    catch (FromPid ! {FromRef,{error,{{Dir,ForErr},{OSDir,ForErr2}}}})
 	    end
     end.
 

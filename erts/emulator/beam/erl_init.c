@@ -47,6 +47,10 @@
 #include "hipe_signal.h"	/* for hipe_signal_init() */
 #endif
 
+#ifdef HAVE_SYS_RESOURCE_H
+#  include <sys/resource.h>
+#endif
+
 /*
  * Note about VxWorks: All variables must be initialized by executable code,
  * not by an initializer. Otherwise a new instance of the emulator will
@@ -550,9 +554,13 @@ void erts_usage(void)
 
     erts_fprintf(stderr, "-r         force ets memory block to be moved on realloc\n");
     erts_fprintf(stderr, "-sbt type  set scheduler bind type, valid types are:\n");
-    erts_fprintf(stderr, "           u|ns|ts|ps|nnts|nnps|tnnps|db\n");
+    erts_fprintf(stderr, "           u|ns|ts|ps|s|nnts|nnps|tnnps|db\n");
     erts_fprintf(stderr, "-sct cput  set cpu topology,\n");
     erts_fprintf(stderr, "           see the erl(1) documentation for more info.\n");
+    erts_fprintf(stderr, "-sss size  suggested stack size in kilo words for scheduler threads,\n");
+    erts_fprintf(stderr, "           valid range is [%d-%d]\n",
+		 ERTS_SCHED_THREAD_MIN_STACK_SIZE,
+		 ERTS_SCHED_THREAD_MAX_STACK_SIZE);
     erts_fprintf(stderr, "-S n1:n2   set number of schedulers (n1), and number of\n");
     erts_fprintf(stderr, "           schedulers online (n2), valid range for both\n");
     erts_fprintf(stderr, "           numbers are [1-%d]\n",
@@ -748,6 +756,27 @@ early_init(int *argc, char **argv) /*
     erts_ets_realloc_always_moves = 0;
 
 }
+
+#ifndef ERTS_SMP
+static void set_main_stack_size(void)
+{
+    if (erts_sched_thread_suggested_stack_size > 0) {
+# if HAVE_DECL_GETRLIMIT && HAVE_DECL_SETRLIMIT && HAVE_DECL_RLIMIT_STACK
+	struct rlimit rl;
+	int bytes = erts_sched_thread_suggested_stack_size * sizeof(Uint) * 1024;
+	if (getrlimit(RLIMIT_STACK, &rl) != 0 ||
+	    (rl.rlim_cur = bytes, setrlimit(RLIMIT_STACK, &rl) != 0)) {
+	    erts_fprintf(stderr, "failed to set stack size for scheduler "
+				 "thread to %d bytes\n", bytes);
+	    erts_usage();
+	}	    
+# else
+	erts_fprintf(stderr, "no OS support for dynamic stack size limit\n");
+	erts_usage();    
+# endif
+    }
+}
+#endif
 
 void
 erl_start(int argc, char **argv)
@@ -1054,14 +1083,29 @@ erl_start(int argc, char **argv)
 		    erts_usage();
 		}
 	    }
-	    else if (sys_strcmp("pnt", sub_param) == 0)
-		erts_init_enable_processor_node_topology();
 	    else if (sys_strcmp("mrq", sub_param) == 0)
 		use_multi_run_queue = 1;
 	    else if (sys_strcmp("srq", sub_param) == 0)
 		use_multi_run_queue = 0;
 	    else if (sys_strcmp("nsp", sub_param) == 0)
 		erts_use_sender_punish = 0;
+	    else if (has_prefix("ss", sub_param)) {
+		/* suggested stack size (Kilo Words) for scheduler threads */
+		arg = get_arg(sub_param+2, argv[i+1], &i);
+		erts_sched_thread_suggested_stack_size = atoi(arg);
+
+		if ((erts_sched_thread_suggested_stack_size
+		     < ERTS_SCHED_THREAD_MIN_STACK_SIZE)
+		    || (erts_sched_thread_suggested_stack_size >
+			ERTS_SCHED_THREAD_MAX_STACK_SIZE)) {
+		    erts_fprintf(stderr, "bad stack size for scheduler threads %s\n",
+				 arg);
+		    erts_usage();
+		}
+		VERBOSE(DEBUG_SYSTEM,
+			("suggested scheduler thread stack size %d kilo words\n",
+			 erts_sched_thread_suggested_stack_size));
+	    }
 	    else {
 		erts_fprintf(stderr, "bad scheduling option %s\n", argv[i]);
 		erts_usage();
@@ -1230,6 +1274,7 @@ erl_start(int argc, char **argv)
 
     erts_sys_main_thread(); /* May or may not return! */
 #else
+    set_main_stack_size();
     process_main();
 #endif
 }
@@ -1237,7 +1282,7 @@ erl_start(int argc, char **argv)
 
 #ifdef USE_THREADS
 
-void erts_thr_fatal_error(int err, char *what)
+__decl_noreturn void erts_thr_fatal_error(int err, char *what)
 {
     char *errstr = err ? strerror(err) : NULL;
     erts_fprintf(stderr,
@@ -1322,7 +1367,7 @@ system_cleanup(int exit_code)
  * other positive n -> Erlang crash dump and core dump produced.
  */
 
-void erl_exit0(char *file, int line, int n, char *fmt,...)
+__decl_noreturn void erl_exit0(char *file, int line, int n, char *fmt,...)
 {
     unsigned int an;
     va_list args;
@@ -1368,7 +1413,7 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
     exit(an);
 }
 
-void erl_exit(int n, char *fmt,...)
+__decl_noreturn void erl_exit(int n, char *fmt,...)
 {
     unsigned int an;
     va_list args;

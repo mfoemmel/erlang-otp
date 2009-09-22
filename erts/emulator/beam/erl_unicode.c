@@ -1707,8 +1707,11 @@ binary_to_atom(Process* p, Eterm bin, Eterm enc, int must_exist)
 	    BIF_ERROR(p, SYSTEM_LIMIT);
 	}
 	if (!must_exist) {
-	    BIF_RET(am_atom_put((char *)bytes, bin_size));
+	    a = am_atom_put((char *)bytes, bin_size);
+	    erts_free_aligned_binary_bytes(temp_alloc);
+	    BIF_RET(a);
 	} else if (erts_atom_get((char *)bytes, bin_size, &a)) {
+	    erts_free_aligned_binary_bytes(temp_alloc);
 	    BIF_RET(a);
 	} else {
 	    goto badarg;
@@ -1782,11 +1785,13 @@ binary_to_atom(Process* p, Eterm bin, Eterm enc, int must_exist)
 	if (!must_exist) {
 	    res = am_atom_put(buf, num_chars);
 	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
+	    erts_free_aligned_binary_bytes(temp_alloc);
 	    BIF_RET(res);
 	} else {
 	    int exists = erts_atom_get(buf, num_chars, &res);
 	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
 	    if (exists) {
+		erts_free_aligned_binary_bytes(temp_alloc);
 		BIF_RET(res);
 	    } else {
 		goto badarg;

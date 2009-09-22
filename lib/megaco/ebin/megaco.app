@@ -19,7 +19,7 @@
 
 {application, megaco,
  [{description, "Megaco/H.248 protocol"},
-  {vsn, "3.11"},
+  {vsn, "3.11.3"},
   {modules,
    [	
 	megaco,

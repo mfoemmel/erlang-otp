@@ -65,32 +65,49 @@
 %% Basic types used in the race analysis
 %%-----------------------------------------------------------------------
 
--type str()        :: [string()].
 -type label_type() :: label() | [label()] | {label()} | ?no_label.
--type args()       :: 'empty' | [label_type() | str()].
--type case_tags()  :: 'beg_case' | 'beg_clause' | 'end_clause' | 'end_case'.
+-type args()       :: 'empty' | [label_type() | [string()]].
 -type core_vars()  :: core_tree() | ?no_arg.
 -type var_to_map() :: core_vars() | [core_tree()].
--type race_tag()   :: 'whereis_register' | 'ets_lookup_insert'.
+-type dep_calls()  :: 'whereis' | 'ets_lookup' | 'mnesia_dirty_read'.
+-type warn_calls() :: 'register' | 'ets_insert' | 'mnesia_dirty_write'.
+-type race_tag()   :: 'whereis_register' | 'ets_lookup_insert'
+                    | 'mnesia_dirty_read_write'.
 
--record(curr_fun, {mfa        :: mfa_or_funlbl(),
-                   label      :: label(),
-                   args       :: args()}).
--record(fun_call, {caller     :: mfa_or_funlbl(),
-                   callee     :: mfa_or_funlbl(),
-                   arg_types  :: [erl_type()],
-                   vars       :: [core_vars()]}). 
--record(dep_call, {call_name  :: 'whereis' | 'ets_lookup',
-                   args       :: args(),
-                   arg_types  :: [erl_type()],
-                   vars       :: [core_vars()],
-                   state      :: _,
-                   file_line  :: file_line()}).
--record(warn_call, {call_name :: 'register' | 'ets_insert',
-                    args      :: args()}).
+-record(beg_clause, {arg        :: var_to_map(),
+                     pats       :: var_to_map(),
+                     guard      :: core_tree()}).
+-record(end_clause, {arg        :: var_to_map(),
+                     pats       :: var_to_map(),
+                     guard      :: core_tree()}).
+-record(end_case,   {clauses    :: [#end_clause{}]}).
+-record(curr_fun,   {status     :: 'in' | 'out',
+                     mfa        :: mfa_or_funlbl(),
+                     label      :: label(),
+                     def_vars   :: [core_vars()],
+                     arg_types  :: [erl_types:erl_type()],
+                     call_vars  :: [core_vars()],
+                     var_map    :: dict()}).
+-record(dep_call,   {call_name  :: dep_calls(),
+                     args       :: args(),
+                     arg_types  :: [erl_types:erl_type()],
+                     vars       :: [core_vars()],
+                     state      :: _,
+                     file_line  :: file_line(),
+                     var_map    :: dict()}).
+-record(fun_call,   {caller     :: mfa_or_funlbl(),
+                     callee     :: mfa_or_funlbl(),
+                     arg_types  :: [erl_types:erl_type()],
+                     vars       :: [core_vars()]}).
+-record(let_tag,    {var        :: var_to_map(),
+                     arg        :: var_to_map()}).
+-record(warn_call,  {call_name  :: warn_calls(),
+                     args       :: args(),
+                     var_map    :: dict()}).
 
+-type case_tags()  :: 'beg_case' | #beg_clause{} | #end_clause{} | #end_case{}.
 -type code()       :: [#dep_call{} | #warn_call{} | #fun_call{} |
-                       #curr_fun{} | case_tags() | race_tag()]
+                       #curr_fun{} | #let_tag{} | case_tags() | race_tag()]
                     | 'empty'.
 
 %%----------------------------------------------------------------------
@@ -105,10 +122,7 @@
 			     rec_var_map    = dict:new()    :: dict(),
 			     self_rec	    = sets:new()    :: set(),
 			     calls          = dict:new()    :: dict(),
-                             exports        = []            :: [mfa()],
-                             race_var_map   = dict:new()    :: dict(),
                              race_code      = dict:new()    :: dict(),
-                             race_deplist   = []            :: [bool()],
                              public_tables  = []            :: [label()],
-                             named_tables   = []            :: str(),
-                             race_detection = false         :: bool()}).
+                             named_tables   = []            :: [string()],
+                             race_detection = false         :: boolean()}).

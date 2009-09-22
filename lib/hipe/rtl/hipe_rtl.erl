@@ -831,8 +831,8 @@ fconv_src_update(C, NewSrc) -> C#fconv{src=NewSrc}.
 %% change_var_to_reg(Var) ->
 %%   mk_reg(var_index(Var)).
 
--record(rtl_reg, {index,        % integer()
-		  is_gc_safe}). % bool()
+-record(rtl_reg, {index	     :: integer(),
+		  is_gc_safe :: boolean()}).
 
 mk_reg(Num, IsGcSafe) when is_integer(Num), Num >= 0 ->
   #rtl_reg{index=Num,is_gc_safe=IsGcSafe}.
@@ -1134,7 +1134,7 @@ subst1([], X) -> X;
 subst1([{X,Y}|_], X) -> Y;
 subst1([_|Xs], X) -> subst1(Xs,X).
 
-%% @spec is_safe(rtl_instruction()) -> bool()
+%% @spec is_safe(rtl_instruction()) -> boolean()
 %%
 %% @doc Succeeds if an RTL instruction is safe and can be deleted if the
 %% result is not used.
@@ -1185,7 +1185,7 @@ is_safe(Instr) ->
 %% is_alu_op(sra) -> true;
 %% is_alu_op(_) -> false.
 
-%% @spec is_shift_op(rtl_operator()) -> bool()
+%% @spec is_shift_op(rtl_operator()) -> boolean()
 %%
 %% @doc  Succeeds if its argument is an RTL operator.
 is_shift_op(sll) -> true;

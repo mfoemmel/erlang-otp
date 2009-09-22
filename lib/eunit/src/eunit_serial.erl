@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: eunit_serial.erl 332 2009-03-01 17:31:59Z rcarlsson $ 
+%% $Id$ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -58,9 +58,9 @@
 %% future use, and/or cancel the current item and possibly one or more
 %% of its parent groups.
 
--record(state, {listeners,
-		cancelled = eunit_lib:trie_new(),
-		messages = dict:new()}).
+-record(state, {listeners			 :: set(),
+		cancelled = eunit_lib:trie_new() :: gb_tree(),
+		messages  = dict:new()		 :: dict()}).
 
 start(Pids) ->
     spawn(fun () -> serializer(Pids) end).

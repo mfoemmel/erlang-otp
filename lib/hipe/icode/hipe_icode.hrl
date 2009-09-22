@@ -23,12 +23,10 @@
 %%=====================================================================
 
 %%---------------------------------------------------------------------
-%% THESE DO NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
+%% THIS DOES NOT REALLY BELONG HERE -- PLEASE REMOVE ASAP!
 %%---------------------------------------------------------------------
 
 -type ordset(T)	 :: [T].
-%%-type erl_type() :: any().    %% XXX: belongs to 'erl_types'
--type erl_type() :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}.
 
 %%---------------------------------------------------------------------
 %% Include files needed for the compilation of this header file
@@ -92,6 +90,8 @@
 
 -type icode_comment_text() :: atom() | string() | {atom(), term()}.
 
+-type icode_info() :: [{'arg_types', [erl_types:erl_type()]}].
+
 %%---------------------------------------------------------------------
 %% Icode instructions
 %%---------------------------------------------------------------------
@@ -136,7 +136,7 @@
 		     type               :: icode_call_type(),
 		     continuation       :: [] | icode_lbl(),
 		     fail_label = []    :: [] | icode_lbl(),
-		     in_guard   = false :: bool()}).
+		     in_guard   = false :: boolean()}).
 
 -record(icode_enter, {'fun' :: icode_funcall(),
 		      args  :: [icode_term_arg()],
@@ -151,9 +151,9 @@
 -record(icode_begin_handler, {dstlist :: [icode_var()]}).
 
 %% TODO: Remove [] from fail_label
--record(icode_fail, {class             :: icode_exit_class(),
-		     args              :: [icode_term_arg()],
-		     fail_label = [] :: [] | icode_lbl()}).
+-record(icode_fail, {class            :: icode_exit_class(),
+		     args             :: [icode_term_arg()],
+		     fail_label = []  :: [] | icode_lbl()}).
 
 -record(icode_comment, {text :: icode_comment_text()}).
 
@@ -176,13 +176,13 @@
 
 -record(icode, {'fun'		:: mfa(),
 		params		:: [icode_var()],
-		is_closure	:: bool(),
+		is_closure	:: boolean(),
 		closure_arity	:: arity(),
-		is_leaf 	:: bool(),
+		is_leaf 	:: boolean(),
 		code = []	:: icode_instrs(),
 		data		:: hipe_consttab(),
 		var_range	:: {non_neg_integer(), non_neg_integer()},
 		label_range	:: {icode_lbl(), icode_lbl()},
-		info = []       :: [{arg_types, [erl_type()]}]}).
+		info = []       :: icode_info()}).
 
 %%---------------------------------------------------------------------

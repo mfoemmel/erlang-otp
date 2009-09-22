@@ -37,13 +37,19 @@
 %%%  Internal Application API
 %%%=========================================================================
 start_link([{_, _}| _] = Config, AcceptTimeout, Debug)  ->
-    Address = proplists:get_value(bind_address, Config),
-    Port = proplists:get_value(port, Config), 
-    Name = make_name(Address, Port),
-    SupName = {local, Name},
-    supervisor:start_link(SupName, ?MODULE, 
-			  [undefined, Config, AcceptTimeout,
-			   Debug, Address, Port]);
+    case httpd_conf:validate_properties(Config) of
+	{ok, Config2} ->
+	    Address = proplists:get_value(bind_address, Config2),
+	    Port    = proplists:get_value(port, Config2), 
+	    Name = make_name(Address, Port),
+	    SupName = {local, Name},
+	    supervisor:start_link(SupName, ?MODULE, 
+				  [undefined, Config2, AcceptTimeout,
+				   Debug, Address, Port]);
+	{error, Reason} ->
+	    error_logger:error_report(Reason),
+	    {stop, Reason}
+    end;
 
 start_link(ConfigFile, AcceptTimeout, Debug) ->
     case file_2_config(ConfigFile) of
@@ -57,14 +63,22 @@ start_link(ConfigFile, AcceptTimeout, Debug) ->
 	    error_logger:error_report(Reason),
 	    {stop, Reason}
     end.
+
+
 start_link([{_, _}| _] = Config, AcceptTimeout, ListenInfo, Debug) ->
-    Address = proplists:get_value(bind_address, Config),
-    Port = proplists:get_value(port, Config), 
-    Name = make_name(Address, Port),
-    SupName = {local, Name},
-    supervisor:start_link(SupName, ?MODULE, 
-			  [undefined, Config, AcceptTimeout,
-			   Debug, Address, Port, ListenInfo]);
+    case httpd_conf:validate_properties(Config) of
+	{ok, Config2} ->
+	    Address = proplists:get_value(bind_address, Config2),
+	    Port    = proplists:get_value(port, Config2), 
+	    Name = make_name(Address, Port),
+	    SupName = {local, Name},
+	    supervisor:start_link(SupName, ?MODULE, 
+				  [undefined, Config2, AcceptTimeout,
+				   Debug, Address, Port, ListenInfo]);
+	{error, Reason} ->
+	    error_logger:error_report(Reason),
+	    {stop, Reason}
+    end;
 
 start_link(ConfigFile, AcceptTimeout, ListenInfo, Debug) ->
     case file_2_config(ConfigFile) of
@@ -78,6 +92,7 @@ start_link(ConfigFile, AcceptTimeout, ListenInfo, Debug) ->
 	    error_logger:error_report(Reason),
 	    {stop, Reason}
     end.
+
 
 %%%=========================================================================
 %%%  Supervisor callback
@@ -139,9 +154,14 @@ make_name(Address,Port) ->
 file_2_config(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
 	{ok, ConfigList} ->
-	    Address =  proplists:get_value(bind_address, ConfigList),
-	    Port = proplists:get_value(port, ConfigList),
-	    {ok, ConfigList, Address, Port};
+	    case httpd_conf:validate_properties(ConfigList) of
+		{ok, Config} ->
+		    Address = proplists:get_value(bind_address, ConfigList),
+		    Port    = proplists:get_value(port, ConfigList),
+		    {ok, Config, Address, Port};
+		Error ->
+		    Error
+	    end;
 	Error ->
 	    Error
     end.

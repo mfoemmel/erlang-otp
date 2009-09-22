@@ -47,6 +47,13 @@
 	 mib_of/1, mib_of/2, 
 	 me_of/1,  me_of/2, 
 	 invalidate_mibs_cache/0, invalidate_mibs_cache/1, 
+	 enable_mibs_cache/0, enable_mibs_cache/1, 
+	 disable_mibs_cache/0, disable_mibs_cache/1,
+	 gc_mibs_cache/0, gc_mibs_cache/1, gc_mibs_cache/2, gc_mibs_cache/3,
+	 enable_mibs_cache_autogc/0, enable_mibs_cache_autogc/1, 
+	 disable_mibs_cache_autogc/0, disable_mibs_cache_autogc/1,
+	 update_mibs_cache_age/1, update_mibs_cache_age/2, 
+	 update_mibs_cache_gclimit/1, update_mibs_cache_gclimit/2,
 
 	 get/2, get/3, get_next/2, get_next/3,
 
@@ -56,7 +63,7 @@
 	 send_notification/6,
 	 send_trap/3, send_trap/4,
 
-	 discovery/2, discovery/3, discovery/4, discovery/5, 
+	 discovery/2, discovery/3, discovery/4, discovery/5, discovery/6, 
 
  	 sys_up_time/0, system_start_time/0,
 
@@ -97,6 +104,8 @@
 	]).
 
 -include("snmpa_atl.hrl").
+
+-define(EXTRA_INFO, undefined).
 
 
 %%-----------------------------------------------------------------
@@ -284,11 +293,73 @@ me_of(Oid) ->
 me_of(Agent, Oid) ->
     snmpa_agent:me_of(Agent, Oid).
 
+
 invalidate_mibs_cache() ->
     invalidate_mibs_cache(snmp_master_agent).
 
 invalidate_mibs_cache(Agent) ->
     snmpa_agent:invalidate_mibs_cache(Agent).
+
+
+enable_mibs_cache() ->
+    enable_mibs_cache(snmp_master_agent).
+
+enable_mibs_cache(Agent) ->
+    snmpa_agent:enable_mibs_cache(Agent).
+
+
+disable_mibs_cache() ->
+    disable_mibs_cache(snmp_master_agent).
+
+disable_mibs_cache(Agent) ->
+    snmpa_agent:disable_mibs_cache(Agent).
+
+
+gc_mibs_cache() ->
+    gc_mibs_cache(snmp_master_agent).
+
+gc_mibs_cache(Agent) when is_atom(Agent) orelse is_pid(Agent) ->
+    snmpa_agent:gc_mibs_cache(Agent);
+gc_mibs_cache(Age) ->
+    gc_mibs_cache(snmp_master_agent, Age).
+
+gc_mibs_cache(Agent, Age) when is_atom(Agent) orelse is_pid(Agent) ->
+    snmpa_agent:gc_mibs_cache(Agent, Age);
+gc_mibs_cache(Age, GcLimit) ->
+    gc_mibs_cache(snmp_master_agent, Age, GcLimit).
+
+gc_mibs_cache(Agent, Age, GcLimit) when is_atom(Agent) orelse is_pid(Agent) ->
+    snmpa_agent:gc_mibs_cache(Agent, Age, GcLimit).
+
+
+enable_mibs_cache_autogc() ->
+    enable_mibs_cache_autogc(snmp_master_agent).
+
+enable_mibs_cache_autogc(Agent) ->
+    snmpa_agent:enable_mibs_cache_autogc(Agent).
+
+
+disable_mibs_cache_autogc() ->
+    disable_mibs_cache_autogc(snmp_master_agent).
+
+disable_mibs_cache_autogc(Agent) ->
+    snmpa_agent:disable_mibs_cache_autogc(Agent).
+
+
+update_mibs_cache_age(Age) ->
+    update_mibs_cache_age(snmp_master_agent, Age).
+
+update_mibs_cache_age(Agent, Age) ->
+    snmpa_agent:update_mibs_cache_age(Agent, Age).
+
+
+update_mibs_cache_gclimit(GcLimit) ->
+    update_mibs_cache_age(snmp_master_agent, GcLimit).
+
+update_mibs_cache_gclimit(Agent, GcLimit) ->
+    snmpa_agent:update_mibs_cache_gclimit(Agent, GcLimit).
+
+
 
 
 %% - message filter / load regulation
@@ -379,11 +450,17 @@ discovery(TargetName, Notification, ContextName, Varbinds)
     discovery(TargetName, Notification, ContextName, Varbinds, 
 	      DiscoHandler);
 discovery(TargetName, Notification, Varbinds, DiscoHandler) 
-  when is_function(DiscoHandler) ->
+  when is_atom(DiscoHandler) ->
     ContextName = "",
     discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler).
 
-discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler) 
+discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler) ->
+    ExtraInfo = ?EXTRA_INFO,
+    discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler, 
+	      ExtraInfo).
+
+discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler, 
+	  ExtraInfo) 
   when (is_list(TargetName) andalso (length(TargetName) > 0) andalso 
 	is_atom(Notification) andalso 
 	is_list(ContextName) andalso 
@@ -391,8 +468,8 @@ discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler)
 	is_atom(DiscoHandler)) ->
     case (catch snmpa_discovery_handler:verify(DiscoHandler)) of
 	ok ->
-	    snmpa_agent:discovery(TargetName, Notification, ContextName, Varbinds,
-				  DiscoHandler);
+	    snmpa_agent:discovery(TargetName, Notification, ContextName, 
+				  Varbinds, DiscoHandler, ExtraInfo);
 	Error ->
 	    Error
     end.

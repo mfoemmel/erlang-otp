@@ -129,7 +129,7 @@ node_format(Opt, Fun, V) ->
 
 edge_format(Opt, Fun, V1, V2) ->
   OptText =
-    case  lists:flatten(edgeoptions(Opt, Fun ,V1, V2)) of
+    case lists:flatten(edgeoptions(Opt, Fun ,V1, V2)) of
       [] ->
 	[];
       [_|X] ->
@@ -140,18 +140,14 @@ edge_format(Opt, Fun, V1, V2) ->
   [String, " [", OptText, "];\n"].
   
 calc_dim(String) ->
-  calc_dim(String, 1, 0 ,0).
+  calc_dim(String, 1, 0, 0).
 		     
-calc_dim([$\\, $n|T], H, TmpW, MaxW) ->
-  if TmpW > MaxW -> calc_dim(T, H+1, 0, TmpW);
-     true -> calc_dim(T, H+1, 0, MaxW)
-  end;
+calc_dim("\\n" ++ T, H, TmpW, MaxW) ->
+  calc_dim(T, H+1, 0, erlang:max(TmpW, MaxW));
 calc_dim([_|T], H, TmpW, MaxW) ->
   calc_dim(T, H, TmpW+1, MaxW);
 calc_dim([], H, TmpW, MaxW) ->
-  if TmpW > MaxW -> {TmpW, H};
-     true -> {MaxW, H}
-  end.
+  {erlang:max(TmpW, MaxW), H}.
 
 edgeoptions([{all_edges, {OptName, OptVal}}|T], Fun, V1, V2) -> 
    case legal_edgeoption(OptName) of

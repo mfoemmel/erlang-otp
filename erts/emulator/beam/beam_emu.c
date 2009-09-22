@@ -2012,9 +2012,6 @@ void process_main(void)
 	    save_calls(c_p, (Export *) Arg(0));
 	}
 
-	/*
-	 * A BIF with no arguments cannot fail (especially not with badarg).
-	 */
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	r(0) = (*bf)(c_p, I);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p) || is_non_value(r(0)));
@@ -2025,10 +2022,17 @@ void process_main(void)
 	    CHECK_TERM(r(0));
 	    Next(1);
 	}
-	else {
-	    ASSERT(c_p->freason == TRAP);
+	else if (c_p->freason == TRAP) {
 	    goto call_bif_trap3;
 	}
+
+	/*
+	 * Error handling.  SWAPOUT is not needed because it was done above.
+	 */
+	ASSERT(c_p->stop == E);
+	reg[0] = r(0);
+	I = handle_error(c_p, I, reg, bf);
+	goto post_error_handling;
     }
 
  OpCase(call_bif1_e):

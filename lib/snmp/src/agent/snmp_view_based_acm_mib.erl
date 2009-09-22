@@ -489,13 +489,14 @@ vacmAccessTable(is_set_ok, RowIndex, Cols0) ->
 		{value, {Col, ?'RowStatus_createAndGo'}} -> % ok, if it doesn't exist
 		    Res = lists:keysearch(?vacmAccessContextMatch, 1, Cols),
 		    case snmpa_vacm:get_row(RowIndex) of
-			false when IsValidKey == true, tuple(Res) -> {noError, 0};
+			false when (IsValidKey =:= true) andalso 
+				   is_tuple(Res) -> {noError, 0};
 			false -> {noCreation, Col}; % Bad RowIndex
 			_ -> {inconsistentValue, Col}
 		    end;
 		{value, {Col, ?'RowStatus_createAndWait'}} -> % ok, if it doesn't exist
 		    case snmpa_vacm:get_row(RowIndex) of
-			false when IsValidKey == true -> {noError, 0};
+			false when (IsValidKey =:= true) -> {noError, 0};
 			false -> {noCreation, Col}; % Bad RowIndex
 			_ -> {inconsistentValue, Col}
 		    end;

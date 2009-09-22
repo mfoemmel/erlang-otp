@@ -194,7 +194,7 @@ record_attributes(Forms) ->
 compile_messages(Forms, FormsNoShadows, Options, State) ->
     %% The qlc module cannot handle binary generators.
     BGenF = fun(_QId,{b_generate,Line,_P,_LE}=BGen, GA, A) ->
-                    M = {Line,?APIMOD,binary_generator},
+                    M = {loc(Line),?APIMOD,binary_generator},
                     {BGen,[{get(?QLC_FILE),[M]}|GA],A};
                (_QId, Q, GA, A) ->
                     {Q,GA,A}
@@ -230,13 +230,34 @@ map_lines(F, E) ->
 
 tagged_messages(MsL) ->
     [{File,
-      [{get_lcid_line(Id),Mod,untag(T)} || {Id,Mod,T} <- Ms,
-                                           is_lcid(Id)]}
+      [{Loc,Mod,untag(T)} || {Loc0,Mod,T} <- Ms,
+                             {true,Loc} <- [tloc(Loc0)]]}
      || {File,Ms} <- MsL]
     ++
-    [{File,[{Line,?APIMOD,{used_generator_variable,V}}]} 
+    [{File,[{Loc,?APIMOD,{used_generator_variable,V}}]}
        || {_, Ms} <- MsL, 
-          {{extra,Line,File,V},erl_lint,{unbound_var,_}} <- Ms].
+           {XLoc,erl_lint,{unbound_var,_}} <- Ms,
+           {Loc,File,V} <- [extra(XLoc)]].
+
+tloc({Id,Column}) ->
+    {IsLcid,T} = tloc(Id),
+    {IsLcid,{T,Column}};
+tloc(Id) ->
+    IsLcid = is_lcid(Id),
+    {IsLcid,case IsLcid of
+                true -> get_lcid_line(Id);
+                false -> any
+            end}.
+
+extra({extra,Line,File,V}) ->
+    {Line,File,V};
+extra({Line,Column}) ->
+    case extra(Line) of
+        {L,File,V} -> {{L,Column},File,V};
+        Else -> Else
+    end;
+extra(Else) ->
+    Else.
 
 untag([E | Es]) -> [untag(E) | untag(Es)];
 untag(T) when is_tuple(T) -> list_to_tuple(untag(tuple_to_list(T)));
@@ -269,9 +290,10 @@ intro_variables(FormsNoShadows, State) ->
                   %% template mentioning all variables occurring in F.
                   Vs = ordsets:to_list(qlc:vars(Filter0)),
                   Id = QId#qid.lcid,
-                  LC1 = embed_vars([{var,{QId,f1},V} || V <- Vs], Id),
-                  LC2 = embed_vars([{var,{QId,f2},V} || V <- Vs], Id),
-                  Filter = {block,line,[LC1,Filter0,LC2]},
+                  LC1 = embed_vars(intro_set_line({QId,f1}, Vs), Id),
+                  LC2 = embed_vars(intro_set_line({QId,f2}, Vs), Id),
+                  AnyLine = -1,
+                  Filter = {block,AnyLine,[LC1,Filter0,LC2]},
                   {Filter,{GVs,[{QId,[]} | QIds]},Foo}
           end,
     Acc0 = {[],[]},
@@ -292,6 +314,10 @@ intro_variables(FormsNoShadows, State) ->
     IV = (Before -- After) -- Unsafe,
     I1 = family(IV ++ GenVars),
     sofs:to_external(sofs:family_union(sofs:family(QIds), I1)).
+
+intro_set_line(Tag, Vars) ->
+    L = erl_parse:set_line(1, fun(_) -> Tag end),
+    [{var,L,V} || V <- Vars].
 
 compile_errors(FormsNoShadows) ->
     case compile_forms(FormsNoShadows, []) of
@@ -354,7 +380,11 @@ used_genvar_check(FormsNoShadows, State) ->
                                    when T =:= b_generate; T =:= generate ->
                 F = fun({var, _, V}=Var) -> 
                             {var, L, OrigVar} = undo_no_shadows(Var),
-                            {var, {extra, L, get(?QLC_FILE), OrigVar}, V} 
+                            AF = fun(Line) -> 
+                                         {extra, Line, get(?QLC_FILE), OrigVar}
+                                 end,
+                            L2 = erl_parse:set_line(L, AF),
+                            {var, L2, V} 
                     end,
                 Vs = [Var || {var, _, V}=Var <- qlc:var_fold(F, [], LE),
                              lists:member(V, IVsSoFar0)],
@@ -606,7 +636,7 @@ qlc_kind(OrigE, Qs) ->
 
 %% Finds filters and patterns that cannot match any values at all. 
 %% Nothing but the patterns and the filters themselves is analyzed.
-%% A much weaker analysis than the one of Dialyzer.
+%% A much weaker analysis than the one of Dialyzer's.
 warn_failing_qualifiers(Qualifiers, AllIVs, Dependencies, State) ->
     {FilterData, GeneratorData} = qual_data(Qualifiers),    
     Anon = 1,
@@ -625,7 +655,7 @@ warn_failing_qualifiers(Qualifiers, AllIVs, Dependencies, State) ->
                             [] ->
                                 {[],
                                  [{get(?QLC_FILE),
-                                   [{abs(element(2, Filter)),?APIMOD,
+                                   [{abs_loc(element(2, Filter)),?APIMOD,
                                      nomatch_filter}]} | Warnings]};
                             Frames1 -> 
                                 {Frames1,Warnings}
@@ -635,7 +665,7 @@ warn_failing_qualifiers(Qualifiers, AllIVs, Dependencies, State) ->
                             {failed, _, _} -> 
                                 {Frames,
                                  [{get(?QLC_FILE),
-                                   [{abs(element(2, Pattern)),?APIMOD,
+                                   [{abs_loc(element(2, Pattern)),?APIMOD,
                                      nomatch_pattern}]} | Warnings]};
                             _ ->
                                 {Frames,Warnings}
@@ -2381,8 +2411,15 @@ aux_vars(Vars, LcN, AllVars) ->
 aux_var(Name, LcN, QN, N, AllVars) ->
     qlc:aux_name(lists:concat([Name, LcN, '_', QN, '_']), N, AllVars).
 
-no_compiler_warning(Line) ->
-    - abs(Line).
+no_compiler_warning(L) ->
+    erl_parse:set_line(L, fun(Line) -> -abs(Line) end).
+
+abs_loc(L) ->
+    loc(erl_parse:set_line(L, fun(Line) -> abs(Line) end)).
+
+loc(L) ->
+    {location,Location} = erl_parse:get_attribute(L, location),
+    Location.
 
 list2op([E], _Op) ->
     E;
@@ -2464,7 +2501,7 @@ no_shadows(Forms0, State) ->
     %% tried (to avoid mixing up introduced names with existing ones).
     %%
     %% The original names of variables are kept in the line number
-    %% position of the abstract code: {var, {OriginalName, L},
+    %% position of the abstract code: {var, {nos, OriginalName, L},
     %% NewName}. undo_no_shadows/1 re-creates the original code.
     AllVars = sets:from_list(ordsets:to_list(qlc:vars(Forms0))),
     ?DEBUG("nos AllVars = ~p~n", [sets:to_list(AllVars)]),
@@ -2513,8 +2550,11 @@ nos({lc,L,E0,Qs0}, S) ->
     {{lc,L,E,Qs}, S};
 nos({var,L,V}=Var, {_LI,Vs,UV,_A,_Sg}=S) when V =/= '_' ->
     case used_var(V, Vs, UV) of
-        {true, VN} -> {{var,{V,L},VN}, S};
-        false -> {Var, S}
+        {true, VN} ->
+            NL = nos_var(L, V),
+            {{var,NL,VN}, S};
+        false ->
+            {Var, S}
     end;
 nos(T, S0) when is_tuple(T) ->
     {TL, S} = nos(tuple_to_list(T), S0),
@@ -2544,12 +2584,16 @@ nos_pattern({var,L,V}, {LI,Vs0,UV,A,Sg}, PVs0) when V =/= '_' ->
                     end,
                 {N, Vs1, [{V,VN} | PVs0]}
         end,
-    {{var,{V,L},Name}, {LI,Vs,UV,A,Sg}, PVs};
+    NL = nos_var(L, V),
+    {{var,NL,Name}, {LI,Vs,UV,A,Sg}, PVs};
 nos_pattern(T, S0, PVs0) when is_tuple(T) ->
     {TL, S, PVs} = nos_pattern(tuple_to_list(T), S0, PVs0),
     {list_to_tuple(TL), S, PVs};
 nos_pattern(T, S, PVs) ->
     {T, S, PVs}.
+
+nos_var(L, Name) ->
+    erl_parse:set_line(L, fun(Line) -> {nos,Name,Line} end).
 
 used_var(V, Vs, UV) ->
     case dict:find(V, Vs) of
@@ -2577,33 +2621,50 @@ next_var(V, Vs, AllVars, LI, UV) ->
 undo_no_shadows(E) ->
     var_map(fun undo_no_shadows1/1, E).
 
-undo_no_shadows1({var, {V, VL}, _}) ->
-    undo_no_shadows1({var, VL, V});
-undo_no_shadows1({var, _, _}=Var) ->
-    Var.
+undo_no_shadows1({var, L, _}=Var) ->
+    case erl_parse:get_attribute(L, line) of
+        {line,{nos,V,_VL}} ->
+            NL = erl_parse:set_line(L, fun({nos,_V,VL}) -> VL end),
+            undo_no_shadows1({var, NL, V});
+        _Else ->
+            Var
+    end.
 
 restore_line_numbers(E) ->
     var_map(fun restore_line_numbers1/1, E).
 
-restore_line_numbers1({var, {_, VL}, V}) ->
-    restore_line_numbers1({var, VL, V});
-restore_line_numbers1({var, L, _}=Var) when is_integer(L) ->
-    Var.
+restore_line_numbers1({var, L, V}=Var) ->
+    case erl_parse:get_attribute(L, line) of
+        {line,{nos,_,_}} ->
+            NL = erl_parse:set_line(L, fun({nos,_V,VL}) -> VL end),
+            restore_line_numbers1({var, NL, V});
+        _Else ->
+            Var
+    end.
 
 %% QLC identifier. 
 %% The first one encountered in the file has No=1.
 
-make_lcid(Line, No) when is_integer(Line), Line < (1 bsl ?MAX_NUM_OF_LINES), 
-                          is_integer(No), No > 0 ->
-    sgn(Line) * ((No bsl ?MAX_NUM_OF_LINES) + sgn(Line) * Line).
+make_lcid(Attrs, No) when is_integer(No), No > 0 ->
+    F = fun(Line) when is_integer(Line), Line < (1 bsl ?MAX_NUM_OF_LINES) ->
+                sgn(Line) * ((No bsl ?MAX_NUM_OF_LINES) + sgn(Line) * Line)
+        end,
+    erl_parse:set_line(Attrs, F).
 
-is_lcid(Id) ->
-    is_integer(Id) andalso (abs(Id) > (1 bsl ?MAX_NUM_OF_LINES)).
+is_lcid(Attrs) ->
+    try 
+        {line,Id} = erl_parse:get_attribute(Attrs, line),
+        is_integer(Id) andalso (abs(Id) > (1 bsl ?MAX_NUM_OF_LINES))
+    catch _:_ ->
+        false
+    end.
 
-get_lcid_no(Id) ->
-    abs(Id) bsr ?MAX_NUM_OF_LINES.
+get_lcid_no(IdAttrs) ->
+    {line,Id} = erl_parse:get_attribute(IdAttrs, line),
+    abs(Id) bsr ?MAX_NUM_OF_LINES.    
 
-get_lcid_line(Id) ->
+get_lcid_line(IdAttrs) ->
+    {line,Id} = erl_parse:get_attribute(IdAttrs, line),
     sgn(Id) * (abs(Id) band ((1 bsl ?MAX_NUM_OF_LINES) - 1)).
 
 sgn(X) when X >= 0 ->

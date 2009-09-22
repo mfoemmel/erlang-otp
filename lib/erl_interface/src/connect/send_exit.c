@@ -56,7 +56,7 @@ int ei_send_exit_tmo(int fd, const erlang_pid *from, const erlang_pid *to,
   int len = strlen(reason) + 1080; /* see below */
 
   if (len > EISMALLBUF)
-    if (!(dbuf = malloc(index)))
+    if (!(dbuf = malloc(len)))
       return -1;
   msgbuf = (dbuf ? dbuf : sbuf);
 

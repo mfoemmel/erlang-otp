@@ -40,7 +40,7 @@
 %%              Value.
 %%  The option handling functions.
 
--spec bool_option(atom(), atom(), bool(), [_]) -> bool().
+-spec bool_option(atom(), atom(), boolean(), [_]) -> boolean().
 
 bool_option(On, Off, Default, Opts) ->
     foldl(fun (Opt, _Def) when Opt =:= On -> true;
@@ -104,10 +104,10 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                warnings=[],                     %Current warnings
 	       global_vt=[],                    %The global VarTable
                file = ""        :: string(),	%From last file attribute
-               recdef_top=false :: bool(),	%true in record initialisation
+               recdef_top=false :: boolean(),	%true in record initialisation
 						%outside any fun or lc
-               xqlc= false :: bool(),		%true if qlc.hrl included
-               new = false :: bool(),		%Has user-defined 'new/N'
+               xqlc= false :: boolean(),	%true if qlc.hrl included
+               new = false :: boolean(),	%Has user-defined 'new/N'
                called= [],			%Called functions
                usage = #usage{}		:: #usage{},
 	       specs = dict:new()	:: dict(),	%Type specifications
@@ -232,9 +232,11 @@ format_error({untyped_record,T}) ->
 format_error({unbound_var,V}) ->
     io_lib:format("variable ~w is unbound", [V]);
 format_error({unsafe_var,V,{What,Where}}) ->
-    io_lib:format("variable ~w unsafe in ~w (line ~w)", [V,What,Where]);
+    io_lib:format("variable ~w unsafe in ~w ~s", 
+                  [V,What,format_where(Where)]);
 format_error({exported_var,V,{What,Where}}) ->
-    io_lib:format("variable ~w exported from ~w (line ~w)", [V,What,Where]);
+    io_lib:format("variable ~w exported from ~w ~s", 
+                  [V,What,format_where(Where)]);
 format_error({shadowed_var,V,In}) ->
     io_lib:format("variable ~w shadowed in ~w", [V,In]);
 format_error({unused_var, V}) ->
@@ -261,7 +263,7 @@ format_error({bad_bitsize,Type}) ->
 %% --- behaviours ---
 format_error({conflicting_behaviours,{Name,Arity},B,FirstL,FirstB}) ->
     io_lib:format("conflicting behaviours - callback ~w/~w required by both '~p' "
-		  "and '~p' (line ~p)", [Name,Arity,B,FirstB,FirstL]);
+		  "and '~p' ~s", [Name,Arity,B,FirstB,format_where(FirstL)]);
 format_error({undefined_behaviour_func, {Func,Arity}, Behaviour}) ->
     io_lib:format("undefined callback function ~w/~w (behaviour '~w')",
 		  [Func,Arity,Behaviour]);
@@ -287,6 +289,9 @@ format_error({new_builtin_type, {TypeName, Arity}}) ->
 format_error({builtin_type, {TypeName, Arity}}) ->
     io_lib:format("type ~w~s is a builtin type; it cannot be redefined", 
 		  [TypeName, gen_type_paren(Arity)]);
+format_error({renamed_type, OldName, NewName}) ->
+    io_lib:format("type ~w() is now called ~w(); "
+		  "please use the new name instead", [OldName, NewName]);
 format_error({redefine_type, {TypeName, Arity}}) ->
     io_lib:format("type ~w~s already defined", 
 		  [TypeName, gen_type_paren(Arity)]);
@@ -325,6 +330,11 @@ format_mfa({M, F, A}) when is_integer(A) ->
 format_mf(M, F, ArityString) when is_atom(M), is_atom(F) ->
     atom_to_list(M) ++ ":" ++ atom_to_list(F) ++ "/" ++ ArityString.
 
+format_where(L) when is_integer(L) ->
+    io_lib:format("(line ~p)", [L]);
+format_where({L,C}) when is_integer(L), is_integer(C) ->
+    io_lib:format("(line ~p, column ~p)", [L, C]).
+
 %% Local functions that are somehow automatically generated.
 
 pseudolocals() ->
@@ -354,7 +364,8 @@ used_vars(Exprs, BindingsList) ->
     Vt = orddict:from_list(Vs),
     {Evt,_St} = exprs(zip_file_and_line(Exprs, "nofile"), Vt, start()),
     {ok, foldl(fun({V,{_,used,_}}, L) -> [V | L];
-                  (_, L) -> L end, [], Evt)}.
+                  (_, L) -> L
+	       end, [], Evt)}.
 
 %% module([Form]) ->
 %% module([Form], FileName) ->
@@ -493,13 +504,23 @@ pack_warnings(Ws) ->
 
 add_error(E, St) -> St#lint{errors=[{St#lint.file,E}|St#lint.errors]}.
 
-add_error({File,Line}, E, St) -> 
-    add_error({Line,erl_lint,E}, St#lint{file = File}).
+add_error(FileLine, E, St) -> 
+    {File,Location} = loc(FileLine),
+    add_error({Location,erl_lint,E}, St#lint{file = File}).
 
 add_warning(W, St) -> St#lint{warnings=[{St#lint.file,W}|St#lint.warnings]}.
 
-add_warning({File,Line}, W, St) -> 
-    add_warning({Line,erl_lint,W}, St#lint{file = File}).
+add_warning(FileLine, W, St) -> 
+    {File,Location} = loc(FileLine),
+    add_warning({Location,erl_lint,W}, St#lint{file = File}).
+
+loc(L) ->
+    case erl_parse:get_attribute(L, location) of
+        {location,{{File,Line},Column}} ->
+            {File,{Line,Column}};
+        {location,{File,Line}} ->
+            {File,Line}
+    end.
 
 %% forms([Form], State) -> State'
 
@@ -548,7 +569,9 @@ eval_file_attr([], _File) ->
     [].
 
 zip_file_and_line(T, File) ->
-    modify_line(T, fun(Line) -> {File,Line} end).
+    F0 = fun(Line) -> {File,Line} end,
+    F = fun(L) -> erl_parse:set_line(L, F0) end,
+    modify_line(T, F).
 
 %% form(Form, State) -> State'
 %%  Check a form returning the updated State. Handle generic cases here.
@@ -687,7 +710,7 @@ bif_clashes(Forms, St) ->
     Clashes = ordsets:subtract(ordsets:from_list(Clashes0), Nowarn),
     St#lint{clashes=Clashes}.
 
--spec is_bif_clash(atom(), byte(), lint_state()) -> bool().
+-spec is_bif_clash(atom(), byte(), lint_state()) -> boolean().
 
 is_bif_clash(_Name, _Arity, #lint{clashes=[]}) ->
     false;
@@ -746,10 +769,7 @@ all_behaviour_callbacks([{Line,B}|Bs], Acc, St0) ->
 all_behaviour_callbacks([], Acc, St) -> {reverse(Acc),St}.
 
 behaviour_callbacks(Line, B, St0) ->
-    case catch B:behaviour_info(callbacks) of
-        {'EXIT', _Reason} ->
-            St1 = add_warning(Line, {undefined_behaviour,B}, St0),
-            {[], St1};
+    try B:behaviour_info(callbacks) of
         Funcs when is_list(Funcs) ->
             All = all(fun({FuncName, Arity}) ->
                               is_atom(FuncName) andalso is_integer(Arity);
@@ -772,6 +792,10 @@ behaviour_callbacks(Line, B, St0) ->
         _Other ->
             St1 = add_warning(Line, {ill_defined_behaviour_callbacks,B}, St0),
             {[], St1}
+    catch
+        _:_ ->
+            St1 = add_warning(Line, {undefined_behaviour,B}, St0),
+            {[], St1}
     end.
 
 behaviour_missing_callbacks([{{Line,B},Bfs}|T], #lint{exports=Exp}=St0) ->
@@ -791,7 +815,8 @@ behaviour_conflicting(AllBfs, St) ->
     R = sofs:to_external(R4),
     behaviour_add_conflicts(R, St).
 
-behaviour_add_conflicts([{Cb,[{{_,FirstL},FirstB}|Cs]}|T], St0) ->
+behaviour_add_conflicts([{Cb,[{FirstLoc,FirstB}|Cs]}|T], St0) ->
+    FirstL = element(2, loc(FirstLoc)),
     St = behaviour_add_conflict(Cs, Cb, FirstL, FirstB, St0),
     behaviour_add_conflicts(T, St);
 behaviour_add_conflicts([], St) -> St.
@@ -993,9 +1018,9 @@ check_unused_records(Forms, St0) ->
             URecs = foldl(fun (Used, Recs) -> 
                                   dict:erase(Used, Recs) 
                           end, St0#lint.records, UsedRecords),
-            Unused = [{Name,Line} || 
-                         {Name,{Line,_Fields}} <- dict:to_list(URecs),
-                         element(1, Line) =:= FirstFile],
+            Unused = [{Name,FileLine} || 
+                         {Name,{FileLine,_Fields}} <- dict:to_list(URecs),
+                         element(1, loc(FileLine)) =:= FirstFile],
             foldl(fun ({N,L}, St) ->
                           add_warning(L, {unused_record, N}, St)
                   end, St0, Unused);
@@ -2352,11 +2377,13 @@ check_type({var, L, Name}, SeenVars, St) ->
 	    error -> dict:store(Name, {seen_once, L}, SeenVars)
 	end,
     {NewSeenVars, St};
-check_type({type, L, 'fun', [Dom, Range]}, SeenVars, St) -> 
+check_type({type, L, bool, []}, SeenVars, St) ->
+    {SeenVars, add_warning(L, {renamed_type, bool, boolean}, St)};
+check_type({type, L, 'fun', [Dom, Range]}, SeenVars, St) ->
     St1 =
 	case Dom of
 	    {type, _, product, _} -> St;
-	    {type, _, any, []} -> St;
+	    {type, _, any} -> St;
 	    _ -> add_error(L, {type_syntax, 'fun'}, St)
 	end,
     check_type({type, -1, product, [Dom, Range]}, SeenVars, St1);
@@ -2368,6 +2395,7 @@ check_type({type, L, range, [From, To]}, SeenVars, St) ->
 	end,
     {SeenVars, St1};
 check_type({type, _L, tuple, any}, SeenVars, St) -> {SeenVars, St};
+check_type({type, _L, any}, SeenVars, St) -> {SeenVars, St};
 check_type({type, L, binary, [Base, Unit]}, SeenVars, St) ->
     St1 =
 	case {Base, Unit} of
@@ -2519,7 +2547,7 @@ is_newly_introduced_builtin_type({iodata, 0}) -> true;
 is_newly_introduced_builtin_type({queue, 0}) -> true; % opaque
 is_newly_introduced_builtin_type({set, 0}) -> true; % opaque
 is_newly_introduced_builtin_type({tid, 0}) -> true; % opaque
-%% R13B-1
+%% R13B01
 is_newly_introduced_builtin_type({boolean, 0}) -> true;
 is_newly_introduced_builtin_type({Name, _}) when is_atom(Name) -> false.
 
@@ -2607,13 +2635,14 @@ check_unused_types(Forms, St = #lint{usage=Usage, types=Types}) ->
 		fun(_Type, -1, AccSt) ->
 			%% Default type
 			AccSt;
-		   (Type, Line, AccSt) ->
-			case Line of
+		   (Type, FileLine, AccSt) ->
+                        case loc(FileLine) of
 			    {FirstFile, _} ->
 				case sets:is_element(Type, UsedTypes) of
 				    true -> AccSt;
 				    false -> 
-					add_warning(Line, {unused_type, Type}, 
+					add_warning(FileLine,
+                                                    {unused_type, Type},
 						    AccSt)
 				end;
 			    _ ->
@@ -2968,10 +2997,12 @@ vtupdate(Uvt, Vt0) ->
 %% vtunsafe([Variable], From, VarTable) -> VarTable.
 %%  Add the variables to VarTable either as exported from From or as unsafe.
 
-vtexport(Vs, {InTag,{_File,Line}}, Vt0) ->
+vtexport(Vs, {InTag,FileLine}, Vt0) ->
+    {_File,Line} = loc(FileLine),
     vtupdate([{V,{{export,{InTag,Line}},unused,[]}} || V <- Vs], Vt0).
 
-vtunsafe(Vs, {InTag,{_File,Line}}, Vt0) ->
+vtunsafe(Vs, {InTag,FileLine}, Vt0) ->
+    {_File,Line} = loc(FileLine),
     vtupdate([{V,{{unsafe,{InTag,Line}},unused,[]}} || V <- Vs], Vt0).
 
 %% vtmerge(VarTable, VarTable) -> VarTable.
@@ -3066,42 +3097,48 @@ copy_expr(Expr, Line) ->
 %% modify_line(Expression, Fun) -> Expression
 %%  Applies Fun to each line number occurrence.
 
+modify_line(T, F0) ->
+    modify_line1(T, F0).
+
 %% Forms.
-modify_line({function,F,A}, _Mf) -> {function,F,A};
-modify_line({function,M,F,A}, _Mf) -> {function,M,F,A};
-modify_line({attribute,L,record,{Name,Fields}}, Mf) -> 
-    {attribute,Mf(L),record,{Name,modify_line(Fields, Mf)}};
-modify_line({attribute,L,spec,{Fun,Types}}, Mf) ->
-    {attribute,Mf(L),spec,{Fun,modify_line(Types, Mf)}};
-modify_line({attribute,L,type,{TypeName,TypeDef,Args}}, Mf) ->
-    {attribute,Mf(L),type,{TypeName,modify_line(TypeDef, Mf),
-			   modify_line(Args, Mf)}};
-modify_line({attribute,L,Attr,Val}, Mf) -> {attribute,Mf(L),Attr,Val};
-modify_line({warning,W}, _Mf) -> {warning,W};
-modify_line({error,W}, _Mf) -> {error,W};
+modify_line1({function,F,A}, _Mf) -> {function,F,A};
+modify_line1({function,M,F,A}, _Mf) -> {function,M,F,A};
+modify_line1({attribute,L,record,{Name,Fields}}, Mf) -> 
+    {attribute,Mf(L),record,{Name,modify_line1(Fields, Mf)}};
+modify_line1({attribute,L,spec,{Fun,Types}}, Mf) ->
+    {attribute,Mf(L),spec,{Fun,modify_line1(Types, Mf)}};
+modify_line1({attribute,L,type,{TypeName,TypeDef,Args}}, Mf) ->
+    {attribute,Mf(L),type,{TypeName,modify_line1(TypeDef, Mf),
+			   modify_line1(Args, Mf)}};
+modify_line1({attribute,L,opaque,{TypeName,TypeDef,Args}}, Mf) ->
+    {attribute,Mf(L),opaque,{TypeName,modify_line1(TypeDef, Mf),
+                             modify_line1(Args, Mf)}};
+modify_line1({attribute,L,Attr,Val}, Mf) -> {attribute,Mf(L),Attr,Val};
+modify_line1({warning,W}, _Mf) -> {warning,W};
+modify_line1({error,W}, _Mf) -> {error,W};
 %% Expressions.
-modify_line({clauses,Cs}, Mf) -> {clauses,modify_line(Cs, Mf)};
-modify_line({typed_record_field,Field,Type}, Mf) -> 
-    {typed_record_field,modify_line(Field, Mf),modify_line(Type, Mf)};
-modify_line({Tag,L}, Mf) -> {Tag,Mf(L)};
-modify_line({Tag,L,E1}, Mf) ->
-    {Tag,Mf(L),modify_line(E1, Mf)};
-modify_line({Tag,L,E1,E2}, Mf) ->
-    {Tag,Mf(L),modify_line(E1, Mf),modify_line(E2, Mf)};
-modify_line({bin_element,L,E1,E2,TSL}, Mf) ->
-    {bin_element,Mf(L),modify_line(E1, Mf),modify_line(E2, Mf), TSL};
-modify_line({Tag,L,E1,E2,E3}, Mf) ->
-    {Tag,Mf(L),modify_line(E1, Mf),modify_line(E2, Mf),modify_line(E3, Mf)};
-modify_line({Tag,L,E1,E2,E3,E4}, Mf) ->
+modify_line1({clauses,Cs}, Mf) -> {clauses,modify_line1(Cs, Mf)};
+modify_line1({typed_record_field,Field,Type}, Mf) -> 
+    {typed_record_field,modify_line1(Field, Mf),modify_line1(Type, Mf)};
+modify_line1({Tag,L}, Mf) -> {Tag,Mf(L)};
+modify_line1({Tag,L,E1}, Mf) ->
+    {Tag,Mf(L),modify_line1(E1, Mf)};
+modify_line1({Tag,L,E1,E2}, Mf) ->
+    {Tag,Mf(L),modify_line1(E1, Mf),modify_line1(E2, Mf)};
+modify_line1({bin_element,L,E1,E2,TSL}, Mf) ->
+    {bin_element,Mf(L),modify_line1(E1, Mf),modify_line1(E2, Mf), TSL};
+modify_line1({Tag,L,E1,E2,E3}, Mf) ->
+    {Tag,Mf(L),modify_line1(E1, Mf),modify_line1(E2, Mf),modify_line1(E3, Mf)};
+modify_line1({Tag,L,E1,E2,E3,E4}, Mf) ->
     {Tag,Mf(L),
-     modify_line(E1, Mf),
-     modify_line(E2, Mf),
-     modify_line(E3, Mf),
-     modify_line(E4, Mf)};
-modify_line([H|T], Mf) ->
-    [modify_line(H, Mf)|modify_line(T, Mf)];
-modify_line([], _Mf) -> [];
-modify_line(E, _Mf) when not is_tuple(E), not is_list(E) -> E.
+     modify_line1(E1, Mf),
+     modify_line1(E2, Mf),
+     modify_line1(E3, Mf),
+     modify_line1(E4, Mf)};
+modify_line1([H|T], Mf) ->
+    [modify_line1(H, Mf)|modify_line1(T, Mf)];
+modify_line1([], _Mf) -> [];
+modify_line1(E, _Mf) when not is_tuple(E), not is_list(E) -> E.
 
 %% Check a record_info call. We have already checked that it is not
 %% shadowed by an import.

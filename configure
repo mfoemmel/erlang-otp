@@ -816,6 +816,8 @@ Optional Features:
   --disable-megaco-reentrant-flex-scanner disable reentrans megaco flex scanner
   --enable-dynamic-ssl-lib        force using dynamic openssl libraries
   --disable-dynamic-ssl-lib       disable using dynamic openssl libraries
+  --enable-shared-zlib        enable using shared zlib library
+  --disable-shared-zlib       disable shared zlib, compile own zlib source (default)
   --disable-erlang-mandir do not install Erlang man pages in a private directory
   --enable-darwin-universal    build universal binaries on darwin i386
   --enable-darwin-64bit    build 64bit binaries on darwin
@@ -2628,6 +2630,12 @@ if test "${enable_dynamic_ssl_lib+set}" = set; then
 
 fi;
 
+# Check whether --enable-shared-zlib or --disable-shared-zlib was given.
+if test "${enable_shared_zlib+set}" = set; then
+  enableval="$enable_shared_zlib"
+
+fi;
+
 #
 # Set Erlang man page directory
 #
@@ -2703,6 +2711,11 @@ echo "$as_me: error: --enable-darwin-64bit only supported on x86 host" >&2;}
 	CFLAGS="-m64 $CFLAGS"
 	export CFLAGS
 	LDFLAGS="-m64 $LDFLAGS"
+	export LDFLAGS
+elif test X"$TMPSYS" '=' X"Darwin-i386"; then
+	CFLAGS="-m32 $CFLAGS"
+	export CFLAGS
+	LDFLAGS="-m32 $LDFLAGS"
 	export LDFLAGS
 fi
 

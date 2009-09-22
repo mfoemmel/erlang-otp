@@ -32,7 +32,7 @@
 	  warning=1   :: non_neg_integer(),	% Warning level (0 - no
 						% warnings, 1 - standard level,
 						% 2, 3, ... - more warnings).
-	  verbose=false :: bool(),		% Verbose (true/false).
+	  verbose=false :: boolean(),		% Verbose (true/false).
 	  optimize=999,				% Optimize options.
 	  specific=[] :: [_],			% Compiler specific options.
 	  outfile=""  :: string(),		% Name of output file (internal

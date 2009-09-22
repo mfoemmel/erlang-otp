@@ -70,7 +70,8 @@
 	[-no_auto_compile]
         [-repeat N [-force_stop]] |
         [-duration HHMMSS [-force_stop]] |
-        [-until [YYMoMoDD]HHMMSS [-force_stop]]</pre>
+        [-until [YYMoMoDD]HHMMSS [-force_stop]]
+	[-basic_html]</pre>
   </section>
   <section>
     <title>Run tests using test specification</title>
@@ -88,7 +89,8 @@
 	[-no_auto_compile]
         [-repeat N [-force_stop]] |
         [-duration HHMMSS [-force_stop]] |
-        [-until [YYMoMoDD]HHMMSS [-force_stop]]</pre>
+        [-until [YYMoMoDD]HHMMSS [-force_stop]]
+	[-basic_html]</pre>
   </section>
   <section>
     <title>Run tests in web based GUI</title>
@@ -99,12 +101,13 @@
         [-dir TestDir1 TestDir2 .. TestDirN] |
         [-suite Suite [[-group Group] [-case Case]]]
 	[-include InclDir1 InclDir2 .. InclDirN]
-	[-no_auto_compile]</pre>
+	[-no_auto_compile]
+	[-basic_html]</pre>
   </section>
   <section>
     <title>Refresh the HTML index files</title>
     <pre>
-	run_test -refresh_logs [-logdir LogDir]</pre>
+	run_test -refresh_logs [-logdir LogDir] [-basic_html]</pre>
   </section>
   <section>
     <title>Run CT in interactive mode</title>

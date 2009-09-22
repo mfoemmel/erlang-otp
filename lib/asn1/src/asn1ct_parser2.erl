@@ -1859,16 +1859,16 @@ parse_ComponentIdList(Tokens,_) ->
 		       [got,get_token(hd(Tokens)),expected,
 			[identifier,'identifier.']]}}).
 
-parse_ContentsConstraint([{_,_,'CONTAINING'}|Rest]) ->
+parse_ContentsConstraint([{'CONTAINING',_}|Rest]) ->
     {Type,Rest2} = parse_Type(Rest),
     case Rest2 of
-	[{_,_,'ENCODED'},{_,_,'BY'}|Rest3] ->
+	[{'ENCODED',_},{'BY',_}|Rest3] ->
 	    {Value,Rest4} = parse_Value(Rest3),
 	    {{contentsconstraint,Type,Value},Rest4};
 	_ ->
 	    {{contentsconstraint,Type,[]},Rest2}
     end;
-parse_ContentsConstraint([{_,_,'ENCODED'},{_,_,'BY'}|Rest]) ->
+parse_ContentsConstraint([{'ENCODED',_},{'BY',_}|Rest]) ->
     {Value,Rest2} = parse_Value(Rest),
     {{contentsconstraint,[],Value},Rest2};
 parse_ContentsConstraint(Tokens) ->
@@ -2798,6 +2798,9 @@ parse_SubtypeElements([{'WITH',_},{'COMPONENTS',_},{'{',_}|Tokens]) ->
 	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
 			       [got,get_token(hd(Rest)),expected,'}']}})
     end;
+parse_SubtypeElements([{'PATTERN',_}|Tokens]) ->
+    {Value,Rest} = parse_Value(Tokens),
+    {{pattern,Value},Rest};
 %% SingleValue
 %% ContainedSubtype
 %% ValueRange

@@ -111,7 +111,7 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(Case, Config) when list(Config) ->
+init_per_testcase(Case, Config) when is_list(Config) ->
     p("init_per_testcase -> Case: ~p", [Case]),
     SnmpPrivDir = ?config(priv_dir, Config),
     p("init_per_testcase -> SnmpPrivDir: ~p", [SnmpPrivDir]),
@@ -145,7 +145,7 @@ init_per_testcase(Case, Config) when list(Config) ->
      {manager_log_dir,  MgrLogDir} | Config].
 
 
-fin_per_testcase(Case, Config) when list(Config) ->
+fin_per_testcase(Case, Config) when is_list(Config) ->
     p("fin_per_testcase -> Case: ~p", [Case]),
     %% The cleanup is removed due to some really discusting NFS behaviour...
     %% CaseTopDir = ?config(manager_dir, Config),
@@ -195,7 +195,7 @@ simple_start_and_stop(suite) -> [];
 simple_start_and_stop(doc) ->
     "Start the snmp manager config process with the \n"
 	"minimum setof options (config dir).";
-simple_start_and_stop(Conf) when list(Conf) ->
+simple_start_and_stop(Conf) when is_list(Conf) ->
     put(tname,ssas),
     p("start"),
     process_flag(trap_exit, true),
@@ -221,7 +221,7 @@ start_without_mandatory_opts1(suite) -> [];
 start_without_mandatory_opts1(doc) ->
     "Start the snmp manager config process with some of the \n"
 	"mandatory options missing.";
-start_without_mandatory_opts1(Conf) when list(Conf) ->
+start_without_mandatory_opts1(Conf) when is_list(Conf) ->
     put(tname,swomo1),
     put(verbosity,trace),
     p("start"),
@@ -250,7 +250,7 @@ start_without_mandatory_opts2(suite) -> [];
 start_without_mandatory_opts2(doc) ->
     "Start the snmp manager config process with some of the \n"
 	"mandatory options missing.";
-start_without_mandatory_opts2(Conf) when list(Conf) ->
+start_without_mandatory_opts2(Conf) when is_list(Conf) ->
     put(tname,swomo2),
     put(verbosity,trace),
     p("start"),
@@ -279,7 +279,7 @@ start_with_all_valid_opts(suite) -> [];
 start_with_all_valid_opts(doc) ->
     "Start the snmp manager config process with the \n"
 	"complete set of all the valid options.";
-start_with_all_valid_opts(Conf) when list(Conf) ->
+start_with_all_valid_opts(Conf) when is_list(Conf) ->
     put(tname,swavo),
     p("start"),
     process_flag(trap_exit, true),
@@ -332,7 +332,7 @@ start_with_unknown_opts(suite) -> [];
 start_with_unknown_opts(doc) ->
     "Start the snmp manager config process when some of\n"
 	"the options are unknown.";
-start_with_unknown_opts(Conf) when list(Conf) ->
+start_with_unknown_opts(Conf) when is_list(Conf) ->
     put(tname,swuo),
     p("start"),
     process_flag(trap_exit, true),
@@ -385,7 +385,7 @@ start_with_incorrect_opts(suite) -> [];
 start_with_incorrect_opts(doc) ->
     "Start the snmp manager config process when some of\n"
 	"the options has incorrect values.";
-start_with_incorrect_opts(Conf) when list(Conf) -> 
+start_with_incorrect_opts(Conf) when is_list(Conf) -> 
     put(tname,swio),
     p("start"),
     process_flag(trap_exit, true),
@@ -628,7 +628,7 @@ start_with_incorrect_opts(Conf) when list(Conf) ->
 start_with_invalid_manager_conf_file1(suite) -> [];
 start_with_invalid_manager_conf_file1(doc) ->
     "Start with invalid manager config file (1).";
-start_with_invalid_manager_conf_file1(Conf) when list(Conf) -> 
+start_with_invalid_manager_conf_file1(Conf) when is_list(Conf) -> 
     put(tname,swimcf),
     p("start"),
     process_flag(trap_exit, true),
@@ -784,7 +784,7 @@ start_with_invalid_manager_conf_file1(Conf) when list(Conf) ->
 start_with_invalid_users_conf_file1(suite) -> [];
 start_with_invalid_users_conf_file1(doc) ->
     "Start with invalid users config file.";
-start_with_invalid_users_conf_file1(Conf) when list(Conf) -> 
+start_with_invalid_users_conf_file1(Conf) when is_list(Conf) -> 
     put(tname,swiucf),
     p("start"),
     process_flag(trap_exit, true),
@@ -1283,7 +1283,7 @@ start_with_invalid_agents_conf_file1(Conf) when is_list(Conf) ->
 start_with_invalid_usm_conf_file1(suite) -> [];
 start_with_invalid_usm_conf_file1(doc) ->
     "Start with invalid usm config file.";
-start_with_invalid_usm_conf_file1(Conf) when list(Conf) -> 
+start_with_invalid_usm_conf_file1(Conf) when is_list(Conf) -> 
     put(tname,swiusmcf),
     p("start"),
     process_flag(trap_exit, true),
@@ -1639,7 +1639,7 @@ simple_system_op(suite) -> [];
 simple_system_op(doc) -> 
     "Access some of the known system info and some \n"
 	"system info that does not exist.";
-simple_system_op(Conf) when list(Conf) ->
+simple_system_op(Conf) when is_list(Conf) ->
     put(tname,sso),
     p("start"),
     ConfDir = ?config(manager_conf_dir, Conf),
@@ -1689,7 +1689,7 @@ users(suite) ->
 register_user_using_file(suite) -> [];
 register_user_using_file(doc) ->
     "Register user using the 'users.conf' file.";
-register_user_using_file(Conf) when list(Conf) -> 
+register_user_using_file(Conf) when is_list(Conf) -> 
     put(tname,ruufi),
     p("start"),
     process_flag(trap_exit, true),
@@ -1705,7 +1705,7 @@ register_user_using_file(Conf) when list(Conf) ->
 register_user_using_function(suite) -> [];
 register_user_using_function(doc) ->
     "Register user using the API (function).";
-register_user_using_function(Conf) when list(Conf) -> 
+register_user_using_function(Conf) when is_list(Conf) -> 
     put(tname,ruufu),
     p("start"),
     process_flag(trap_exit, true),
@@ -1721,7 +1721,7 @@ register_user_using_function(Conf) when list(Conf) ->
 register_user_failed_using_function1(suite) -> [];
 register_user_failed_using_function1(doc) ->
     "Register user failed using incorrect arguments to API (function).";
-register_user_failed_using_function1(Conf) when list(Conf) -> 
+register_user_failed_using_function1(Conf) when is_list(Conf) -> 
     put(tname,rufufu1),
     p("start"),
     process_flag(trap_exit, true),
@@ -1751,7 +1751,7 @@ agents(suite) ->
 register_agent_using_file(suite) -> [];
 register_agent_using_file(doc) ->
     "Register agents using the 'agents'conf' file.";
-register_agent_using_file(Conf) when list(Conf) -> 
+register_agent_using_file(Conf) when is_list(Conf) -> 
     put(tname,raufi),
     p("start"),
     process_flag(trap_exit, true),
@@ -1890,7 +1890,7 @@ register_agent_using_file(Conf) when list(Conf) ->
 register_agent_using_function(suite) -> [];
 register_agent_using_function(doc) ->
     "Register agents using the API (function).";
-register_agent_using_function(Conf) when list(Conf) -> 
+register_agent_using_function(Conf) when is_list(Conf) -> 
     put(tname,raufu),
     p("start"),
     process_flag(trap_exit, true),
@@ -1907,7 +1907,7 @@ register_agent_failed_using_function1(suite) -> [];
 register_agent_failed_using_function1(doc) ->
     "Register agents failng using the API (function) with incorrect "
 	"config (1).";
-register_agent_failed_using_function1(Conf) when list(Conf) -> 
+register_agent_failed_using_function1(Conf) when is_list(Conf) -> 
     put(tname,rafuf1),
     p("start"),
     process_flag(trap_exit, true),
@@ -1938,7 +1938,7 @@ usm_users(suite) ->
 register_usm_user_using_file(suite) -> [];
 register_usm_user_using_file(doc) ->
     "Register usm user using the 'usm.conf' file.";
-register_usm_user_using_file(Conf) when list(Conf) -> 
+register_usm_user_using_file(Conf) when is_list(Conf) -> 
     put(tname,ruuufi),
     p("start"),
     process_flag(trap_exit, true),
@@ -2022,7 +2022,7 @@ register_usm_user_using_file(Conf) when list(Conf) ->
 register_usm_user_using_function(suite) -> [];
 register_usm_user_using_function(doc) ->
     "Register usm user using the API (function).";
-register_usm_user_using_function(Conf) when list(Conf) -> 
+register_usm_user_using_function(Conf) when is_list(Conf) -> 
     put(tname,ruuufu),
     p("start"),
     process_flag(trap_exit, true),
@@ -2123,7 +2123,7 @@ register_usm_user_using_function(Conf) when list(Conf) ->
 register_usm_user_failed_using_function1(suite) -> [];
 register_usm_user_failed_using_function1(doc) ->
     "Register usm user failed using incorrect arguments to API (function).";
-register_usm_user_failed_using_function1(Conf) when list(Conf) -> 
+register_usm_user_failed_using_function1(Conf) when is_list(Conf) -> 
     put(tname,ruufufu1),
     p("start"),
     process_flag(trap_exit, true),
@@ -2152,7 +2152,7 @@ register_usm_user_failed_using_function1(Conf) when list(Conf) ->
 update_usm_user_info(suite) -> [];
 update_usm_user_info(doc) ->
     "Update usm user info.";
-update_usm_user_info(Conf) when list(Conf) -> 
+update_usm_user_info(Conf) when is_list(Conf) -> 
     put(tname,ruufufu1),
     p("start"),
     process_flag(trap_exit, true),
@@ -2193,7 +2193,7 @@ counter(suite) ->
 create_and_increment(suite) -> [];
 create_and_increment(doc) ->
     "Craete and increment counters.";
-create_and_increment(Conf) when list(Conf) -> 
+create_and_increment(Conf) when is_list(Conf) -> 
     put(tname,cai),
     p("start"),
     process_flag(trap_exit, true),
@@ -2244,7 +2244,7 @@ stats_counter(suite) ->
 stats_create_and_increment(suite) -> [];
 stats_create_and_increment(doc) ->
     "Create and increment statistics counters.";
-stats_create_and_increment(Conf) when list(Conf) -> 
+stats_create_and_increment(Conf) when is_list(Conf) -> 
     put(tname,scai),
     p("start"),
     process_flag(trap_exit, true),
@@ -2303,7 +2303,7 @@ otp_7219(suite) ->
     [];
 otp_7219(doc) ->
     "Test-case for ticket OTP-7219";
-otp_7219(Config) when list(Config) ->
+otp_7219(Config) when is_list(Config) ->
     put(tname, otp7219),
     p("start"),
     process_flag(trap_exit, true),

@@ -214,7 +214,7 @@ empty() ->
 
 new() -> empty().
 
--spec is_empty(gb_set()) -> bool().
+-spec is_empty(gb_set()) -> boolean().
 
 is_empty({0, nil}) ->
     true;
@@ -231,12 +231,12 @@ size({Size, _}) ->
 singleton(Key) ->
     {1, {Key, nil, nil}}.
 
--spec is_element(term(), gb_set()) -> bool().
+-spec is_element(term(), gb_set()) -> boolean().
 
 is_element(Key, S) ->
     is_member(Key, S).
 
--spec is_member(term(), gb_set()) -> bool().
+-spec is_member(term(), gb_set()) -> boolean().
 
 is_member(Key, {_, T}) ->
     is_member_1(Key, T).
@@ -666,7 +666,7 @@ intersection_list(S, [S1 | Ss]) ->
     intersection_list(intersection(S, S1), Ss);
 intersection_list(S, []) -> S.
 
--spec is_disjoint(gb_set(), gb_set()) -> bool().
+-spec is_disjoint(gb_set(), gb_set()) -> boolean().
 
 is_disjoint({N1, T1}, {N2, T2}) when N1 < N2 ->
     is_disjoint_1(T1, T2);
@@ -747,7 +747,7 @@ difference_2(Xs, [], As, S) ->
 %% Subset testing is much the same thing as set difference, but
 %% without the construction of a new set.
 
--spec is_subset(gb_set(), gb_set()) -> bool().
+-spec is_subset(gb_set(), gb_set()) -> boolean().
 
 is_subset({N1, T1}, {N2, T2}) ->
     is_subset(to_list_1(T1), N1, T2, N2).
@@ -788,13 +788,13 @@ is_subset_2(_, []) ->
 
 %% For compatibility with `sets':
 
--spec is_set(term()) -> bool().
+-spec is_set(term()) -> boolean().
 
 is_set({0, nil}) -> true;
 is_set({N, {_, _, _}}) when is_integer(N), N >= 0 -> true;
 is_set(_) -> false.
 
--spec filter(fun((term()) -> bool()), gb_set()) -> gb_set().
+-spec filter(fun((term()) -> boolean()), gb_set()) -> gb_set().
 
 filter(F, S) ->
     from_ordset([X || X <- to_list(S), F(X)]).

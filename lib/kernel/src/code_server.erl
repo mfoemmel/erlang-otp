@@ -596,17 +596,13 @@ make_path(BundleDir,[Bundle|Tail],Res,Bs) ->
 	    make_path(BundleDir,Tail,[Ebin|Res],[Bundle|Bs]);
 	_ ->
 	    %% Second try with archive
-	    case {filename:extension(Dir), archive_extension()} of
-		{Ext, Ext} ->
-		    Base = filename:basename(Dir, Ext),
-		    Ebin2 = filename:join([Dir, Base, "ebin"]),
-		    %% Add the dir in archive if it exists
-		    case erl_prim_loader:read_file_info(Ebin2) of
-			{ok,#file_info{type=directory}} -> 
-			    make_path(BundleDir,Tail,[Ebin2|Res],[Bundle|Bs]);
-			_ ->
-			    make_path(BundleDir,Tail,Res,Bs)
-		    end;
+	    Ext = archive_extension(),
+	    Base = filename:basename(Dir, Ext),
+	    Ebin2 = filename:join([filename:dirname(Dir), Base ++ Ext, Base, "ebin"]),
+	    %% Add the dir in archive if it exists
+	    case erl_prim_loader:read_file_info(Ebin2) of
+		{ok,#file_info{type=directory}} -> 
+		    make_path(BundleDir,Tail,[Ebin2|Res],[Bundle|Bs]);
 		_ ->
 		    case erl_prim_loader:read_file_info(Dir) of
 			{ok,#file_info{type=directory}} ->
@@ -752,48 +748,52 @@ check_path(Path) ->
     
 do_check_path([], _PathChoice, _ArchiveExt, Acc) -> 
     {ok, lists:reverse(Acc)};
-do_check_path([Dir | Tail], PathChoice = strict, ArchiveExt, Acc) ->
-    %% Be strict. Use dir as explicitly as stated
+do_check_path([Dir | Tail], PathChoice, ArchiveExt, Acc) ->
     case catch erl_prim_loader:read_file_info(Dir) of
 	{ok, #file_info{type=directory}} -> 
 	    do_check_path(Tail, PathChoice, ArchiveExt, [Dir | Acc]);
-	_ ->
-	    {error, bad_directory}
-    end;
-do_check_path([Orig | Tail], PathChoice = relaxed, ArchiveExt, Acc) ->
-    %% Be relaxed
-    case catch lists:reverse(filename:split(Orig)) of
-	{'EXIT', _} ->
+	_ when PathChoice =:= strict ->
+	    %% Be strict. Only use dir as explicitly stated
 	    {error, bad_directory};
-	["ebin", App, OptArchive | RevTop] ->
-	    Ext = filename:extension(OptArchive),
-	    Base = filename:basename(OptArchive, Ext),
-	    if
-		Ext =:= ArchiveExt, Base =:= App ->
-		    %% Orig archive
-		    Archive = Orig,
-		    Top = lists:reverse(RevTop),
-		    Dir = filename:join(Top ++ [App, "ebin"]);
-		true ->
-		    %% Orig directory
-		    Dir = Orig,
-		    Top = lists:reverse([OptArchive | RevTop]),
-		    Archive = filename:join(Top ++ [App ++ Ext, App, "ebin"])
-	    end,
-	    %% First try dir, second try archive and at last use orig if both fails.
-	    case erl_prim_loader:read_file_info(Dir) of
-		{ok, #file_info{type = directory}} ->
-		    do_check_path(Tail, PathChoice, ArchiveExt, [Dir | Acc]);
-		_ ->
-		    case erl_prim_loader:read_file_info(Archive) of
+	_ when PathChoice =:= relaxed ->
+	    %% Be relaxed
+	    case catch lists:reverse(filename:split(Dir)) of
+		{'EXIT', _} ->
+		    {error, bad_directory};
+		["ebin", App] ->
+		    Dir2 = filename:join([App ++ ArchiveExt, App, "ebin"]),
+		    case erl_prim_loader:read_file_info(Dir2) of
 			{ok, #file_info{type = directory}} ->
-			    do_check_path(Tail, PathChoice, ArchiveExt, [Archive | Acc]);
+			    do_check_path(Tail, PathChoice, ArchiveExt, [Dir2 | Acc]);
 			_ ->
-			    do_check_path(Tail, PathChoice, ArchiveExt, [Orig | Acc])
-		    end
-	    end;    
-	_ ->
-	    do_check_path(Tail, PathChoice, ArchiveExt, [Orig | Acc])
+			    {error, bad_directory}
+		    end;    
+		["ebin", App, OptArchive | RevTop] ->
+		    Ext = filename:extension(OptArchive),
+		    Base = filename:basename(OptArchive, Ext),
+		    Dir2 = 
+			if
+			    Ext =:= ArchiveExt, Base =:= App ->
+				%% .../app-vsn.ez/app-vsn/ebin
+				Top = lists:reverse(RevTop),
+				filename:join(Top ++ [App, "ebin"]);
+			    Ext =:= ArchiveExt ->
+				%% .../app-vsn.ez/xxx/ebin
+				{error, bad_directory};
+			    true ->
+				%% .../app-vsn/ebin
+				Top = lists:reverse([OptArchive | RevTop]),
+				filename:join(Top ++ [App ++ ArchiveExt, App, "ebin"])
+			end,
+		    case erl_prim_loader:read_file_info(Dir2) of
+			{ok, #file_info{type = directory}} ->
+			    do_check_path(Tail, PathChoice, ArchiveExt, [Dir2 | Acc]);
+			_ ->
+			    {error, bad_directory}
+		    end;    
+		_ ->
+		    {error, bad_directory}
+	    end
     end.
 
 %%

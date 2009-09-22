@@ -101,7 +101,7 @@ pretty_text(suite) ->
     [];
 pretty_text(doc) ->
     [];
-pretty_text(Config) when list(Config) ->
+pretty_text(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("pretty_text -> starting"),
@@ -116,7 +116,7 @@ flex_pretty_text(suite) ->
     [];
 flex_pretty_text(doc) ->
     [];
-flex_pretty_text(Config) when list(Config) ->
+flex_pretty_text(Config) when is_list(Config) ->
     ?SKIP(not_implemented_yet).
 
 
@@ -124,7 +124,7 @@ compact_text(suite) ->
     [];
 compact_text(doc) ->
     [];
-compact_text(Config) when list(Config) ->
+compact_text(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("compact_text -> starting"),
@@ -139,7 +139,7 @@ flex_compact_text(suite) ->
     [];
 flex_compact_text(doc) ->
     [];
-flex_compact_text(Config) when list(Config) ->
+flex_compact_text(Config) when is_list(Config) ->
     ?SKIP(not_implemented_yet).
 
 
@@ -147,7 +147,7 @@ erl_dist(suite) ->
     [];
 erl_dist(doc) ->
     [];
-erl_dist(Config) when list(Config) ->
+erl_dist(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("erl_dist -> starting"),
@@ -162,7 +162,7 @@ erl_dist_mc(suite) ->
     [];
 erl_dist_mc(doc) ->
     [];
-erl_dist_mc(Config) when list(Config) ->
+erl_dist_mc(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("erl_dist_mc -> starting"),
@@ -177,7 +177,7 @@ ber_bin(suite) ->
     [];
 ber_bin(doc) ->
     [];
-ber_bin(Config) when list(Config) ->
+ber_bin(Config) when is_list(Config) ->
     ?SKIP(currently_not_supported_by_asn1).
 
 
@@ -185,7 +185,7 @@ ber_bin_drv(suite) ->
     [];
 ber_bin_drv(doc) ->
     [];
-ber_bin_drv(Config) when list(Config) ->
+ber_bin_drv(Config) when is_list(Config) ->
     ?SKIP(currently_not_supported_by_asn1).
 
 
@@ -193,7 +193,7 @@ ber_bin_native(suite) ->
     [];
 ber_bin_native(doc) ->
     [];
-ber_bin_native(Config) when list(Config) ->
+ber_bin_native(Config) when is_list(Config) ->
     ?SKIP(currently_not_supported_by_asn1).
 
 
@@ -201,14 +201,14 @@ ber_bin_drv_native(suite) ->
     [];
 ber_bin_drv_native(doc) ->
     [];
-ber_bin_drv_native(Config) when list(Config) ->
+ber_bin_drv_native(Config) when is_list(Config) ->
     ?SKIP(currently_not_supported_by_asn1).
 
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-req_and_rep(Config, Codec, _Version, EC) when list(Config) ->
+req_and_rep(Config, Codec, _Version, EC) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("req_and_rep -> starting"),

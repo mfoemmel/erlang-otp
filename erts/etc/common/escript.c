@@ -107,24 +107,6 @@ char *strerror(int errnum)
 }
 #endif /* !HAVE_STRERROR */
 
-static void
-set_env(char *key, char *value)
-{
-#ifdef __WIN32__
-    if (!SetEnvironmentVariable((LPCTSTR) key, (LPCTSTR) value))
-	error("SetEnvironmentVariable(\"%s\", \"%s\") failed!", key, value);
-#else
-    size_t size = strlen(key) + 1 + strlen(value) + 1;
-    char *str = emalloc(size);
-    sprintf(str, "%s=%s", key, value);
-    if (putenv(str) != 0)
-	error("putenv(\"%s\") failed!", str);
-#ifdef HAVE_COPYING_PUTENV
-    efree(str);
-#endif
-#endif
-}
-
 static char *
 get_env(char *key)
 {
@@ -266,14 +248,14 @@ find_prog(char *origpath)
 }
 
 static void
-append_shebang_args_to_erl_flags(char* scriptname)
+append_shebang_args(char* scriptname)
 {
     /* Open script file */
     FILE* fd = fopen (scriptname,"r");
 
     if (fd != NULL)	{
 	/* Read first line in script file */
-	char linebuf[LINEBUFSZ];
+	static char linebuf[LINEBUFSZ];
 	char* ptr = fgets(linebuf, LINEBUFSZ, fd);
 
 	if (ptr != NULL && linebuf[0] == '#' && linebuf[1] == '!') {
@@ -294,43 +276,36 @@ append_shebang_args_to_erl_flags(char* scriptname)
 	  
 	    if (ptr != NULL) {
 		/* Use entire line but the leading chars */
-		char* emulator_flags = linebuf;
-		emulator_flags++;
-		emulator_flags++;
-	    
-		/* Get rid of trailing newline */
-		{
-		    char* linenl = strstr(emulator_flags, "\n");
-		    if (linenl) {
-			linenl[0] = '\0';
+		char* beg = linebuf + 3;
+		char* end;
+		BOOL newline = FALSE;
+		
+		/* Push all args */
+		while(beg && !newline) {
+		    /* Skip leading spaces */
+		    while (beg && beg[0] == ' ') {
+			beg++;
 		    }
-		}
-	    
-		/* Skip leading spaces */
-		while (emulator_flags && emulator_flags[0] == ' ') {
-		    emulator_flags++;
-		}
-	    
-		if (emulator_flags) {
-		    /* Read old env setting */
-		    char* varname = "ERL_FLAGS";
-		    char* oldenv = getenv(varname);
-		    if (oldenv) {
-			/* Copy flags from script */
-			char* newenv = emalloc(strlen(oldenv)+LINEBUFSZ);
-			char* tmpenv = newenv;
-			strcpy(tmpenv, emulator_flags);
-			tmpenv += strlen(emulator_flags);
-			/* Append flags from old env setting */
-			strcpy(tmpenv, " ");
-			tmpenv++;
-			strcpy(tmpenv, oldenv);
-			set_env(varname, newenv);
-			efree(newenv);
-		    } else {
-			/* Set new env */
-			set_env(varname, emulator_flags);
+		    
+		    /* Find end of arg */
+		    end = beg;
+		    while (end && end[0] != ' ') {
+			if (end[0] == '\n') {
+			    newline = TRUE;
+			    end[0]= '\0';
+			    break;
+			} else {
+			    end++;
+			}
 		    }
+
+		    /* Empty arg */
+		    if (beg == end) {
+			break;
+		    }
+		    end[0]= '\0';
+		    PUSH(beg);
+		    beg = end + 1;
 		}
 	    } 
 	}
@@ -350,6 +325,8 @@ main(int argc, char** argv)
     char* basename;
     char* absname;
     char scriptname[PMAX];
+    char** last_opt;
+    char** first_opt;
 
     emulator = env = get_env("ESCRIPT_EMULATOR");
     if (emulator == NULL) {
@@ -362,7 +339,7 @@ main(int argc, char** argv)
      * the array, to allow easy addition of commands in the beginning.
      */
 
-    eargv_size = argc*4+100;
+    eargv_size = argc*4+1000;
     eargv_base = (char **) emalloc(eargv_size*sizeof(char*));
     eargv = eargv_base;
     eargc = 0;
@@ -380,13 +357,16 @@ main(int argc, char** argv)
     PUSH("+B");
     PUSH2("-boot", "start_clean");
     PUSH("-noshell");
-    PUSH3("-run", "escript", "start");
 
+    /* Determine basename of the executable */
     for (basename = argv[0]+strlen(argv[0]);
 	 basename > argv[0] && !(IS_DIRSEP(basename[-1]));
 	 --basename)
 	;
     
+    first_opt = argv;
+    last_opt = argv;
+
 #ifdef __WIN32__
     if (_stricmp(basename, "escript.exe") == 0) {
 #else
@@ -398,7 +378,9 @@ main(int argc, char** argv)
 	
 	while (argc > 1 && argv[1][0] == '-') {
 	    PUSH(argv[1]+1);
-	    argc--, argv++;
+	    argc--;
+	    argv++;
+	    last_opt = argv;
 	}
 	
 	if (argc <= 1) {
@@ -424,15 +406,25 @@ main(int argc, char** argv)
     }
 
     /*
-     * Read options from the first row in the script and append them
-     * to ERL_FLAGS
+     * Read options from the %%! row in the script and add them as args
      */
 
-    append_shebang_args_to_erl_flags(scriptname);
+    append_shebang_args(scriptname);
 
     /*
      * Push the script name and everything following it as extra arguments.
      */
+
+    PUSH3("-run", "escript", "start");
+
+    /*
+     * Push all options (without the hyphen) before the script name.
+     */
+    
+    while (first_opt != last_opt) {
+	PUSH(first_opt[1]+1);
+	first_opt++;
+    }
 
     PUSH("-extra");
     PUSH(scriptname);

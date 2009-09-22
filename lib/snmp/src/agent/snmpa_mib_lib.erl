@@ -19,6 +19,7 @@
 -module(snmpa_mib_lib).
 
 -export([table_cre_row/3, table_del_row/2]).
+-export([get_table/2, print_table/3, print_table/4, print_tables/1]).
 -export([gc_tab/3, gc_tab/5]).
 
 -include("SNMPv2-TC.hrl").
@@ -48,8 +49,93 @@ table_del_row({Tab, mnesia}, Key) ->
     ?vtrace("delete mnesia table ~w row with Key: ~w",[Tab, Key]),
     {error, mnesia_not_supported};
 table_del_row({Tab, Db} = TabDb, Key) ->
-    ?vtrace("delete ~w table ~w row with Key: ~w",[Db, Tab, Key]),
+    ?vtrace("delete ~w table ~w row with Key: ~w", [Db, Tab, Key]),
     snmpa_local_db:table_delete_row(TabDb, Key).
+
+
+%%%-----------------------------------------------------------------
+%%% Retreives the entire table. Used for debugging
+%%%-----------------------------------------------------------------
+
+get_table(NameDb, FOI) ->
+    (catch get_table(NameDb, FOI, [], [])).
+
+get_table(NameDb, FOI, Oid, Acc) ->
+    case table_next(NameDb, Oid) of
+        endOfTable ->
+            ?vdebug("end of table",[]),
+            {ok, lists:reverse(Acc)};
+        Oid ->
+            %% Crap, circular ref
+            ?vinfo("cyclic reference: ~w -> ~w", [Oid,Oid]),
+            throw({error, {cyclic_db_reference, Oid, Acc}});
+        NextOid ->
+            ?vtrace("get row for oid ~w", [NextOid]),
+            case table_get_row(NameDb, NextOid, FOI) of
+                undefined -> 
+		    throw({error, {invalid_rowindex, NextOid, Acc}});
+                Row ->
+                    ?vtrace("row: ~w", [Row]),
+		    get_table(NameDb, FOI, NextOid, [{NextOid, Row}|Acc])
+            end
+    end.
+    
+
+print_tables(Tables) when is_list(Tables) ->
+    lists:foreach(fun({Table, DB, FOI, PrintRow}) ->
+			  print_table(Table, DB, FOI, PrintRow)
+		  end, Tables),
+    ok.
+
+%% print_table(Table, DB, FOI, PrintRow) ->
+%%     TableInfo = get_table(DB(Table), FOI(Table)),
+%%     print_table(Table, TableInfo, PrintRow),
+%%     ok.
+
+print_table(Table, DB, FOI, PrintRow) ->
+    TableInfo = get_table(DB, FOI),
+    print_table(Table, TableInfo, PrintRow).
+
+print_table(Table, TableInfo, PrintRow) when is_function(PrintRow, 2) ->
+    io:format("~w => ~n", [Table]),
+    do_print_table(TableInfo, PrintRow).
+
+do_print_table({ok, TableInfo}, PrintRow) when is_function(PrintRow, 2) ->
+    lists:foreach(fun({RowIdx, Row}) ->
+			  io:format("   ~w => ~n~s~n", 
+				    [RowIdx, PrintRow("      ", Row)])
+		  end, TableInfo),
+    io:format("~n", []);
+do_print_table({error, {invalid_rowindex, BadRowIndex, []}}, _PrintRow) ->
+    io:format("Error: Bad rowindex ~w~n", [BadRowIndex]);
+do_print_table({error, {invalid_rowindex, BadRowIndex, TableInfo}}, PrintRow) ->
+    io:format("Error: Bad rowindex ~w", [BadRowIndex]),
+    do_print_table(TableInfo, PrintRow);
+do_print_table(Error, _PrintRow) ->
+    io:format("Error: ~p~n", [Error]).
+    
+
+%%%-----------------------------------------------------------------
+%%% 
+%%%-----------------------------------------------------------------
+
+table_next({Name, mnesia}, RestOid) ->
+    snmp_generic_mnesia:table_next(Name, RestOid);
+table_next(NameDb, RestOid) -> 
+    snmpa_local_db:table_next(NameDb, RestOid).
+
+
+table_get_row({Name, mnesia}, RowIndex) ->
+    snmp_generic_mnesia:table_get_row(Name, RowIndex);
+table_get_row(NameDb, RowIndex) ->
+    snmpa_local_db:table_get_row(NameDb, RowIndex).
+
+table_get_row(NameDb, RowIndex, undefined) ->
+    table_get_row(NameDb, RowIndex);
+table_get_row({Name, mnesia}, RowIndex, FOI) ->
+    snmp_generic_mnesia:table_get_row(Name, RowIndex, FOI);
+table_get_row(NameDb, RowIndex, _FOI) ->
+    snmpa_local_db:table_get_row(NameDb, RowIndex).
 
 
 %%%-----------------------------------------------------------------

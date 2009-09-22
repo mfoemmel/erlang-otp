@@ -61,8 +61,8 @@
 
 
 -record(file_descriptor,
-	{module :: atom(),      % Module that handles this kind of file
-	 data   :: any()}).     % Module dependent data
+	{module :: module(),      % Module that handles this kind of file
+	 data   :: term()}).     % Module dependent data
 
 -type fd() :: pid() | #file_descriptor{}.
 

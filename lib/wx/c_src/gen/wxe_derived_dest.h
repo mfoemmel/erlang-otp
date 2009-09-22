@@ -709,6 +709,12 @@ class EwxSplitterWindow : public wxSplitterWindow {
  EwxSplitterWindow() : wxSplitterWindow() {};
 }; 
 
+class EwxHtmlWindow : public wxHtmlWindow { 
+ public: ~EwxHtmlWindow() {((WxeApp *)wxTheApp)->clearPtr(this);}; 
+ EwxHtmlWindow(wxWindow * parent,wxWindowID id,const wxPoint& pos,const wxSize& size,long style) : wxHtmlWindow(parent,id,pos,size,style) {};
+ EwxHtmlWindow() : wxHtmlWindow() {};
+}; 
+
 void WxeApp::delete_object(void *ptr, wxeRefData *refd) {
  switch(refd->type) {
   case 52: delete (wxIconBundle *) ptr; break;
@@ -717,6 +723,7 @@ void WxeApp::delete_object(void *ptr, wxeRefData *refd) {
   case 63: delete (wxSizerFlags *) ptr; break;
   case 79: /* delete (wxCalendarDateAttr *) ptr;These objects must be deleted by owner object */ break;
   case 93: delete (wxTextAttr *) ptr; break;
+  case 145: delete (wxAuiPaneInfo *) ptr; break;
   case 202: /* delete (wxFileDataObject *) ptr;These objects must be deleted by owner object */ break;
   case 203: /* delete (wxTextDataObject *) ptr;These objects must be deleted by owner object */ break;
   case 204: /* delete (wxBitmapDataObject *) ptr;These objects must be deleted by owner object */ break;

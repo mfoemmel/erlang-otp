@@ -245,7 +245,7 @@ encode_body(#conn_data{protocol_version = V} = ConnData,
     EM = ConnData#conn_data.encoding_mod,
     EC = ConnData#conn_data.encoding_config,
     case (catch EM:encode_message(EC, V, MegaMsg)) of
-        {ok, Bin} when binary(Bin) ->
+        {ok, Bin} when is_binary(Bin) ->
             ?SIM({ok, Bin}, encode_body);
         {error, Reason} ->
 	    incNumErrors(ConnData#conn_data.conn_handle),	    

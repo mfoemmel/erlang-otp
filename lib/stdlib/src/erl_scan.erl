@@ -77,12 +77,15 @@
 -type column() :: pos_integer().
 -type line() :: integer().
 -type location() :: line() | {line(),column()}.
--type resword_fun() :: fun((atom()) -> bool()).
+-type resword_fun() :: fun((atom()) -> boolean()).
 -type option() :: 'return' | 'return_white_spaces' | 'return_comments'
                 | 'text' | {'reserved_word_fun', resword_fun()}.
 -type options() :: option() | [option()].
 -type symbol() :: atom() | float() | integer() | string().
--opaque attributes_data() :: list() | tuple().
+-type info_line() :: integer() | term().
+-opaque attributes_data()
+       :: [{'column', column()} | {'line', info_line()} | {'text', string()}]
+        |  {line(),column()}.
 %% The fact that {line(),column()} is a possible attributes() type
 %% is hidden.
 -type attributes() :: line() | attributes_data().
@@ -127,7 +130,10 @@ string(String, {Line,Column}, Options) when ?STRING(String),
     string1(String, options(Options), Line, Column, []).
 
 -type char_spec() :: string() | 'eof'.
--opaque return_cont() :: tuple().
+-type cont_fun() :: fun((char_spec(), #erl_scan{}, line(), column(),
+                         tokens(), any()) -> any()).
+-opaque return_cont() :: {string(), column(), tokens(), line(), 
+                          #erl_scan{}, cont_fun(), any()}.
 -type cont() :: return_cont() | [].
 -type tokens_result() :: {'ok', tokens(), location()}
                        | {'eof', location()}
@@ -153,7 +159,6 @@ tokens({Cs,Col,Toks,Line,St,Any,Fun}, CharSpec, _Loc, _Opts) ->
 
 -type attribute_item() :: 'column' | 'length' | 'line' 
                         | 'location' | 'text'.
--type info_line() :: integer() | term().
 -type info_location() :: location() | term().
 -type attribute_info() :: {'column', column()}| {'length', pos_integer()} 
                         | {'line', info_line()} 
@@ -373,8 +378,8 @@ tokens1(Cs, St, Line, Col, Toks, Fun, Any) when ?STRING(Cs); Cs =:= eof ->
             {done,Res,eof};
         {ok,Toks0,Rest,Nline,Ncol} ->
             {done,{ok,lists:reverse(Toks0),location(Nline, Ncol)},Rest};
-        {error,_,_}=Error ->
-            {done,Error,[]}
+        {{error,_,_}=Error,Rest} ->
+            {done,Error,Rest}
     end.
 
 string1(Cs, St, Line, Col, Toks) ->
@@ -383,14 +388,14 @@ string1(Cs, St, Line, Col, Toks) ->
             case Fun(Cs0++eof, St, Nline, Ncol, Ntoks, Any) of
                 {ok,Toks1,_Rest,Line2,Col2} ->
                     {ok,lists:reverse(Toks1),location(Line2, Col2)};
-                {error,_,_}=Error ->
+                {{error,_,_}=Error,_Rest} ->
                     Error
             end;
         {ok,Ntoks,[_|_]=Rest,Nline,Ncol} ->
             string1(Rest, St, Nline, Ncol, Ntoks);
         {ok,Ntoks,_,Nline,Ncol} ->
             {ok,lists:reverse(Ntoks),location(Nline, Ncol)};
-        {error,_,_}=Error ->
+        {{error,_,_}=Error,_Rest} ->
             Error
     end.
 
@@ -569,7 +574,7 @@ scan1([C|Cs], St, Line, Col, Toks) when ?CHAR(C) ->
             tok2(Cs, St, Line, Col, Toks, Str, Sym, 1);
         _ ->
             Ncol = incr_column(Col, 1),
-            scan_error({illegal,character}, Line, Col, Line, Ncol)
+            scan_error({illegal,character}, Line, Col, Line, Ncol, Cs)
     end;
 scan1([]=Cs, _St, Line, Col, Toks) ->
     {more,{Cs,Col,Toks,Line,[],fun scan/6}};
@@ -591,7 +596,7 @@ scan_atom(Cs0, St, Line, Col, Toks, Ncs0) ->
                     end;
                 _Error -> 
                     Ncol = incr_column(Col, length(Wcs)),
-                    scan_error({illegal,atom}, Line, Col, Line, Ncol)
+                    scan_error({illegal,atom}, Line, Col, Line, Ncol, Cs)
             end
     end.
 
@@ -605,7 +610,7 @@ scan_variable(Cs0, St, Line, Col, Toks, Ncs0) ->
                     tok3(Cs, St, Line, Col, Toks, var, Wcs, Name);
                 _Error -> 
                     Ncol = incr_column(Col, length(Wcs)),
-                    scan_error({illegal,var}, Line, Col, Line, Ncol)
+                    scan_error({illegal,var}, Line, Col, Line, Ncol, Cs)
             end
     end.
 
@@ -765,10 +770,10 @@ scan_char([$\\|Cs]=Cs0, St, Line, Col, Toks) ->
     case scan_escape(Cs, incr_column(Col, 2)) of
         more ->
             {more,{[$$|Cs0],Col,Toks,Line,[],fun scan/6}};
-        {error,Error,Ncol} ->
-            scan_error(Error, Line, Col, Line, Ncol);
+        {error,Ncs,Error,Ncol} ->
+            scan_error(Error, Line, Col, Line, Ncol, Ncs);
         {eof,Ncol} ->
-            scan_error(char, Line, Col, Line, Ncol);
+            scan_error(char, Line, Col, Line, Ncol, eof);
         {nl,Val,Str,Ncs,Ncol} ->
             Attrs = attributes(Line, Col, St, "$\\"++Str),
             Ntoks = [{char,Attrs,Val}|Toks],
@@ -792,18 +797,18 @@ scan_char([C|Cs], St, Line, Col, Toks) when ?CHAR(C) ->
 scan_char([], _St, Line, Col, Toks) ->
     {more,{[$$],Col,Toks,Line,[],fun scan/6}};
 scan_char(eof, _St, Line, Col, _Toks) ->
-    scan_error(char, Line, Col, Line, incr_column(Col, 1)).
+    scan_error(char, Line, Col, Line, incr_column(Col, 1), eof).
 
 scan_string(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
     case scan_string0(Cs, St, Line, Col, $\", Str, Wcs, Uni0) of
         {more,Ncs,Nline,Ncol,Nstr,Nwcs,Uni} ->
             State = {Nwcs,Nstr,Line0,Col0,Uni},
             {more,{Ncs,Ncol,Toks,Nline,State,fun scan_string/6}};
-        {char_error,Error,Nline,Ncol,EndCol} ->
-            scan_error(Error, Nline, Ncol, Nline, EndCol);
-        {error,Nline,Ncol,Nwcs} ->
+        {char_error,Ncs,Error,Nline,Ncol,EndCol} ->
+            scan_error(Error, Nline, Ncol, Nline, EndCol, Ncs);
+        {error,Nline,Ncol,Nwcs,Ncs} ->
             Estr = string:substr(Nwcs, 1, 16), % Expanded escape chars.
-            scan_error({string,$\",Estr}, Line0, Col0, Nline, Ncol);
+            scan_error({string,$\",Estr}, Line0, Col0, Nline, Ncol, Ncs);
         {Ncs,Nline,Ncol,Nstr,Nwcs,?NO_UNICODE} ->
             Attrs = attributes(Line0, Col0, St, Nstr),
             scan1(Ncs, St, Nline, Ncol, [{string,Attrs,Nwcs}|Toks]);
@@ -860,18 +865,18 @@ scan_qatom(Cs, St, Line, Col, Toks, {Wcs,Str,Line0,Col0,Uni0}) ->
         {more,Ncs,Nline,Ncol,Nstr,Nwcs,Uni} ->
             State = {Nwcs,Nstr,Line0,Col0,Uni},
             {more,{Ncs,Ncol,Toks,Nline,State,fun scan_qatom/6}};
-        {char_error,Error,Nline,Ncol,EndCol} ->
-            scan_error(Error, Nline, Ncol, Nline, EndCol);
-        {error,Nline,Ncol,Nwcs} ->
+        {char_error,Ncs,Error,Nline,Ncol,EndCol} ->
+            scan_error(Error, Nline, Ncol, Nline, EndCol, Ncs);
+        {error,Nline,Ncol,Nwcs,Ncs} ->
             Estr = string:substr(Nwcs, 1, 16), % Expanded escape chars.
-            scan_error({string,$\',Estr}, Line0, Col0, Nline, Ncol);
+            scan_error({string,$\',Estr}, Line0, Col0, Nline, Ncol, Ncs);
         {Ncs,Nline,Ncol,Nstr,Nwcs,?NO_UNICODE} ->
             case catch list_to_atom(Nwcs) of
                 A when is_atom(A) ->
                     Attrs = attributes(Line0, Col0, St, Nstr),
                     scan1(Ncs, St, Nline, Ncol, [{atom,Attrs,A}|Toks]);
                 _ ->
-                    scan_error({illegal,atom}, Line0, Col0, Nline, Ncol)
+                    scan_error({illegal,atom}, Line0, Col0, Nline, Ncol, Ncs)
             end
     end.
 
@@ -912,6 +917,11 @@ scan_string_col(Cs, Line, Col, Q, Wcs, Uni) ->
 %% workaround is eventually removed.
 -define(UNI_STR(Col, S), S).
 
+%% Note: in those cases when a 'char_error' tuple is returned below it
+%% is tempting to skip over characters up to the first Q character,
+%% but then the end location of the error tuple would not correspond
+%% to the start location of the returned Rest string. (Maybe the end
+%% location could be modified, but that too is ugly.)
 scan_string1([Q|Cs], Line, Col, Q, Str0, Wcs0, Uni) ->
     Wcs = lists:reverse(Wcs0),
     Str = ?UNI_STR(Col, [Q|lists:reverse(Str0, [Q])]),
@@ -923,16 +933,16 @@ scan_string1([$\\|Cs]=Cs0, Line, Col, Q, Str, Wcs, Uni) ->
     case scan_escape(Cs, Col) of
         more ->
             {more,Cs0,Line,Col,Str,Wcs,Uni};
-        {error,Error,Ncol} ->
-            {char_error,Error,Line,Col,incr_column(Ncol, 1)};
+        {error,Ncs,Error,Ncol} ->
+            {char_error,Ncs,Error,Line,Col,incr_column(Ncol, 1)};
         {eof,Ncol} ->
-            {error,Line,incr_column(Ncol, 1),lists:reverse(Wcs)};
+            {error,Line,incr_column(Ncol, 1),lists:reverse(Wcs),eof};
         {nl,Val,ValStr,Ncs,Ncol} ->
             Nstr = ?UNI_STR(Ncol, lists:reverse(ValStr, [$\\|Str])),
             Nwcs = [Val|Wcs],
             scan_string1(Ncs, Line+1, Ncol, Q, Nstr, Nwcs, Uni);
-        {unicode,_Val,_ValStr,_Ncs,Ncol} when Q =:= $' -> %' Emacs
-            {char_error,{illegal,character},Line,Col,incr_column(Ncol, 1)};
+        {unicode,_Val,_ValStr,Ncs,Ncol} when Q =:= $' -> %' Emacs
+            {char_error,Ncs,{illegal,character},Line,Col,incr_column(Ncol, 1)};
         {unicode,Val,ValStr,Ncs,Ncol} -> % UNI. Uni is set to Val.
             Nstr = ?UNI_STR(Ncol, lists:reverse(ValStr, [$\\|Str])),
             Nwcs = [Val|Wcs], % not used
@@ -948,14 +958,14 @@ scan_string1([C|Cs], Line, no_col=Col, Q, Str, Wcs, Uni) when ?CHAR(C),
     scan_string1(Cs, Line, Col, Q, [C|Str], [C|Wcs], Uni); % UNI
 scan_string1([C|Cs], Line, Col, Q, Str, Wcs, Uni) when ?CHAR(C), ?UNI255(C) ->
     scan_string1(Cs, Line, Col+1, Q, [C|Str], [C|Wcs], Uni);
-scan_string1([C|_Cs], Line, Col, $', _Str, _Wcs, _Uni) when ?CHAR(C) -> %' UNI
-    {char_error,{illegal,character},Line,Col,incr_column(Col, 1)};
+scan_string1([C|Cs], Line, Col, $', _Str, _Wcs, _Uni) when ?CHAR(C) -> %' UNI
+    {char_error,Cs,{illegal,character},Line,Col,incr_column(Col, 1)};
 scan_string1([C|Cs], Line, Col, Q, Str, Wcs, _Uni) when ?CHAR(C) -> % UNI
     scan_string1(Cs, Line, incr_column(Col, 1), Q, [C|Str], [C|Wcs], C);
 scan_string1([]=Cs, Line, Col, _Q, Str, Wcs, Uni) ->
     {more,Cs,Line,Col,Str,Wcs,Uni};
 scan_string1(eof, Line, Col, _Q, _Str, Wcs, _Uni) ->
-    {error,Line,Col,lists:reverse(Wcs)}.
+    {error,Line,Col,lists:reverse(Wcs),eof}.
 
 -define(OCT(C), C >= $0, C =< $7).
 -define(HEX(C), C >= $0 andalso C =< $9 orelse 
@@ -988,8 +998,8 @@ scan_escape([$x,H1,H2|Cs], Col) when ?HEX(H1), ?HEX(H2) ->
     {Val,?UNI_STR(Col, [$x,H1,H2]),Cs,incr_column(Col, 3)};
 scan_escape([$x,H1], _Col) when ?HEX(H1) ->
     more;
-scan_escape([$x|_], Col) ->
-    {error,{illegal,character},incr_column(Col, 1)};
+scan_escape([$x|Cs], Col) ->
+    {error,Cs,{illegal,character},incr_column(Col, 1)};
 %% \^X -> CTL-X
 scan_escape([$^=C0,$\n=C|Cs], Col) ->
     {nl,C,?UNI_STR(Col, [C0,C]),Cs,new_column(Col, 1)};
@@ -1027,14 +1037,14 @@ scan_esc_end([$}|Cs], Col, Wcs0, B, Str0) ->
         Val when Val =< 16#10FFFF ->
             {unicode,Val,?UNI_STR(Col, Str0++Wcs++[$}]),Cs,incr_column(Col,1)};
         _ ->
-            {error,{illegal,character},incr_column(Col, 1)}
+            {error,Cs,{illegal,character},incr_column(Col, 1)}
     end;
 scan_esc_end([], _Col, _Wcs, _B, _Str0) ->
     more;
 scan_esc_end(eof, Col, _Wcs, _B, _Str0) ->
     {eof,Col};
-scan_esc_end(_Cs, Col, _Wcs, _B, _Str0) ->
-    {error,{illegal,character},Col}.
+scan_esc_end(Cs, Col, _Wcs, _B, _Str0) ->
+    {error,Cs,{illegal,character},Col}.
 
 escape_char($n) -> $\n;                         % \n = LF
 escape_char($r) -> $\r;                         % \r = CR
@@ -1053,7 +1063,7 @@ scan_number([$.,C|Cs], St, Line, Col, Toks, Ncs) when ?DIGIT(C) ->
     scan_fraction(Cs, St, Line, Col, Toks, [C,$.|Ncs]);
 scan_number([$.]=Cs, _St, Line, Col, Toks, Ncs) ->
     {more,{Cs,Col,Toks,Line,Ncs,fun scan_number/6}};
-scan_number([$#|Cs], St, Line, Col, Toks, Ncs0) ->
+scan_number([$#|Cs]=Cs0, St, Line, Col, Toks, Ncs0) ->
     Ncs = lists:reverse(Ncs0),
     case catch list_to_integer(Ncs) of
         B when B >= 2, B =< 1+$Z-$A+10 ->
@@ -1061,7 +1071,7 @@ scan_number([$#|Cs], St, Line, Col, Toks, Ncs0) ->
             scan_based_int(Cs, St, Line, Col, Toks, {B,[],Bcs});
         B ->
             Len = length(Ncs),
-            scan_error({base,B}, Line, Col, Line, incr_column(Col, Len))
+            scan_error({base,B}, Line, Col, Line, incr_column(Col, Len), Cs0)
     end;
 scan_number([]=Cs, _St, Line, Col, Toks, Ncs) ->
     {more,{Cs,Col,Toks,Line,Ncs,fun scan_number/6}};
@@ -1072,7 +1082,7 @@ scan_number(Cs, St, Line, Col, Toks, Ncs0) ->
             tok3(Cs, St, Line, Col, Toks, integer, Ncs, N);
         _ ->
             Ncol = incr_column(Col, length(Ncs)),
-            scan_error({illegal,integer}, Line, Col, Line, Ncol)
+            scan_error({illegal,integer}, Line, Col, Line, Ncol, Cs)
     end.
     
 scan_based_int([C|Cs], St, Line, Col, Toks, {B,Ncs,Bcs})
@@ -1094,7 +1104,7 @@ scan_based_int(Cs, St, Line, Col, Toks, {B,Ncs0,Bcs}) ->
         _ ->
             Len = length(Bcs)+length(Ncs),
             Ncol = incr_column(Col, Len),
-            scan_error({illegal,integer}, Line, Col, Line, Ncol)
+            scan_error({illegal,integer}, Line, Col, Line, Ncol, Cs)
     end.
 
 scan_fraction([C|Cs], St, Line, Col, Toks, Ncs) when ?DIGIT(C) ->
@@ -1127,7 +1137,7 @@ float_end(Cs, St, Line, Col, Toks, Ncs0) ->
             tok3(Cs, St, Line, Col, Toks, float, Ncs, F);
         _ ->
             Ncol = incr_column(Col, length(Ncs)),
-            scan_error({illegal,float}, Line, Col, Line, Ncol)
+            scan_error({illegal,float}, Line, Col, Line, Ncol, Cs)
     end.
 
 skip_comment([C|Cs], St, Line, Col, Toks, N) when C =/= $\n, ?CHAR(C) ->
@@ -1170,13 +1180,13 @@ tok3(Cs, St, Line, Col, Toks, Item, String, Sym, Length) ->
     Token = {Item,attributes(Line, Col, St, String),Sym},
     scan1(Cs, St, Line, incr_column(Col, Length), [Token|Toks]).
 
-scan_error(Error, Line, Col, EndLine, EndCol) ->
+scan_error(Error, Line, Col, EndLine, EndCol, Rest) ->
     Loc = location(Line, Col),
     EndLoc = location(EndLine, EndCol),
-    scan_error(Error, Loc, EndLoc).
+    scan_error(Error, Loc, EndLoc, Rest).
 
-scan_error(Error, ErrorLoc, EndLoc) ->
-    {error,{ErrorLoc,?MODULE,Error},EndLoc}.
+scan_error(Error, ErrorLoc, EndLoc, Rest) ->
+    {{error,{ErrorLoc,?MODULE,Error},EndLoc},Rest}.
 
 -compile({inline,[attributes/4]}).
 
@@ -1262,7 +1272,7 @@ tabs(8)  ->  "\t\t\t\t\t\t\t\t";
 tabs(9)  ->  "\t\t\t\t\t\t\t\t\t";
 tabs(10) ->  "\t\t\t\t\t\t\t\t\t\t".
 
--spec reserved_word(atom()) -> bool().
+-spec reserved_word(atom()) -> boolean().
 reserved_word('after') -> true;
 reserved_word('begin') -> true;
 reserved_word('case') -> true;

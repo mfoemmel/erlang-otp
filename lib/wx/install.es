@@ -21,6 +21,7 @@
 %% Install wx to an erlang distribution.
 %% 
 
+-module('install_es'). %% Temp workaround for buggy escript
 -mode(compile).
 
 usage() ->
@@ -49,10 +50,10 @@ install_files() ->
      {[test],      {files, ["wxt", "Readme"]}},
      {[samples],   {files, ["sample.xpm"]}},
      {[samples,menu], {files, ["copy.xpm"]}},
-     {[samples,'*'], {list, "*.?rl"}},
-     {[demos,'*'], {list, "*.?rl"}},
+     {[samples,'*'],  {list, "*.?rl"}},
+     {[demos,'*'],    {list, "*.?rl"}},
      {[demos,xrc,rc], {list, "*"}},
-     {[doc],       {files, ["edoc-info", "erlang.png", "stylesheet.css"]}}
+     {[doc,html],     {files, ["edoc-info", "erlang.png", "stylesheet.css"]}}
     ].
 
 built_files(SrcDir, Type) ->
@@ -77,21 +78,22 @@ built_files(SrcDir, Type) ->
     end.
 
 release_files() ->
-    [{[],          {files, ["configure.in","Makefile.in","wxwin.m4"]}},
+    [{[],          {files, ["configure.in","Makefile","wxwin.m4", "config.mk.in", "vsn.mk"]}},
      {[],          {files, ["configure", "install.es"]}},
      {[autoconf],  {files, ["config.guess","config.sub","install-sh"]}},
-     {[src],       {files, ["Makefile.in"]}},
+     {[src],       {files, ["Makefile"]}},
      {[c_src],     {files, ["Makefile.in"]}},
      {[c_src],     {list, "*.c*"}},
      {[c_src],     {list, "*.h"}},
      {[c_src,gen], {list, "*.cpp"}},
      {[c_src,gen], {list, "*.h"}},
-     {[doc],       {files, ["Makefile", "overview.edoc"]}},
-     {[test],      {files, ["Makefile.in"]}},
-     {[demos],     {files, ["Makefile"]}},
-     {[demos,'*'], {files, ["Makefile"]}},
-     {[samples],   {files, ["Makefile"]}},
-     {[samples,'*'], {files, ["Makefile"]}},
+     {[doc],       {files, ["overview.edoc"]}},
+     {[doc,src],   {files, ["Makefile"]}},
+     {[test],      {files, ["Makefile"]}},
+%%      {[demos],     {files, ["Makefile"]}},
+%%      {[demos,'*'], {files, ["Makefile"]}},
+%%      {[samples],   {files, ["Makefile"]}},
+%%      {[samples,'*'], {files, ["Makefile"]}},
      {[api_gen],   {list, "*.?rl"}},
      {[api_gen],   {list, "*.conf"}},
      {[api_gen],   {files, ["Makefile", "README"]}},
@@ -204,13 +206,19 @@ expand_files2(Fs,From,To,Fun,PrevAcc) ->
 create_release() ->
     All  = release_files() ++ install_files(),
     SrcD = get_src_dir(),
-    Ver  = get_version(SrcD),
+    Ver  = "wx-" ++ get_version(SrcD),
     io:format("Create release ~p~n From ~p ~n",[Ver,SrcD]),
     case is_ok('ok [y|n]? ',[y,n]) of
 	y ->
 	    List = fun(File, From, To, Acc) ->
-			   [{filename:join(To, File), 
-			     filename:join(From,File)}|Acc]
+			   case filelib:is_regular(filename:join(From,File)) of
+			       true -> 
+				   [{filename:join(To, File), 
+				     filename:join(From,File)}|Acc];
+			       false ->
+				   io:format("Warning: File ~s/~s is missing~n",[From,File]),
+				   Acc
+			   end
 		   end,
 	    Expand = fun({Dir,Fs},Acc) -> 
 			     expand_dirs(Dir,Fs,SrcD,Ver,List,Acc) 
@@ -254,7 +262,14 @@ get_version(Dir) ->
 	fun() ->
 		{_,Month,Day} = erlang:date(),
 		Date = io_lib:format("~.2.0w~.2.0w",[Month,Day]),
-		lists:flatten(["wx-0.97."|Date])
+		{ok, Bin} = file:read_file("vsn.mk"),
+		Opt = [{capture, all_but_first, list}],
+		case re:run(Bin, "WX_VSN\s*=\s*(.*)", Opt) of
+		    {match, [Ver]} ->
+			lists:flatten([Ver,"."|Date]);
+		    _ ->
+			lists:flatten(["wx-0.98."|Date])
+		end
 	end,
     case Dir of
 	"." -> 

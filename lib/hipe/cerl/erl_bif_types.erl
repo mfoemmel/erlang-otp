@@ -132,11 +132,7 @@
 
 %%=============================================================================
 
--type erl_type() :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}.  % XXX: temporarily
-
-%%=============================================================================
-
--spec type(atom(), atom(), arity()) -> erl_type().
+-spec type(atom(), atom(), arity()) -> erl_types:erl_type().
 
 type(M, F, A) ->
   type(M, F, A, any_list(A)).
@@ -144,7 +140,7 @@ type(M, F, A) ->
 %% Arguments should be checked for undefinedness, so we do not make
 %% unnecessary overapproximations.
 
--spec type(atom(), atom(), arity(), [erl_type()]) -> erl_type().
+-spec type(atom(), atom(), arity(), [erl_types:erl_type()]) -> erl_types:erl_type().
 
 %%-- code ---------------------------------------------------------------------
 type(code, add_path, 1, Xs) ->
@@ -164,9 +160,7 @@ type(code, add_pathsz, 1, Xs) ->
 type(code, add_pathz, 1, Xs) ->
   type(code, add_path, 1, Xs);
 type(code, all_loaded, 0, _) ->
-  t_list(t_tuple([t_atom(), t_sup([t_string(), % filename
-				   t_atom('preloaded'),
-				   t_atom('cover_compiled')])]));
+  t_list(t_tuple([t_atom(), t_code_loaded_fname_or_status()]));
 type(code, compiler_dir, 0, _) ->
   t_string();
 type(code, del_path, 1, Xs) ->
@@ -193,9 +187,7 @@ type(code, get_path, 0, _) ->
 type(code, is_loaded, 1, Xs) ->
   strict(arg_types(code, is_loaded, 1), Xs,
 	 fun (_) ->
-	     t_sup([t_tuple([t_atom('file'), t_string()]), % filename
-		    t_tuple([t_atom('file'), t_atom('preloaded')]),
-		    t_tuple([t_atom('file'), t_atom('cover_compiled')]),
+	     t_sup([t_tuple([t_atom('file'), t_code_loaded_fname_or_status()]),
 		    t_atom('false')])
 	 end);
 type(code, is_sticky, 1, Xs) ->
@@ -212,7 +204,8 @@ type(code, lib_dir, 1, Xs) ->
  		   t_tuple([t_atom('error'), t_atom('bad_name')]))
  	 end);
 type(code, load_abs, 1, Xs) ->
-  type(code, load_file, 1, Xs);
+  strict(arg_types(code, load_abs, 1), Xs,
+	 fun ([_File]) -> t_code_load_return(t_atom()) end);	% XXX: cheating
 type(code, load_abs, 2, Xs) ->
   strict(arg_types(code, load_abs, 2), Xs,
 	 fun ([_File,Mod]) -> t_code_load_return(Mod) end);
@@ -268,9 +261,7 @@ type(code, unstick_mod, 1, Xs) ->
 type(code, which, 1, Xs) ->
   strict(arg_types(code, which, 1), Xs,
 	 fun (_) ->
-	     t_sup([t_string(),
-		    t_atom('preloaded'),
-		    t_atom('cover_compiled'),
+	     t_sup([t_code_loaded_fname_or_status(),
 		    t_atom('non_existing')])
 	 end);
 %%-- erl_ddll -----------------------------------------------------------------
@@ -314,8 +305,6 @@ type(erlang, halt, 1, _) -> t_none();
 type(erlang, exit, 1, _) -> t_none();
 %% Note that exit/2 sends an exit signal to another process.
 type(erlang, exit, 2, _) -> t_atom('true');
-type(erlang, fault, 1, _) -> t_none();
-type(erlang, fault, 2, _) -> t_none();
 type(erlang, error, 1, _) -> t_none();
 type(erlang, error, 2, _) -> t_none();
 type(erlang, throw, 1, _) -> t_none();
@@ -744,6 +733,9 @@ type(erlang, delete_module, 1, Xs) ->
  	 fun (_) -> t_sup(t_atom('true'), t_atom('undefined')) end);
 type(erlang, demonitor, 1, Xs) ->
   strict(arg_types(erlang, demonitor, 1), Xs, fun (_) -> t_atom('true') end);
+%% TODO: overapproximation -- boolean only if 'info' is part of arg2 otherwise 'true'
+type(erlang, demonitor, 2, Xs) ->
+  strict(arg_types(erlang, demonitor, 2), Xs, fun (_) -> t_boolean() end);
 type(erlang, disconnect_node, 1, Xs) ->
   strict(arg_types(erlang, disconnect_node, 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, display, 1, _) -> t_atom('true');
@@ -1107,6 +1099,15 @@ type(erlang, md5_final, 1, Xs) ->
 type(erlang, md5_init, 0, _) -> t_binary();
 type(erlang, md5_update, 2, Xs) ->
   strict(arg_types(erlang, md5_update, 2), Xs, fun (_) -> t_binary() end);
+type(erlang, memory, 0, _) -> t_list(t_tuple([t_atom(), t_non_neg_fixnum()]));
+type(erlang, memory, 1, Xs) ->
+  strict(arg_types(erlang, memory, 1), Xs,
+	 fun ([Type]) ->
+	     case t_is_atom(Type) of
+	       true -> t_non_neg_fixnum();
+	       _ -> t_list(t_tuple([t_atom(), t_non_neg_fixnum()]))
+	     end
+	 end);
 type(erlang, module_loaded, 1, Xs) ->
   strict(arg_types(erlang, module_loaded, 1), Xs, fun (_) -> t_boolean() end);
 type(erlang, monitor, 2, Xs) ->
@@ -1322,21 +1323,26 @@ type(erlang, send, 3, Xs) ->
 type(erlang, send_after, 3, Xs) ->
   strict(arg_types(erlang, send_after, 3), Xs, fun (_) -> t_reference() end);
 type(erlang, seq_trace, 2, Xs) ->
-  strict(arg_types(erlang, seq_trace, 2), Xs, fun (_) -> t_tuple(5) end);
+  strict(arg_types(erlang, seq_trace, 2), Xs,
+	 fun (_) -> t_sup(t_seq_trace_info_returns(), t_tuple(5)) end);
 type(erlang, seq_trace_info, 1, Xs) ->
   strict(arg_types(erlang, seq_trace_info, 1), Xs,
 	 fun ([Item]) ->
 	     case t_atom_vals(Item) of
-	       ['label'] -> t_sup(t_tuple([Item, t_any()]), t_nil());
-	       ['serial'] -> t_sup(t_tuple([Item, t_tuple(2)]), t_nil());
+	       ['label'] ->
+		 t_sup(t_tuple([Item, t_non_neg_integer()]), t_nil());
+	       ['serial'] -> 
+		 t_sup(t_tuple([Item, t_tuple([t_non_neg_integer(),
+					       t_non_neg_integer()])]),
+		       t_nil());
 	       ['send'] -> t_tuple([Item, t_boolean()]);
 	       ['receive'] -> t_tuple([Item, t_boolean()]);
 	       ['print'] -> t_tuple([Item, t_boolean()]);
 	       ['timestamp'] -> t_tuple([Item, t_boolean()]);
 	       List when is_list(List) ->
-		 t_sup(t_tuple([t_seq_trace_info(), t_any()]), t_nil());
+		 t_seq_trace_info_returns();
 	       unknown ->
-		 t_sup(t_tuple([t_seq_trace_info(), t_any()]), t_nil())
+		 t_seq_trace_info_returns()
 	     end
 	 end);
 type(erlang, seq_trace_print, 1, Xs) ->
@@ -1490,7 +1496,8 @@ type(erlang, system_flag, 2, Xs) ->
 		     t_system_multi_scheduling();
 		   ['schedulers_online'] ->
 		     t_pos_fixnum();
-		   %% ['scheduler_bind_type'] ->
+		   ['scheduler_bind_type'] ->
+		     t_scheduler_bind_type_results();
 		   ['sequential_tracer'] ->
 		     t_atom('false');		% XXX: IS THIS CORRECT?
 		   ['trace_control_word'] ->
@@ -1564,14 +1571,14 @@ type(erlang, system_info, 1, Xs) ->
 			    t_atom('ultrasparc'), t_atom('x86')]);
 		   ['info'] ->
 		     t_binary();
+		   ['internal_cpu_topology'] -> %% Undocumented internal feature
+		     t_internal_cpu_topology();
 		   ['loaded'] ->
 		     t_binary();
 		   ['logical_processors'] ->
 		     t_non_neg_fixnum();
 		   ['machine'] ->
 		     t_string();
-		   ['memory'] ->
-		     t_list(t_tuple([t_atom(), t_non_neg_fixnum()]));
 		   ['multi_scheduling'] ->
 		     t_system_multi_scheduling();
 		   ['multi_scheduling_blockers'] ->
@@ -1595,7 +1602,8 @@ type(erlang, system_info, 1, Xs) ->
 		     t_binary();
 		   ['scheduler_bindings'] ->
 		     t_tuple();
-		   %% ['scheduler_bind_type'] ->
+		   ['scheduler_bind_type'] ->
+		     t_scheduler_bind_type_results();
 		   ['schedulers'] ->
 		     t_pos_fixnum();
 		   ['schedulers_online'] ->
@@ -2760,23 +2768,11 @@ list_replace(N, E, [X | Xs]) when N > 1 ->
 list_replace(1, E, [_X | Xs]) ->
   [E | Xs].
 
-any_is_none_or_unit([X | Xs]) ->
-  case t_is_none_or_unit(X) of
-    true ->
-      true;
-    false ->
-      any_is_none_or_unit(Xs)
-  end;
-any_is_none_or_unit([]) -> false.
+any_is_none_or_unit(Ts) ->
+  lists:any(fun erl_types:t_is_none_or_unit/1, Ts).
 
-all_is_none([X | Xs]) ->
-  case t_is_none(X) of
-    true ->
-      all_is_none(Xs);
-    false ->
-      false
-  end;
-all_is_none([]) -> true.
+all_is_none(Ts) ->
+  lists:all(fun erl_types:t_is_none/1, Ts).
 
 check_guard([X], Test, Type) ->
   check_guard_single(X, Test, Type).
@@ -3126,7 +3122,7 @@ arith(Op, X1, X2) ->
 
 %%=============================================================================
 
--spec arg_types(atom(), atom(), arity()) -> [erl_type()] | 'unknown'.
+-spec arg_types(atom(), atom(), arity()) -> [erl_types:erl_type()] | 'unknown'.
 
 %%------- code ----------------------------------------------------------------
 arg_types(code, add_path, 1) ->
@@ -3148,7 +3144,7 @@ arg_types(code, compiler_dir, 0) ->
 arg_types(code, del_path, 1) ->
   [t_sup(t_string(), t_atom())];  % OBS: doc differs from add_path/1 - why?
 arg_types(code, delete, 1) ->
-  arg_types(code, load_file, 1);
+  [t_atom()];
 arg_types(code, ensure_loaded, 1) ->
   arg_types(code, load_file, 1);
 arg_types(code, get_chunk, 2) ->
@@ -3170,11 +3166,11 @@ arg_types(code, lib_dir, 1) ->
 arg_types(code, load_abs, 1) ->
   [t_string()];
 arg_types(code, load_abs, 2) ->
-  [t_sup(t_string(), t_atom()), t_atom()];
+  [t_code_loaded_fname_or_status(), t_atom()];
 arg_types(code, load_binary, 3) ->
-  [t_atom(), t_sup(t_string(), t_atom()), t_binary()];
+  [t_atom(), t_code_loaded_fname_or_status(), t_binary()];
 arg_types(code, load_file, 1) ->
-  [t_sup(t_atom(), t_string())];
+  [t_atom()];
 arg_types(code, load_native_partial, 2) ->
   [t_atom(), t_binary()];
 arg_types(code, load_native_sticky, 3) ->
@@ -3359,6 +3355,8 @@ arg_types(erlang, delete_module, 1) ->
   [t_atom()];
 arg_types(erlang, demonitor, 1) ->
   [t_reference()];
+arg_types(erlang, demonitor, 2) ->
+  [t_reference(), t_list(t_atoms(['flush', 'info']))];
 arg_types(erlang, disconnect_node, 1) ->
   [t_node()];
 arg_types(erlang, display, 1) ->
@@ -3381,10 +3379,6 @@ arg_types(erlang, exit, 2) ->
   [t_sup(t_pid(), t_port()), t_any()];
 arg_types(erlang, external_size, 1) ->
   [t_any()]; % takes any term as input
-arg_types(erlang, fault, 1) ->
-  arg_types(erlang, error, 1);  % alias for compatibility
-arg_types(erlang, fault, 2) ->
-  arg_types(erlang, error, 2);  % alias for compatibility
 arg_types(erlang, float, 1) ->
   [t_number()];
 arg_types(erlang, float_to_list, 1) ->
@@ -3532,6 +3526,13 @@ arg_types(erlang, md5_init, 0) ->
   [];
 arg_types(erlang, md5_update, 2) ->
   [t_binary(), t_sup(t_iolist(), t_binary())];
+arg_types(erlang, memory, 0) ->
+  [];
+arg_types(erlang, memory, 1) ->
+  Arg = t_atoms(['total', 'processes', 'processes_used', 'system',
+		 'atom', 'atom_used', 'binary', 'code', 'ets',
+		 'maximum']),
+  [t_sup(Arg, t_list(Arg))];
 arg_types(erlang, module_loaded, 1) ->
   [t_atom()];
 arg_types(erlang, monitor, 2) ->
@@ -3552,8 +3553,10 @@ arg_types(erlang, nodes, 1) ->
 arg_types(erlang, now, 0) ->
   [];
 arg_types(erlang, open_port, 2) ->
-  [t_sup(t_atom(), t_sup(t_tuple([t_atom('spawn'), t_sup(t_atom(), t_string())]),
-			 t_tuple([t_atom('fd'), t_integer(), t_integer()]))),
+  [t_sup(t_atom(), t_sup([t_tuple([t_atom('spawn'), t_string()]),
+			  t_tuple([t_atom('spawn_driver'), t_string()]),
+			  t_tuple([t_atom('spawn_executable'), t_string()]),
+			  t_tuple([t_atom('fd'), t_integer(), t_integer()])])),
    t_list(t_sup(t_sup([t_atom('stream'),
 		       t_atom('exit_status'),
 		       t_atom('use_stdio'),
@@ -3562,11 +3565,14 @@ arg_types(erlang, open_port, 2) ->
 		       t_atom('in'),
 		       t_atom('out'),
 		       t_atom('binary'),
-		       t_atom('eof')]),
+		       t_atom('eof'),
+		       t_atom('hide')]),
 		t_sup([t_tuple([t_atom('packet'), t_integer()]),
 		       t_tuple([t_atom('line'), t_integer()]),
 		       t_tuple([t_atom('cd'), t_string()]),
-		       t_tuple([t_atom('env'), t_list()])])))];
+		       t_tuple([t_atom('env'), t_list(t_tuple(2))]), % XXX: More
+		       t_tuple([t_atom('args'), t_list(t_string())]),
+		       t_tuple([t_atom('arg0'), t_string()])])))];
 arg_types(erlang, phash, 2) ->
   [t_any(), t_pos_integer()];
 arg_types(erlang, phash2, 1) ->
@@ -3591,8 +3597,8 @@ arg_types(erlang, port_info, 1) ->
   [t_sup(t_port(), t_atom())];
 arg_types(erlang, port_info, 2) ->
   [t_sup(t_port(), t_atom()),
-   t_sup([t_atom('registered_name'), t_atom('id'), t_atom('connected'),
-	  t_atom('links'), t_atom('name'), t_atom('input'),t_atom('output')])];
+   t_atoms(['registered_name', 'id', 'connected',
+	    'links', 'name', 'input', 'output'])];
 arg_types(erlang, port_to_list, 1) ->
   [t_port()];
 arg_types(erlang, ports, 0) ->
@@ -3716,8 +3722,14 @@ arg_types(erlang, system_flag, 2) ->
 	  %% Undocumented; used to implement (the documented) seq_trace module.
 	  t_atom('sequential_tracer'),
 	  t_atom('trace_control_word'),
+	  %% 'internal_cpu_topology' is an undocumented internal feature.
+	  t_atom('internal_cpu_topology'),
 	  t_integer()]),
    t_sup([t_integer(),
+	  %% 'cpu_topology'
+	  t_system_cpu_topology(),
+	  %% 'scheduler_bind_type'
+	  t_scheduler_bind_type_args(),
 	  %% Undocumented: the following is for 'debug_flags' that
 	  %% takes any erlang term as flags and currently ignores it.
 	  %% t_any(),	% commented out since it destroys the type signature
@@ -3726,7 +3738,9 @@ arg_types(erlang, system_flag, 2) ->
 	  t_atom('false'),
 	  %% The following two are for 'multi_scheduling'
 	  t_atom('block'),
-	  t_atom('unblock')])];
+	  t_atom('unblock'),
+	  %% The following is for 'internal_cpu_topology'
+	  t_internal_cpu_topology()])];
 arg_types(erlang, system_info, 1) ->
   [t_sup([t_atom(),                     % documented
 	  t_tuple([t_atom(), t_any()]), % documented
@@ -4271,7 +4285,7 @@ arg_types(M, F, A) when is_atom(M), is_atom(F),
   unknown.                     % safe approximation for all functions.
 
 
--spec is_known(atom(), atom(), arity()) -> bool().
+-spec is_known(atom(), atom(), arity()) -> boolean().
 
 is_known(M, F, A) ->
   arg_types(M, F, A) =/= unknown.
@@ -4423,6 +4437,11 @@ t_code_load_error_rsn() ->	% also used in erlang:load_module/2
 	 t_atom('native_code'),
 	 t_atom('sticky_directory')]).	% only for the 'code' functions
 
+t_code_loaded_fname_or_status() ->
+  t_sup([t_string(), % filename
+	 t_atom('preloaded'),
+	 t_atom('cover_compiled')]).
+
 %% =====================================================================
 %% These are used for the built-in functions of 'erlang'
 %% =====================================================================
@@ -4501,6 +4520,13 @@ t_seq_trace_info() ->
 	 t_atom('label'),
 	 t_atom('serial')]).
 
+%% XXX: Better if we also maintain correspondencies between infos and values
+t_seq_trace_info_returns() ->
+  Values = t_sup([t_non_neg_integer(), t_boolean(),
+		  t_tuple([t_non_neg_integer(), t_non_neg_integer()])]),
+  t_sup(t_tuple([t_seq_trace_info(), Values]), t_nil()).
+
+
 t_spawn_options() ->
   t_sup([t_atom('link'),
 	 t_atom('monitor'),
@@ -4539,6 +4565,38 @@ t_system_cpu_topology_logical_cpu_id() ->
 
 t_system_cpu_topology_info_list() ->
   t_nil().  % it may be extended in the future
+
+t_internal_cpu_topology() -> %% Internal undocumented type
+  t_sup(t_list(t_tuple([t_atom('cpu'),
+			t_non_neg_fixnum(),
+			t_non_neg_fixnum(),
+			t_non_neg_fixnum(),
+			t_non_neg_fixnum(),
+			t_non_neg_fixnum(),
+			t_non_neg_fixnum()])),
+	t_atom('undefined')).
+
+t_scheduler_bind_type_args() ->
+  t_sup([t_atom('default_bind'),
+	 t_atom('no_node_processor_spread'),
+	 t_atom('no_node_thread_spread'),
+	 t_atom('no_spread'),
+	 t_atom('processor_spread'),
+	 t_atom('spread'),
+	 t_atom('thread_spread'),
+	 t_atom('thread_no_node_processor_spread'),
+	 t_atom('unbound')]).
+  
+t_scheduler_bind_type_results() ->
+  t_sup([t_atom('no_node_processor_spread'),
+	 t_atom('no_node_thread_spread'),
+	 t_atom('no_spread'),
+	 t_atom('processor_spread'),
+	 t_atom('spread'),
+	 t_atom('thread_spread'),
+	 t_atom('thread_no_node_processor_spread'),
+	 t_atom('unbound')]).
+
 
 t_system_monitor_settings() ->
   t_sup([t_atom('undefined'),
@@ -4582,7 +4640,8 @@ t_matchres() ->
 %% From the 'ets' documentation
 %%-----------------------------
 %%   Option = Type | Access | named_table | {keypos,Pos}
-%%          | {heir,pid(),HeirData} | {heir,none} | {write_concurrency,bool()}
+%%          | {heir,pid(),HeirData} | {heir,none}
+%%          | {write_concurrency,boolean()}
 %%     Type = set | ordered_set | bag | duplicate_bag
 %%   Access = public | protected | private
 %%      Pos = integer()

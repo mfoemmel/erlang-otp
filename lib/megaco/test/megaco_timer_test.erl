@@ -129,7 +129,7 @@ simple_init(suite) ->
     [];
 simple_init(doc) ->
     [];
-simple_init(Config) when list(Config) ->
+simple_init(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        si),
     put(sname,     "TEST"),
@@ -243,7 +243,7 @@ simple_usage(suite) ->
     [];
 simple_usage(doc) ->
     [];
-simple_usage(Config) when list(Config) ->
+simple_usage(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        su),
     put(sname,     "TEST"),
@@ -335,7 +335,7 @@ integer_timer_start_and_expire(suite) ->
     [];
 integer_timer_start_and_expire(doc) ->
     [];
-integer_timer_start_and_expire(Config) when list(Config) ->
+integer_timer_start_and_expire(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        itsae),
     put(sname,     "TEST"),
@@ -361,7 +361,7 @@ integer_timer_start_and_stop(suite) ->
     [];
 integer_timer_start_and_stop(doc) ->
     [];
-integer_timer_start_and_stop(Config) when list(Config) ->
+integer_timer_start_and_stop(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        itsas),
     put(sname,     "TEST"),

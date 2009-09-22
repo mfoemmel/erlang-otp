@@ -1582,12 +1582,6 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 
     if (sel == am_allocator_sizes && arity == 2) {
 	return erts_allocator_info_term(BIF_P, *tp, 1);
-    } else if (sel == am_memory) {
-	Eterm res;
-	if (arity != 2)
-	    return am_badarg;
-	res = erts_memory(NULL, NULL, BIF_P, *tp);
-	return res;
     } else if (sel == am_allocated) {
 	if (arity == 2) {
 	    Eterm res = THE_NON_VALUE;
@@ -1858,9 +1852,6 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
     } else if (BIF_ARG_1 == am_compat_rel) {
 	ASSERT(erts_compat_rel > 0);
 	BIF_RET(make_small(erts_compat_rel));
-    } else if (BIF_ARG_1 == am_memory) {
-	res = erts_memory(NULL, NULL, BIF_P, THE_NON_VALUE);
-	BIF_RET(res);
     } else if (BIF_ARG_1 == am_multi_scheduling) {
 #ifndef ERTS_SMP
 	BIF_RET(am_disabled);
@@ -2293,6 +2284,15 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	    DECL_AM(unknown);
 	    BIF_RET(AM_unknown);
 	}
+    }
+    else if (ERTS_IS_ATOM_STR("logical_processors_available", BIF_ARG_1)) {
+	int no = erts_get_cpu_available(erts_cpuinfo);
+	if (no > 0)
+	    BIF_RET(make_small((Uint) no));
+	else {
+	    DECL_AM(unknown);
+	    BIF_RET(AM_unknown);
+	}
     } else if (ERTS_IS_ATOM_STR("otp_release", BIF_ARG_1)) {
 	int n = sizeof(ERLANG_OTP_RELEASE)-1;
 	hp = HAlloc(BIF_P, 2*n);
@@ -2405,6 +2405,12 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #endif    
     } else if (ERTS_IS_ATOM_STR("lock_checking", BIF_ARG_1)) {
 #ifdef ERTS_ENABLE_LOCK_CHECK
+	BIF_RET(am_true);
+#else
+	BIF_RET(am_false);
+#endif
+    } else if (ERTS_IS_ATOM_STR("lock_counting", BIF_ARG_1)) {
+#ifdef ERTS_ENABLE_LOCK_COUNT
 	BIF_RET(am_true);
 #else
 	BIF_RET(am_false);
@@ -2929,6 +2935,26 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
     BIF_ERROR(BIF_P, BADARG);
 }
 
+BIF_RETTYPE memory_0(BIF_ALIST_0)
+{
+    BIF_RETTYPE res = erts_memory(NULL, NULL, BIF_P, THE_NON_VALUE);
+    switch (res) {
+    case am_badarg: BIF_ERROR(BIF_P, EXC_INTERNAL_ERROR); /* never... */
+    case am_notsup: BIF_ERROR(BIF_P, EXC_NOTSUP);
+    default: BIF_RET(res);
+    }
+}
+
+BIF_RETTYPE memory_1(BIF_ALIST_1)
+{
+    BIF_RETTYPE res = erts_memory(NULL, NULL, BIF_P, BIF_ARG_1);
+    switch (res) {
+    case am_badarg: BIF_ERROR(BIF_P, BADARG);
+    case am_notsup: BIF_ERROR(BIF_P, EXC_NOTSUP);
+    default: BIF_RET(res);
+    }
+}
+
 BIF_RETTYPE error_logger_warning_map_0(BIF_ALIST_0)
 {
     BIF_RET(erts_error_logger_warnings);
@@ -3012,6 +3038,13 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	else if (ERTS_IS_ATOM_STR("max_atom_out_cache_index", BIF_ARG_1)) {
 	    /* Used by distribution_SUITE (emulator) */
 	    BIF_RET(make_small((Uint) erts_debug_max_atom_out_cache_index()));
+	}
+	else if (ERTS_IS_ATOM_STR("nbalance", BIF_ARG_1)) {
+	    Uint n;
+	    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	    n = erts_debug_nbalance();
+	    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	    BIF_RET(erts_make_integer(n, BIF_P));
 	}
 	else if (ERTS_IS_ATOM_STR("available_internal_state", BIF_ARG_1)) {
 	    BIF_RET(am_true);
@@ -3427,16 +3460,6 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 		erts_smp_de_runlock(dep);
 		erts_kill_dist_connection(dep, con_id);
 		erts_deref_dist_entry(dep);
-		BIF_RET(am_true);
-	    }
-	}
-	else if (ERTS_IS_ATOM_STR("processor_node_topology", BIF_ARG_1)) {
-	    if (BIF_ARG_2 == am_true) {
-		erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
-		erts_smp_block_system(0);
-		erts_init_enable_processor_node_topology();
-		erts_smp_release_system();
-		erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 		BIF_RET(am_true);
 	    }
 	}

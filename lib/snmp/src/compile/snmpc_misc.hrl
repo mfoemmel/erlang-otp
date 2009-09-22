@@ -20,10 +20,10 @@
 -define(verify_format_version(VFV_Ver1,VFV_Ver2),
 	fun(VFV_V,VFV_V) ->
 		ok;
-	   (VFV_V1,VFV_V2) when list(VFV_V1), list(VFV_V2) ->
+	   (VFV_V1,VFV_V2) when is_list(VFV_V1) andalso is_list(VFV_V2) ->
 		Toks1 = string:tokens(VFV_V1, [$.]),
 		[Major1|_] = case (catch [list_to_integer(I) || I <- Toks1]) of
-				Nums when list(Nums) ->
+				Nums when is_list(Nums) ->
 				    Nums;
 				_ ->
 				    {error, {invalid_version_format, VFV_V1}}
@@ -49,7 +49,7 @@
 			 throw(RM_Error)
 	       end,
 	RM_Mib = case (catch binary_to_term(RM_Bin)) of
-		     RM_M when record(RM_M, mib) ->
+		     RM_M when is_record(RM_M, mib) ->
 			 RM_M;
 		     _ ->
 			 throw({error, bad_mib_format})
@@ -57,7 +57,7 @@
 	#mib{mib_format_version = RM_V1} = #mib{},
 	case RM_Mib of
 	    #mib{mib_format_version = RM_V2,
-		 misc               = RM_X} when integer(RM_X) ->
+		 misc               = RM_X} when is_integer(RM_X) ->
 		case (catch ?verify_format_version(RM_V1, RM_V2)) of
 		    ok ->
 			{ok, RM_Mib#mib{misc = []}};

@@ -268,7 +268,7 @@ void  wxeReturn::add(wxDateTime dateTime) {
   addTupleCount(2);
 }
 
-inline 
+INLINE 
 void  wxeReturn::addDate(wxDateTime dateTime) {
     addInt(dateTime.GetYear());
     addInt(dateTime.GetMonth()+1); // c++ month is zero based
@@ -328,5 +328,21 @@ void  wxeReturn::add(wxMouseState val) {
     addBool(val.MetaDown());
     addBool(val.CmdDown());
     addTupleCount(11);     
+}
+
+INLINE
+void wxeReturn::add(const wxHtmlLinkInfo *val) {
+  addAtom("wxHtmlLinkInfo");
+  add(val->GetHref());
+  add(val->GetTarget());
+  addTupleCount(3);
+}
+
+INLINE
+void wxeReturn::add(const wxHtmlLinkInfo &val) {
+  addAtom("wxHtmlLinkInfo");
+  add(val.GetHref());
+  add(val.GetTarget());
+  addTupleCount(3);
 }
 

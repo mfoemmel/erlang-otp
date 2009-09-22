@@ -58,7 +58,7 @@
 %% An empty node list ([]), is traslated into a list containing
 %% only the own node.
 %% ---------------------------------------------------------------
-open({mnesia,Nodes,clear}, Name, RecName, Attr, Type) when list(Nodes) ->
+open({mnesia,Nodes,clear}, Name, RecName, Attr, Type) when is_list(Nodes) ->
     ?vtrace("[mnesia] open ~p database ~p for ~p on ~p; clear",
 	    [Type, Name, RecName, Nodes]),
     mnesia_open(mnesia_table_check(Name), Nodes, RecName, Attr, Type, clear);
@@ -66,7 +66,7 @@ open({mnesia,Nodes,_}, Name, RecName, Attr, Type) ->
     ?vtrace("[mnesia] open ~p database ~p for ~p on ~p; keep",
 	    [Type, Name, RecName, Nodes]),
     open({mnesia,Nodes}, Name, RecName, Attr, Type);
-open({mnesia,Nodes}, Name, RecName, Attr, Type) when list(Nodes) ->
+open({mnesia,Nodes}, Name, RecName, Attr, Type) when is_list(Nodes) ->
     ?vtrace("[mnesia] open ~p database ~p for ~p on ~p",
 	    [Type, Name, RecName, Nodes]),
     mnesia_open(mnesia_table_check(Name), Nodes, RecName, Attr, Type, keep);
@@ -415,7 +415,7 @@ tab2list({ets, Name, _}) ->
 %% ---------------------------------------------------------------
 info({mnesia, Name}) ->
     case (catch mnesia:table_info(Name, all)) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	{'EXIT', {aborted, Reason}} ->
 	    {error, Reason};

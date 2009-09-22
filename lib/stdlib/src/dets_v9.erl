@@ -2284,7 +2284,7 @@ eval_key1([{_Seq,{lookup,Pid}} | L], Cs, Old, Type, Key, LU, Ws, No, Orig) ->
 	    eval_end(New, NLU, Type, Ws, NewNo, Orig);
 	true ->
 	    NewOld = dets_utils:msort(New),
-	    eval_key1(L, Cs, NewOld, Type, Key, NLU, Ws, NewNo, Orig)
+	    eval_key1(L, [], NewOld, Type, Key, NLU, Ws, NewNo, Orig)
     end;
 eval_key1([{_Seq,delete_key} | L], _Cs, Old, Type, K, LU, Ws, No, Orig) ->
     NewNo = No - length(Old),

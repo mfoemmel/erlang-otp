@@ -82,8 +82,8 @@
 -define(vsn, 5).
 
 %%-----------------------------------------------------------------
-%% connect_all = bool() - true if we are supposed to set up a
-%%                        fully connected net
+%% connect_all = boolean() - true if we are supposed to set up a
+%%                           fully connected net
 %% known       = [Node] - all nodes known to us
 %% synced      = [Node] - all nodes that have the same names as us
 %% resolvers   = [{Node, MyTag, Resolver}] - 
@@ -106,8 +106,12 @@
 %% {sync_tag_his, Node} = The Node's tag, used at synchronization
 %% {lock_id, Node} = The resource locking the partitions
 %%-----------------------------------------------------------------
--record(state, {connect_all, known = [], synced = [],
-		resolvers = [], syncers = [], node_name = node(),
+-record(state, {connect_all        :: boolean(),
+		known = []         :: [node()],
+		synced = []        :: [node()],
+		resolvers = [],
+		syncers = []       :: [pid()],
+		node_name = node() :: node(),
 		the_locker, the_deleter, the_registrar, trace,
                 global_lock_down = false
                }).
@@ -159,22 +163,25 @@ start_link() ->
 stop() -> 
     gen_server:call(global_name_server, stop, infinity).
 
+-spec sync() -> 'ok' | {'error', term()}.
 sync() ->
     case check_sync_nodes() of
-	{error, Error} ->
-	    {error, Error};
+	{error, _} = Error ->
+	    Error;
 	SyncNodes ->
 	    gen_server:call(global_name_server, {sync, SyncNodes}, infinity)
     end.
 
+-spec sync([node()]) -> 'ok' | {'error', term()}.
 sync(Nodes) ->
     case check_sync_nodes(Nodes) of
-	{error, Error} ->
-	    {error, Error};
+	{error, _} = Error ->
+	    Error;
 	SyncNodes ->
 	    gen_server:call(global_name_server, {sync, SyncNodes}, infinity)
     end.
 
+-spec send(term(), term()) -> pid().
 send(Name, Msg) ->
     case whereis_name(Name) of
 	Pid when is_pid(Pid) ->
@@ -185,9 +192,11 @@ send(Name, Msg) ->
     end.
 
 %% See OTP-3737.
+-spec whereis_name(term()) -> pid() | 'undefined'.
 whereis_name(Name) ->
     where(Name).
 
+-spec safe_whereis_name(term()) -> pid() | 'undefined'.
 safe_whereis_name(Name) ->
     gen_server:call(global_name_server, {whereis, Name}, infinity).
 
@@ -207,9 +216,13 @@ node_disconnected(Node) ->
 %% undefined which one of them is used.
 %% Method blocks the name registration, but does not affect global locking.
 %%-----------------------------------------------------------------
+-spec register_name(term(), pid()) -> 'yes' | 'no'.
 register_name(Name, Pid) when is_pid(Pid) ->
-    register_name(Name, Pid, {?MODULE, random_exit_name}).
+    register_name(Name, Pid, fun random_exit_name/3).
 
+-type method() :: fun((term(), pid(), pid()) -> pid() | 'none').
+
+-spec register_name(term(), pid(), method()) -> 'yes' | 'no'.
 register_name(Name, Pid, Method) when is_pid(Pid) ->
     Fun = fun(Nodes) ->
         case (where(Name) =:= undefined) andalso check_dupname(Name, Pid) of
@@ -241,6 +254,7 @@ check_dupname(Name, Pid) ->
             end
     end.
 
+-spec unregister_name(term()) -> _.
 unregister_name(Name) ->
     case where(Name) of
 	undefined ->
@@ -256,9 +270,11 @@ unregister_name(Name) ->
             gen_server:call(global_name_server, {registrar, Fun}, infinity)
     end.
 
+-spec re_register_name(term(), pid()) -> _.
 re_register_name(Name, Pid) when is_pid(Pid) ->
-    re_register_name(Name, Pid, {?MODULE, random_exit_name}).
+    re_register_name(Name, Pid, fun random_exit_name/3).
 
+-spec re_register_name(term(), pid(), method()) -> _.
 re_register_name(Name, Pid, Method) when is_pid(Pid) ->
     Fun = fun(Nodes) ->
 		  gen_server:multi_call(Nodes,
@@ -269,6 +285,7 @@ re_register_name(Name, Pid, Method) when is_pid(Pid) ->
     ?trace({re_register_name, self(), Name, Pid, Method}),
     gen_server:call(global_name_server, {registrar, Fun}, infinity).
 
+-spec registered_names() -> [term()].
 registered_names() ->
     MS = ets:fun2ms(fun({Name,_Pid,_M,_RP,_R}) -> Name end),
     ets:select(global_names, MS).
@@ -289,7 +306,7 @@ registered_names() ->
 %% the fact that monitors do the job now.]
 %%-----------------------------------------------------------------
 register_name_external(Name, Pid) when is_pid(Pid) ->
-    register_name_external(Name, Pid, {?MODULE, random_exit_name}).
+    register_name_external(Name, Pid, fun random_exit_name/3).
 
 register_name_external(Name, Pid, Method) when is_pid(Pid) ->
     Fun = fun(Nodes) ->
@@ -309,12 +326,19 @@ register_name_external(Name, Pid, Method) when is_pid(Pid) ->
 unregister_name_external(Name) ->
     unregister_name(Name).
 
+-type id() :: {term(), term()}.
+
+-spec set_lock(id()) -> boolean().
 set_lock(Id) ->
     set_lock(Id, [node() | nodes()], infinity, 1).
 
+-type retries() :: non_neg_integer() | 'infinity'.
+
+-spec set_lock(id(), [node()]) -> boolean().
 set_lock(Id, Nodes) ->
     set_lock(Id, Nodes, infinity, 1).
 
+-spec set_lock(id(), [node()], retries()) -> boolean().
 set_lock(Id, Nodes, Retries) when is_integer(Retries), Retries >= 0 ->
     set_lock(Id, Nodes, Retries, 1);
 set_lock(Id, Nodes, infinity) ->
@@ -336,20 +360,25 @@ set_lock({_ResourceId, _LockRequesterId} = Id, Nodes, Retries, Times) ->
 	    set_lock(Id, Nodes, dec(Retries), Times+1)
     end.
 
+-spec del_lock(id()) -> 'true'.
 del_lock(Id) ->
     del_lock(Id, [node() | nodes()]).
 
-del_lock({ResourceId, LockRequesterId}, Nodes) ->
-    Id = {ResourceId, LockRequesterId},
-    ?trace({del_lock, {me,self()}, {ResourceId,LockRequesterId}, 
-            {nodes,Nodes}}),
+-spec del_lock(id(), [node()]) -> 'true'.
+del_lock({_ResourceId, _LockRequesterId} = Id, Nodes) ->
+    ?trace({del_lock, {me,self()}, Id, {nodes,Nodes}}),
     gen_server:multi_call(Nodes, global_name_server, {del_lock, Id}),
     true.
 
+-type trans_fun() :: function() | {module(), atom()}.
+
+-spec trans(id(), trans_fun()) -> term().
 trans(Id, Fun) -> trans(Id, Fun, [node() | nodes()], infinity).
 
+-spec trans(id(), trans_fun(), [node()]) -> term().
 trans(Id, Fun, Nodes) -> trans(Id, Fun, Nodes, infinity).
 
+-spec trans(id(), trans_fun(), [node()], retries()) -> term().
 trans(Id, Fun, Nodes, Retries) ->
     case set_lock(Id, Nodes, Retries) of
 	true ->
@@ -975,16 +1004,14 @@ init_connect(Vsn, Node, InitMsg, HisTag, Resolvers, S) ->
     %% older versions of the protocol.
     put({prot_vsn, Node}, Vsn),
     put({sync_tag_his, Node}, HisTag),
-    case lists:keysearch(Node, 1, Resolvers) of
-        {value, {Node, MyTag, _Resolver}} ->
+    case lists:keyfind(Node, 1, Resolvers) of
+        {Node, MyTag, _Resolver} ->
             MyTag = get({sync_tag_my, Node}), % assertion
-            case InitMsg of
-                {locker, _NoLongerAPid, _HisKnown0, HisTheLocker} ->
-                    ?trace({init_connect,{histhelocker,HisTheLocker}}),
-                    HisKnown = [],
-                    S#state.the_locker ! {his_the_locker, HisTheLocker,
-                                          {Vsn,HisKnown}, S#state.known}
-            end;
+	    {locker, _NoLongerAPid, _HisKnown0, HisTheLocker} = InitMsg,
+	    ?trace({init_connect,{histhelocker,HisTheLocker}}),
+	    HisKnown = [],
+	    S#state.the_locker ! {his_the_locker, HisTheLocker,
+				  {Vsn,HisKnown}, S#state.known};
         false ->
             ?trace({init_connect,{pre_connect,Node},{histag,HisTag}}),
             put({pre_connect, Node}, {Vsn, InitMsg, HisTag})
@@ -1023,8 +1050,7 @@ exchange(Node, NameList, Resolvers) ->
             {resolvers, Resolvers}}),
     case erase({wait_lock, Node}) of
 	lock_is_set ->
-            {value, {Node, _Tag, Resolver}} = 
-                lists:keysearch(Node, 1, Resolvers),
+            {Node, _Tag, Resolver} = lists:keyfind(Node, 1, Resolvers),
             Resolver ! {resolve, NameList, Node};
 	undefined ->
 	    put({wait_lock, Node}, {exchange, NameList})
@@ -1212,8 +1238,8 @@ remove_lock(ResourceId, LockRequesterId, Pid, [{Pid,RPid,Ref}], Down, S0) ->
                   [{ResourceId, LockRequesterId}, Pid]);
 remove_lock(ResourceId, LockRequesterId, Pid, PidRefs0, _Down, S) ->
     ?trace({remove_lock_2, {id,ResourceId},{pid,Pid}}),
-    PidRefs = case lists:keysearch(Pid, 1, PidRefs0) of
-                  {value, {Pid, RPid, Ref}} ->
+    PidRefs = case lists:keyfind(Pid, 1, PidRefs0) of
+                  {Pid, RPid, Ref} ->
                       true = erlang:demonitor(Ref, [flush]),
                       kill_monitor_proc(RPid, Pid),
                       true = ets:delete_object(global_pid_ids, 
@@ -1348,8 +1374,8 @@ lock_still_set_old(Node, ReqId, PidRefs) when is_list(ReqId) ->
 
 extra_info(Tag, ExtraInfo) ->
     %% ExtraInfo used to be a list of nodes (vsn 2).
-    case catch lists:keysearch(Tag, 1, ExtraInfo) of
-        {value, {Tag, Info}} ->
+    case catch lists:keyfind(Tag, 1, ExtraInfo) of
+        {Tag, Info} ->
             Info;
         _ ->
             undefined
@@ -1839,8 +1865,8 @@ cancel_locker(Node, S, Tag, ToBeRunOnLockerF) ->
     Resolvers = S#state.resolvers,
     ?trace({cancel_locker, {node,Node},{tag,Tag},
             {sync_tag_my, get({sync_tag_my, Node})},{resolvers,Resolvers}}),
-    case lists:keysearch(Node, 1, Resolvers) of
-	{value, {_, Tag, Resolver}} ->
+    case lists:keyfind(Node, 1, Resolvers) of
+	{_, Tag, Resolver} ->
             ?trace({{resolver, Resolver}}),
             exit(Resolver, kill),
             S1 = trace_message(S, {kill_resolver, Node}, [Tag, Resolver]),
@@ -1850,7 +1876,7 @@ cancel_locker(Node, S, Tag, ToBeRunOnLockerF) ->
     end.
 
 reset_node_state(Node) ->
-    ?trace({{node,Node}, reset_node_state,get()}),
+    ?trace({{node,Node}, reset_node_state, get()}),
     erase({wait_lock, Node}),
     erase({save_ops, Node}),
     erase({pre_connect, Node}),
@@ -1913,6 +1939,7 @@ resolve_it(Method, Name, Pid1, Pid2) ->
 minmax(P1,P2) ->
     if node(P1) < node(P2) -> {P1, P2}; true -> {P2, P1} end.
 
+-spec random_exit_name(term(), pid(), pid()) -> pid().
 random_exit_name(Name, Pid, Pid2) ->
     {Min, Max} = minmax(Pid, Pid2),
     error_logger:info_msg("global: Name conflict terminating ~w\n",
@@ -1925,6 +1952,7 @@ random_notify_name(Name, Pid, Pid2) ->
     Max ! {global_name_conflict, Name},
     Min.
 
+-spec notify_all_name(term(), pid(), pid()) -> 'none'.
 notify_all_name(Name, Pid, Pid2) ->
     Pid ! {global_name_conflict, Name, Pid2},
     Pid2 ! {global_name_conflict, Name, Pid},
@@ -1954,14 +1982,13 @@ unlink_pid(Pid) ->
     end.
 
 pid_is_locking(Pid, PidRefs) ->
-    lists:keysearch(Pid, 1, PidRefs) =/= false.
+    lists:keyfind(Pid, 1, PidRefs) =/= false.
 
 delete_lock(Ref, S0) ->
     Locks = pid_locks(Ref),
     del_locks(Locks, Ref, S0#state.known),
     F = fun({ResourceId, LockRequesterId, PidRefs}, S) -> 
-                {value, {Pid, _RPid, Ref}} = 
-                    lists:keysearch(Ref, 3, PidRefs),
+                {Pid, _RPid, Ref} = lists:keyfind(Ref, 3, PidRefs),
                 remove_lock(ResourceId, LockRequesterId, Pid, PidRefs, true,S)
         end,
     lists:foldl(F, S0, Locks).
@@ -1974,11 +2001,11 @@ pid_locks(Ref) ->
              rpid_is_locking(Ref, PidRefs)].
 
 rpid_is_locking(Ref, PidRefs) ->
-    lists:keysearch(Ref, 3, PidRefs) =/= false.
+    lists:keyfind(Ref, 3, PidRefs) =/= false.
 
 %% Send {async_del_lock, ...} to old nodes (pre R11B-3).
 del_locks([{ResourceId, _LockReqId, PidRefs} | Tail], Ref, KnownNodes) ->
-    {value, {Pid, _RPid, Ref}} = lists:keysearch(Ref, 3, PidRefs),
+    {Pid, _RPid, Ref} = lists:keyfind(Ref, 3, PidRefs),
     case node(Pid) =:= node()  of
         true -> 
             gen_server:abcast(KnownNodes, global_name_server,
@@ -2090,8 +2117,8 @@ check_sync_nodes() ->
 	    %% global_groups parameter is defined, we are not allowed to sync
 	    %% with nodes not in our own global group.
 	    intersection(nodes(), NodesNG);
-	{error, Error} ->
-	    {error, Error}
+	{error, _} = Error ->
+	    Error
     end.
 
 check_sync_nodes(SyncNodes) ->
@@ -2108,8 +2135,8 @@ check_sync_nodes(SyncNodes) ->
 		_ -> {error, {"Trying to sync nodes not defined in "
                               "the own global group", IllegalSyncNodes}}
 	    end;
-	{error, Error} ->
-	    {error, Error}
+	{error, _} = Error ->
+	    Error
     end.
 
 get_own_nodes() ->

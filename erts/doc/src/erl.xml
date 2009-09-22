@@ -631,6 +631,10 @@
 	      <item><p>Same as
 	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, processor_spread)</seealso>.
 	      </p></item>
+	      <tag><c>s</c></tag>
+	      <item><p>Same as
+	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, spread)</seealso>.
+	      </p></item>
 	      <tag><c>nnts</c></tag>
 	      <item><p>Same as
 	      <seealso marker="erlang#system_flag_scheduler_bind_type">erlang:system_flag(scheduler_bind_type, no_node_thread_spread)</seealso>.
@@ -675,7 +679,7 @@
               <item><c><![CDATA[<CoreIds> = C<IdList> | c<IdList>]]></c></item>
               <item><c><![CDATA[<ProcessorIds> = P<IdList> | p<IdList>]]></c></item>
               <item><c><![CDATA[<NodeIds> = N<IdList> | n<IdList>]]></c></item>
-              <item><c><![CDATA[<IdDefs> =  <LogicalIds><ThreadIds><CoreIds><ProcessorIds><NodeIds>]]></c></item>
+              <item><c><![CDATA[<IdDefs> = <LogicalIds><ThreadIds><CoreIds><ProcessorIds><NodeIds> | <LogicalIds><ThreadIds><CoreIds><NodeIds><ProcessorIds>]]></c></item>
               <item><c><![CDATA[CpuTopology = <IdDefs>:<IdDefs> | <IdDefs>]]></c></item>
             </list>
             <p>Upper-case letters signify real identifiers and lower-case
@@ -689,8 +693,9 @@
 	       node identifiers may be left out. If left out, thread id
 	       defaults to <c>t0</c>, core id defaults to <c>c0</c>,
 	       processor id defaults to <c>p0</c>, and node id will
-	       be left undefined. Either all processors or no processors
-	       should have node identifiers defined.
+	       be left undefined. Either each logical processor must 
+	       belong to one and only one NUMA node, or no logical
+	       processors must belong to any NUMA nodes. 
 	     </p>
 	     <p>Both increasing and decreasing <c><![CDATA[<IdRange>]]></c>s
 	        are allowed.</p>
@@ -699,12 +704,19 @@
 		identifiers are also system wide. Core identifiers are
 		processor wide. Thread identifiers are core wide.</p>
 	     <p>The order of the identifier types imply the hierarchy of the
-	        CPU topology. Currently, the only valid order is: logical,
-		thread, core, processor, node. That is, thread is part of a
-		core which is part of a processor which is part of a NUMA
-		node. This will, however, change in the future, since multiple
-		NUMA nodes can be part of a processor, but this is not
-		supported yet.
+	        CPU topology. Valid orders are either
+		<c><![CDATA[<LogicalIds><ThreadIds><CoreIds><ProcessorIds><NodeIds>]]></c>,
+		or
+		<c><![CDATA[<LogicalIds><ThreadIds><CoreIds><NodeIds><ProcessorIds>]]></c>.
+		That is, thread is part of a core which is part of a processor
+		which is part of a NUMA node, or thread is part of a core which
+		is part of a NUMA node which is part of a processor. A cpu
+		topology can consist of both processor external, and processor
+		internal NUMA nodes as long as each logical processor belongs
+		to one and only one NUMA node. If <c><![CDATA[<ProcessorIds>]]></c>
+		is left out, its default position will be before
+		<c><![CDATA[<NodeIds>]]></c>. That is, the default is
+		processor external NUMA nodes.
 	     </p>
 	     <p>If a list of identifiers is used in an
 	        <c><![CDATA[<IdDefs>]]></c>:</p>
@@ -772,6 +784,13 @@
 	    <seealso marker="erlang#system_flag_cpu_topology">erlang:system_flag(cpu_topology, CpuTopology)</seealso>.</p>
           </item>
         </taglist>
+      </item>
+      <tag><c><![CDATA[+sss size]]></c></tag>
+      <item>
+        <marker id="sched_thread_stack_size"></marker>
+        <p>Suggested stack size, in kilowords, for scheduler threads.
+          Valid range is 4-8192 kilowords. The default stack size
+          is OS dependent.</p>
       </item>
       <tag><c><![CDATA[+T Level]]></c></tag>
       <item>

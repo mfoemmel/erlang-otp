@@ -516,7 +516,6 @@ find_dest(TargetName) ->
 	    {error, {not_found, snmpTargetAddrTable}}
     end.
 
-
 send_discovery_pdu({Dest, TargetName, {SecModel, SecName, SecLevel}, 
 		    Timeout, Retry}, 
 		   Record, ContextName, Vbs, NetIf) ->
@@ -532,8 +531,7 @@ send_discovery_pdu({Dest, TargetName, {SecModel, SecName, SecLevel},
 	    "~n   ContextName:         ~p",
 	    [Dest, TargetName, SecModel, SecName, SecLevel, 
 	     Timeout, Retry, Record, ContextName]),
-    case snmpa_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
-				 ContextName) of
+    case get_mib_view(SecModel, SecName, SecLevel, ContextName) of
 	{ok, MibView} ->
 	    case check_all_varbinds(Record, Vbs, MibView) of
 		true ->
@@ -631,8 +629,7 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 	    "~n   V2Res:               ~p"
 	    "~n   V3Res:               ~p",
 	    [DestAddr, TargetName, MpModel, Type, V1Res, V2Res, V3Res]),
-    case snmpa_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
-				 ContextName) of
+    case get_mib_view(SecModel, SecName, SecLevel, ContextName) of
 	{ok, MibView} ->
 	    case check_all_varbinds(TrapRec, Vbs, MibView) of
 		true when MpModel =:= ?MP_V1 ->
@@ -1041,6 +1038,13 @@ mk_flag(?'SnmpSecurityLevel_noAuthNoPriv') -> 0;
 mk_flag(?'SnmpSecurityLevel_authNoPriv') -> 1;
 mk_flag(?'SnmpSecurityLevel_authPriv') -> 3.
      
+
+%%--------------------------------------------------
+%% Mib view wrapper
+%%--------------------------------------------------
+get_mib_view(SecModel, SecName, SecLevel, ContextName) ->
+    snmpa_vacm:get_mib_view(notify, 
+			    SecModel, SecName, SecLevel, ContextName).
 
 
 user_err(F, A) ->

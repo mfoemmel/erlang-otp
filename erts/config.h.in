@@ -95,7 +95,7 @@
 /* Define if you have the pthread_mutexattr_settype function. */
 #undef ETHR_HAVE_PTHREAD_MUTEXATTR_SETTYPE
 
-/* Define if you have the pthread_rwlock_init function. */
+/* Define if you have a pthread_rwlock implementation that can be used. */
 #undef ETHR_HAVE_PTHREAD_RWLOCK_INIT
 
 /* Define if you have the pthread_spin_lock function. */
@@ -141,6 +141,14 @@
 /* Define if you have a putenv() that stores a copy of the key-value pair */
 #undef HAVE_COPYING_PUTENV
 
+/* Define to 1 if you have the declaration of `getrlimit', and to 0 if you
+   don't. */
+#undef HAVE_DECL_GETRLIMIT
+
+/* Define to 1 if you have the declaration of `RLIMIT_STACK', and to 0 if you
+   don't. */
+#undef HAVE_DECL_RLIMIT_STACK
+
 /* Define to 1 if you have the declaration of `SCTP_ABORT', and to 0 if you
    don't. */
 #undef HAVE_DECL_SCTP_ABORT
@@ -164,6 +172,10 @@
 /* Define to 1 if you have the declaration of `SCTP_UNORDERED', and to 0 if
    you don't. */
 #undef HAVE_DECL_SCTP_UNORDERED
+
+/* Define to 1 if you have the declaration of `setrlimit', and to 0 if you
+   don't. */
+#undef HAVE_DECL_SETRLIMIT
 
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
@@ -270,6 +282,9 @@
 
 /* Define to 1 if you have the `util' library (-lutil). */
 #undef HAVE_LIBUTIL
+
+/* Define to 1 if you have the `z' library (-lz). */
+#undef HAVE_LIBZ
 
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
@@ -431,6 +446,9 @@
 /* Define to 1 if you have the <sys/ndir.h> header file, and it defines `DIR'.
    */
 #undef HAVE_SYS_NDIR_H
+
+/* Define to 1 if you have the <sys/resource.h> header file */
+#undef HAVE_SYS_RESOURCE_H
 
 /* Define to 1 if you have the <sys/socketio.h> header file. */
 #undef HAVE_SYS_SOCKETIO_H

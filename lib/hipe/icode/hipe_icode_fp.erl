@@ -839,13 +839,8 @@ is_fop_cand(I) ->
       end
   end.
 
-any_is_float([Var|Left]) ->
-  case erl_types:t_is_float(get_type(Var)) of
-    true -> true;
-    false -> any_is_float(Left)
-  end;
-any_is_float([]) ->
-  false.
+any_is_float(Vars) ->
+  lists:any(fun (V) -> erl_types:t_is_float(get_type(V)) end, Vars).
 
 remove_duplicates(List) ->
   remove_duplicates(List, []).

@@ -64,16 +64,6 @@
     <list type="bulleted">
       <item>In the current implementation, every object insert and
        look-up operation results in a copy of the object.</item>
-      <item>This module provides very limited support for concurrent
-       updates. No locking is available, but the <c>safe_fixtable/2</c>
-       function can be used to guarantee that a sequence of
-      <c>first/1</c> and <c>next/2</c> calls will traverse the table
-       without errors and that each object in the table is visited
-       exactly once, even if another process (or the same process)
-       simultaneously deletes or inserts objects into the table.
-       Nothing more is guaranteed; in particular any object inserted
-       during a traversal <em>may</em> be visited in the traversal.
-      </item>
       <item><c>'$end_of_table'</c> should not be used as a key since
        this atom is used to mark the end of the table when using
       <c>first</c>/<c>next</c>.</item>
@@ -97,6 +87,31 @@
       table identifier is invalid.</p>
   </description>
 
+  <section><marker id="concurrency"></marker>
+    <title>Concurrency</title>
+      <p>This module provides some limited support for concurrent access.
+       All updates to single objects are guaranteed to be both <em>atomic</em>
+       and <em>isolated</em>. This means that an updating operation towards
+       a single object will either succeed or fail completely without any
+       effect at all (atomicy).
+       Nor can any intermediate results of the update be seen by other
+       processes (isolation). Some functions that update several objects
+       state that they even guarantee atomicy and isolation for the entire
+       operation. In database terms the isolation level can be seen as
+       "serializable", as if all isolated operations were carried out serially,
+       one after the other in a strict order.</p>
+      <p>No other support is available within ETS that would guarantee
+       consistency between objects. However, the <c>safe_fixtable/2</c>
+       function can be used to guarantee that a sequence of
+      <c>first/1</c> and <c>next/2</c> calls will traverse the table
+       without errors and that each existing object in the table is visited
+       exactly once, even if another process (or the same process)
+       simultaneously deletes or inserts objects into the table.
+       Nothing more is guaranteed; in particular objects that are inserted
+       or deleted during such a traversal may be visited once or not at all.
+       Functions that internally traverse over a table, like <c>select</c>
+       and <c>match</c>, will give the same guarantee as <c>safe_fixtable</c>.</p>
+  </section>
   <section>
     <marker id="match_spec"></marker>
     <title>Match Specifications</title>
@@ -158,8 +173,9 @@ tid()
         <v>Tab = tid() | atom()</v>
       </type>
       <desc>
-        <p>Delete all objects in the ETS table <c>Tab</c>. The deletion
-          is atomic.</p>
+        <p>Delete all objects in the ETS table <c>Tab</c>. 
+         The operation is guaranteed to be
+         <seealso marker="#concurrency">atomic and isolated</seealso>.</p>
       </desc>
     </func>
     <func>
@@ -172,7 +188,8 @@ tid()
       <desc>
         <p>Delete the exact object <c>Object</c> from the ETS table,
           leaving objects with the same key but other differences
-          (useful for type <c>bag</c>).</p>
+          (useful for type <c>bag</c>). In a <c>duplicate_bag</c>, all
+          instances of the object will be deleted.</p>
       </desc>
     </func>
     <func>
@@ -564,6 +581,9 @@ Error: fun containing local Erlang function calls
           <c>set</c>, one will be inserted, which one is
           not defined. The same thing holds for <c>ordered_set</c>, but
           will also happen if the keys <em>compare equal</em>.</p>
+        <p>The entire operation is guaranteed to be
+          <seealso marker="#concurrency">atomic and isolated</seealso>,
+          even when a list of objects is inserted.</p>
       </desc>
     </func>
     <func>
@@ -583,7 +603,8 @@ Error: fun containing local Erlang function calls
           list, the function checks <em>every</em> key prior to
           inserting anything. Nothing will be inserted if not
           <em>all</em> keys present in the list are absent from the
-          table.</p>
+          table. Like <c>insert/2</c>, the entire operation is guaranteed to be
+          <seealso marker="#concurrency">atomic and isolated</seealso>.</p>
       </desc>
     </func>
     <func>
@@ -1024,10 +1045,14 @@ ets:select(Table,MatchSpec),</code>
               mutates (writes to) the table will obtain exclusive access,
               blocking any concurrent access of the same table until finished.
               If set to <c>true</c>, the table is optimized towards concurrent
-              write access. Different parts of the same table can be mutated
-              (and read) by concurrent processes. This is achieve to some degree
+              write access. Different objects of the same table can be mutated
+              (and read) by concurrent processes. This is achieved to some degree
               at the expense of single access and concurrent reader performance.
-              Table typ <c>ordered_set</c> is not affected by this option in current
+              Note that this option does not change any guarantees about 
+              <seealso marker="#concurrency">atomicy and isolation</seealso>.
+              Functions that makes such promises over several objects (like
+              <c>insert/2</c>) will gain less (or nothing) from this option.</p>
+             <p>Table type <c>ordered_set</c> is not affected by this option in current
               implementation.</p>
           </item>
         </list>

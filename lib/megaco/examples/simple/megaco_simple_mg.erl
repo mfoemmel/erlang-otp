@@ -66,7 +66,7 @@
 start_batch() ->
     start_batch([]).
 
-start_batch(Args0) when list(Args0) ->
+start_batch(Args0) when is_list(Args0) ->
     {ok, LocalHost} = inet:gethostname(),
     Defs    = [{mgc_host, LocalHost}, {trace,false}, {debug, false}],
     Args    = parse_args(Args0, Defs),
@@ -82,9 +82,9 @@ start_batch(Args0) when list(Args0) ->
 	    
 parse_args([], Acc) ->
     Acc;
-parse_args([Arg|Args], Acc) when atom(Arg) ->
+parse_args([Arg|Args], Acc) when is_atom(Arg) ->
     case string:tokens(atom_to_list(Arg),"{},") of
-	["mgc_host", Host] when list(Host) ->
+	["mgc_host", Host] when is_list(Host) ->
 	    parse_args(Args, parse_args(mgc_host, Host, Acc));
 	["trace",Trace] ->
 	    parse_args(Args, parse_args(trace, list_to_atom(Trace), Acc));
@@ -135,10 +135,12 @@ start() ->
     start(LocalHost, false, false).
 
 %% Used when calling from the erlang shell:
-start(MgcHost, Trace, Debug) when atom(MgcHost), atom(Trace), atom(Debug) ->
+start(MgcHost, Trace, Debug) 
+  when is_atom(MgcHost) andalso is_atom(Trace) andalso is_atom(Debug) ->
     start(atom_to_list(MgcHost), Trace, Debug);
 
-start(MgcHost, Trace, Debug) when list(MgcHost), atom(Trace), atom(Debug) ->
+start(MgcHost, Trace, Debug) 
+  when is_list(MgcHost) andalso is_atom(Trace) andalso is_atom(Debug) ->
     put(debug, Debug),
     d("start -> entry with"
       "~n   MgcHost: ~s"

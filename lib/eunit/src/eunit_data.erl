@@ -13,7 +13,7 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% $Id: eunit_data.erl 339 2009-04-05 14:10:47Z rcarlsson $ 
+%% $Id$ 
 %%
 %% @author Richard Carlsson <richardc@it.uu.se>
 %% @copyright 2006 Richard Carlsson
@@ -146,10 +146,8 @@ iter_next(I = #iter{next = [T | Ts]}) ->
 
 iter_prev(#iter{prev = []}) ->
     none;
-iter_prev(#iter{prev = [T | Ts]} = I) ->
-    {T, I#iter{prev = Ts,
-	       next = [T | I#iter.next],
-		       pos = I#iter.pos - 1}}.
+iter_prev(#iter{prev = [T | Ts], next = Next, pos = Pos} = I) ->
+    {T, I#iter{prev = Ts, next = [T | Next], pos = Pos - 1}}.
 
 
 %% ---------------------------------------------------------------------
@@ -387,10 +385,10 @@ parse({S, T1} = T) when is_list(S) ->
     end;
 parse({S, T1}) when is_binary(S) ->
     group(#group{tests = T1, desc = S});
-parse(T) when is_tuple(T), size(T) > 2, is_list(element(1, T)) ->
+parse(T) when tuple_size(T) > 2, is_list(element(1, T)) ->
     [S | Es] = tuple_to_list(T),
     parse({S, list_to_tuple(Es)});
-parse(T) when is_tuple(T), size(T) > 2, is_binary(element(1, T)) ->
+parse(T) when tuple_size(T) > 2, is_binary(element(1, T)) ->
     [S | Es] = tuple_to_list(T),
     parse({S, list_to_tuple(Es)});
 parse(M) when is_atom(M) ->
@@ -629,8 +627,7 @@ is_module_filename(F) ->
 
 objfile_test(File) ->
     try
-	{value, {module, M}} =
-	lists:keysearch(module, 1, beam_lib:info(File)),
+	{module, M} = lists:keyfind(module, 1, beam_lib:info(File)),
 	{setup,
 	 fun () ->
 		 %% TODO: better error/stacktrace for this internal fun

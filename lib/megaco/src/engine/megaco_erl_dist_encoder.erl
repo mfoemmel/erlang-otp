@@ -133,10 +133,10 @@ encode_command_request([megaco_compressed|Config], Vsn, CmdReq)
   when is_tuple(CmdReq) ->
     {ok, erlang:term_to_binary(?MC_MOD:encode(CmdReq, Vsn), Config)};
 encode_command_request([{megaco_compressed, Mod}|Config], Vsn, CmdReq)
-  when tuple(CmdReq) ->
+  when is_tuple(CmdReq) ->
     {ok, erlang:term_to_binary(Mod:encode(CmdReq, Vsn), Config)};
 encode_command_request(Config, _Vsn, CmdReq)
-  when tuple(CmdReq) ->
+  when is_tuple(CmdReq) ->
     {ok, erlang:term_to_binary(CmdReq, Config)}.
  
 
@@ -162,7 +162,7 @@ encode_action_reply(Config, _Vsn, ActRep)
 %% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
 
-version_of(Config, Bin) when binary(Bin) ->
+version_of(Config, Bin) when is_binary(Bin) ->
     case decode_message(Config, 1, Bin) of
 	{ok, M} ->
 	    V = (M#'MegacoMessage'.mess)#'Message'.version,

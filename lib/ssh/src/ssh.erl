@@ -53,15 +53,19 @@ stop() ->
     application:stop(ssh).
 
 %%--------------------------------------------------------------------
-%% Function: connect(Host, Port, Options) -> ConnectionRef | {error, Reason}
+%% Function: connect(Host, Port, Options) -> 
+%%           connect(Host, Port, Options, Timeout -> ConnectionRef | {error, Reason}
 %% 
 %%	Host - string()
 %%	Port - integer()
 %%	Options - [{Option, Value}]
+%%      Timeout - infinity | integer().
 %%
 %% Description: Starts an ssh connection.
 %%--------------------------------------------------------------------
 connect(Host, Port, Options) ->
+    connect(Host, Port, Options, infinity).
+connect(Host, Port, Options, Timeout) ->
     {SocketOpts, Opts} = handle_options(Options),
     DisableIpv6 =  proplists:get_value(ip_v6_disabled, Opts, false),
     Inet = inetopt(DisableIpv6),
@@ -70,11 +74,13 @@ connect(Host, Port, Options) ->
 			      {channel_pid, self()},
 			      {socket_opts, [Inet | SocketOpts]}, 
 			      {ssh_opts, [{host, Host}| Opts]}]]) of 
-	{ok, ConnectionSup} ->
+ 	{ok, ConnectionSup} ->
 	    {ok, Manager} = 
 		ssh_connection_sup:connection_manager(ConnectionSup),
+	    MRef = erlang:monitor(process, Manager),
 	    receive 
 		{Manager, is_connected} ->
+		    do_demonitor(MRef, Manager),
 		    {ok, Manager};
 		%% When the connection fails 
 		%% ssh_connection_sup:connection_manager
@@ -82,14 +88,37 @@ connect(Host, Port, Options) ->
 		%% could allready have terminated, so we will not
 		%% match the Manager in this case
 		{_, not_connected, {error, Reason}} ->
+		    do_demonitor(MRef, Manager),
 		    {error, Reason};
 		{_, not_connected, Other} ->
-		    {error, Other}
+		    do_demonitor(MRef, Manager),
+		    {error, Other};
+		{'DOWN', MRef, _, Manager, Reason} when is_pid(Manager) ->
+		    receive %% Clear EXIT message from queue
+			{'EXIT', Manager, _What} -> 
+			    {error, Reason}
+		    after 0 ->
+			    {error, Reason}
+		    end
+	    after Timeout  ->
+		    do_demonitor(MRef, Manager),
+		    ssh_connection_manager:stop(Manager),
+		    {error, timeout}
 	    end
     catch 
 	exit:{noproc, _} ->
  	    {error, ssh_not_started}
     end.
+
+do_demonitor(MRef, Manager) ->
+    erlang:demonitor(MRef),
+    receive 
+	{'DOWN', MRef, _, Manager, _} -> 
+	    ok
+    after 0 -> 
+	    ok
+    end.
+
 
 %%--------------------------------------------------------------------
 %% Function: close(ConnectionRef) -> ok

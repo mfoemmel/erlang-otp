@@ -366,6 +366,7 @@ endif
 
 ENCODESRC = \
 	encode/encode_atom.c \
+	encode/encode_big.c \
 	encode/encode_bignum.c \
 	encode/encode_binary.c \
 	encode/encode_boolean.c \
@@ -715,11 +716,11 @@ $(ERL_CALL):
 else
 ifdef THR_DEFS
 $(ERL_CALL): $(ERLCALL) ../include/ei.h $(MT_EILIB)
-	$(PURIFY) $(CC) $(PROG_CFLAGS) $(THR_DEFS) -o $@ $(ERLCALL) \
+	$(PURIFY) $(CC) $(PROG_CFLAGS) $(THR_DEFS) $(LDFLAGS) -o $@ $(ERLCALL) \
 		-L$(OBJDIR) -lei $(THR_LIBS) $(LIBS)
 else
 $(ERL_CALL): $(ERLCALL) ../include/ei.h $(ST_EILIB)
-	$(PURIFY) $(CC) $(PROG_CFLAGS) -o $@ $(ERLCALL) \
+	$(PURIFY) $(CC) $(PROG_CFLAGS) $(LDFLAGS) -o $@ $(ERLCALL) \
 		-L$(OBJDIR) -lei $(LIBS)
 endif
 endif

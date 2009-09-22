@@ -22,68 +22,29 @@
 %% ----- U p g r a d e -------------------------------------------------------
 
  [
+  {"4.13.4",   
+   [
+    {restart_application, snmp}
+   ]
+  }, 
+  {"4.13.3",   
+   [
+    {restart_application, snmp}
+   ]
+  }, 
   {"4.13.2",   
    [
-    {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_config]},
-    {update, snmpa_supervisor, supervisor}, 
-    {load_module, snmpa, soft_purge, soft_purge, 
-     [snmpa_agent, snmpa_discovery_handler, snmpa_discovery_handler_default]},
-    {load_module, snmpa_trap, soft_purge, soft_purge, [snmpa_net_if]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_usm]},
-    {load_module, snmpa_usm, soft_purge, soft_purge, []},
-    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, 
-     [snmpa_trap, snmp_user_based_sm_mib, 
-      snmpa_discovery_handler, snmpa_discovery_handler_default]}, 
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, [snmpa_mpd]},
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_config]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {add_module, snmpa_discovery_handler},
-    {add_module, snmpa_discovery_handler_default}
+    {restart_application, snmp}
    ]
   }, 
   {"4.13.1",   
    [
-    {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_config]},
-    {update, snmpa_supervisor, supervisor}, 
-    {load_module, snmpa, soft_purge, soft_purge, 
-     [snmpa_agent, snmpa_discovery_handler, snmpa_discovery_handler_default]},
-    {load_module, snmpa_trap, soft_purge, soft_purge, [snmpa_net_if]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_usm]},
-    {load_module, snmpa_usm, soft_purge, soft_purge, []},
-    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, 
-     [snmpa_trap, snmp_user_based_sm_mib, 
-      snmpa_discovery_handler, snmpa_discovery_handler_default]}, 
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, [snmpa_mpd]}, 
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_config]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []}, 
-    {add_module, snmpa_discovery_handler},
-    {add_module, snmpa_discovery_handler_default}
+    {restart_application, snmp}
    ]
   }, 
   {"4.13",   
    [
-    {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_config]},
-    {update, snmpa_supervisor, supervisor}, 
-    {load_module, snmpa, soft_purge, soft_purge, 
-     [snmpa_agent, snmpa_discovery_handler, snmpa_discovery_handler_default]},
-    {load_module, snmpa_trap, soft_purge, soft_purge, [snmpa_net_if]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_usm]},
-    {load_module, snmpa_usm, soft_purge, soft_purge, []},
-    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, 
-     [snmpa_trap, snmp_user_based_sm_mib, 
-      snmpa_discovery_handler, snmpa_discovery_handler_default]}, 
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, [snmpa_mpd]}, 
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_config]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, [snmpm_user_old]},
-    {add_module, snmpm_user_old},
-    {add_module, snmpa_discovery_handler},
-    {add_module, snmpa_discovery_handler_default}
+    {restart_application, snmp}
    ]
   }
  ], 
@@ -91,63 +52,29 @@
 %% ------D o w n g r a d e ---------------------------------------------------
 
  [
+  {"4.13.4",   
+   [
+    {restart_application, snmp}
+   ]
+  }, 
+  {"4.13.3",   
+   [
+    {restart_application, snmp}
+   ]
+  }, 
   {"4.13.2",   
    [
-    {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_config]},
-    {update, snmpa_supervisor, supervisor}, 
-    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
-    {load_module, snmpa_trap, soft_purge, soft_purge, [snmpa_net_if]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_usm]},
-    {load_module, snmpa_usm, soft_purge, soft_purge, []},
-    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, 
-     [snmpa_trap, snmp_user_based_sm_mib]}, 
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_trap]}, 
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, [snmpa_mpd]},
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_config]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []},
-    {delete_module, snmpa_discovery_handler}, 
-    {delete_module, snmpa_discovery_handler_default}
+    {restart_application, snmp}
    ]
   }, 
   {"4.13.1",   
    [
-    {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_config]},
-    {update, snmpa_supervisor, supervisor}, 
-    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
-    {load_module, snmpa_trap, soft_purge, soft_purge, [snmpa_net_if]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_usm]},
-    {load_module, snmpa_usm, soft_purge, soft_purge, []},
-    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, 
-     [snmpa_trap, snmp_user_based_sm_mib]}, 
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, [snmpa_mpd]}, 
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_config]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []},
-    {delete_module, snmpa_discovery_handler}, 
-    {delete_module, snmpa_discovery_handler_default}
+    {restart_application, snmp}
    ]
   }, 
   {"4.13",   
    [
-    {load_module, snmp, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_config]},
-    {update, snmpa_supervisor, supervisor}, 
-    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
-    {load_module, snmpa_trap, soft_purge, soft_purge, [snmpa_net_if]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_usm]},
-    {load_module, snmpa_usm, soft_purge, soft_purge, []},
-    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, 
-     [snmpa_trap, snmp_user_based_sm_mib]}, 
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, [snmpa_mpd]}, 
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_config]}, 
-    {update, snmpm_config, soft, soft_purge, soft_purge, []},
-    {delete_module, snmpm_user_old},
-    {delete_module, snmpa_discovery_handler}, 
-    {delete_module, snmpa_discovery_handler_default}
+    {restart_application, snmp}
    ]
   }
  ]

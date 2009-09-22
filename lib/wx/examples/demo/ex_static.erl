@@ -18,7 +18,7 @@
 
 -module(ex_static).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -56,7 +56,7 @@ do_init(Config) ->
     LineSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				     [{label, "wxStaticLine"}]),
 
-    %% Create items
+    %% Create static texts
     Texts = [wxStaticText:new(Panel, 1, "This is a regular text (left aligned)", []),
 	     wxStaticText:new(Panel, 2, "This is a centered text",
 			      [{style, ?wxALIGN_CENTER bor ?wxST_NO_AUTORESIZE}]),
@@ -92,6 +92,10 @@ do_init(Config) ->
     {Panel, #state{parent=Panel, config=Config}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Async Events are handled in handle_event as in handle_info
+handle_event(#wx{}, State = #state{}) ->
+    {noreply, State}.
+
 %% Callbacks handled as normal gen_server callbacks
 handle_info(Msg, State) ->
     demo:format(State#state.config, "Got Info ~p\n", [Msg]),
@@ -100,11 +104,6 @@ handle_info(Msg, State) ->
 handle_call(Msg, _From, State) ->
     demo:format(State#state.config, "Got Call ~p\n", [Msg]),
     {reply,{error, nyi}, State}.
-
-%% Async Events are handled in handle_event as in handle_info
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
-    {noreply, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

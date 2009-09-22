@@ -442,9 +442,16 @@ check_source(S, CheckOnly) ->
 
 pre_def_macros(File) ->
     {MegaSecs, Secs, MicroSecs} = erlang:now(),
+    Replace = fun(Char) -> 
+		      case Char of
+			  $\. -> $\_;
+                          _ -> Char
+                      end
+              end, 
+    CleanBase = lists:map(Replace, filename:basename(File)),
     ModuleStr =
+	CleanBase ++ "__" ++
         "escript__" ++
-        filename:basename(File) ++ "__" ++              
         integer_to_list(MegaSecs) ++ "__" ++
         integer_to_list(Secs) ++ "__" ++
         integer_to_list(MicroSecs),

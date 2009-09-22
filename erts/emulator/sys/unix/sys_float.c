@@ -57,6 +57,7 @@ static void erts_init_fp_exception(void)
 void erts_thread_init_fp_exception(void)
 {
     unsigned long *fpe = erts_alloc(ERTS_ALC_T_FP_EXCEPTION, sizeof(*fpe));
+    *fpe = 0L;
     erts_tsd_set(fpe_key, fpe);
 }
 
@@ -792,6 +793,8 @@ sys_chars_to_double(char* buf, double* fp)
 int
 matherr(struct exception *exc)
 {
+#if !defined(NO_FPE_SIGNALS)
     set_current_fp_exception((unsigned long)__builtin_return_address(0));
+#endif
     return 1;
 }

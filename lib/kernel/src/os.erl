@@ -70,7 +70,7 @@ find_executable1(_Name, [], _Extensions) ->
     false.
 
 verify_executable(Name0, [Ext|Rest]) ->
-    Name1 = Name0++Ext,
+    Name1 = Name0 ++ Ext,
     case os:type() of
 	vxworks ->
 	    %% We consider all existing VxWorks files to be executable
@@ -118,6 +118,7 @@ reverse_element([$"|T]) ->	%"
 reverse_element(List) ->
     lists:reverse(List).
 
+-spec extensions() -> [string()].
 extensions() ->
     case type() of
 	{win32, _} -> [".exe",".com",".cmd",".bat"];
@@ -170,10 +171,10 @@ unix_cmd(Cmd) ->
 -define(SHELL, "/bin/sh -s unix:cmd 2>&1").
 
 %%
-%%  start_port() -> Port
-%%
 %% Serializing open_port through a process to avoid smp lock contention
 %% when many concurrent os:cmd() want to do vfork (OTP-7890).
+%%
+-spec start_port() -> port().
 start_port() ->
     {Ref,Client} = {make_ref(),self()},
     try (os_cmd_port_creator ! {Ref,Client})
@@ -184,7 +185,7 @@ start_port() ->
 	{Ref,Port} when is_port(Port) -> Port;
 	{Ref,Error} -> exit(Error)
     end.
-	
+
 start_port_srv(Request) ->
     StayAlive = try register(os_cmd_port_creator, self())
 		catch
@@ -208,8 +209,6 @@ start_port_srv_loop({Ref,Client}, StayAlive) ->
 	false -> exiting
     end.
 
-
-
 %%
 %%  unix_get_data(Port) -> Result
 %%
@@ -221,9 +220,9 @@ unix_get_data(Port, Sofar) ->
 	{Port,{data, Bytes}} ->
 	    case eot(Bytes) of
 		{done, Last} ->
-		    lists:flatten([Sofar| Last]);
+		    lists:flatten([Sofar|Last]);
 		more  ->
-		    unix_get_data(Port, [Sofar| Bytes])
+		    unix_get_data(Port, [Sofar|Bytes])
 	    end;
 	{'EXIT', Port, _} ->
 	    lists:flatten(Sofar)

@@ -92,7 +92,7 @@ verbose(Format, Args, File, Line) ->
 	    log(Format, Args, File, Line);
 	undefined ->
 	    case init:get_argument(Arg) of
-		{ok, List} when list(List) ->
+		{ok, List} when is_list(List) ->
 		    case lists:last(List) of
 			["true"] ->
 			    put(Arg, true),

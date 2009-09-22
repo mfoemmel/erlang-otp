@@ -107,6 +107,10 @@
 
 %%% Function definitions.
 
--record(defun, {mfa :: mfa(), formals, code, data,
-	        isclosure :: bool(), isleaf :: bool(),
+-include("../misc/hipe_consttab.hrl").
+
+-record(defun, {mfa :: mfa(), formals, code,
+	       	data	  :: hipe_consttab(),
+	        isclosure :: boolean(),
+		isleaf    :: boolean(),
 		var_range, label_range}).

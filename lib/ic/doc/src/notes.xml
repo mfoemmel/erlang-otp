@@ -30,6 +30,20 @@
   </header>
 
    <section>
+    <title>IC 4.2.22</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>The 64-bit version of libic was not compiled with the -fPIC flag.</p>
+          <p>Own id: OTP-8088</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+   <section>
     <title>IC 4.2.21</title>
 
     <section>

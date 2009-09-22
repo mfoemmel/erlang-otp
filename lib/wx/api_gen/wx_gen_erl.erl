@@ -364,20 +364,17 @@ gen_inherited_ms([], _, _Skip, Done,Exp) -> {Done,Exp}.
 taylormade_func(Class, #method{name=Name, id=Id}) ->
     {ok, Bin} = file:read_file(filename:join([wx_extra, Class ++".erl"])),
     Str0 = binary_to_list(Bin),
-    {match, Start, Len} = regexp:first_match(Str0, "<<" ++ Name),
-    {match, End, _} = regexp:first_match(Str0, Name ++ ">>"),
-    Str1 = string:substr(Str0, Start+Len, End-Start-Len),
-    %% {ok, Str, _} = regexp:sub(Str1, "FUNCID", integer_to_list(Id)),
+    {match, [Str1]} = re:run(Str0, "<<"++Name++"(.*)"++Name++">>",
+			     [dotall, {capture, all_but_first, list}]),
+    
     w(Str1, ["?" ++ get_unique_name(Id)]),
     ok.
 
 taylormade_export(Class, #method{name=Name}) ->
     {ok, Bin} = file:read_file(filename:join([wx_extra, Class ++".erl"])),
     Str0 = binary_to_list(Bin),
-    {match, Start, Len} = regexp:first_match(Str0, "<<EXPORT:" ++ Name ),
-    {match, End, _} = regexp:first_match(Str0, Name ++ ":EXPORT>>"),
-    Str1 = string:substr(Str0, Start+Len, End-Start-Len),
-    %% {ok, Str, _} = regexp:sub(Str1, "FUNCID", integer_to_list(Id)),
+    {match, [Str1]} = re:run(Str0, "<<EXPORT:"++Name++"(.*)"++Name++":EXPORT>>",
+			     [dotall, {capture, all_but_first, list}]),
     Str1.
 
 %%%%%%%%%%%%%%%
@@ -433,15 +430,15 @@ arg_type_test(#param{name=Name0,type=#type{base=binary}},EOS,Acc) ->
     Name = erl_arg_name(Name0),
     w("  wxe_util:send_bin(~s),~s", [Name,EOS]),
     Acc;
-arg_type_test(#param{name=Name0,type=#type{name=Type,single=Single}},EOS,Acc) -> 
+arg_type_test(#param{name=Name0,type=#type{name=Type,base=Base,single=Single}},EOS,Acc) -> 
     if 
-	Type =:= "wxString" orelse (Type =:= "wxChar" andalso Single =/= true) ->
-	    Name = erl_arg_name(Name0),
-	    w("  ~s_UC = unicode:characters_to_binary([~s,0]),~s", [Name,Name,EOS]);
 	Type =:= "wxArtClient", Single =:= true ->
 	    Name = erl_arg_name(Name0),
 	    w("  ~s_UC = unicode:characters_to_binary([~s, $_, $C,0]),~s",
 	      [Name,Name, EOS]);
+	Base =:= string orelse (Type =:= "wxChar" andalso Single =/= true) ->
+	    Name = erl_arg_name(Name0),
+	    w("  ~s_UC = unicode:characters_to_binary([~s,0]),~s", [Name,Name,EOS]);
 	Type =:= "wxArrayString" ->
 	    Name = erl_arg_name(Name0),
 	    w("  ~s_UCA = [unicode:characters_to_binary([~sTemp,0]) || ~s", 
@@ -533,7 +530,7 @@ func_arg_name(#param{name=Name}) ->
 func_arg(#param{def=Def}) when Def =/= none -> skip;
 func_arg(#param{in=false}) -> skip;
 func_arg(#param{where=c}) -> skip;
-func_arg(#param{name=Name,type=#type{name="wxString"}}) -> 
+func_arg(#param{name=Name,type=#type{base=string}}) -> 
     erl_arg_name(Name);
 func_arg(#param{name=Name,type=#type{name="wxArrayString"}}) -> 
     erl_arg_name(Name);
@@ -567,7 +564,7 @@ guard_test(#param{type=#type{base={class,_},single=true}}) -> skip;
 guard_test(#param{def=Def}) when Def =/= none -> skip;
 guard_test(#param{where=c})  -> skip;
 guard_test(#param{in=In}) when In == false -> skip;
-guard_test(#param{name=N, type=#type{name="wxString"}}) ->
+guard_test(#param{name=N, type=#type{base=string}}) ->
     "is_list(" ++ erl_arg_name(N) ++")";
 guard_test(#param{name=N, type=#type{name="wxArtClient"}}) ->
     "is_list(" ++ erl_arg_name(N) ++")";
@@ -765,7 +762,7 @@ doc_arg_type2(T=#type{single=Single}) when Single =:= array; Single =:= list ->
 doc_arg_type2(T) -> 
     doc_arg_type3(T).
 
-doc_arg_type3(#type{name="wxString"}) -> "string()";
+doc_arg_type3(#type{base=string}) -> "string()";
 doc_arg_type3(#type{name="wxChar", single=S}) when S =/= true -> "string()";
 doc_arg_type3(#type{name="wxArrayString"}) -> "[string()]";
 doc_arg_type3(#type{name="wxDateTime"}) ->    "wx:datetime()";
@@ -942,8 +939,7 @@ marshal_arg(#type{name="wxChar", single=Single}, Name, Align0)
 	align(32,Align0, "(byte_size("++Name++"_UC)):32/?UI,(" ++ Name ++ "_UC)/binary"),
     MsgSize = "(" ++ integer_to_list(Align*4)++"+byte_size("++Name++"_UC))",
     {Str++", 0:(((8- (" ++ MsgSize ++" band 16#7)) band 16#7))/unit:8",0};
-marshal_arg(#type{base=[int], name=Type}, Name, Align0)  
-  when Type =:= "wxString"; Type =:= "wxArtClient" ->
+marshal_arg(#type{base=string}, Name, Align0) ->
     {Str,Align} = 
 	align(32,Align0, "(byte_size("++Name++"_UC)):32/?UI,(" ++ Name ++ "_UC)/binary"),
     MsgSize = "(" ++ integer_to_list(Align*4)++"+byte_size("++Name++"_UC))",
@@ -1027,6 +1023,9 @@ gen_enums_ints() ->
     w("-record(wxMouseState, {x, y,  %% integer() ~n"
       "          leftDown, middleDown, rightDown, %% bool() ~n"
       "          controlDown, shiftDown, altDown, metaDown, cmdDown %% bool()~n"
+      "        }).~n", []),
+    w("-record(wxHtmlLinkInfo, { ~n"
+      "          href, target %% string() ~n"
       "        }).~n", []),
     w("~n%% Hardcoded Defines ~n", []),
     Enums = [E || E = {{enum,_},#enum{as_atom=false}} <- get()],
@@ -1181,10 +1180,12 @@ event_type_name(EvN) ->
     lowercase_all(Ev).
 
 event_attr_name("m_" ++ Attr) ->
+    lowercase(Attr);
+event_attr_name(Attr) ->
     lowercase(Attr).
 
 
-gen_funcnames() ->    
+gen_funcnames() -> 
     open_write("../src/gen/wxe_debug.hrl"),
     erl_copyright(),
     w("%% This file is generated DO NOT EDIT~n~n", []),

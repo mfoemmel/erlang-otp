@@ -226,7 +226,7 @@ is_plt_mode(succ_typings) -> false.
 
 -spec build_warnings([atom()], [dial_warning()]) -> [dial_warning()].
 
-build_warnings([Opt|Left], Warnings) ->
+build_warnings([Opt|Opts], Warnings) ->
   NewWarnings =
     case Opt of
       no_return ->
@@ -250,8 +250,8 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:add_element(?WARN_UNMATCHED_RETURN, Warnings);
       error_handling ->
 	ordsets:add_element(?WARN_RETURN_ONLY_EXIT, Warnings);
-      possible_races ->
-	ordsets:add_element(?WARN_POSSIBLE_RACE, Warnings);
+      race_conditions ->
+	ordsets:add_element(?WARN_RACE_CONDITION, Warnings);
       specdiffs ->
 	S = ordsets:from_list([?WARN_CONTRACT_SUBTYPE, 
 			       ?WARN_CONTRACT_SUPERTYPE,
@@ -264,6 +264,6 @@ build_warnings([Opt|Left], Warnings) ->
       OtherAtom ->
 	bad_option("Unknown dialyzer warning option", OtherAtom)
     end,
-  build_warnings(Left, NewWarnings);
+  build_warnings(Opts, NewWarnings);
 build_warnings([], Warnings) ->
   Warnings.

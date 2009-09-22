@@ -23,6 +23,7 @@ include ../vsn.mk
 ENABLE_ALLOC_TYPE_VARS = @ENABLE_ALLOC_TYPE_VARS@
 HIPE_ENABLED=@HIPE_ENABLED@
 LIBS = @LIBS@
+Z_LIB=@Z_LIB@
 NO_INLINE_FUNCTIONS=false
 OPCODE_TABLES = $(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
 
@@ -256,24 +257,32 @@ CS_CFLAGS = $(subst -O2, $(GEN_OPT_FLGS) $(UNROLL_FLG), $(CS_CFLAGS_))
 else
 CS_CFLAGS = $(CS_CFLAGS_)
 endif
+CS_LDFLAGS = $(LDFLAGS)
 CS_LIBS = -L../lib/internal/$(TARGET) -lerts_internal @ERTS_INTERNAL_X_LIBS@
 
 LIBS	+= @TERMCAP_LIB@ -L../lib/internal/$(TARGET) @ERTS_INTERNAL_X_LIBS@
 
+ifdef Z_LIB
+# Use shared zlib library
+LIBS += $(Z_LIB)
+else
 ifeq ($(TARGET),win32)
-LIBS    += \
-	-L$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE) -lz \
-	-L$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE) -lepcre
-DEPLIBS = \
-	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/z.lib \
-	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/epcre.lib
+LIBS    += -L$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE) -lz
+DEPLIBS = $(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/z.lib
 else
 # Build on darwin fails if -lz is used
-LIBS    += \
-	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a \
-	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a
-DEPLIBS = \
-	$(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a \
+LIBS += $(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a
+DEPLIBS = $(ERL_TOP)/erts/emulator/zlib/obj/$(TARGET)/$(TYPE)/libz.a
+endif
+
+endif
+	
+ifeq ($(TARGET),win32)
+LIBS    += -L$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE) -lepcre
+DEPLIBS += $(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/epcre.lib
+else
+LIBS    += $(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a
+DEPLIBS += \
 	$(ERL_TOP)/erts/emulator/pcre/obj/$(TARGET)/$(TYPE)/libepcre.a \
 	$(ERL_TOP)/erts/lib/internal/$(TARGET)/liberts_internal.a 
 # rem liberts_internal.a
@@ -311,6 +320,8 @@ endif
 LIBS += $(THR_LIBS) -l$(ERTS_INTERNAL_LIB)$(TYPEMARKER)
 
 LIBS += @LIBRT@
+
+LIBS += @LIBCARBON@
 
 TTF_DIR=$(TARGET)/$(TYPE)/$(FLAVOR)
 CREATE_DIRS += $(TTF_DIR)
@@ -369,8 +380,13 @@ endif
 endif
 endif
 
+ifdef Z_LIB
+zlib:
+	@echo 'Skip zlib directory, use shared library'
+else
 zlib:
 	@set -e ; cd zlib && $(MAKE) TYPE=$(TYPE) $(TYPE)
+endif
 
 pcre:
 	@set -e ; cd pcre && $(MAKE) TYPE=$(TYPE) $(TYPE)
@@ -554,7 +570,11 @@ endif
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-COMMON_INCLUDES = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET) -Izlib -Ipcre -Ihipe -I../include/internal -I../include/internal/$(TARGET)
+COMMON_INCLUDES = -Ibeam -Isys/$(ERLANG_OSTYPE) -Isys/common -I$(TARGET)
+ifndef Z_LIB
+COMMON_INCLUDES += -Izlib 
+endif
+COMMON_INCLUDES += -Ipcre -Ihipe -I../include/internal -I../include/internal/$(TARGET)
 
 INCLUDES  =  -I$(TTF_DIR) $(COMMON_INCLUDES)
 
@@ -654,8 +674,8 @@ endif
 CS_SRC = sys/$(ERLANG_OSTYPE)/erl_child_setup.c
 
 $(BINDIR)/$(CS_EXECUTABLE): $(CS_SRC)
-	$(CS_PURIFY) $(CC) -o $(BINDIR)/$(CS_EXECUTABLE) \
-	$(CS_CFLAGS) $(COMMON_INCLUDES) $(CS_SRC) $(CS_LIBS)
+	$(CS_PURIFY) $(CC) $(CS_LDFLAGS) -o $(BINDIR)/$(CS_EXECUTABLE) \
+               $(CS_CFLAGS) $(COMMON_INCLUDES) $(CS_SRC) $(CS_LIBS)
 
 $(OBJDIR)/%.elib.o: beam/%.c
 	$(CC) $(ELIB_FLAGS) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
@@ -754,7 +774,8 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_obsolete.o	$(OBJDIR)/erl_bif_timer.o \
 	$(OBJDIR)/erl_drv_thread.o      $(OBJDIR)/erl_bif_chksum.o \
 	$(OBJDIR)/erl_bif_re.o		$(OBJDIR)/erl_unicode.o \
-	$(OBJDIR)/packet_parser.o	$(OBJDIR)/safe_hash.o
+	$(OBJDIR)/packet_parser.o	$(OBJDIR)/safe_hash.o \
+	$(OBJDIR)/erl_zlib.o
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \

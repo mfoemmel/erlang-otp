@@ -60,6 +60,7 @@
       description of the available configuration options, also called
       properties.</p>
 
+    <marker id="file_prop"></marker>
     <p><em>File properties</em></p>
 
     <p>When the web server is started
@@ -110,18 +111,21 @@
     <note>
       <p>The properties proplist_file and file are mutually exclusive.</p>
     </note>
+
+    <marker id="mand_prop"></marker>
     <p><em>Mandatory properties</em></p>
     <taglist>
       <tag>{port, integer()} </tag>
       <item> 
 	The port that the HTTP server shall listen on.
-       If zero is specified as port, an arbitrary available port
-       will be picked and you can  use the httpd:info/2 function to find
-       out which port was picked. </item>
+        If zero is specified as port, an arbitrary available port
+        will be picked and you can use the httpd:info/2 function to find
+        out which port was picked. </item>
       <tag>{server_name, string()} </tag>
       <item>
 	The name of your server, normally a fully qualified domain
-       name.</item>
+        name.
+      </item>
       <tag>{server_root, path()} </tag>
       <item> 
 	Defines the servers home directory where log files etc can
@@ -133,19 +137,30 @@
 	are available on the HTTP server.</item>
     </taglist>
 
+    <marker id="comm_prop"></marker>
     <p><em>Communication properties</em> </p>
     <taglist>
       <tag>{bind_address, ip_address() | hostname() | any} </tag>
       <item>
-	Defaults to any. Note any is denoted *
-	in the apache like configuration file.</item>
+	Defaults to <c>any</c>. Note that <c>any</c> is denoted <em>*</em> 
+	in the apache like configuration file.
+      </item>
 
       <tag>{socket_type, ip_comm | ssl}</tag>
       <item>
-	Defaults to <c>ip_comm</c></item>
+	<p>Defaults to <c>ip_comm</c>. </p> 
+      </item>
+
+      <tag>{ipfamily, inet | inet6 | inet6fb4}</tag>
+      <item>
+	<p>Defaults to <c>inet6fb4. </c> </p>
+        <p>Note that this option is only used when the option 
+          <c>socket_type</c> has the value <c>ip_comm</c>. </p>
+      </item>
+
     </taglist>
 
-    <p><em>Erlang Web server API moudles</em> </p>
+    <p><em>Erlang Web server API modules</em> </p>
     <taglist>
       <tag>{modules, [atom()]} </tag>
       <item>
@@ -160,6 +175,7 @@
       </item>
   </taglist>
     
+    <marker id="limit_prop"></marker>
     <p><em>Limit properties</em> </p>
     <taglist>  
       <tag>{disable_chunked_transfer_encoding_send, boolean()}</tag>
@@ -209,6 +225,7 @@
 	request. Defaults to no limit.</item>   
     </taglist>
     
+    <marker id="admin_prop"></marker>
     <p><em>Administrative properties</em></p>
     <taglist> 
       <tag>{mime_types, [{MimeType, Extension}] | path()}</tag>
@@ -303,6 +320,7 @@ bytes
       
     </taglist>
     
+    <marker id="ssl_prop"></marker>
     <p><em>ssl properties</em></p>
     <taglist>
       <tag>{ssl_ca_certificate_file, path()}</tag>
@@ -353,6 +371,7 @@ bytes
 
     </taglist>
     
+    <marker id="alias_prop"></marker>
     <p><em>URL aliasing properties - requires mod_alias</em></p>
     <taglist>
       <tag>{alias, {Alias, RealName}}</tag>
@@ -386,6 +405,7 @@ bytes
       </item> 
     </taglist>
 
+    <marker id="cgi_prop"></marker>
     <p><em>CGI  properties - requires mod_cgi</em></p>
     <taglist> 
       <tag>{script_alias, {Alias, RealName}}</tag>
@@ -445,6 +465,7 @@ bytes
       </item>
     </taglist>
     
+    <marker id="esi_prop"></marker>
     <p><em>ESI properties - requires mod_esi</em></p>
     <taglist>
       <tag>{erl_script_alias, {URLPath, [AllowedModule]}}</tag>
@@ -490,6 +511,7 @@ bytes
       for backwards compatibility. The eval scheme is deprecated.</item>
     </taglist>
 
+    <marker id="log_prop"></marker>
     <p><em>Log properties - requires mod_log</em></p>
     <taglist>
       <tag>{error_log, path()}</tag>
@@ -516,6 +538,7 @@ bytes
       </item>
     </taglist>
 
+    <marker id="dlog_prop"></marker>
     <p><em>Disk Log properties - requires mod_disk_log</em></p>
     <taglist>
       <tag>{disk_log_format, internal | external}</tag>
@@ -580,11 +603,13 @@ bytes
 	used before the first file is truncated and reused.</item>
     </taglist>
 
+    <marker id="auth_prop"></marker>
     <p><em>Authentication properties - requires mod_auth</em></p>
 
     <p><em>{directory, {path(), [{property(), term()}]}}</em></p>
 
-    <p> Here follows the valid properties for directories </p>
+    <marker id="dir_prop"></marker>
+    <p>Here follows the valid properties for directories </p>
     
     <taglist>
       <tag>{allow_from,  all | [RegxpHostString]}</tag>
@@ -696,7 +721,8 @@ bytes
       
     </taglist>
 
-    <p><em>Htacess authenication properties - requires mod_htacess</em></p>
+    <marker id="htaccess_prop"></marker>
+    <p><em>Htaccess authenication properties - requires mod_htacess</em></p>
     <taglist>
       <tag>{access_files, [path()]}</tag>
 
@@ -709,10 +735,12 @@ bytes
       </item>
     </taglist>
 
-    <p><em>Authentication properties - requires mod_security </em></p>
+    <marker id="sec_prop"></marker>
+    <p><em>Security properties - requires mod_security </em></p>
  
     <p><em>{security_directory, {path(), [{property(), term()}]}</em></p>
        
+    <marker id="sdir_prop"></marker>
     <p> Here follows the valid properties for security directories</p>
     <taglist>
       <tag>{security_data_file, path()}</tag>

@@ -212,10 +212,10 @@ safe_tokenize_whole_string(String) ->
 
 %% Returns: {ReplyToken, NewState}
 safe_tokenise(eof) -> {{eof, get(line)}, eof};
-safe_tokenise(Chars) when list(Chars) ->
+safe_tokenise(Chars) when is_list(Chars) ->
     case catch tokenise(Chars) of
 	{error, ErrorInfo} -> {{error, ErrorInfo, get(line)}, {[], eof}};
-	{Token, RestChars} when tuple(Token) ->
+	{Token, RestChars} when is_tuple(Token) ->
 	    {{ok, [Token], get(line)}, RestChars}
     end.
 
@@ -224,7 +224,7 @@ get_all_tokens(eof,Toks) ->
 get_all_tokens(Str,Toks) ->
     case catch tokenise(Str) of
 	{error, ErrorInfo} -> {error, ErrorInfo};
-	{Token, RestChars} when tuple(Token) -> 
+	{Token, RestChars} when is_tuple(Token) -> 
 	    get_all_tokens(RestChars, [Token|Toks])
     end.
 
@@ -233,10 +233,10 @@ get_all_tokens(Str,Toks) ->
 %%--------------------------------------------------
 %% Returns: {Token, Rest}
 %%--------------------------------------------------
-tokenise([H|T]) when $a =< H , H =< $z ->
+tokenise([H|T]) when ($a =< H) andalso (H =< $z) ->
     get_name(atom, [H], T);
 
-tokenise([H|T]) when $A =< H , H =< $Z ->
+tokenise([H|T]) when ($A =< H) andalso (H =< $Z) ->
     get_name(variable, [H], T);
 
 tokenise([$:,$:,$=|T]) ->
@@ -245,11 +245,11 @@ tokenise([$:,$:,$=|T]) ->
 tokenise([$-,$-|T]) ->
     tokenise(skip_comment(T));
 
-tokenise([$-,H|T]) when $0 =< H , H =< $9 ->
+tokenise([$-,H|T]) when ($0 =< H ) andalso (H =< $9) ->
     {Val, Rest} = get_integer(T, [H]),
     {{integer, get(line), -1 * Val}, Rest};
 
-tokenise([H|T]) when $0 =< H , H =< $9 ->
+tokenise([H|T]) when ($0 =< H) andalso (H =< $9) ->
     {Val, Rest} = get_integer(T, [H]),
     {{integer, get(line), Val}, Rest};
 
@@ -313,16 +313,16 @@ makeNameRespons(Category, Name, RestChars) ->
 isInName($-) -> true;
 isInName(Ch) -> isalnum(Ch).
 	    
-isalnum(H) when $A =< H , H =< $Z ->
+isalnum(H) when ($A =< H) andalso (H =< $Z) ->
     true;
-isalnum(H) when $a =< H , H =< $z ->
+isalnum(H) when ($a =< H) andalso (H =< $z) ->
     true;
-isalnum(H) when $0 =< H , H =< $9 ->
+isalnum(H) when ($0 =< H) andalso (H =< $9) ->
     true;
 isalnum(_) ->
     false.
 
-isdigit(H) when $0 =< H , H =< $9 ->
+isdigit(H) when ($0 =< H) andalso (H =< $9) ->
     true;
 isdigit(_) ->
     false.

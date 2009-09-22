@@ -24,7 +24,7 @@
 %%%-----------------------------------------------------------------
 %%% Implements different error mechanisms.
 %%%-----------------------------------------------------------------
--export([stage1_finish/2]).
+-export([stage1_finish/3]).
 
 
 %%-----------------------------------------------------------------
@@ -33,6 +33,6 @@
 %% 
 %% 
 %%-----------------------------------------------------------------
-stage1_finish(_TargetName, _ManagerEngineID) ->
+stage1_finish(_TargetName, _ManagerEngineID, _ExtraInfo) ->
     ignore.
 

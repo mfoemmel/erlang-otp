@@ -141,44 +141,44 @@ encode_transaction(EC, 3, Trans) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_requests([{version3,_}|EC], 1, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
-encode_action_requests(EC, 1, ActReqs) when list(ActReqs) ->
+encode_action_requests(EC, 1, ActReqs) when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v1,
     TransMod = megaco_binary_transformer_v1,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests([{version3,_}|EC], 2, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
-encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
+encode_action_requests(EC, 2, ActReqs) when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v2,
     TransMod = megaco_binary_transformer_v2,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests([{version3,v3}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v3,
     TransMod = megaco_binary_transformer_v3,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests([{version3,prev3c}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3c,
     TransMod = megaco_binary_transformer_prev3c,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests([{version3,prev3b}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3b,
     TransMod = megaco_binary_transformer_prev3b,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
 encode_action_requests([{version3,prev3a}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_prev3a,
     TransMod = megaco_binary_transformer_prev3a,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list);
-encode_action_requests(EC, 3, ActReqs) when list(ActReqs) ->
+encode_action_requests(EC, 3, ActReqs) when is_list(ActReqs) ->
     AsnMod   = megaco_ber_media_gateway_control_v3,
     TransMod = megaco_binary_transformer_v3,
     ?BIN_LIB:encode_action_requests(EC, ActReqs, AsnMod, TransMod, io_list).

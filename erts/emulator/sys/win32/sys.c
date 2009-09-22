@@ -72,7 +72,8 @@ static FUNCTION(BOOL, CreateChildProcess, (char *, HANDLE, HANDLE,
 					   char **, int *));
 static int create_pipe(LPHANDLE, LPHANDLE, BOOL);
 static int ApplicationType(const char* originalName, char fullPath[MAX_PATH],
-			   BOOL search_in_path, int *error_return);
+			   BOOL search_in_path, BOOL handle_quotes,
+			   int *error_return);
 
 HANDLE erts_service_event;
 
@@ -1332,7 +1333,8 @@ CreateChildProcess
 	thecommand[cmdlength] = '\0';
 	DEBUGF(("spawn command: %s\n", thecommand));
     
-	applType = ApplicationType(thecommand, execPath, TRUE, errno_return);
+	applType = ApplicationType(thecommand, execPath, TRUE, 
+				   TRUE, errno_return);
 	DEBUGF(("ApplicationType returned for (%s) is %d\n", thecommand, applType));
 	erts_free(ERTS_ALC_T_TMP, (void *) thecommand);
 	if (applType == APPL_NONE) {
@@ -1364,7 +1366,8 @@ CreateChildProcess
 	strcat(newcmdline, origcmd+cmdlength);
     } else { /* ERTS_SPAWN_EXECUTABLE */
 	int run_cmd = 0;
-	applType = ApplicationType(origcmd, execPath, FALSE, errno_return);
+	applType = ApplicationType(origcmd, execPath, FALSE, FALSE, 
+				   errno_return);
 	if (applType == APPL_NONE) {
 	    return FALSE;
 	} 
@@ -1386,7 +1389,7 @@ CreateChildProcess
 	if (run_cmd) {
 	    char cmdPath[MAX_PATH];
 	    int cmdType;
-	    cmdType = ApplicationType("cmd.exe", cmdPath, TRUE, errno_return);
+	    cmdType = ApplicationType("cmd.exe", cmdPath, TRUE, FALSE, errno_return);
 	    if (cmdType == APPL_NONE || cmdType == APPL_DOS) {
 		return FALSE;
 	    }
@@ -1605,6 +1608,7 @@ static int ApplicationType
  char fullPath[MAX_PATH],  /* Filled with complete path to 
 			    * application. */
  BOOL search_in_path,      /* If we should search the system wide path */
+ BOOL handle_quotes,       /* If we should handle quotes around executable */
  int *error_return         /* A place to put an error code */
  )
 {
@@ -1615,6 +1619,8 @@ static int ApplicationType
     DWORD read;
     IMAGE_DOS_HEADER header;
     static char extensions[][5] = {"", ".com", ".exe", ".bat"};
+    int is_quoted;
+    int len;
 
     /* Look for the program as an external program.  First try the name
      * as it is, then try adding .com, .exe, and .bat, in that order, to
@@ -1631,12 +1637,23 @@ static int ApplicationType
      * the extensions, looking for a match.  (')
      */
 
+    len = strlen(originalName);
+    is_quoted = handle_quotes && len > 0 && originalName[0] == '"' && 
+	originalName[len-1] == '"';
+
     applType = APPL_NONE;
     *error_return = ENOENT;
     for (i = 0; i < (int) (sizeof(extensions) / sizeof(extensions[0])); i++) {
-	lstrcpyn(fullPath, originalName, MAX_PATH - 5);
-        lstrcat(fullPath, extensions[i]);
-	
+	if(is_quoted) {
+	   lstrcpyn(fullPath, originalName+1, MAX_PATH - 7); 
+	   len = strlen(fullPath);
+	   if(len > 0) {
+	       fullPath[len-1] = '\0';
+	   }
+	} else {
+	    lstrcpyn(fullPath, originalName, MAX_PATH - 5);
+	}
+	lstrcat(fullPath, extensions[i]);
 	SearchPath((search_in_path) ? NULL : ".", fullPath, NULL, MAX_PATH, fullPath, &rest);
 
 	/*
@@ -1727,6 +1744,14 @@ static int ApplicationType
 	 */
 
 	GetShortPathName(fullPath, fullPath, MAX_PATH);
+    }
+    if (is_quoted) {
+	/* restore quotes on quoted program name */
+	len = strlen(fullPath);
+	memmove(fullPath+1,fullPath,len);
+	fullPath[0]='"';
+	fullPath[len+1]='"';
+	fullPath[len+2]='\0';
     }
     return applType;
 }

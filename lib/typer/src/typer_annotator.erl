@@ -43,7 +43,7 @@
 -record(info, {recMap = typer_map:new() :: dict(),
 	       funcs = []               :: [func_info()],
 	       typeMap                  :: dict(),
-	       contracts                :: bool()}).
+	       contracts                :: boolean()}).
 -record(inc, {map    = typer_map:new() :: dict(),
 	      filter = []              :: [string()]}).
 
@@ -200,7 +200,7 @@ remove_yecc_generated_file(TmpInc) ->
 normalize_obj(TmpInc) ->
   Fun = fun(Key, Val, Inc) ->
 	    NewVal = [{{Line,F,A},Type} || {{F,A},{Line,Type}} <- Val],
-	    typer_map:insert({Key,NewVal},Inc)
+	    typer_map:insert({Key,NewVal}, Inc)
 	end,
   NewMap = typer_map:fold(Fun, typer_map:new(), TmpInc#inc.map),
   TmpInc#inc{map = NewMap}.
@@ -219,14 +219,16 @@ get_typeMap(Module, Analysis, RecMap) ->
   TypeInfoList = [get_type(I, CodeServer, RecMap) || I <- TypeInfo],
   typer_map:from_list(TypeInfoList).
 
-get_type({MFA = {M,F,A}, Range, Arg}, CodeServer, RecMap) ->
-  case dialyzer_codeserver:lookup_contract(MFA, CodeServer) of
-    {ok, {_Line, C}} ->
+get_type({{M, F, A} = MFA, Range, Arg}, CodeServer, RecMap) ->
+  case dialyzer_codeserver:lookup_mfa_contract(MFA, CodeServer) of
+    error ->
+      {{F, A}, {Range, Arg}};
+    {ok, {_FileLine, Contract}} ->
       Sig = erl_types:t_fun(Arg, Range),
-      case dialyzer_contracts:check_contract(C, Sig) of
-	ok -> {{F, A}, {contract, C}};
+      case dialyzer_contracts:check_contract(Contract, Sig) of
+	ok -> {{F, A}, {contract, Contract}};
 	{error, invalid_contract} ->
-	  CString = dialyzer_contracts:contract_to_string(C),
+	  CString = dialyzer_contracts:contract_to_string(Contract),
 	  SigString = dialyzer_utils:format_sig(Sig, RecMap),
 	  typer:error(
 	    io_lib:format("Error in contract of function ~w:~w/~w\n" 
@@ -237,9 +239,7 @@ get_type({MFA = {M,F,A}, Range, Arg}, CodeServer, RecMap) ->
 	  typer:error(
 	    io_lib:format("Error in contract of function ~w:~w/~w: ~s",
 			  [M, F, A, Msg]))
-      end;
-    error ->
-      {{F, A}, {Range, Arg}}
+      end
   end.
 
 get_functions(File, Analysis) ->
@@ -259,7 +259,7 @@ get_functions(File, Analysis) ->
   end.
 
 normalize_incFuncs(Funcs) ->
-  [FuncInfo || {_FileName,FuncInfo} <- Funcs].
+  [FuncInfo || {_FileName, FuncInfo} <- Funcs].
 
 -spec remove_module_info([func_info()]) -> [func_info()].
 
@@ -373,7 +373,7 @@ get_type_info(Func, TypeMap) ->
   case typer_map:lookup(Func, TypeMap) of
     none ->
       %% Note: Typeinfo of any function should exist in
-      %% the result offered by Dialyzer, otherwise there 
+      %% the result offered by dialyzer, otherwise there 
       %% *must* be something wrong with the analysis
       io:format("No type info for function: ~p\n", [Func]),
       halt();

@@ -127,7 +127,7 @@ key_to_frag_number(OldState, Key) ->
 
 match_spec_to_frag_numbers(#hash_state{n_fragments = N} = State, MatchSpec) ->
     case MatchSpec of
-	[{HeadPat, _, _}] when tuple(HeadPat), size(HeadPat) > 2 ->
+	[{HeadPat, _, _}] when is_tuple(HeadPat), tuple_size(HeadPat) > 2 ->
 	    KeyPat = element(2, HeadPat),
 	    case has_var(KeyPat) of
 		false ->

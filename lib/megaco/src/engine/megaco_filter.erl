@@ -47,15 +47,15 @@ start(ExtraOptions) ->
 	 {title, "Megaco tracer - Erlang/OTP"} | ExtraOptions],
     et_viewer:start(Options).
 
-filter(E) when record(E, event) ->
+filter(E) when is_record(E, event) ->
     From = filter_actor(E#event.from),
     To 	 = filter_actor(E#event.to),
     E2 	 = E#event{from = From, to = To},
     E3 	 = filter_contents(E#event.contents, E2, []),
     {true, E3}.
 
-filter_actors(From, To, E) when E#event.from == ?APPLICATION,
-				E#event.to   == ?APPLICATION ->
+filter_actors(From, To, E) 
+  when (E#event.from =:= ?APPLICATION) andalso (E#event.to =:= ?APPLICATION) ->
     Label = E#event.label,
     case lists:prefix("callback:", Label) of
 	true ->
@@ -98,7 +98,7 @@ filter_user_actor(Actor) ->
 	    String
     end.
 	
-do_filter_actor(CH) when record(CH, megaco_conn_handle) ->
+do_filter_actor(CH) when is_record(CH, megaco_conn_handle) ->
     Mid = CH#megaco_conn_handle.local_mid,
     do_filter_actor(Mid);
 do_filter_actor(Actor) ->
@@ -136,7 +136,7 @@ filter_contents([H | T], E, Contents) ->
     case H of
 	{line, _Mod, _Line} ->
 	    filter_contents(T, E, Contents);
-	CD when record(CD, conn_data) ->
+	CD when is_record(CD, conn_data) ->
 	    CH = CD#conn_data.conn_handle,
 	    From = CH#megaco_conn_handle.local_mid,
 	    To   = CH#megaco_conn_handle.remote_mid,
@@ -144,18 +144,18 @@ filter_contents([H | T], E, Contents) ->
 	    Serial = CD#conn_data.serial,
 	    E3 = append_serial(Serial, E2),
 	    filter_contents(T, E3, Contents);
-	CH when record(CH, megaco_conn_handle) ->
+	CH when is_record(CH, megaco_conn_handle) ->
 	    From = CH#megaco_conn_handle.local_mid,
 	    To   = CH#megaco_conn_handle.remote_mid,
 	    E2 = filter_actors(From, To, E),
 	    filter_contents(T, E2, Contents);
 	{orig_conn_handle, _CH} ->
 	    filter_contents(T, E, Contents);
-	RH when record(RH, megaco_receive_handle) ->
+	RH when is_record(RH, megaco_receive_handle) ->
 	    Actor = RH#megaco_receive_handle.local_mid,
 	    E2 = filter_actors(Actor, Actor, E),
 	    filter_contents(T, E2, Contents);
-	{pid, Pid} when pid(Pid) ->
+	{pid, Pid} when is_pid(Pid) ->
 	    filter_contents(T, E, Contents);
 	pending ->
 	    filter_contents(T, E, Contents);
@@ -169,20 +169,20 @@ filter_contents([H | T], E, Contents) ->
 	    Pretty = pretty_error({'EXIT', Reason}),
 	    E2 = prepend_error(E),
 	    filter_contents(T, E2, [[Pretty, "\n"], Contents]);
-	ED when record(ED, 'ErrorDescriptor') ->
+	ED when is_record(ED, 'ErrorDescriptor') ->
 	    Pretty = pretty_error(ED),
 	    E2 = prepend_error(E),
 	    filter_contents(T, E2, [[Pretty, "\n"], Contents]);
-	Trans when record(Trans, 'TransactionRequest') ->
+	Trans when is_record(Trans, 'TransactionRequest') ->
 	    Pretty = pretty({trans, {transactionRequest, Trans}}),
 	    filter_contents([], E, [[Pretty, "\n"], Contents]);
-	Trans when record(Trans, 'TransactionReply') ->
+	Trans when is_record(Trans, 'TransactionReply') ->
 	    Pretty = pretty({trans, {transactionReply, Trans}}),
 	    filter_contents([], E, [[Pretty, "\n"], Contents]);
-	Trans when record(Trans, 'TransactionPending') ->	    
+	Trans when is_record(Trans, 'TransactionPending') ->	    
 	    Pretty = pretty({trans, {transactionPending, Trans}}),
 	    filter_contents([], E, [[Pretty, "\n"], Contents]);
-	Trans when record(Trans, 'TransactionAck') ->	    
+	Trans when is_record(Trans, 'TransactionAck') ->	    
 	    Pretty = pretty({trans, {transactionResponseAck, [Trans]}}),
 	    case Trans#'TransactionAck'.lastAck of
 		asn1_NOVALUE ->
@@ -207,10 +207,10 @@ filter_contents([H | T], E, Contents) ->
 	{actionReplies, ARS} ->
 	    Pretty = [[pretty(AR), "\n"] || AR <- ARS],
 	    filter_contents(T, E, [["REPLY: \n", Pretty, "\n"], Contents]);
-	MegaMsg when record(MegaMsg, 'MegacoMessage') ->
+	MegaMsg when is_record(MegaMsg, 'MegacoMessage') ->
 	    Pretty = pretty(MegaMsg),
 	    filter_contents(T, E, [["MESSAGE: \n", Pretty, "\n"], Contents]);
-	{bytes, Bin} when binary(Bin) ->
+	{bytes, Bin} when is_binary(Bin) ->
             E2 = 
 		case E#event.label of
 		    [$s, $e, $n, $d, $ , $b, $y, $t, $e, $s | Tail] ->
@@ -233,7 +233,7 @@ filter_contents([H | T], E, Contents) ->
 	    filter_contents(T, E, [[Pretty, "\n"], Contents])
     end.
 
-append_serial(Serial, E) when integer(Serial) ->
+append_serial(Serial, E) when is_integer(Serial) ->
     Label = term_to_string(E#event.label),
     E#event{label = Label ++ " #" ++ integer_to_list(Serial)};
 append_serial(_Serial, E) ->
@@ -245,23 +245,23 @@ prepend_error(E) ->
 
 pretty({context_id, ContextId}) ->
      if
-	 ContextId == ?megaco_null_context_id ->
+	 ContextId =:= ?megaco_null_context_id ->
 	     ["CONTEXT ID: -\n"];
-	 ContextId == ?megaco_choose_context_id ->
+	 ContextId =:= ?megaco_choose_context_id ->
 	     ["CONTEXT ID: $\n"];
-	 ContextId == ?megaco_all_context_id ->
+	 ContextId =:= ?megaco_all_context_id ->
 	     ["CONTEXT ID: *\n"];
-	 integer(ContextId) ->
+	 is_integer(ContextId) ->
 	     ["CONTEXT ID: ",integer_to_list(ContextId), "\n"]
      end;
-pretty(MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
+pretty(MegaMsg) when is_record(MegaMsg, 'MegacoMessage') ->
     case catch megaco_pretty_text_encoder:encode_message([], MegaMsg) of
 	{ok, Bin} ->
 	    term_to_string(Bin);
 	_Bad ->
 	    term_to_string(MegaMsg)
     end;
-pretty(CmdReq) when record(CmdReq, 'CommandRequest') ->
+pretty(CmdReq) when is_record(CmdReq, 'CommandRequest') ->
     case catch megaco_pretty_text_encoder:encode_command_request(CmdReq) of
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
@@ -279,7 +279,7 @@ pretty({complete_success, ContextId, RepList} = Res) ->
 	_Bad ->
 	    term_to_string(Res)
    end;
-pretty(AR) when record(AR, 'ActionReply') ->
+pretty(AR) when is_record(AR, 'ActionReply') ->
     case catch megaco_pretty_text_encoder:encode_action_reply(AR) of
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
@@ -299,7 +299,7 @@ pretty({partial_failure, ContextId, RepList} = Res) ->
    end;
 pretty({trans, Trans}) ->
     case catch megaco_pretty_text_encoder:encode_transaction(Trans) of
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    IoList2 = lists:flatten(binary_to_list(Bin)),
 	    term_to_string(IoList2);
 	{ok, IoList} ->
@@ -341,7 +341,7 @@ do_string_to_term(Cont, Chars, Line) ->
 	    {error, Other}
     end.
 
-term_to_string(Bin) when binary(Bin) ->
+term_to_string(Bin) when is_binary(Bin) ->
     binary_to_list(Bin);
 term_to_string(Term) ->
     case catch io_lib:format("~s", [Term]) of

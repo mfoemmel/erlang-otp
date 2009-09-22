@@ -164,7 +164,7 @@ new(Storage) ->
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
 load_mib(MibData,FileName,MeOverride,TeOverride) 
-  when record(MibData,mib_data), list(FileName) -> 
+  when is_record(MibData,mib_data) andalso is_list(FileName) -> 
     ?vlog("load mib file: ~p",[FileName]),
     ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
@@ -196,7 +196,7 @@ do_load_mib(MibData, ActualFileName, MibName, MeOverride, TeOverride) ->
 	    ?vlog("error merging nodes:"
 		"~n~p~nand~n~p", [Node1,Node2]),
 	    {error, oid_conflict};
-	NewRoot when tuple(NewRoot), element(1,NewRoot) == tree ->
+	NewRoot when is_tuple(NewRoot) andalso (element(1,NewRoot) =:= tree) ->
  	    ?d("load_mib -> "
  		"~n   NewRoot: ~p", [NewRoot]),
 	    Symbolic = not lists:member(no_symbolic_info, Mib#mib.misc),
@@ -338,7 +338,7 @@ check_mes([Crap | MEs]) ->
 %%----------------------------------------------------------------------
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
-unload_mib(MibData, FileName, _, _) when list(FileName) -> 
+unload_mib(MibData, FileName, _, _) when is_list(FileName) -> 
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
     (catch do_unload_mib(MibData, MibName)).
 
@@ -410,7 +410,7 @@ whereis_mib(#mib_data{mib_db = Db}, Name) ->
 %% Purpose: Deletes SA with Pid from all subtrees it handles.
 %% Returns: NewMibData.
 %%----------------------------------------------------------------------
-unregister_subagent(MibData, Pid) when pid(Pid) ->
+unregister_subagent(MibData, Pid) when is_pid(Pid) ->
     SAs = MibData#mib_data.subagents,
     case lists:keysearch(Pid, 1, SAs) of
 	false -> MibData;
@@ -425,7 +425,7 @@ unregister_subagent(MibData, Pid) when pid(Pid) ->
 %% Purpose: Deletes one unique subagent. 
 %% Returns: {error, Reason} | {ok, NewMibData, DeletedSubagentPid}
 %%----------------------------------------------------------------------
-unregister_subagent(#mib_data{tree = T} = MibData, Oid) when list(Oid) ->
+unregister_subagent(#mib_data{tree = T} = MibData, Oid) when is_list(Oid) ->
     case catch delete_subagent(T#tree.root, Oid) of
 	{tree, Tree, Info} ->
 	    OldSAs = MibData#mib_data.subagents,
@@ -579,7 +579,7 @@ lookup(#mib_data{tree = T} = D, Oid) ->
      ?vtrace("lookup -> entry with"
  	"~n   Oid: ~p",[Oid]),	    
     case (catch find_node(D, T#tree.root, Oid, [])) of
-	{variable, ME, _Mib} when record(ME, me) -> 
+	{variable, ME, _Mib} when is_record(ME, me) -> 
 	    ?vtrace("lookup -> variable:"
 		"~n   ME: ~p",[ME]),	    
 	    {variable, ME};
@@ -763,7 +763,7 @@ next_node(D, {tree, Tree, {table_entry, _MibName}},
     end;
 
 next_node(D, {tree, Tree, _Info}, [Int | RestOfOid], RevOidSoFar, MibView) 
-  when Int < size(Tree), Int >= 0 ->
+  when (Int < size(Tree)) andalso (Int >= 0) ->
     ?vtrace("next_node(tree) -> entry when"
 	"~n   size(Tree):  ~p"
 	"~n   Int:         ~p"
@@ -1001,7 +1001,7 @@ in_subtree(LevelPrefix, Me) ->
 %% where the ME really should be in _this_ subtree (not above).
 %%--------------------------------------------------
 classify_how_in_subtree(LevelPrefix, Me) 
-  when length(Me#me.oid) == length(LevelPrefix) + 1 ->
+  when (length(Me#me.oid) =:= (length(LevelPrefix) + 1)) ->
     Oid = Me#me.oid,
     case node_or_subtree(Me#me.entrytype) of
 	subtree ->
@@ -1011,7 +1011,7 @@ classify_how_in_subtree(LevelPrefix, Me)
     end;
 
 classify_how_in_subtree(LevelPrefix, Me) 
-  when length(Me#me.oid) > length(LevelPrefix) + 1 ->
+  when (length(Me#me.oid) > (length(LevelPrefix) + 1)) ->
     L1 = length(LevelPrefix) + 1,
     Oid = Me#me.oid,
     {internal_subtree, lists:nth(L1, Oid), lists:sublist(Oid, 1, L1)}.
@@ -1036,7 +1036,7 @@ convert_tree({Index, {tree, Tree, Info}}) when Index >= 0 ->
     {Index, {tree, dict_list_to_tuple(L), Info}};
 convert_tree({Index, {node, Info}}) when Index >= 0 ->
     {Index, {node, Info}};
-convert_tree(Tree) when list(Tree) ->
+convert_tree(Tree) when is_list(Tree) ->
     L = lists:map(fun convert_tree/1, Tree),
     dict_list_to_tuple(L).
 
@@ -1092,7 +1092,7 @@ merge_nodes(Node1, Node2) ->
 %%      to extend than a tuple.
 %% Returns: The resulting, merged level tuple.
 %%----------------------------------------------------------------------
-merge_levels(Level1, Level2) when length(Level1) == length(Level2) ->
+merge_levels(Level1, Level2) when length(Level1) =:= length(Level2) ->
     list_to_tuple(snmp_misc:multi_map({?MODULE, merge_nodes},
 				      [Level1, Level2]));
 merge_levels(Level1, Level2) when length(Level1) > length(Level2) ->
@@ -1129,7 +1129,7 @@ delete_mib_from_tree(MibName, {tree, Tree, internal}) ->
 %%          other mibs use it) anymore the empty list is returned.
 %% Returns: {MEs, The new level represented as a list}
 %%----------------------------------------------------------------------
-delete_tree(Tree, MibName) when tuple(Tree) ->
+delete_tree(Tree, MibName) when is_tuple(Tree) ->
     NewLevel = delete_nodes(tuple_to_list(Tree), MibName, []),
     case lists:filter(fun drop_undefined_nodes/1,NewLevel) of
 	[] -> [];
@@ -1185,12 +1185,13 @@ insert_subagent(Oid, OldRoot) ->
     case catch convert_tree(ListTree) of
 	{'EXIT', _Reason} ->
 	    {error, 'cannot construct tree from oid'};
-	Level when tuple(Level) ->
+	Level when is_tuple(Level) ->
 	    T = {tree, Level, internal},
 	    case catch merge_nodes(T, OldRoot) of
 		{error_merge_nodes, _Node1, _Node2} ->
 		    {error, oid_conflict};
-		NewRoot when tuple(NewRoot), element(1, NewRoot) == tree->
+		NewRoot when is_tuple(NewRoot) andalso 
+			     (element(1, NewRoot) =:= tree) ->
 		    NewRoot
 	    end
     end.

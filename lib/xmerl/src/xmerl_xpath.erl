@@ -86,6 +86,7 @@
 
 
 -include("xmerl.hrl").
+-include("xmerl_internal.hrl").
 
 
 -record(state, {context = #xmlContext{},

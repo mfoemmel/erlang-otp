@@ -58,9 +58,9 @@ localhost() ->
     {ok, Ip} = snmp_misc:ip(net_adm:localhost()),
     Ip.
 
-sz(L) when list(L) ->
+sz(L) when is_list(L) ->
     length(L);
-sz(B) when binary(B) ->
+sz(B) when is_binary(B) ->
     size(B);
 sz(O) ->
     {unknown_size,O}.
@@ -289,7 +289,7 @@ ping(N) ->
 local_nodes() ->
     nodes_on(net_adm:localhost()).
 
-nodes_on(Host) when list(Host) ->
+nodes_on(Host) when is_list(Host) ->
     net_adm:world_list([list_to_atom(Host)]).
 
 
@@ -302,7 +302,7 @@ start_node(Name, Args) ->
 %% Application and Crypto utility functions
 %% 
 
-is_app_running(App) when atom(App) ->
+is_app_running(App) when is_atom(App) ->
     Apps = application:which_applications(),
     lists:keymember(App,1,Apps).
 
@@ -427,7 +427,7 @@ timetrap_scale_factor() ->
 %% file & dir functions
 %%
 
-del_dir(Dir) when list(Dir) ->
+del_dir(Dir) when is_list(Dir) ->
     (catch do_del_dir(Dir)).
 
 do_del_dir(Dir) ->
@@ -484,7 +484,7 @@ del_file_or_dir(FileOrDir) ->
 %% cover functions
 %%
 
-cover([Suite, Case] = Args) when atom(Suite), atom(Case) ->
+cover([Suite, Case] = Args) when is_atom(Suite) andalso is_atom(Case) ->
     Mods0 = cover:compile_directory("../src"),
     Mods1 = [Mod || {ok, Mod} <- Mods0],
     snmp_test_server:t(Args),
@@ -497,7 +497,7 @@ cover([Suite, Case] = Args) when atom(Suite), atom(Case) ->
 %% (debug) Print functions
 %%
 
-p(Mod, Case) when is_atom(Mod) and is_atom(Case) ->
+p(Mod, Case) when is_atom(Mod) andalso is_atom(Case) ->
     case get(test_case) of
 	undefined ->
 	    put(test_case, Case),
@@ -506,7 +506,7 @@ p(Mod, Case) when is_atom(Mod) and is_atom(Case) ->
 	    ok
     end;
 
-p(F, A) when is_list(F) and is_list(A) ->
+p(F, A) when is_list(F) andalso is_list(A) ->
     io:format(user, F ++ "~n", A).
 
 print(Prefix, Module, Line, Format, Args) ->

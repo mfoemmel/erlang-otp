@@ -327,13 +327,13 @@ e({'AuditDescriptor', AT}, 1 = V) ->
 e({'AuditDescriptor', asn1_NOVALUE, asn1_NOVALUE}, V) when V >= 2 ->
     {192};
 e({'AuditDescriptor', AT, APT}, V) 
-  when is_list(AT) and is_list(APT) and (V >= 2) ->
+  when is_list(AT) andalso is_list(APT) andalso (V >= 2) ->
     {193, el(AT, V), el(APT, V)};
 e({'AuditDescriptor', AT, APT}, V) 
-  when is_list(APT) and (V >= 2) ->
+  when is_list(APT) andalso (V >= 2) ->
     {194, e(AT, V), el(APT, V)};
 e({'AuditDescriptor', AT, APT}, V) 
-  when is_list(AT) and (V >= 2) ->
+  when is_list(AT) andalso (V >= 2) ->
     {195, el(AT, V), e(APT, V)};
 e({'AuditDescriptor', AT, APT}, V) when (V >= 2) ->
     {196, e(AT, V), e(APT, V)};
@@ -955,16 +955,16 @@ e({'IndAudStreamParms', LCD, LD, RD, SD}, V)
 
 e({'IndAudLocalControlDescriptor', SM, RV, RG, asn1_NOVALUE}, 2 = V) ->
     {1020, e(SM, V), e(RV, V), e(RG, V)};
-e({'IndAudLocalControlDescriptor', SM, RV, RG, PP}, 2 = V) when list(PP) ->
+e({'IndAudLocalControlDescriptor', SM, RV, RG, PP}, 2 = V) when is_list(PP) ->
     {1021, e(SM, V), e(RV, V), e(RG, V), el(PP, V)};
 e({'IndAudLocalControlDescriptor', SM, RV, RG, asn1_NOVALUE, asn1_NOVALUE}, V) 
   when V >= 3 ->
     {1022, e(SM, V), e(RV, V), e(RG, V)};
 e({'IndAudLocalControlDescriptor', SM, RV, RG, PP, asn1_NOVALUE}, V) 
-  when is_list(PP) and (V >= 3) ->
+  when is_list(PP) andalso (V >= 3) ->
     {1023, e(SM, V), e(RV, V), e(RG, V), el(PP, V)};
 e({'IndAudLocalControlDescriptor', SM, RV, RG, PP, SMS}, V) 
-  when is_list(PP) and (V >= 3) ->
+  when is_list(PP) andalso (V >= 3) ->
     {1024, e(SM, V), e(RV, V), e(RG, V), el(PP, V), e(SMS, V)};
 
 e({'IndAudPropertyParm', N}, 2 = _V) ->
@@ -1227,11 +1227,11 @@ d({191, AT}, 1 = V) ->
     {'AuditDescriptor', dl(AT, V)};
 d({192}, V) when (V >= 2) ->
     {'AuditDescriptor', asn1_NOVALUE, asn1_NOVALUE};
-d({193, AT, APT}, V) when is_list(AT) and is_list(APT) and (V >= 2) ->
+d({193, AT, APT}, V) when is_list(AT) andalso is_list(APT) andalso (V >= 2) ->
     {'AuditDescriptor', dl(AT, V), dl(APT, V)};
-d({194, AT, APT}, V) when is_list(APT) and (V >= 2) ->
+d({194, AT, APT}, V) when is_list(APT) andalso (V >= 2) ->
     {'AuditDescriptor', d(AT, V), dl(APT, V)};
-d({195, AT, APT}, V) when is_list(AT) and (V >= 2) ->
+d({195, AT, APT}, V) when is_list(AT) andalso (V >= 2) ->
     {'AuditDescriptor', dl(AT, V), d(APT, V)};
 d({196, AT, APT}, V) when (V >= 2) ->
     {'AuditDescriptor', d(AT, V), d(APT, V)};
@@ -1846,17 +1846,17 @@ d({1020, SM, RV, RG}, 2 = V) ->
     {'IndAudLocalControlDescriptor', 
      d(SM, V), d(RV, V), d(RG, V), asn1_NOVALUE};
 d({1021, SM, RV, RG, PP}, 2 = V) 
-  when list(PP) ->
+  when is_list(PP) ->
     {'IndAudLocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V)};
 d({1022, SM, RV, RG}, V) when (V >= 3) ->
     {'IndAudLocalControlDescriptor', 
      d(SM, V), d(RV, V), d(RG, V), asn1_NOVALUE, asn1_NOVALUE};
 d({1023, SM, RV, RG, PP}, V) 
-  when is_list(PP) and (V >= 3) ->
+  when is_list(PP) andalso (V >= 3) ->
     {'IndAudLocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V),
      asn1_NOVALUE};
 d({1024, SM, RV, RG, PP, SMS}, V) 
-  when is_list(PP) and (V >= 3) ->
+  when is_list(PP) andalso (V >= 3) ->
     {'IndAudLocalControlDescriptor', d(SM, V), d(RV, V), d(RG, V), dl(PP, V),
      d(SMS, V)};
 

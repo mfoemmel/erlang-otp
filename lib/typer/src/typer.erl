@@ -56,51 +56,75 @@ start() ->
 
 -spec extract(#typer_analysis{}) -> #typer_analysis{}.
 
-extract(Analysis = #typer_analysis{macros = Macros, includes = Includes,
-				   t_files = TFiles, trust_plt = TrustPLT}) ->
+extract(#typer_analysis{macros = Macros, includes = Includes,
+			t_files = TFiles, trust_plt = TrustPLT} = Analysis) ->
   %% io:format("--- Extracting trusted typer_info... "),
   Ds = [{d, Name, Value} || {Name, Value} <- Macros],
+  CodeServer = dialyzer_codeserver:new(),
   Fun =
-    fun(File, TmpPlt) ->
+    fun(File, TmpCS) ->
 	%% We include one more dir; the one above the one we are trusting
 	%% E.g, for /home/tests/typer_ann/test.ann.erl, we should include
 	%% /home/tests/ rather than /home/tests/typer_ann/
 	AllIncludes = [filename:dirname(filename:dirname(File)) | Includes],
 	Is = [{i, Dir} || Dir <- AllIncludes],
-	CompOpts = ?SRC_COMPILE_OPTS ++ Is ++ Ds,
-	SpecInfo = 
-	  case dialyzer_utils:get_abstract_code_from_src(File, CompOpts) of
-	    {error, Reason} -> compile_error(Reason);
-	    {ok, AbstractCode} -> 
-	      case dialyzer_utils:get_record_and_type_info(AbstractCode) of
-		{error, Reason} -> compile_error([Reason]);
-		{ok, RecDict} -> 
-		  case dialyzer_utils:get_spec_info(AbstractCode, RecDict) of
-		    {error, Reason} -> compile_error([Reason]);
-		    {ok, Ans} -> Ans
-		  end
-	      end
-	  end,
+	CompOpts = dialyzer_utils:src_compiler_opts() ++ Is ++ Ds,
+	case dialyzer_utils:get_abstract_code_from_src(File, CompOpts) of
+	  {ok, AbstractCode} -> 
+	    case dialyzer_utils:get_record_and_type_info(AbstractCode) of
+	      {ok, RecDict} ->
+		case dialyzer_utils:get_spec_info(AbstractCode, RecDict) of
+		  {ok, SpecDict} ->
+		    Mod = list_to_atom(filename:basename(File, ".erl")),
+		    TmpCS1 = dialyzer_codeserver:store_temp_records(Mod, RecDict, TmpCS),
+		    dialyzer_codeserver:store_temp_contracts(Mod, SpecDict, TmpCS1);
+		  {error, Reason} -> compile_error([Reason])
+		end;
+	      {error, Reason} -> compile_error([Reason])
+	    end;
+	  {error, Reason} -> compile_error(Reason)
+	end
+    end,
+  CodeServer1 = lists:foldl(Fun, CodeServer, TFiles),
+  %% Process remote types
+  NewCodeServer =
+    try
+      NewRecords = dialyzer_codeserver:get_temp_records(CodeServer1),
+      OldRecords = dialyzer_plt:get_types(TrustPLT), % XXX change to the PLT?
+      MergedRecords = dialyzer_utils:merge_records(NewRecords, OldRecords),
+      CodeServer2 = dialyzer_codeserver:set_temp_records(MergedRecords, CodeServer1),
+      CodeServer3 = dialyzer_utils:process_record_remote_types(CodeServer2),
+      dialyzer_contracts:process_contract_remote_types(CodeServer3)
+    catch
+      throw:{error, ErrorMsg} ->
+	compile_error(ErrorMsg)
+    end,
+  %% Create TrustPLT
+  Contracts = dialyzer_codeserver:get_contracts(NewCodeServer),
+  Modules = dict:fetch_keys(Contracts),
+  FoldFun =
+    fun(Module, TmpPlt) ->
+	{ok, ModuleContracts} = dict:find(Module, Contracts),
 	SpecList = [{MFA, Contract} 
-		    || {MFA, {_FileLine, Contract}} <- dict:to_list(SpecInfo)],
+		    || {MFA, {_FileLine, Contract}} <- dict:to_list(ModuleContracts)],
 	dialyzer_plt:insert_contract_list(TmpPlt, SpecList)
     end,
-  NewTrustPLT = lists:foldl(Fun, TrustPLT, TFiles),
+  NewTrustPLT = lists:foldl(FoldFun, TrustPLT, Modules),
   Analysis#typer_analysis{trust_plt = NewTrustPLT}.
 
 %%--------------------------------------------------------------------
 
 -spec get_type_info(#typer_analysis{}) -> #typer_analysis{}.
 
-get_type_info(Analysis = #typer_analysis{callgraph = CallGraph,
-					 trust_plt = TrustPLT,
-					 code_server = CodeServer}) ->
+get_type_info(#typer_analysis{callgraph = CallGraph,
+			      trust_plt = TrustPLT,
+			      code_server = CodeServer} = Analysis) ->
   StrippedCallGraph = remove_external(CallGraph, TrustPLT),
   %% io:format("--- Analyzing callgraph... "),
   try 
     NewPlt = dialyzer_succ_typings:analyze_callgraph(StrippedCallGraph, 
 						     TrustPLT, CodeServer),
-    Analysis#typer_analysis{callgraph=StrippedCallGraph, trust_plt=NewPlt}
+    Analysis#typer_analysis{callgraph = StrippedCallGraph, trust_plt = NewPlt}
   catch
     error:What ->
       error(io_lib:format("Analysis failed with message: ~p", 
@@ -109,7 +133,7 @@ get_type_info(Analysis = #typer_analysis{callgraph = CallGraph,
       error(io_lib:format("Analysis failed with message: ~s", [Msg]))
   end.
 
--spec remove_external(#dialyzer_callgraph{}, #dialyzer_plt{}) -> #dialyzer_callgraph{}.
+-spec remove_external(dialyzer_callgraph:callgraph(), dialyzer_plt:plt()) -> dialyzer_callgraph:callgraph().
 
 remove_external(CallGraph, PLT) ->
   {StrippedCG0, Ext} = dialyzer_callgraph:remove_external(CallGraph),
@@ -121,7 +145,7 @@ remove_external(CallGraph, PLT) ->
   end,
   StrippedCG.
 
--spec get_external([{mfa(), mfa()}], #dialyzer_plt{}) -> [mfa()].
+-spec get_external([{mfa(), mfa()}], dialyzer_plt:plt()) -> [mfa()].
 
 get_external(Exts, Plt) ->
   Fun = fun ({_From, To = {M, F, A}}, Acc) ->

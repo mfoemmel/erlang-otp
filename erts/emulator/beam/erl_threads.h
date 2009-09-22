@@ -98,8 +98,8 @@ typedef struct {
 } erts_rwlock_t;
 
 typedef ethr_timeval erts_thr_timeval_t;
-void  __noreturn erts_thr_fatal_error(int, char *); /* implemented in
-						       erl_init.c */
+__decl_noreturn void  __noreturn erts_thr_fatal_error(int, char *); 
+                                 /* implemented in erl_init.c */
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
 #define ERTS_REC_MTX_INITER \

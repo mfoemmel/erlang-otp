@@ -46,7 +46,7 @@ start_link(Type, Opts) ->
 stop() ->
     ?d("stop -> entry", []),
     case whereis(?SERVER) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    ?d("stop -> Pid: ~p", [Pid]),
 	    exit(Pid, shutdown),
 	    ?d("stop -> stopped", []),

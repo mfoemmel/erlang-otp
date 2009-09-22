@@ -35,7 +35,7 @@
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
 
-decode_message(_, Bin) when binary(Bin) ->
+decode_message(_, Bin) when is_binary(Bin) ->
     case megaco_text_scanner:scan(Bin) of
 	{ok, Tokens, _Vsn, _LastLine} ->
 	    decode_message(Tokens);

@@ -173,6 +173,13 @@ script_start1(Parent, Args) ->
 	    end
     end,
 
+    case lists:keysearch(basic_html, 1, Args) of
+	{value,_} ->
+	    application:set_env(common_test, basic_html, true);
+	false ->
+	    application:set_env(common_test, basic_html, false)
+    end,
+
     Result =
 	case lists:keysearch(refresh_logs, 1, Args) of
 	    {value,{refresh_logs,_}} ->
@@ -383,7 +390,8 @@ script_usage() ->
 	      "\n\t[-dir TestDir1 TestDir2 .. TestDirN] |"
 	      "\n\t[-suite Suite [-case Case]]"
 	      "\n\t[-include InclDir1 InclDir2 .. InclDirN]" 
-	      "\n\t[-no_auto_compile]\n\n"),
+	      "\n\t[-no_auto_compile]"
+	      "\n\t[-basic_html]\n\n"),
     io:format("Run tests from command line:\n\n"
 	      "\trun_test [-dir TestDir1 TestDir2 .. TestDirN] |"
 	      "\n\t[-suite Suite1 Suite2 .. SuiteN [-case Case1 Case2 .. CaseN]]"
@@ -396,7 +404,8 @@ script_usage() ->
 	      "\n\t[-cover CoverCfgFile]"
 	      "\n\t[-event_handler EvHandler1 EvHandler2 .. EvHandlerN]"
 	      "\n\t[-include InclDir1 InclDir2 .. InclDirN]" 
-	      "\n\t[-no_auto_compile]" 
+	      "\n\t[-no_auto_compile]"
+	      "\n\t[-basic_html]" 
 	      "\n\t[-repeat N [-force_stop]] |" 
 	      "\n\t[-duration HHMMSS [-force_stop]] |"
 	      "\n\t[-until [YYMoMoDD]HHMMSS [-force_stop]]\n\n"),
@@ -411,13 +420,15 @@ script_usage() ->
 	      "\n\t[-cover CoverCfgFile]"
 	      "\n\t[-event_handler EvHandler1 EvHandler2 .. EvHandlerN]"
 	      "\n\t[-include InclDir1 InclDir2 .. InclDirN]" 
-	      "\n\t[-no_auto_compile]" 
+	      "\n\t[-no_auto_compile]"
+	      "\n\t[-basic_html]" 
 	      "\n\t[-repeat N [-force_stop]] |" 
 	      "\n\t[-duration HHMMSS [-force_stop]] |"
 	      "\n\t[-until [YYMoMoDD]HHMMSS [-force_stop]]\n\n"),
     io:format("Refresh the HTML index files:\n\n"
 	      "\trun_test -refresh_logs "
-	      "[-logdir LogDir]\n\n"),
+	      "[-logdir LogDir] "
+	      "[-basic_html]\n\n"),
     io:format("Run CT in interactive mode:\n\n"
 	      "\trun_test -shell"
 	      "\n\t[-config ConfigFile1 ConfigFile2 .. ConfigFileN]"
@@ -595,6 +606,13 @@ run_test1(Opts) ->
 	    application:set_env(common_test, decrypt, {file,filename:absname(KeyFile)});
 	false ->
 	    application:unset_env(common_test, decrypt)
+    end,
+
+    case lists:keysearch(basic_html, 1, Opts) of
+	{value,{basic_html,BasicHtmlBool}} ->
+	    application:set_env(common_test, basic_html, BasicHtmlBool);
+	_ ->
+	    application:set_env(common_test, basic_html, false)
     end,
 
     case lists:keysearch(spec, 1, Opts) of
@@ -1224,7 +1242,12 @@ do_run_test(Tests, Skip, Opt) ->
 					  incl_mods  = CovIncl,
 					  cross      = CovCross,
 					  src        = _CovSrc}}}} ->
-		    ct_logs:log("COVER INFO","Using cover specification file: ~s",[CovFile]), 
+		    ct_logs:log("COVER INFO","Using cover specification file: ~s~n"
+				"App: ~w~n"
+				"Cross cover: ~w~n"
+				"Including ~w modules~n"
+				"Excluding ~w modules",
+				[CovFile,CovApp,CovCross,length(CovIncl),length(CovExcl)]), 
 
 		    %% cover export file will be used for export and import
 		    %% between tests so make sure it doesn't exist initially

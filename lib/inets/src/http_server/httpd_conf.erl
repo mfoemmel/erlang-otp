@@ -25,10 +25,14 @@
 
 %% Application internal API
 -export([load/1, load/2, load_mime_types/1, store/1, store/2,
-	remove/1, remove_all/1, config/1, get_config/2, get_config/3]).
+	remove/1, remove_all/1, config/1, get_config/2, get_config/3,
+	lookup/2, lookup/3, lookup/4,
+	validate_properties/1]).
 
 -define(VMODULE,"CONF").
 -include("httpd.hrl").
+-include("httpd_internal.hrl").
+
 
 %%%=========================================================================
 %%%  EWSAPI
@@ -58,6 +62,8 @@ is_directory(directory,read_write,_FileInfo,Directory) ->
     {ok,Directory};
 is_directory(_Type,_Access,FileInfo,_Directory) ->
     {error,FileInfo}.
+
+
 %%-------------------------------------------------------------------------
 %% is_file(FilePath) -> Result
 %%	FilePath = string()
@@ -83,6 +89,8 @@ is_file(regular,read_write,_FileInfo,File) ->
     {ok,File};
 is_file(_Type,_Access,FileInfo,_File) ->
     {error,FileInfo}.
+
+
 %%-------------------------------------------------------------------------
 %% make_integer(String) -> Result
 %% String = string()
@@ -97,6 +105,8 @@ make_integer(String) ->
 	nomatch ->
 	    {error, nomatch}
     end.
+
+
 %%-------------------------------------------------------------------------
 %% clean(String) -> Stripped
 %% String = Stripped = string()
@@ -108,6 +118,8 @@ clean(String) ->
     {ok,CleanedString,_} = 
 	inets_regexp:gsub(String, "^[ \t\n\r\f]*|[ \t\n\r\f]*\$",""),
     CleanedString.
+
+
 %%-------------------------------------------------------------------------
 %% custom_clean(String,Before,After) -> Stripped
 %% Before = After = regexp()
@@ -120,6 +132,8 @@ custom_clean(String,MoreBefore,MoreAfter) ->
     {ok,CleanedString,_} = inets_regexp:gsub(String,"^[ \t\n\r\f"++MoreBefore++
 				       "]*|[ \t\n\r\f"++MoreAfter++"]*\$",""),
     CleanedString.
+
+
 %%-------------------------------------------------------------------------
 %% check_enum(EnumString,ValidEnumStrings) -> Result
 %%	EnumString = string()
@@ -137,20 +151,7 @@ check_enum(Enum,[Enum|_Rest]) ->
 check_enum(Enum, [_NotValid|Rest]) ->
     check_enum(Enum, Rest).
 
-get_config(Address, Port) ->    
-    Tab = httpd_util:make_name("httpd_conf", Address, Port),
-    Properties =  ets:tab2list(Tab),
-    MimeTab = proplists:get_value(mime_types, Properties),
-    NewProperties = proplists:delete(mime_types, Properties),
-    [{mime_types, ets:tab2list(MimeTab)} | NewProperties].
-     
-get_config(Address, Port, Properties) ->    
-    Tab = httpd_util:make_name("httpd_conf", Address, Port),
-    Config = 
-	lists:map(fun(Prop) -> {Prop, httpd_util:lookup(Tab, Prop)} end,
-		  Properties),
-    [{Proporty, Value} || {Proporty, Value} <- Config, Value =/= undefined].  
-			   
+
 %%%=========================================================================
 %%%  Application internal API
 %%%=========================================================================
@@ -164,20 +165,26 @@ get_config(Address, Port, Properties) ->
 
 %% Phase 1: Load
 load(ConfigFile) ->
+    ?hdrv("load config", [{config_file, ConfigFile}]),
     case read_config_file(ConfigFile) of
 	{ok, Config} ->
+	    ?hdrt("config read", []),
 	    case bootstrap(Config) of
 		{error, Reason} ->
+		    ?hdri("bootstrap failed", [{reason, Reason}]),
 		    {error, Reason};
 		{ok, Modules} ->
+                    ?hdrd("config bootstrapped", [{modules, Modules}]),
 		    load_config(Config, lists:append(Modules, [?MODULE]))
 	    end;
 	{error, Reason} ->
+	    ?hdri("failed reading config file", [{reason, Reason}]),
 	    {error, ?NICE("Error while reading config file: "++Reason)}
     end.
 
 load(eof, []) ->
     eof;
+
 load("MaxHeaderSize " ++ MaxHeaderSize, []) ->
     case make_integer(MaxHeaderSize) of
         {ok, Integer} ->
@@ -207,6 +214,7 @@ load("MaxBodySize " ++ MaxBodySize, []) ->
 
 load("ServerName " ++ ServerName, []) ->
     {ok,[],{server_name,clean(ServerName)}};
+
 load("SocketType " ++ SocketType, []) ->
     case check_enum(clean(SocketType),["ssl","ip_comm"]) of
 	{ok, ValidSocketType} ->
@@ -214,6 +222,7 @@ load("SocketType " ++ SocketType, []) ->
 	{error,_} ->
 	    {error, ?NICE(clean(SocketType) ++ " is an invalid SocketType")}
     end;
+
 load("Port " ++ Port, []) ->
     case make_integer(Port) of
 	{ok, Integer} ->
@@ -221,24 +230,59 @@ load("Port " ++ Port, []) ->
 	{error, _} ->
 	    {error, ?NICE(clean(Port)++" is an invalid Port")}
     end;
-load("BindAddress " ++ Address, []) ->
+
+load("BindAddress " ++ Address0, []) ->
     %% If an ipv6 address is provided in URL-syntax strip the
     %% url specific part e.i. "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     %% -> "FEDC:BA98:7654:3210:FEDC:BA98:7654:3210"
-    NewAddress = string:strip(string:strip(clean(Address), 
-					   left, $[), 
-			      right, $]),
-    case NewAddress of
-	"*" ->
-	    {ok, [], {bind_address,any}};
-	CAddress ->
-	    case httpd_util:ip_address(CAddress) of
-		{ok, IPAddr} ->
-		    {ok, [], {bind_address,IPAddr}};
-		{error, _} ->
-		    {error, ?NICE(CAddress++" is an invalid address")}
+
+    try
+	begin
+	    ?hdrv("load BindAddress", [{address0, Address0}]),
+	    {Address, IpFamily} = 
+		case string:tokens(Address0, [$|]) of
+		    [Address1] ->
+			?hdrv("load BindAddress", [{address1, Address1}]),
+			{clean_address(Address1), inet6fb4};
+		    [Address1, IpFamilyStr] ->
+			?hdrv("load BindAddress", 
+			      [{address1, Address1}, 
+			       {ipfamily_str, IpFamilyStr}]),
+			{clean_address(Address1), make_ipfamily(IpFamilyStr)};
+		    _Bad ->
+			?hdrv("load BindAddress - bad address", 
+			      [{bad_address, _Bad}]),
+			throw({error, {bad_bind_address, Address0}})
+		end,
+
+	    ?hdrv("load BindAddress - address and ipfamily separated", 
+		  [{address, Address}, {ipfamily, IpFamily}]),
+
+	    case Address of
+		"*" ->
+		    {ok, [], [{bind_address, any}, {ipfamily, IpFamily}]};
+		_ ->
+		    case httpd_util:ip_address(Address, IpFamily) of
+			{ok, IPAddr} ->
+			    ?hdrv("load BindAddress - checked", 
+				  [{ip_address, IPAddr}]),
+			    Entries = [{bind_address, IPAddr}, 
+				       {ipfamily,     IpFamily}], 
+			    {ok, [], Entries};
+			{error, _} ->
+			    {error, ?NICE(Address ++ " is an invalid address")}
+		    end
 	    end
+	end
+    catch
+	throw:{error, {bad_bind_address, _}} ->
+	    ?hdrv("load BindAddress - bad bind address", []),
+	    {error, ?NICE(Address0 ++ " is an invalid address")};
+	throw:{error, {bad_ipfamily, _}} ->
+	    ?hdrv("load BindAddress - bad ipfamily", []),
+	    {error, ?NICE(Address0 ++ " has an invalid ipfamily")}
     end;
+
 load("KeepAlive " ++ OnorOff, []) ->
     case list_to_atom(clean(OnorOff)) of
 	off ->
@@ -246,6 +290,7 @@ load("KeepAlive " ++ OnorOff, []) ->
 	_ ->
 	    {ok, [], {keep_alive, true}}
     end;
+
 load("MaxKeepAliveRequests " ++  MaxRequests, []) ->
     case make_integer(MaxRequests) of
 	{ok, Integer} ->
@@ -254,6 +299,7 @@ load("MaxKeepAliveRequests " ++  MaxRequests, []) ->
 	    {error, ?NICE(clean(MaxRequests) ++
 			  " is an invalid MaxKeepAliveRequests")}
     end;
+
 %% This clause is keept for backwards compability 
 load("MaxKeepAliveRequest " ++  MaxRequests, []) ->
     case make_integer(MaxRequests) of
@@ -263,6 +309,7 @@ load("MaxKeepAliveRequest " ++  MaxRequests, []) ->
 	    {error, ?NICE(clean(MaxRequests) ++
 			  " is an invalid MaxKeepAliveRequest")}
     end;
+
 load("KeepAliveTimeout " ++ Timeout, []) ->
     case make_integer(Timeout) of
 	{ok, Integer} ->
@@ -270,11 +317,14 @@ load("KeepAliveTimeout " ++ Timeout, []) ->
 	{error, _} ->
 	    {error, ?NICE(clean(Timeout)++" is an invalid KeepAliveTimeout")}
     end;
+
 load("Modules " ++ Modules, []) ->
     {ok, ModuleList} = inets_regexp:split(Modules," "),
     {ok, [], {modules,[list_to_atom(X) || X <- ModuleList]}};
+
 load("ServerAdmin " ++ ServerAdmin, []) ->
     {ok, [], {server_admin,clean(ServerAdmin)}};
+
 load("ServerRoot " ++ ServerRoot, []) ->
     case is_directory(clean(ServerRoot)) of
 	{ok, Directory} ->
@@ -377,6 +427,21 @@ load("LogFormat " ++ LogFormat, []) ->
 load("ErrorLogFormat " ++ LogFormat, []) ->
     {ok,[],{error_log_format, list_to_atom(httpd_conf:clean(LogFormat))}}.
 
+
+clean_address(Addr) ->
+    string:strip(string:strip(clean(Addr), left, $[), right, $]).
+
+
+make_ipfamily(IpFamilyStr) ->
+    IpFamily = list_to_atom(IpFamilyStr),
+    case lists:member(IpFamily, [inet, inet6, inet6fb4]) of
+	true ->
+	    IpFamily;
+	false ->
+	    throw({error, {bad_ipfamily, IpFamilyStr}})
+    end.
+
+
 %%
 %% load_mime_types/1 -> {ok, MimeTypes} | {error, Reason}
 %%
@@ -387,6 +452,66 @@ load_mime_types(MimeTypesFile) ->
 	{error, _} ->
 	    {error, ?NICE("Can't open " ++ MimeTypesFile)}
     end.
+
+
+validate_properties(Properties) ->
+    %% First, check that all mandatory properties are present
+    case mandatory_properties(Properties) of
+	ok -> 
+	    %% Second, check that property dependency are ok
+	    {ok, validate_properties2(Properties)};
+	Error ->
+	    throw(Error)
+    end.
+
+%% This function is used to validate inter-property dependencies.
+%% That is, if property A depends on property B.
+%% The only sunch preperty at this time is bind_address that depends 
+%% on ipfamily.
+validate_properties2(Properties) ->
+    case proplists:get_value(bind_address, Properties) of
+	undefined ->
+	    case  proplists:get_value(sock_type, Properties, ip_comm) of
+		ip_comm ->
+		    case proplists:get_value(ipfamily, Properties) of
+			undefined ->
+			    [{bind_address, any}, 
+			     {ipfamily, inet6fb4} | Properties];
+			_ ->
+			    [{bind_address, any} | Properties]
+		    end;
+		_ ->
+		    [{bind_address, any} | Properties]
+	    end;
+	any ->
+	    Properties;
+	Address0 ->
+	    IpFamily = proplists:get_value(ipfamily, Properties, inet6fb4),
+	    case httpd_util:ip_address(Address0, IpFamily) of
+		{ok, Address} ->
+		    Properties1 = proplists:delete(bind_address, Properties),
+		    [{bind_address, Address} | Properties1];
+		{error, Reason} ->
+		    Error = {error, 
+			     {failed_determine_ip_address, 
+			      Address0, IpFamily, Reason}}, 
+		    throw(Error)
+	    end
+    end.
+
+mandatory_properties(ConfigList) ->
+    a_must(ConfigList, [server_name, port, server_root, document_root]).
+
+a_must(_ConfigList, []) ->
+    ok;
+a_must(ConfigList, [Prop | Rest]) ->
+    case proplists:get_value(Prop, ConfigList) of
+	undefined ->
+	    {error, {missing_property, Prop}};
+	_ ->
+	    a_must(ConfigList, Rest)
+    end.
+
 
 validate_config_params([]) ->
     ok;
@@ -427,6 +552,14 @@ validate_config_params([{bind_address, Value} | Rest])  ->
 	false ->
 	    throw({bind_address, Value})
     end;
+
+validate_config_params([{ipfamily, Value} | Rest]) 
+  when ((Value =:= inet)  orelse 
+	(Value =:= inet6) orelse 
+	(Value =:= inet6fb4)) ->
+    validate_config_params(Rest);
+validate_config_params([{ipfamily, Value} | _]) -> 
+    throw({ipfamily, Value});
 
 validate_config_params([{keep_alive, Value} | Rest])  
   when (Value =:= true) orelse (Value =:= false) ->
@@ -533,10 +666,12 @@ validate_config_params([{disable_chunked_transfer_encoding_send, Value} |
 validate_config_params([_| Rest]) ->
     validate_config_params(Rest).
 
+%% It is actually pointless to check bind_address in this way since
+%% we need ipfamily to do it properly...
 is_bind_address(any) ->
     true;
 is_bind_address(Value) ->
-    case httpd_util:ip_address(Value) of
+    case httpd_util:ip_address(Value, inet6fb4) of
 	{ok, _} ->
 	    true;
 	_ ->
@@ -544,17 +679,20 @@ is_bind_address(Value) ->
     end.
 
 store(ConfigList0) -> 
+    ?hdrd("store", []),
     try validate_config_params(ConfigList0) of
 	ok ->
 	    Modules = 
 		proplists:get_value(modules, ConfigList0, ?DEFAULT_MODS),
+	    ?hdrt("store", [{modules, Modules}]),
 	    Port = proplists:get_value(port, ConfigList0),
 	    Addr = proplists:get_value(bind_address, ConfigList0, any),
 	    ConfigList = fix_mime_types(ConfigList0),
-	    Name = httpd_util:make_name("httpd_conf",Addr,Port),
+	    Name = httpd_util:make_name("httpd_conf", Addr, Port),
 	    ConfigDB = ets:new(Name, [named_table, bag, protected]),
 	    store(ConfigDB, ConfigList, 
-		  lists:append(Modules,[?MODULE]), ConfigList)
+		  lists:append(Modules, [?MODULE]), 
+		  ConfigList)
     catch
 	throw:Error ->
 	    {error, {invalid_option, Error}}
@@ -625,6 +763,40 @@ config(ConfigDB) ->
 	    ip_comm
     end.
 
+
+get_config(Address, Port) ->    
+    Tab = httpd_util:make_name("httpd_conf", Address, Port),
+    Properties =  ets:tab2list(Tab),
+    MimeTab = proplists:get_value(mime_types, Properties),
+    NewProperties = proplists:delete(mime_types, Properties),
+    [{mime_types, ets:tab2list(MimeTab)} | NewProperties].
+     
+get_config(Address, Port, Properties) ->    
+    Tab = httpd_util:make_name("httpd_conf", Address, Port),
+    Config = 
+	lists:map(fun(Prop) -> {Prop, httpd_util:lookup(Tab, Prop)} end,
+		  Properties),
+    [{Proporty, Value} || {Proporty, Value} <- Config, Value =/= undefined].  
+	
+		   
+lookup(Tab, Key) ->
+    httpd_util:lookup(Tab, Key).
+
+lookup(Tab, Key, Default) when is_atom(Key) ->
+    httpd_util:lookup(Tab, Key, Default);
+
+lookup(Address, Port, Key) when is_integer(Port) ->
+    Tab = table(Address, Port),
+    lookup(Tab, Key).
+
+lookup(Address, Port, Key, Default) when is_integer(Port) ->
+    Tab = table(Address, Port),
+    lookup(Tab, Key, Default).
+
+table(Address, Port) ->
+    httpd_util:make_name("httpd_conf", Address, Port).
+
+
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
@@ -650,10 +822,13 @@ load_config(Config, Modules) ->
     %% Create default contexts for all modules
     Contexts = lists:duplicate(length(Modules), []),
     load_config(Config, Modules, Contexts, []).
+
 load_config([], _Modules, _Contexts, ConfigList) ->
+    ?hdrv("config loaded", []),
     {ok, ConfigList};
 	
 load_config([Line|Config], Modules, Contexts, ConfigList) ->
+    ?hdrt("load config", [{config_line, Line}]),
     case load_traverse(Line, Contexts, Modules, [], ConfigList, no) of
 	{ok, NewContexts, NewConfigList} ->
 	    load_config(Config, Modules, NewContexts, NewConfigList);
@@ -677,28 +852,45 @@ load_traverse(_Line, [], [], NewContexts, ConfigList, yes) ->
     {ok, lists:reverse(NewContexts), ConfigList};
 load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts,
 	      ConfigList, State) ->
+    ?hdrt("load config traverse",
+          [{context, Context}, {httpd_module, Module}, {state, State}]),
     case catch apply(Module, load, [Line, Context]) of
-	{'EXIT', {function_clause, _}} ->
+	{'EXIT', {function_clause, _FC}} ->
+	    ?hdrt("does not handle load config", 
+		  [{config_line, Line}, {fc, _FC}]),
 	    load_traverse(Line, Contexts, Modules, 
 			  [Context|NewContexts], ConfigList, State);
-	{'EXIT',{undef, _}} ->
+
+	{'EXIT', {undef, _}} ->
+	    ?hdrt("does not implement load", []),
 	    load_traverse(Line, Contexts, Modules,
 			  [Context|NewContexts], ConfigList,yes);
+
 	{'EXIT', Reason} ->
 	    error_logger:error_report({'EXIT', Reason}),
 	    load_traverse(Line, Contexts, Modules, 
 			  [Context|NewContexts], ConfigList, State);
+
 	{ok, NewContext} ->
+	    ?hdrt("line processed", [{new_context, NewContext}]),
 	    load_traverse(Line, Contexts, Modules, 
 			  [NewContext|NewContexts], ConfigList,yes);
+
 	{ok, NewContext, ConfigEntry} when is_tuple(ConfigEntry) ->
-	  load_traverse(Line, Contexts, 
-			Modules, [NewContext|NewContexts],
+	     ?hdrt("line processed",
+                  [{new_context, NewContext}, {config_entry, ConfigEntry}]),
+	    load_traverse(Line, Contexts, 
+			  Modules, [NewContext|NewContexts],
 			  [ConfigEntry|ConfigList], yes);
+
 	{ok, NewContext, ConfigEntry} when is_list(ConfigEntry) ->
+	    ?hdrt("line processed",
+                  [{new_context, NewContext}, {config_entry, ConfigEntry}]),
 	    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
 			  lists:append(ConfigEntry, ConfigList), yes);
+
 	{error, Reason} ->
+	    ?hdrv("line processing failed", [{reason, Reason}]),
 	    {error, Reason}
     end.
 	
@@ -776,35 +968,41 @@ suffixes(MimeType,[Suffix|Rest]) ->
     [{Suffix,MimeType}|suffixes(MimeType,Rest)].
 
 
-%% Pahse 2: store
-store(ConfigDB, _ConfigList, _Modules,[]) ->
+%% Phase 2: store
+store(ConfigDB, _ConfigList, _Modules, []) ->
     {ok, ConfigDB};
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
-    case store_traverse(ConfigListEntry,ConfigList,Modules) of
+    ?hdrt("store", [{entry, ConfigListEntry}]),
+    case store_traverse(ConfigListEntry, ConfigList, Modules) of
 	{ok, ConfigDBEntry} when is_tuple(ConfigDBEntry) ->
-	    ets:insert(ConfigDB,ConfigDBEntry),
-	    store(ConfigDB,ConfigList,Modules,Rest);
+	    ets:insert(ConfigDB, ConfigDBEntry),
+	    store(ConfigDB, ConfigList, Modules, Rest);
 	{ok, ConfigDBEntry} when is_list(ConfigDBEntry) ->
 	    lists:foreach(fun(Entry) ->
 				  ets:insert(ConfigDB,Entry)
 			  end,ConfigDBEntry),
-	    store(ConfigDB,ConfigList,Modules,Rest);
+	    store(ConfigDB, ConfigList, Modules, Rest);
 	{error, Reason} ->
 	    {error,Reason}
     end.
 
 store_traverse(_ConfigListEntry, _ConfigList,[]) ->
-    {error,?NICE("Unable to store configuration...")};
+    {error, ?NICE("Unable to store configuration...")};
 store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
-    case catch apply(Module,store,[ConfigListEntry, ConfigList]) of
+    ?hdrt("store traverse",
+          [{httpd_module, Module}, {entry, ConfigListEntry}]),
+    case catch apply(Module, store, [ConfigListEntry, ConfigList]) of
 	{'EXIT',{function_clause,_}} ->
+	    ?hdrt("does not handle store config", []),
 	    store_traverse(ConfigListEntry,ConfigList,Rest);
 	{'EXIT',{undef, _}} ->
+	    ?hdrt("does not implement store", []),
 	    store_traverse(ConfigListEntry,ConfigList,Rest);
 	{'EXIT', Reason} ->
 	    error_logger:error_report({'EXIT',Reason}),
 	    store_traverse(ConfigListEntry,ConfigList,Rest);
 	Result ->
+	    ?hdrt("config entry processed", [{result, Result}]),
 	    Result
     end.
 

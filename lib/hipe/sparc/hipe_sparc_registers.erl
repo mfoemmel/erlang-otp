@@ -217,8 +217,7 @@ is_fixed(Reg) ->
 nr_args() -> ?SPARC_NR_ARG_REGS.
 
 args(Arity) when is_integer(Arity) ->
-  Max = ?SPARC_NR_ARG_REGS,
-  N = if Arity > Max -> Max; true -> Arity end,
+  N = erlang:min(Arity, ?SPARC_NR_ARG_REGS),
   args(N-1, []).
 
 args(I, Rest) when is_integer(I), I < 0 -> Rest;

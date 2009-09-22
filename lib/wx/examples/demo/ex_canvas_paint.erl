@@ -18,7 +18,7 @@
 
 -module(ex_canvas_paint).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -50,30 +50,37 @@ init(Config) ->
 do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxPanel:new(Parent, []),
-    
+
     %% Setup sizers
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "wxDC"}]),
+    
+    %% Create the window to paint on and make it repaint the whole window on resize
     Canvas = wxPanel:new(Panel, [{style, ?wxFULL_REPAINT_ON_RESIZE}]),
-    wxPanel:setToolTip(Panel,
+    wxPanel:setToolTip(Canvas,
 		       "Left-click and hold to draw something - release to stop drawing.\n"
 		       "Middle-click to fill with pink\n"
 		       "Middle-dclick to fill with white.\n"
 		       "Right-click to clear."),
 
+    %% Create a wxPen and a WxBrush and set its colors to draw with
     Brush = wxBrush:new(?wxWHITE),
     Pen = wxPen:new(?wxBLACK, [{width, 2}]),
+    
+    PrintButton = wxButton:new(Panel, ?wxID_ANY, [{label, "Print"}]),
+
+    Bitmap = wxBitmap:new(30,30),
 
     %% Add to sizers
     wxSizer:add(Sizer, Canvas, [{flag, ?wxEXPAND},
 				{proportion, 1}]),
 
+    wxSizer:add(MainSizer, PrintButton, []),
     wxSizer:add(MainSizer, Sizer, [{flag, ?wxEXPAND},
 				   {proportion, 1}]),
-    {W,H} = wxPanel:getSize(Canvas),
-    Bitmap = wxBitmap:new(W,H),
     
+    wxPanel:connect(PrintButton, command_button_clicked),
     wxPanel:connect(Canvas, paint, [callback]),
     wxPanel:connect(Canvas, size),
     wxPanel:connect(Canvas, left_down),
@@ -89,15 +96,6 @@ do_init(Config) ->
 		   brush = Brush, bitmap = Bitmap}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Sync event from callback events, paint event must be handled in callbacks
 %% otherwise nothing will be drawn on windows.
 handle_sync_event(#wx{event = #wxPaint{}}, _wxObj, #state{canvas=Canvas, bitmap=Bitmap}) ->
@@ -106,18 +104,57 @@ handle_sync_event(#wx{event = #wxPaint{}}, _wxObj, #state{canvas=Canvas, bitmap=
     wxPaintDC:destroy(DC),
     ok.
 
-%% Async Events are handled in handle_event as in handle_info
+%% Print what's drawn
+handle_event(#wx{event = #wxCommand{type = command_button_clicked}},
+	     State = #state{bitmap=Bitmap}) ->
+    PD = wxPrintData:new(),
+    PDD = wxPrintDialogData:new(PD),
+    PSDD = wxPageSetupDialogData:new(PD),
+    Fun =
+	fun(This,_Page) ->
+		MX = MY = 500,  
+		wxPrintout:fitThisSizeToPageMargins(This, {MX,MY}, PSDD),
+		{_X,_Y,W,H} = wxPrintout:getLogicalPageMarginsRect(This, PSDD),
+		wxPrintout:offsetLogicalOrigin(This,(W-MX) div 2, (H-MY) div 2),
+		DC = wxPrintout:getDC(This),
+		redraw(DC, Bitmap),
+		true
+	end,
+    Printout1 = wxPrintout:new("Print", Fun,
+			       [{getPageInfo, fun getPageInfo/1}]),
+    Printout2 = wxPrintout:new("Print", Fun,
+			       [{getPageInfo, fun getPageInfo/1}]),
+    Preview = wxPrintPreview:new(Printout1, [{printoutForPrinting,Printout2},{data,PDD}]), 
+    case wxPrintPreview:isOk(Preview) of
+	true ->
+	    Env = wx:get_env(), 
+	    spawn_link(fun() ->
+			       wx:set_env(Env),
+			       PF = wxPreviewFrame:new(Preview, State#state.parent, []),
+			       wxPreviewFrame:centre(PF, [{dir, ?wxBOTH}]),
+			       wxPreviewFrame:initialize(PF),
+			       wxPreviewFrame:centre(PF),
+			       wxPreviewFrame:show(PF)
+		       end);
+	false ->
+	    io:format("Could not create preview window.\n"
+		      "Perhaps your current printer is not set correctly?~n", []),
+	    wxPrintPreview:destroy(Preview)
+    end,
+    {noreply, State#state{}};
 %% Draw a line
 handle_event(#wx{event = #wxMouse{type = motion, x = X, y = Y}},
 	     State = #state{canvas = Canvas, pen = Pen, brush = Brush}) ->
     Fun =
-	fun(DC) -> wxDC:setPen(DC, Pen),
-		   wxBrush:setColour(Brush, ?wxBLACK),
-		   wxDC:setBrush(DC, Brush),
-		   wxDC:drawLine(DC, {X,Y}, State#state.old_pos)
+	fun(DC) ->
+		wxDC:setPen(DC, Pen),
+		wxBrush:setColour(Brush, ?wxBLACK),
+		wxDC:setBrush(DC, Brush),
+		wxDC:drawLine(DC, {X,Y}, State#state.old_pos)
 	end,
     draw(Canvas,State#state.bitmap, Fun),
     {noreply, State#state{old_pos = {X,Y}}};
+%% Resize event
 handle_event(#wx{event = #wxSize{size = {W,H}}}, State = #state{bitmap=Prev}) ->
     wxBitmap:destroy(Prev),
     Bitmap = wxBitmap:new(W,H),
@@ -129,24 +166,30 @@ handle_event(#wx{event = #wxMouse{type = left_dclick,x = X,y = Y}}, State = #sta
 handle_event(#wx{event = #wxMouse{type = left_down,x = X,y = Y}}, State = #state{}) ->
     wxPanel:connect(State#state.canvas, motion),
     {noreply, State#state{old_pos = {X,Y}}};
-
 %% Fill with pink color
 handle_event(#wx{event = #wxMouse{type = middle_down,x = X, y =Y}}, State = #state{}) ->
+    case os:type() of
+	{_, darwin} ->
+	    io:format("Fill doesn't work on Darwin ~n",[]);
+	_ ->
+	    ok
+    end,
     Fun =
-	fun(DC) -> wxBrush:setColour(State#state.brush, {255,125,255,255}),
-		   wxDC:setBrush(DC, State#state.brush),
-		   wxDC:floodFill(DC, {X,Y}, ?wxBLACK, [{style, ?wxFLOOD_BORDER}])
+	fun(DC) ->
+		wxBrush:setColour(State#state.brush, {255,125,255,255}),
+		wxDC:setBrush(DC, State#state.brush),
+		wxDC:floodFill(DC, {X,Y}, ?wxBLACK, [{style, ?wxFLOOD_BORDER}])
 	end,
     
     draw(State#state.canvas, State#state.bitmap, Fun),
     {noreply, State};
-
 %% Fill with white color
 handle_event(#wx{event = #wxMouse{type = middle_dclick,x = X, y =Y}}, State = #state{}) ->
     Fun =
-	fun(DC) -> wxBrush:setColour(State#state.brush, ?wxWHITE),
-		   wxDC:setBrush(DC, State#state.brush),
-		   wxDC:floodFill(DC, {X,Y}, ?wxBLACK, [{style, ?wxFLOOD_BORDER}])
+	fun(DC) ->
+		wxBrush:setColour(State#state.brush, ?wxWHITE),
+		wxDC:setBrush(DC, State#state.brush),
+		wxDC:floodFill(DC, {X,Y}, ?wxBLACK, [{style, ?wxFLOOD_BORDER}])
 	end,
     
     draw(State#state.canvas,  State#state.bitmap,Fun),
@@ -154,12 +197,19 @@ handle_event(#wx{event = #wxMouse{type = middle_dclick,x = X, y =Y}}, State = #s
 handle_event(#wx{event = #wxMouse{type = left_up}}, State = #state{}) ->
     wxPanel:disconnect(State#state.canvas, motion),
     {noreply, State};
+%% Clear the DC
 handle_event(#wx{event = #wxMouse{type = right_down}}, State = #state{}) ->
     draw(State#state.canvas, State#state.bitmap, fun(DC) -> wxDC:clear(DC) end),
-    {noreply, State};
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.
@@ -184,7 +234,6 @@ draw(Canvas, Bitmap, Fun) ->
     wxClientDC:destroy(CDC),
     wxMemoryDC:destroy(MemoryDC).
 
-
 redraw(DC, Bitmap) ->
     MemoryDC = wxMemoryDC:new(Bitmap),
 
@@ -195,3 +244,5 @@ redraw(DC, Bitmap) ->
     wxMemoryDC:destroy(MemoryDC).
 
 
+getPageInfo(_This) -> 
+    {1,1,1,1}.

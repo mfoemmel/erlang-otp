@@ -141,15 +141,20 @@ JAVA_SOURCE_FILES = \
 
 JD_INDEX_HTML_FILES = \
 	allclasses-frame.html \
+	allclasses-noframe.html \
 	deprecated-list.html  \
 	index-all.html \
 	overview-tree.html \
-	packages.html \
 	stylesheet.css \
 	help-doc.html \
 	index.html \
 	package-list \
-	serialized-form.html
+	serialized-form.html \
+	constant-values.html
+
+JD_GIF_FILES = \
+	../html/java/resources/inherit.gif
+
 
 PACK_DIR = com/ericsson/otp/ic
 JAVA_SOURCE_DIR = ../../java_src/$(PACK_DIR)
@@ -245,12 +250,15 @@ release_docs_spec: docs
 		$(RELSYSDIR)/doc/html
 	$(INSTALL_DATA) $(INFO_FILE) $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java
+	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/resources
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/com
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/com/ericsson
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/com/ericsson/otp
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/com/ericsson/otp/ic
 	$(INSTALL_DATA) $(JAVADOC_INDEX_HTML_FILES) \
 		$(RELSYSDIR)/doc/html/java
+	$(INSTALL_DATA) $(JD_GIF_FILES) \
+		$(RELSYSDIR)/doc/html/java/resources
 	$(INSTALL_DATA) $(JAVADOC_PACK_HTML_FILES) \
 		$(RELSYSDIR)/doc/html/java/com/ericsson/otp/ic
 	$(INSTALL_DIR) $(RELEASE_PATH)/man/man3

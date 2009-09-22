@@ -217,8 +217,8 @@
      directories in the embedded archive are added to the code path.
      See <seealso marker="erts:escript">escript(1)</seealso></p>
 
-    <p>By default the choice of directories in the code path is
-     <c>strict</c>. The directory that ends up in the code path will
+    <p>When the choice of directories in the code path is
+     <c>strict</c>, the directory that ends up in the code path will
      be exactly the stated one. This means that if for example the
      directory <c>$OTPROOT/lib/mnesia-4.4.7/ebin</c> is explicitly
      added to the code path, the code server will not load files from
@@ -237,10 +237,10 @@
     <p>The command line flag <c>-code_path_choice Choice</c> does also
      affect how <c>init</c> interprets the <c>boot script</c>. The
      interpretation of the explicit code paths in the <c>boot
-     script</c> may be <c>strict</c> or <c>relaxed</c>. it is
+     script</c> may be <c>strict</c> or <c>relaxed</c>. It is
      particular useful to set the flag to <c>relaxed</c> when you want
      to elaborate with code loading from archives without editing the
-     <c>boot script</c>.  See <seealso
+     <c>boot script</c>. The default is <c>relaxed</c>. See <seealso
      marker="erts:init">init(3)</seealso></p> </section>
 
   <section>

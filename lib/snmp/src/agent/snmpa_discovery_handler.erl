@@ -21,7 +21,7 @@
 -export([behaviour_info/1, verify/1]).
 
 behaviour_info(callbacks) ->
-    [{stage1_finish, 2}];
+    [{stage1_finish, 3}];
 behaviour_info(_) ->
     undefined.
 

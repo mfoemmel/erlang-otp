@@ -30,6 +30,53 @@
   <p>This document describes the changes made to the wxErlang
     application.</p>
 
+<section><title>Wx 0.98.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Added wxListCtrl sorting and build fixes supplied by Paul
+            Hampson. Thanks.</p>
+          <p>
+            Own Id: OTP-8126</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+            <p>wxHtmlWindow class implemented.</p> <p>All exceptions
+            from callbacks are now catched and written to the
+            log.</p> <p>Some defines where wrong in 'wx.hrl'.</p>
+            <p><c>wx:batch/1</c> and friends could hang forever if
+            for instance a breakpoint was set inside the fun. That
+            caused all wx applications to hang.</p> <p>Added missing
+            wxAuiPaneInfo constructor and destructor.</p> <p>Added
+            wxAuiNotebookEvent and wxAuiManagerEvent.</p> <p>Calling
+            non supported wxWidgets functions hanged instead of
+            crashed.</p> <p>Update OpenGL to version 3.1 and added
+            some of the missing glu functions.</p> <p>Fixed
+            wxRadioBox which inherited the wrong class, thanks Atilla
+            Erdodi.</p>
+          <p>
+            Own Id: OTP-8083</p>
+        </item>
+        <item>
+          <p>
+            Removed some of the automatic garbage collecting after
+            application exit, user will get a warning instead so he
+            can correct the code.</p>
+          <p>
+            Own Id: OTP-8138</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Wx 0.98.2</title>
 
     <section><title>Improvements and New Features</title>

@@ -372,7 +372,7 @@
 %%	is_tree(Tree) = true
 
 -record(tree, {type,
-	       attr = #attr{},
+	       attr = #attr{} :: #attr{},
 	       data}).
 
 %% `wrapper' records are used for attaching new-form node information to
@@ -387,7 +387,7 @@
 %%	is_tree(Wrapper) = false
 
 -record(wrapper, {type,
-		  attr = #attr{},
+		  attr = #attr{} :: #attr{},
 		  tree}).
 
 
@@ -648,11 +648,7 @@ is_leaf(Node) ->
 	operator -> true;	% nonstandard type
 	string -> true;
 	text -> true;		% nonstandard type
-	tuple ->
-	    case tuple_elements(Node) of
-		[] -> true;
-		_ -> false
-	    end;
+	tuple -> tuple_elements(Node) =:= [];
 	underscore -> true;
 	variable -> true;
 	warning_marker -> true;
@@ -1861,7 +1857,7 @@ is_atom(Node, Value) ->
 
 
 %% =====================================================================
-%% @spec atom_value(syntaxTree())-> atom()
+%% @spec atom_value(syntaxTree()) -> atom()
 %%
 %% @doc Returns the value represented by an <code>atom</code> node.
 %%
@@ -3813,7 +3809,7 @@ operator(Name) ->
 
 
 %% =====================================================================
-%% @spec operator_name(syntaxTree())-> atom()
+%% @spec operator_name(syntaxTree()) -> atom()
 %%
 %% @doc Returns the name of an <code>operator</code> node. Note that
 %% the name is returned as an atom.
@@ -3825,7 +3821,7 @@ operator_name(Node) ->
 
 
 %% =====================================================================
-%% @spec operator_literal(syntaxTree())-> string()
+%% @spec operator_literal(syntaxTree()) -> string()
 %%
 %% @doc Returns the literal string represented by an
 %% <code>operator</code> node. This is simply the operator name as a
@@ -6007,12 +6003,7 @@ is_literal(T) ->
 	nil ->
 	    true;
 	list ->
-	    case is_literal(list_head(T)) of
-		true ->
-		    is_literal(list_tail(T));
-		false ->
-		    false
-	    end;
+	    is_literal(list_head(T)) andalso is_literal(list_tail(T));
 	tuple ->
 	    lists:all(fun is_literal/1, tuple_elements(T));
 	_ ->
@@ -6867,10 +6858,7 @@ unfold_variable_names(Vs, Pos) ->
 %% associative, so folding should nest on the left.
 
 is_qualified_name({record_field, _, L, R}) ->
-    case is_qualified_name(L) of
-	true -> is_qualified_name(R);
-	false -> false
-    end;
+    is_qualified_name(L) andalso is_qualified_name(R);
 is_qualified_name({atom, _, _}) -> true;
 is_qualified_name(_) -> false.
 

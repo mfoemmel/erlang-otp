@@ -75,6 +75,11 @@
 #include <limits.h>
 #endif
 
+#ifdef __linux__
+#  define ERTS_SYS_NODE_PATH	"/sys/devices/system/node"
+#  define ERTS_SYS_CPU_PATH	"/sys/devices/system/cpu"
+#endif
+
 static int read_topology(erts_cpu_info_t *cpuinfo);
 
 int
@@ -98,6 +103,7 @@ struct erts_cpu_info_t_ {
     int configured;
     int online;
     int available;
+    int topology_size;
     erts_cpu_topology_t *topology;
 #if defined(HAVE_SCHED_xETAFFINITY)
     char *affinity_str;
@@ -121,6 +127,7 @@ erts_cpu_info_create(void)
 #elif defined(HAVE_PSET_INFO)
     cpuinfo->cpuids = NULL;
 #endif
+    cpuinfo->topology_size = 0;
     cpuinfo->topology = NULL;
     erts_cpu_info_update(cpuinfo);
     return cpuinfo;
@@ -137,8 +144,11 @@ erts_cpu_info_destroy(erts_cpu_info_t *cpuinfo)
 	if (cpuinfo->cpuids)
 	    free(cpuinfo->cpuids);
 #endif
-	if (cpuinfo->topology)
+	cpuinfo->topology_size = 0;
+	if (cpuinfo->topology) {
+	    cpuinfo->topology = NULL;
 	    free(cpuinfo->topology);
+	}
 	free(cpuinfo);
     }
 }
@@ -350,6 +360,12 @@ erts_is_cpu_available(erts_cpu_info_t *cpuinfo, int id)
 }
 
 int
+erts_get_cpu_topology_size(erts_cpu_info_t *cpuinfo)
+{
+    return cpuinfo->topology_size;
+}
+
+int
 erts_get_cpu_topology(erts_cpu_info_t *cpuinfo,
 		      erts_cpu_topology_t *topology)
 {
@@ -484,6 +500,27 @@ erts_unbind_from_cpu_str(char *str)
 
 
 static int
+pn_cmp(const void *vx, const void *vy)
+{
+    erts_cpu_topology_t *x = (erts_cpu_topology_t *) vx;
+    erts_cpu_topology_t *y = (erts_cpu_topology_t *) vy;
+
+    if (x->processor != y->processor)
+	return x->processor - y->processor;
+    if (x->node != y->node)
+	return x->node - y->node;
+    if (x->processor_node != y->processor_node)
+	return x->processor_node - y->processor_node;
+    if (x->core != y->core)
+	return x->core - y->core;
+    if (x->thread != y->thread)
+	return x->thread - y->thread;
+    if (x->logical != y->logical)
+	return x->logical - y->logical;
+    return 0;
+}
+
+static int
 cpu_cmp(const void *vx, const void *vy)
 {
     erts_cpu_topology_t *x = (erts_cpu_topology_t *) vx;
@@ -553,6 +590,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
     int ix;
     int res = 0;
     int got_nodes = 0;
+    int no_nodes = 0;
 
     errno = 0;
 
@@ -578,7 +616,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
 
     ix = -1;
 
-    if (realpath("/sys/devices/system/node", npath)) {
+    if (realpath(ERTS_SYS_NODE_PATH, npath)) {
 	got_nodes = 1;
 	ndir = opendir(npath);
     }
@@ -587,7 +625,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
 	int node_id = -1;
 
 	if (!got_nodes) {
-	    if (!realpath("/sys/devices/system/cpu", cpath))
+	    if (!realpath(ERTS_SYS_CPU_PATH, cpath))
 		goto error;
 	}
 	else {
@@ -599,6 +637,8 @@ read_topology(erts_cpu_info_t *cpuinfo)
 
 	    if (sscanf(nde->d_name, "node%d", &node_id) != 1)
 		continue;
+
+	    no_nodes++;
 
 	    sprintf(tpath, "%s/node%d", npath, node_id);
 
@@ -646,7 +686,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
 		ix++;
 		cpuinfo->topology[ix].node	= node_id;
 		cpuinfo->topology[ix].processor	= processor_id;
-		cpuinfo->topology[ix].processor_node = -1; /* Currently not detected */
+		cpuinfo->topology[ix].processor_node = -1; /* Fixed later */
 		cpuinfo->topology[ix].core	= core_id;
 		cpuinfo->topology[ix].thread	= 0; /* we'll numerate later */
 		cpuinfo->topology[ix].logical	= cpu_id;
@@ -654,38 +694,96 @@ read_topology(erts_cpu_info_t *cpuinfo)
 	}
     } while (got_nodes);
 
-    qsort(cpuinfo->topology,
-	  cpuinfo->configured,
-	  sizeof(erts_cpu_topology_t),
-	  cpu_cmp);
-
     res = ix+1;
 
-    if (res < cpuinfo->online)
+    if (!res || res < cpuinfo->online)
 	res = 0;
     else {
 	erts_cpu_topology_t *prev, *this, *last;
 
+	cpuinfo->topology_size = res;
+
+	if (cpuinfo->topology_size != cpuinfo->configured) {
+	    void *t = realloc(cpuinfo->topology, (sizeof(erts_cpu_topology_t)
+						  * cpuinfo->topology_size));
+	    if (t)
+		cpuinfo->topology = t;
+	}
+
+	if (no_nodes > 1) {
+	    int processor = -1;
+	    int processor_node = 0;
+	    int node = -1;
+
+	    qsort(cpuinfo->topology,
+		  cpuinfo->topology_size,
+		  sizeof(erts_cpu_topology_t),
+		  pn_cmp);
+
+	    prev = NULL;
+	    this = &cpuinfo->topology[0];
+	    last = &cpuinfo->topology[cpuinfo->configured-1];
+	    while (1) {
+		if (processor == this->processor) {
+		    if (node != this->node)
+			processor_node = 1;
+		}
+		else {
+		    if (processor_node) {
+		    make_processor_node:
+			while (prev->processor == processor) {
+			    prev->processor_node = prev->node;
+			    prev->node = -1;
+			    if (prev == &cpuinfo->topology[0])
+				break;
+			    prev--;
+			}
+			processor_node = 0;
+		    }
+		    processor = this->processor;
+		    node = this->node;
+		}
+		if (this == last) {
+		    if (processor_node) {
+			prev = this;
+			goto make_processor_node;
+		    }
+		    break;
+		}
+		prev = this++;
+	    }
+	}
+
+	qsort(cpuinfo->topology,
+	      cpuinfo->topology_size,
+	      sizeof(erts_cpu_topology_t),
+	      cpu_cmp);
+
 	this = &cpuinfo->topology[0];
 	this->thread = 0;
 
-	prev = this++;
-	last = &cpuinfo->topology[cpuinfo->configured-1];
-
-	while (this <= last) {
-	    this->thread = ((this->node == prev->node
-			     && this->processor == prev->processor
-			     && this->processor_node == prev->processor_node
-			     && this->core == prev->core)
-			    ? prev->thread + 1
-			    : 0);
+	if (res > 1) {
 	    prev = this++;
+	    last = &cpuinfo->topology[cpuinfo->configured-1];
+
+	    while (1) {
+		this->thread = ((this->node == prev->node
+				 && this->processor == prev->processor
+				 && this->processor_node == prev->processor_node
+				 && this->core == prev->core)
+				? prev->thread + 1
+				: 0);
+		if (this == last)
+		    break;
+		prev = this++;
+	    }
 	}
     }
 
  error:
 
     if (res == 0) {
+	cpuinfo->topology_size = 0;
 	if (cpuinfo->topology) {
 	    free(cpuinfo->topology);
 	    cpuinfo->topology = NULL;
@@ -782,7 +880,7 @@ read_topology(erts_cpu_info_t *cpuinfo)
 	    if (ks->ks_type == KSTAT_TYPE_NAMED) {
 		/*
 		 * Don't know how to figure numa nodes out;
-		 * hope there is only one...
+		 * hope there is none...
 		 */
 		cpuinfo->topology[ix].node = -1;
 		cpuinfo->topology[ix].processor = data_lookup_int(ks,"chip_id");
@@ -798,38 +896,52 @@ read_topology(erts_cpu_info_t *cpuinfo)
 
     kstat_close(ks_ctl);
 
-    res = ix+1;
+    res = ix;
 
-    if (res < cpuinfo->online)
+    if (!res || res < cpuinfo->online)
 	res = 0;
     else {
 	erts_cpu_topology_t *prev, *this, *last;
 
+	cpuinfo->topology_size = res;
+
+	if (cpuinfo->topology_size != cpuinfo->configured) {
+	    void *t = realloc(cpuinfo->topology, (sizeof(erts_cpu_topology_t)
+						  * cpuinfo->topology_size));
+	    if (t)
+		cpuinfo->topology = t;
+	}
+
 	qsort(cpuinfo->topology,
-	      cpuinfo->configured,
+	      cpuinfo->topology_size,
 	      sizeof(erts_cpu_topology_t),
 	      cpu_cmp);
 
 	this = &cpuinfo->topology[0];
 	this->thread = 0;
 
-	prev = this++;
-	last = &cpuinfo->topology[cpuinfo->configured-1];
-
-	while (this <= last) {
-	    this->thread = ((this->node == prev->node
-			     && this->processor == prev->processor
-			     && this->processor_node == prev->processor_node
-			     && this->core == prev->core)
-			    ? prev->thread + 1
-			    : 0);
+	if (res > 1) {
 	    prev = this++;
+	    last = &cpuinfo->topology[cpuinfo->configured-1];
+
+	    while (1) {
+		this->thread = ((this->node == prev->node
+				 && this->processor == prev->processor
+				 && this->processor_node == prev->processor_node
+				 && this->core == prev->core)
+				? prev->thread + 1
+				: 0);
+		if (this == last)
+		    break;
+		prev = this++;
+	    }
 	}
     }
 
  error:
 
     if (res == 0) {
+	cpuinfo->topology_size = 0;
 	if (cpuinfo->topology) {
 	    free(cpuinfo->topology);
 	    cpuinfo->topology = NULL;

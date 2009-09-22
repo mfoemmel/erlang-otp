@@ -30,6 +30,7 @@
 -export([md5_mac/2, md5_mac_96/2, sha_mac/2, sha_mac_96/2]).
 -export([des_cbc_encrypt/3, des_cbc_decrypt/3, des_cbc_ivec/1]).
 -export([des3_cbc_encrypt/5, des3_cbc_decrypt/5]).
+-export([blowfish_cfb64_encrypt/3,blowfish_cfb64_decrypt/3]).
 -export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
 -export([aes_cfb_128_encrypt/3, aes_cfb_128_decrypt/3]).
 -export([exor/2]).
@@ -45,6 +46,7 @@
 %% -export([idea_cbc_encrypt/3, idea_cbc_decrypt/3]).
 -export([aes_cbc_128_encrypt/3, aes_cbc_128_decrypt/3]).
 -export([aes_cbc_256_encrypt/3, aes_cbc_256_decrypt/3]).
+-export([aes_cbc_ivec/1]).
 
 -export([dh_generate_parameters/2, dh_check/1]). %% Testing see below
 
@@ -111,6 +113,8 @@
 %% -define(SHA512_UPDATE,	 57).
 %% -define(SHA512_FINAL,	 58).
 
+-define(BF_CFB64_ENCRYPT, 59).
+-define(BF_CFB64_DECRYPT, 60).
 
 %% -define(IDEA_CBC_ENCRYPT, 34).
 %% -define(IDEA_CBC_DECRYPT, 35).
@@ -297,6 +301,15 @@ des_ede3_cbc_decrypt(Key1, Key2, Key3, IVec, Data) ->
     control(?DES_EDE3_CBC_DECRYPT, [Key1, Key2, Key3, IVec, Data]).
 
 %%
+%% Blowfish
+%%
+blowfish_cfb64_encrypt(Key, IVec, Data) when byte_size(IVec) =:= 8 ->
+    control_bin(?BF_CFB64_ENCRYPT, Key, list_to_binary([IVec, Data])).
+
+blowfish_cfb64_decrypt(Key, IVec, Data) when byte_size(IVec) =:= 8 ->
+    control_bin(?BF_CFB64_DECRYPT, Key, list_to_binary([IVec, Data])).
+
+%%
 %% AES in cipher feedback mode (CFB)
 %%
 aes_cfb_128_encrypt(Key, IVec, Data) ->
@@ -467,6 +480,20 @@ aes_cbc_256_encrypt(Key, IVec, Data) ->
 
 aes_cbc_256_decrypt(Key, IVec, Data) ->
     control(?AES_CBC_256_DECRYPT, [Key, IVec, Data]).
+
+%%
+%% aes_cbc_ivec(Data) -> binary()
+%%
+%% Returns the IVec to be used in the next iteration of
+%% aes_cbc_*_[encrypt|decrypt].
+%% IVec size: 16 bytes
+%%
+aes_cbc_ivec(Data) when is_binary(Data) ->
+    {_, IVec} = split_binary(Data, size(Data) - 16),
+    IVec;
+aes_cbc_ivec(Data) when is_list(Data) ->
+    aes_cbc_ivec(list_to_binary(Data)).
+
 
 %%
 %% XOR - xor to iolists and return a binary

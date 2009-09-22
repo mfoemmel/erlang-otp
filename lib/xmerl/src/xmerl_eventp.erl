@@ -33,6 +33,7 @@
 % -export([cont/3, rules_read/3,rules_write/4,fetch/2,close/1]).
 
 -include("xmerl.hrl").
+-include("xmerl_internal.hrl").
 -include_lib("kernel/include/file.hrl").
 
 %% @spec stream(Fname::string(), Options::option_list()) -> xmlElement()

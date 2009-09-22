@@ -58,7 +58,10 @@ close() ->
 		[] -> 
 		    ok = file:delete(File ++ ".temp"),
 		    %% So that make understands that we have made this
-		    %% os:cmd("touch " ++ File),
+		    case os:getenv("CLEARCASE_ROOT") of
+			false -> os:cmd("touch " ++ File);
+			_ ->  ignore
+		    end,
 		    ok;
 		Diff ->
 		    case check_diff(Diff) of
@@ -90,7 +93,11 @@ check_diff(Diff) ->
 	copyright
     catch
 	throw:_ ->  diff;
-	error:{badmatch,_} -> diff
+	error:{badmatch,_} ->
+	    diff;
+	_:What ->
+	    io:format("~p:~p: ~p ~p~n", [?MODULE,?LINE, What, erlang:get_stacktrace()]),
+	    diff
     end.
 
 w(Str) ->
@@ -168,6 +175,10 @@ replace_and_remove([$| | R], Acc) ->
     replace_and_remove(R, ["|"|Acc]);
 replace_and_remove([$* | R], Acc) ->
     replace_and_remove(R, ["*"|Acc]);
+replace_and_remove([$& | R], Acc) ->
+    replace_and_remove(R, [$&|Acc]);
+replace_and_remove([$<,$< | R], Acc) ->
+    replace_and_remove(R, ["<<"|Acc]);
 replace_and_remove([$, | R], Acc) ->
     replace_and_remove(R, [cont|Acc]);
 replace_and_remove([$; | R], Acc) ->

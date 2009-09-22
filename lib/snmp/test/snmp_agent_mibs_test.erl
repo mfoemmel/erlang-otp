@@ -32,6 +32,7 @@
 -include_lib("snmp/include/SNMP-COMMUNITY-MIB.hrl").
 -include_lib("snmp/include/SNMP-VIEW-BASED-ACM-MIB.hrl").
 -include_lib("snmp/include/SNMP-USER-BASED-SM-MIB.hrl").
+-include("snmp_test_data/Test2.hrl").
 
 
 %%----------------------------------------------------------------------
@@ -49,7 +50,8 @@
 	 size_check_mnesia/1,
 	 load_unload/1,
 	 me_lookup/1,
-	 which_mib/1
+	 which_mib/1,
+	 cache_test/1
 
 	]).
 
@@ -71,30 +73,47 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(size_check_dets, Config) when list(Config) ->
+init_per_testcase(size_check_dets, Config) when is_list(Config) ->
     Dir = ?config(priv_dir, Config),
     DetsDir = join(Dir, "dets_dir/"),
     ?line ok = file:make_dir(DetsDir),
     [{dets_dir, DetsDir}|Config];
-init_per_testcase(size_check_mnesia, Config) when list(Config) ->
+init_per_testcase(size_check_mnesia, Config) when is_list(Config) ->
     Dir = ?config(priv_dir, Config),
     MnesiaDir = join(Dir, "mnesia_dir/"),
     ?line ok = file:make_dir(MnesiaDir),
     mnesia_start([{dir, MnesiaDir}]),
     [{mnesia_dir, MnesiaDir}|Config];
-init_per_testcase(_Case, Config) when list(Config) ->
+init_per_testcase(cache_test, Config) when is_list(Config) ->
+    Min = timer:minutes(5), 
+    Timeout = 
+	case lists:keysearch(tc_timeout, 1, Config) of
+	    {value, {tc_timeout, TcTimeout}} when TcTimeout < Min ->
+		Min; 
+	    {value, {tc_timeout, TcTimeout}} ->
+		TcTimeout; 
+	    _ ->
+		Min
+	end,
+    Dog = test_server:timetrap(Timeout), 
+    [{watchdog, Dog} | Config];
+init_per_testcase(_Case, Config) when is_list(Config) ->
     Config.
 
-fin_per_testcase(size_check_dets, Config) when list(Config) ->
+fin_per_testcase(size_check_dets, Config) when is_list(Config) ->
     Dir = ?config(dets_dir, Config),
     ?line ok = ?DEL_DIR(Dir),
     lists:keydelete(dets_dir, 1, Config);
-fin_per_testcase(size_check_mnesia, Config) when list(Config) ->
+fin_per_testcase(size_check_mnesia, Config) when is_list(Config) ->
     mnesia_stop(),
     Dir = ?config(mnesia_dir, Config),
     ?line ok = ?DEL_DIR(Dir),
     lists:keydelete(mnesia_dir, 1, Config);
-fin_per_testcase(_Case, Config) when list(Config) ->
+fin_per_testcase(cache_test, Config) when is_list(Config) ->
+    Dog = ?config(watchdog, Config),
+    test_server:timetrap_cancel(Dog),
+    Config;
+fin_per_testcase(_Case, Config) when is_list(Config) ->
     Config.
 
 
@@ -111,10 +130,11 @@ cases() ->
      load_unload,
      size_check,
      me_lookup,
-     which_mib
+     which_mib,
+     cache_test
     ].
 
-init_all(Config) when list(Config) ->
+init_all(Config) when is_list(Config) ->
     %% Data dir points wrong
     DataDir0     = ?config(data_dir, Config),
     DataDir1     = filename:split(filename:absname(DataDir0)),
@@ -122,7 +142,7 @@ init_all(Config) when list(Config) ->
     DataDir      = filename:join(lists:reverse(DataDir2) ++ [?snmp_test_data]),
     [{snmp_data_dir, DataDir ++ "/"}|Config].
 
-finish_all(Config) when list(Config) ->
+finish_all(Config) when is_list(Config) ->
     lists:keydelete(snmp_data_dir, 1, Config).
 
 
@@ -131,7 +151,7 @@ finish_all(Config) when list(Config) ->
 %%======================================================================
 
 start_and_stop(suite) -> [];
-start_and_stop(Config) when list(Config) ->
+start_and_stop(Config) when is_list(Config) ->
     Prio      = normal,
     Verbosity = trace,
 
@@ -149,7 +169,7 @@ start_and_stop(Config) when list(Config) ->
 %% ---------------------------------------------------------------------
 
 load_unload(suite) -> [];
-load_unload(Config) when list(Config) ->
+load_unload(Config) when is_list(Config) ->
     Prio       = normal,
     Verbosity  = log,
     %% MibStorage = ets,
@@ -206,18 +226,18 @@ size_check(suite) ->
 
 size_check_ets(suite) ->
     [];
-size_check_ets(Config) when list(Config) ->
+size_check_ets(Config) when is_list(Config) ->
     do_size_check([{mib_storage, ets}|Config]).
 
 size_check_dets(suite) ->
     [];
-size_check_dets(Config) when list(Config) ->
+size_check_dets(Config) when is_list(Config) ->
     Dir = ?config(dets_dir, Config),
     do_size_check([{mib_storage, {dets, Dir}}|Config]).
 
 size_check_mnesia(suite) ->
     [];
-size_check_mnesia(Config) when list(Config) ->
+size_check_mnesia(Config) when is_list(Config) ->
     do_size_check([{mib_storage, {mnesia, [node()]}}|Config]).
 
 do_size_check(Config) ->
@@ -274,7 +294,7 @@ do_size_check(Config) ->
 %% ---------------------------------------------------------------------
 
 me_lookup(suite) -> [];
-me_lookup(Config) when list(Config) ->
+me_lookup(Config) when is_list(Config) ->
     Prio       = normal,
     Verbosity  = trace,
     %% MibStorage = ets,
@@ -328,7 +348,7 @@ me_lookup(Config) when list(Config) ->
 %% ---------------------------------------------------------------------
 
 which_mib(suite) -> [];
-which_mib(Config) when list(Config) ->
+which_mib(Config) when is_list(Config) ->
     Prio       = normal,
     Verbosity  = trace,
     %% MibStorage = ets,
@@ -382,6 +402,111 @@ which_mib(Config) when list(Config) ->
     ok.
 
 
+%% ---------------------------------------------------------------------
+
+cache_test(suite) -> [];
+cache_test(Config) when is_list(Config) ->
+    ?DBG("cache_test -> start", []),
+    Prio       = normal,
+    Verbosity  = trace,
+    MibStorage = ets,
+    MibDir     = ?config(snmp_data_dir, Config),
+    StdMibDir  = filename:join(code:priv_dir(snmp), "mibs") ++ "/",
+    Mibs    = ["Test2", "TestTrap", "TestTrapv2"],
+    StdMibs = ["OTP-SNMPEA-MIB",
+	       "SNMP-COMMUNITY-MIB",
+	       "SNMP-FRAMEWORK-MIB",
+	       "SNMP-MPD-MIB",
+	       "SNMP-NOTIFICATION-MIB",
+	       "SNMP-TARGET-MIB",
+	       %% "SNMP-USER-BASED-SM-MIB",
+	       "SNMP-VIEW-BASED-ACM-MIB",
+	       "SNMPv2-MIB",
+	       "SNMPv2-TC",
+	       "SNMPv2-TM"],
+
+    ?DBG("cache_test -> start symbolic store", []),
+    ?line sym_start(Prio, MibStorage, Verbosity),
+
+    ?DBG("cache_test -> start mib server", []),
+    GcLimit = 2, 
+    Age     = timer:seconds(10), 
+    CacheOpts = [{autogc, false}, {age, Age}, {gclimit, GcLimit}],
+    ?line MibsPid = mibs_start(Prio, MibStorage, [], Verbosity, CacheOpts), 
+    
+    ?DBG("cache_test -> load mibs", []),
+    ?line load_mibs(MibsPid, MibDir, Mibs),
+    ?DBG("cache_test -> load std mibs", []),
+    ?line load_mibs(MibsPid, StdMibDir, StdMibs),
+
+    ?DBG("cache_test -> do a simple walk to populate the cache", []),
+    ?line ok = walk(MibsPid),
+     
+    {ok, Sz1} = snmpa_mib:which_cache_size(MibsPid),
+    ?DBG("cache_test -> Size1: ~p", [Sz1]),
+
+    ?DBG("cache_test -> sleep 5 secs", []),
+    ?SLEEP(timer:seconds(5)),
+
+    ?DBG("cache_test -> perform gc, expect nothing", []),
+    {ok, 0} = snmpa_mib:gc_cache(MibsPid),
+
+    ?DBG("cache_test -> sleep 10 secs", []),
+    ?SLEEP(timer:seconds(10)),
+
+    ?DBG("cache_test -> perform gc, expect GcLimit", []),
+    GcLimit1 = GcLimit + 1, 
+    {ok, GcLimit1} = snmpa_mib:gc_cache(MibsPid, Age, GcLimit1),
+
+    Sz2 = Sz1 - GcLimit1, 
+    {ok, Sz2} = snmpa_mib:which_cache_size(MibsPid),
+    ?DBG("cache_test -> Size2: ~p", [Sz2]),
+
+    ?DBG("cache_test -> enable cache autogc", []),
+    ?line ok = snmpa_mib:enable_cache_autogc(MibsPid),
+
+    ?DBG("cache_test -> wait 65 seconds to allow gc to happen", []),
+    ?SLEEP(timer:seconds(65)),
+    Sz3 = Sz2 - GcLimit, 
+    {ok, Sz3} = snmpa_mib:which_cache_size(MibsPid),
+    ?DBG("cache_test -> Size3: ~p", [Sz3]),
+
+    ?DBG("cache_test -> "
+	 "wait 2 minutes to allow gc to happen, expect empty cache", []),
+    ?SLEEP(timer:minutes(2)),
+    {ok, 0} = snmpa_mib:which_cache_size(MibsPid),
+
+    ?DBG("cache_test -> stop mib server", []),
+    ?line mibs_stop(MibsPid),
+
+    ?DBG("cache_test -> stop symbolic store", []),
+    ?line sym_stop(),
+    ok.
+
+walk(MibsPid) ->
+    MibView = snmpa_acm:get_root_mib_view(),
+    do_walk(MibsPid, ?snmpTrapCommunity_instance, MibView),
+    do_walk(MibsPid, ?vacmViewSpinLock_instance, MibView),
+    do_walk(MibsPid, ?usmStatsNotInTimeWindows_instance, MibView),
+    do_walk(MibsPid, ?tDescr_instance, MibView).
+    
+
+do_walk(MibsPid, Oid, MibView) ->
+    io:format("do_walk -> entry with"
+	      "~n   Oid: ~p"
+	      "~n", [Oid]),
+    case snmpa_mib:next(MibsPid, Oid, MibView) of
+	{table, _, _, #me{oid = Oid}} ->
+	    ok;
+	{table, _, _, #me{oid = Next}} ->
+	    do_walk(MibsPid, Next, MibView);
+	{variable, #me{oid = Oid}, _} ->
+	    ok;
+	{variable, #me{oid = Next}, _} ->
+	    do_walk(MibsPid, Next, MibView)
+    end.
+
+
 %%======================================================================
 %% Internal functions
 %%======================================================================
@@ -431,14 +556,27 @@ sym_info() ->
 
 %% -- MIB server mini interface 
 		   
-mibs_start(Prio, Verbosity) ->
+mibs_start(Prio, Verbosity) when is_atom(Prio) andalso is_atom(Verbosity) ->
     mibs_start(Prio, ets, [], Verbosity).
 
-mibs_start(Prio, MibStorage, Verbosity) ->
+mibs_start(Prio, MibStorage, Verbosity) 
+  when is_atom(Prio) andalso is_atom(Verbosity) ->
     mibs_start(Prio, MibStorage, [], Verbosity).
 
-mibs_start(Prio, MibStorage, Mibs, Verbosity) ->
-    Opts = [{mib_storage, MibStorage}, {verbosity,Verbosity}],
+mibs_start(Prio, MibStorage, Mibs, Verbosity) 
+  when is_atom(Prio)       andalso 
+       is_list(Mibs)       andalso 
+       is_atom(Verbosity) ->
+    mibs_start(Prio, MibStorage, Mibs, Verbosity, []).
+
+mibs_start(Prio, MibStorage, Mibs, Verbosity, CacheOpts) 
+  when is_atom(Prio)       andalso 
+       is_list(Mibs)       andalso 
+       is_atom(Verbosity)  andalso 
+       is_list(CacheOpts) ->
+    Opts = [{mib_storage, MibStorage}, 
+	    {verbosity,   Verbosity}, 
+	    {cache,       CacheOpts}],
     {ok, Pid} = snmpa_mib:start_link(Prio, Mibs, Opts),
     Pid.
 
@@ -519,7 +657,7 @@ me_lookup(Pid, Oid) ->
 			    
 which_mib(Pid, Oid, Mib1) ->    
     case snmpa_mib:which_mib(Pid, Oid) of
-	{ok, Mib2} when atom(Mib2) ->
+	{ok, Mib2} when is_atom(Mib2) ->
 	    Mib3 = atom_to_list(Mib2),
 	    which_mib(Mib1, Mib3);
 	{ok, Mib2} ->
@@ -564,14 +702,14 @@ display_memory_usage(MibsPid) ->
     
 key1search([], Res) ->
     Res;
-key1search([Key|Keys], List) when atom(Key), list(List) ->
+key1search([Key|Keys], List) when is_atom(Key) andalso is_list(List) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {Key, Val}} ->
 	    key1search(Keys, Val);
 	false ->
 	    undefined
     end;
-key1search(Key, List) when atom(Key) ->
+key1search(Key, List) when is_atom(Key) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {Key, Val}} ->
 	    Val;

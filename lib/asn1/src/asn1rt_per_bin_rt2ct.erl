@@ -933,10 +933,12 @@ encode_bit_string(C, BL=[{bit,_} | _RestVal], NamedBitList) ->
 encode_bit_string(Int, BitListValue, _) 
   when is_list(BitListValue),is_integer(Int),Int =< 16 ->
     %% The type is constrained by a single value size constraint
+    %% range_check(Int,length(BitListValue)),
     [40,Int,length(BitListValue),BitListValue];
 encode_bit_string(Int, BitListValue, _) 
   when is_list(BitListValue),is_integer(Int), Int =< 255 ->
     %% The type is constrained by a single value size constraint
+    %% range_check(Int,length(BitListValue)),
     [2,40,Int,length(BitListValue),BitListValue];
 encode_bit_string(Int, BitListValue, _) 
   when is_list(BitListValue),is_integer(Int), Int < ?'64K' ->
@@ -1029,14 +1031,17 @@ bit_string_trailing_zeros1(BitList,Lb,Ub) ->
 %% encode_bin_bit_string/3, when value is a tuple of Unused and BinBits.
 %% Unused = integer(),i.e. number unused bits in least sign. byte of
 %% BinBits = binary().
-encode_bin_bit_string(C,{_,BinBits},_NamedBitList)
+encode_bin_bit_string(C,{Unused,BinBits},_NamedBitList)
   when is_integer(C),C=<16 ->
+    range_check(C,bit_size(BinBits) - Unused),
     [45,C,size(BinBits),BinBits];
-encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
+encode_bin_bit_string(C,{Unused,BinBits},_NamedBitList)
   when is_integer(C), C =< 255 ->
+    range_check(C,bit_size(BinBits) - Unused),
     [2,45,C,size(BinBits),BinBits];
-encode_bin_bit_string(C,{_Unused,BinBits},_NamedBitList)
+encode_bin_bit_string(C,{Unused,BinBits},_NamedBitList)
   when is_integer(C), C =< 65535 ->
+    range_check(C,bit_size(BinBits) - Unused),
     case size(BinBits) of
 	Size when Size =< 255 ->
 	    [2,46,<<C:16>>,Size,BinBits];
@@ -1075,6 +1080,11 @@ encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 	    [encode_length(Sc,Size*8 - Unused1),
 	     2,octets_unused_to_complete(Unused1,Size,Bin1)]
     end.
+
+range_check(C,C) when is_integer(C) ->
+    ok;
+range_check(C1,C2) when is_integer(C1) ->
+    exit({error,{asn1,{bit_string_out_of_range,{C1,C2}}}}).
 
 remove_trailing_bin([], {Unused,Bin}) ->
     {Unused,Bin};

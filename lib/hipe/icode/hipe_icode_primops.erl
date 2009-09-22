@@ -40,17 +40,13 @@
 
 %%---------------------------------------------------------------------
 
--type io_device() :: atom() | pid().    %% XXX: DOES NOT BELONG HERE
-
-%%---------------------------------------------------------------------
-
 %% Note that 'unsafe_...' operations are generally "safe", i.e., it is
 %% typically unsafe to use them unless you have extra information about
 %% the call (e.g., if the types are known). However, if they have been
 %% correctly introduced in the code, most of them are also OK to remove
 %% if the result is not used.
 
--spec is_safe(icode_primop()) -> bool().
+-spec is_safe(icode_primop()) -> boolean().
 
 is_safe('+') -> false;
 is_safe('/') -> false;
@@ -147,7 +143,7 @@ is_safe(#unsafe_element{}) -> true;
 is_safe(#unsafe_update_element{}) -> true.
 
 
--spec fails(icode_funcall()) -> bool().
+-spec fails(icode_funcall()) -> boolean().
 
 fails('+') -> true;
 fails('-') -> true;
@@ -255,7 +251,7 @@ fails({M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 ->
 %% Pretty printing
 %%=====================================================================
 
--spec pp(io_device(), icode_primop()) -> 'ok'.
+-spec pp(io:device(), icode_primop()) -> 'ok'.
 
 pp(Dev, Op) ->
   case Op of
@@ -370,7 +366,7 @@ pp(Dev, Op) ->
 %% Type handling
 %%=====================================================================
 
--spec type(icode_funcall(), [erl_type()]) -> erl_type().
+-spec type(icode_funcall(), [erl_types:erl_type()]) -> erl_types:erl_type().
 
 type(Primop, Args) ->
   case Primop of
@@ -733,7 +729,7 @@ type(Primop, Args) ->
   end.
 
 
--spec type(icode_funcall()) -> erl_type().
+-spec type(icode_funcall()) -> erl_types:erl_type().
 
 type(Primop) ->
   case Primop of
@@ -910,7 +906,7 @@ type(Primop) ->
 %% function arg_types returns a list of the demanded argument types for
 %% a bif to succeed.
 
--spec arg_types(icode_funcall()) -> [erl_type()] | 'unknown'.
+-spec arg_types(icode_funcall()) -> [erl_types:erl_type()] | 'unknown'.
 
 arg_types(Primop) ->
   case Primop of

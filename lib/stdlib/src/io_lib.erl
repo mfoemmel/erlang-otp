@@ -66,21 +66,46 @@
 -export([write_atom/1,write_string/1,write_string/2,write_unicode_string/1,
 	 write_unicode_string/2, write_char/1, write_unicode_char/1]).
 
--export([quote_atom/2,char_list/1,unicode_char_list/1,deep_char_list/1,deep_unicode_char_list/1,printable_list/1,printable_unicode_list/1]).
+-export([quote_atom/2, char_list/1, unicode_char_list/1,
+	 deep_char_list/1, deep_unicode_char_list/1,
+	 printable_list/1, printable_unicode_list/1]).
 
 %% Utilities for collecting characters.
--export([collect_chars/3,collect_chars/4,collect_line/2,collect_line/3,collect_line/4,get_until/3,get_until/4]).
+-export([collect_chars/3, collect_chars/4,
+	 collect_line/2, collect_line/3, collect_line/4,
+	 get_until/3, get_until/4]).
+
+%%----------------------------------------------------------------------
+
+ %% XXX: overapproximates a deep list of (unicode) characters
+-type chars() :: [_].
+-type depth() :: -1 | non_neg_integer().
+
+%%----------------------------------------------------------------------
 
 %% Interface calls to sub-modules.
+
+-spec fwrite(io:format(), [term()]) -> chars().
 
 fwrite(Format, Args) ->
     format(Format, Args).
 
+-spec fread(string(), string()) ->
+        {'ok', chars(), string()} |
+	{'more', string(), non_neg_integer(), chars()} |
+	{'error', term()}.
+
 fread(Chars, Format) ->
     io_lib_fread:fread(Chars, Format).
 
+-spec fread(erl_scan:cont(), string(), string()) ->
+        {'done', {'ok', chars()} | 'eof' | {'error', term()}, string()} |
+        {'more', erl_scan:cont()}.
+
 fread(Cont, Chars, Format) ->
     io_lib_fread:fread(Cont, Chars, Format).
+
+-spec format(io:format(), [term()]) -> chars().
 
 format(Format, Args) ->
     case catch io_lib_format:fwrite(Format, Args) of
@@ -90,11 +115,17 @@ format(Format, Args) ->
 	    Other
     end.
 
+-spec print(term()) -> chars().
+
 print(Term) ->
     io_lib_pretty:print(Term).
 
+-spec print(term(), non_neg_integer(), non_neg_integer(), depth()) -> chars().
+
 print(Term, Column, LineLength, Depth) ->
     io_lib_pretty:print(Term, Column, LineLength, Depth).
+
+-spec indentation(string(), integer()) -> integer().
 
 indentation(Chars, Current) ->
     io_lib_format:indentation(Chars, Current).
@@ -105,6 +136,9 @@ indentation(Chars, Current) ->
 %% printed without any additional quotes.
 %% Note that the output is a deep string, and not an iolist (i.e.,
 %% it may be deep, but never contains binaries, due to the "~s").
+
+-spec format_prompt(term()) -> chars().
+
 format_prompt({format,Format,Args}) ->
     format_prompt(Format,Args);
 format_prompt(Prompt)
@@ -113,8 +147,8 @@ format_prompt(Prompt)
 format_prompt(Prompt) ->
     format_prompt("~p", [Prompt]).
 
-format_prompt(Format,Args) ->
-    case catch io_lib:format(Format,Args) of
+format_prompt(Format, Args) ->
+    case catch io_lib:format(Format, Args) of
 	{'EXIT',_} -> "???";
 	List -> List
     end.
@@ -126,12 +160,18 @@ format_prompt(Format,Args) ->
 %%  Return a (non-flattened) list of characters giving a printed
 %%  representation of the term. write/3 is for backward compatibility.
 
+-spec write(term()) -> chars().
+
 write(Term) -> write(Term, -1).
+
+-spec write(term(), depth(), boolean()) -> chars().
 
 write(Term, D, true) ->
     io_lib_pretty:print(Term, 1, 80, D);
 write(Term, D, false) ->
     write(Term, D).
+
+-spec write(term(), depth()) -> chars().
 
 write(_Term, 0) -> "...";
 write(Term, _D) when is_integer(Term) -> integer_to_list(Term);
@@ -196,6 +236,8 @@ write_binary_body(B, _D) ->
 %% write_atom(Atom) -> [Char]
 %%  Generate the list of characters needed to print an atom.
 
+-spec write_atom(atom()) -> chars().
+
 write_atom(Atom) ->
     Chars = atom_to_list(Atom),
     case quote_atom(Atom, Chars) of
@@ -208,6 +250,8 @@ write_atom(Atom) ->
 %% quote_atom(Atom, CharList)
 %%  Return 'true' if atom with chars in CharList needs to be quoted, else
 %%  return 'false'.
+
+-spec quote_atom(atom(), chars()) -> boolean().
 
 quote_atom(Atom, Cs0) ->
     case erl_scan:reserved_word(Atom) of
@@ -241,8 +285,12 @@ name_char(_) -> false.
 %% write_string([Char]) -> [Char]
 %%  Generate the list of characters needed to print a string.
 
+-spec write_string(string()) -> chars().
+
 write_string(S) ->
     write_string(S, $").   %"
+
+-spec write_string(string(), char()) -> chars().
 
 write_string(S, Q) ->
     [Q|write_string1(latin1, S, Q)].
@@ -284,6 +332,8 @@ string_char(_,C, _, Tail) when C < $\240->	%Other control characters.
 %%  Generate the list of characters needed to print a character constant.
 %%  Must special case SPACE, $\s, here.
 
+-spec write_char(char()) -> chars().
+
 write_char($\s) -> "$\\s";			%Must special case this.
 write_char(C) when is_integer(C), C >= $\000, C =< $\377 ->
     [$$|string_char(latin1,C, -1, [])].
@@ -298,10 +348,14 @@ write_unicode_char(Uni) ->
 %%  Return true if CharList is a (possibly deep) list of characters, else
 %%  false.
 
+-spec char_list(term()) -> boolean().
+
 char_list([C|Cs]) when is_integer(C), C >= $\000, C =< $\377 ->
     char_list(Cs);
 char_list([]) -> true;
 char_list(_) -> false.			%Everything else is false
+
+-spec unicode_char_list(term()) -> boolean().
 
 unicode_char_list([C|Cs]) when is_integer(C), C >= 0, C < 16#D800; 
        is_integer(C), C > 16#DFFF, C < 16#FFFE;
@@ -309,6 +363,8 @@ unicode_char_list([C|Cs]) when is_integer(C), C >= 0, C < 16#D800;
     unicode_char_list(Cs);
 unicode_char_list([]) -> true;
 unicode_char_list(_) -> false.			%Everything else is false
+
+-spec deep_char_list(term()) -> boolean().
 
 deep_char_list(Cs) ->
     deep_char_list(Cs, []).
@@ -322,6 +378,8 @@ deep_char_list([], [Cs|More]) ->
 deep_char_list([], []) -> true;
 deep_char_list(_, _More) ->			%Everything else is false
     false.
+
+-spec deep_unicode_char_list(term()) -> boolean().
 
 deep_unicode_char_list(Cs) ->
     deep_unicode_char_list(Cs, []).
@@ -339,9 +397,11 @@ deep_unicode_char_list([], []) -> true;
 deep_unicode_char_list(_, _More) ->		%Everything else is false
     false.
 
-%% printable_list([Char]) -> bool()
+%% printable_list([Char]) -> boolean()
 %%  Return true if CharList is a list of printable characters, else
 %%  false.
+
+-spec printable_list(term()) -> boolean().
 
 printable_list([C|Cs]) when is_integer(C), C >= $\040, C =< $\176 ->
     printable_list(Cs);
@@ -357,11 +417,13 @@ printable_list([$\e|Cs]) -> printable_list(Cs);
 printable_list([]) -> true;
 printable_list(_) -> false.			%Everything else is false
 
-%% printable_unicode_list([Char]) -> bool()
+%% printable_unicode_list([Char]) -> boolean()
 %%  Return true if CharList is a list of printable characters, else
 %%  false. The notion of printable in Unicode terms is somewhat floating.
 %%  Everything that is not a control character and not invalid unicode 
 %%  will be considered printable.
+
+-spec printable_unicode_list(term()) -> boolean().
 
 printable_unicode_list([C|Cs]) when is_integer(C), C >= $\040, C =< $\176 ->
     printable_unicode_list(Cs);
@@ -378,10 +440,12 @@ printable_unicode_list([$\b|Cs]) -> printable_unicode_list(Cs);
 printable_unicode_list([$\f|Cs]) -> printable_unicode_list(Cs);
 printable_unicode_list([$\e|Cs]) -> printable_unicode_list(Cs);
 printable_unicode_list([]) -> true;
-printable_unicode_list(_) -> false.			%Everything else is false
+printable_unicode_list(_) -> false.		%Everything else is false
 
 %% List = nl()
 %%  Return a list of characters to generate a newline.
+
+-spec nl() -> string().
 
 nl() ->
     "\n".

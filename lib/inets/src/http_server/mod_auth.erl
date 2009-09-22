@@ -37,6 +37,7 @@
 
 -include("httpd.hrl").
 -include("mod_auth.hrl").
+-include("httpd_internal.hrl").
 
 -define(VMODULE,"AUTH").
 
@@ -44,6 +45,7 @@
 
 %% do
 do(Info) ->
+    ?hdrt("do", [{info, Info}]),
     case proplists:get_value(status,Info#mod.data) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
@@ -58,19 +60,24 @@ do(Info) ->
 		    %% Is it a secret area?
 		    case secretp(Path,Info#mod.config_db) of
 			{yes, {Directory, DirectoryData}} ->
+			    ?hdrt("secret area", 
+				  [{directory, Directory},
+				   {directory_data, DirectoryData}]),
+
 			    %% Authenticate (allow)
 			    case allow((Info#mod.init_data)#init_data.peername,
 				       Info#mod.socket_type,Info#mod.socket,
 				       DirectoryData) of
 				allowed ->
+				    ?hdrt("allowed", []),
 				    case deny((Info#mod.init_data)#init_data.peername,
 					      Info#mod.socket_type, 
 					      Info#mod.socket,
 					      DirectoryData) of
 					not_denied ->
+					    ?hdrt("not denied", []),
 					    case proplists:get_value(auth_type,
-						   DirectoryData
-						   ) of
+								     DirectoryData) of
 						undefined ->
 						    {proceed, Info#mod.data};
 						none ->
@@ -82,6 +89,7 @@ do(Info) ->
 							    AuthType)
 					    end;
 					{denied, Reason} ->
+					    ?hdrt("denied", [{reason, Reason}]),
 					    {proceed,
 					     [{status, {403,
 						       Info#mod.request_uri,
@@ -89,6 +97,7 @@ do(Info) ->
 					      Info#mod.data]}
 				    end;
 				{not_allowed, Reason} ->
+				    ?hdrt("not allowed", [{reason, Reason}]),
 				    {proceed,[{status,{403,
 						       Info#mod.request_uri,
 						       Reason}} |
@@ -104,14 +113,18 @@ do(Info) ->
     end.
 
 
-do_auth(Info, Directory, DirectoryData, _AuthType) ->
+do_auth(Info, Directory, DirectoryData, AuthType) ->
     %% Authenticate (require)
+    ?hdrt("authenticate", [{auth_type, AuthType}]),
     case require(Info, Directory, DirectoryData) of
 	authorized ->
+	    ?hdrt("authorized", []),
 	    {proceed,Info#mod.data};
 	{authorized, User} ->
+	    ?hdrt("authorized", [{user, User}]),
 	    {proceed, [{remote_user,User}|Info#mod.data]};
 	{authorization_required, Realm} ->
+	    ?hdrt("authorization required", [{realm, Realm}]),
 	    ReasonPhrase = httpd_util:reason_phrase(401),
 	    Message = httpd_util:message(401,none,Info#mod.config_db),
 	    {proceed,
@@ -134,7 +147,6 @@ require(Info, Directory, DirectoryData) ->
     ParsedHeader = Info#mod.parsed_header,
     ValidUsers   = proplists:get_value(require_user, DirectoryData),
     ValidGroups  = proplists:get_value(require_group, DirectoryData),
-
     %% Any user or group restrictions?
     case ValidGroups of
 	undefined when ValidUsers =:= undefined ->
@@ -143,7 +155,7 @@ require(Info, Directory, DirectoryData) ->
 	    case proplists:get_value("authorization", ParsedHeader) of
 		undefined ->
 		    authorization_required(DirectoryData);
-		%% Chec kcredentials!
+		%% Check credentials!
 		"Basic" ++ EncodedString = Credentials ->
 		    case (catch base64:decode_to_string(EncodedString)) of
 			{'EXIT',{function_clause, _}} ->
@@ -185,7 +197,7 @@ validate_user(Info, Directory, DirectoryData, ValidUsers,
 
 a_valid_user(Info,DecodedString,ValidUsers,ValidGroups,Dir,DirData) ->
     case httpd_util:split(DecodedString,":",2) of
-	{ok,[SupposedUser, Password]} ->
+	{ok, [SupposedUser, Password]} ->
 	    case user_accepted(SupposedUser, ValidUsers) of
 		true ->
 		    check_password(SupposedUser, Password, Dir, DirData);
@@ -198,7 +210,7 @@ a_valid_user(Info,DecodedString,ValidUsers,ValidGroups,Dir,DirData) ->
 			    {no,?NICE("No such user exists")}
 		    end
 	    end;
-	{ok,BadCredentials} ->
+	{ok, BadCredentials} ->
 	    {status,{401,none,?NICE("Bad credentials "++BadCredentials)}}
     end.
 
@@ -236,7 +248,7 @@ check_password(User, Password, _Dir, DirData) ->
 		_ ->
 		    {no, "No such user"}   % Don't say 'Bad Password' !!!
 	    end;
-	_ ->
+	_Other ->
 	    {no, "No such user"}
     end.
 
@@ -252,9 +264,9 @@ int_list_group_members(Group, _Dir, DirData) ->
 
 auth_mod_name(DirData) ->
     case proplists:get_value(auth_type, DirData, plain) of
-	plain ->    mod_auth_plain;
-	mnesia ->   mod_auth_mnesia;
-	dets ->	    mod_auth_dets
+	plain ->  mod_auth_plain;
+	mnesia -> mod_auth_mnesia;
+	dets ->	  mod_auth_dets
     end.
 
     
@@ -374,13 +386,13 @@ load("AuthName " ++ AuthName, [{directory, {Directory, DirData}}|Rest]) ->
 load("AuthUserFile " ++ AuthUserFile0,
      [{directory, {Directory, DirData}}|Rest]) ->
     AuthUserFile = httpd_conf:clean(AuthUserFile0),
-    {ok,[{directory, {Directory,
+    {ok, [{directory, {Directory,
 		      [{auth_user_file, AuthUserFile}|DirData]}} | Rest ]};
 load("AuthGroupFile " ++ AuthGroupFile0,
 	 [{directory, {Directory, DirData}}|Rest]) ->
     AuthGroupFile = httpd_conf:clean(AuthGroupFile0),
     {ok,[{directory, {Directory,
-	  [ {auth_group_file, AuthGroupFile}|DirData]}} | Rest]};
+	  [{auth_group_file, AuthGroupFile}|DirData]}} | Rest]};
 
 %AuthAccessPassword
 load("AuthAccessPassword " ++ AuthAccessPassword0,
@@ -473,6 +485,8 @@ check_filename_present(Dir,AuthFile,DirData) ->
 
 store({directory, {Directory, DirData}}, ConfigList) 
   when is_list(Directory) andalso is_list(DirData) ->
+    ?hdrt("store", 
+	  [{directory, Directory}, {dir_data, DirData}]),
     try directory_config_check(Directory, DirData) of
 	ok ->
 	    store_directory(Directory, DirData, ConfigList) 
@@ -484,6 +498,8 @@ store({directory, {Directory, DirData}}, _) ->
     {error, {wrong_type, {directory, {Directory, DirData}}}}.
 
 store_directory(Directory0, DirData0, ConfigList) ->
+    ?hdrt("store directory - entry", 
+	  [{directory, Directory0}, {dir_data, DirData0}]),
     Port = proplists:get_value(port, ConfigList),
     DirData = case proplists:get_value(bind_address, ConfigList) of
 		  undefined ->
@@ -491,14 +507,14 @@ store_directory(Directory0, DirData0, ConfigList) ->
 		Addr ->
 		    [{port, Port},{bind_address,Addr}|DirData0]
 	    end,
-	    Directory = 
-		case filename:pathtype(Directory0) of
-		    relative ->
-			SR = proplists:get_value(server_root, ConfigList),
-			filename:join(SR, Directory0);
-		    _ ->
-			Directory0
-		end,
+    Directory = 
+	case filename:pathtype(Directory0) of
+	    relative ->
+		SR = proplists:get_value(server_root, ConfigList),
+		filename:join(SR, Directory0);
+	    _ ->
+		Directory0
+	end,
     AuthMod =
 	case proplists:get_value(auth_type, DirData0) of
 	    mnesia -> mod_auth_mnesia;
@@ -506,27 +522,32 @@ store_directory(Directory0, DirData0, ConfigList) ->
 	    plain ->  mod_auth_plain;
 	    _ ->      no_module_at_all
 	end,
+    ?hdrt("store directory", 
+	  [{directory, Directory}, {dir_data, DirData}, {auth_mod, AuthMod}]),
     case AuthMod of
 	no_module_at_all ->
 	    {ok, {directory, {Directory, DirData}}};
 	_ ->
-	    %% Control that there are a password or add a standard password: 
+	    %% Check that there are a password or add a standard password: 
 	    %% "NoPassword"
 	    %% In this way a user must select to use a noPassword
-	    Pwd = case proplists:get_value(auth_access_password, DirData)of
-		      undefined->
-			  ?NOPASSWORD;
-		    PassW->
-			  PassW
-		  end,
+	    Passwd = 
+		case proplists:get_value(auth_access_password, DirData) of
+		    undefined ->
+			?NOPASSWORD;
+		    PassW ->
+			PassW
+		end,
 	    DirDataLast = lists:keydelete(auth_access_password,1,DirData), 
 	    Server_root = proplists:get_value(server_root, ConfigList),
-	    case catch AuthMod:store_directory_data(Directory, DirDataLast, Server_root) of
+	    case catch AuthMod:store_directory_data(Directory, 
+						    DirDataLast, 
+						    Server_root) of
 		ok ->
-		    add_auth_password(Directory,Pwd,ConfigList),
+		    add_auth_password(Directory, Passwd, ConfigList),
 		    {ok, {directory, {Directory, DirDataLast}}};
 		{ok, NewDirData} ->
-		    add_auth_password(Directory,Pwd,ConfigList),
+		    add_auth_password(Directory, Passwd, ConfigList),
 		    {ok, {directory, {Directory, NewDirData}}};
 		{error, Reason} ->
 		    {error, Reason};
@@ -691,7 +712,7 @@ delete_user(UserName, Addr, Port, Dir) ->
 
 delete_group(GroupName, Opt) ->
     case get_options(Opt, mandatory) of
-	{Addr, Port, Dir, AuthPwd}->
+	{Addr, Port, Dir, AuthPwd} ->
 	    mod_auth_server:delete_group(Addr, Port, Dir, GroupName, AuthPwd);
 	{error, Reason} ->
 	    {error, Reason}
@@ -707,7 +728,7 @@ delete_group(GroupName, Addr, Port, Dir) ->
 
 list_groups(Opt) ->
     case get_options(Opt, mandatory) of
-	{Addr, Port, Dir, AuthPwd}->
+	{Addr, Port, Dir, AuthPwd} ->
 	    mod_auth_server:list_groups(Addr, Port, Dir, AuthPwd);
 	{error, Reason} ->
 	    {error, Reason}
@@ -721,7 +742,7 @@ list_groups(Addr, Port, Dir) ->
 
 %% list_group_members
 
-list_group_members(GroupName,Opt) ->
+list_group_members(GroupName, Opt) ->
     case get_options(Opt, mandatory) of
 	{Addr, Port, Dir, AuthPwd} ->
 	    mod_auth_server:list_group_members(Addr, Port, Dir, GroupName, 
@@ -746,7 +767,7 @@ get_options(Opt, mandatory)->
 	    case proplists:get_value(dir, Opt, undefined) of
 		Dir when is_list(Dir) ->
 		    Addr = proplists:get_value(addr, Opt,
-						 undefined),
+					       undefined),
 		    AuthPwd = proplists:get_value(authPassword, Opt,
 						  ?NOPASSWORD),
 		    {Addr, Port, Dir, AuthPwd};

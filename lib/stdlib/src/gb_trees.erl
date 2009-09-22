@@ -166,7 +166,7 @@
 empty() ->
     {0, nil}.
 
--spec is_empty(gb_tree()) -> bool().
+-spec is_empty(gb_tree()) -> boolean().
 
 is_empty({0, nil}) ->
     true;
@@ -205,7 +205,7 @@ lookup_1(_, nil) ->
 
 %% This is a specialized version of `lookup'.
 
--spec is_defined(term(), gb_tree()) -> bool().
+-spec is_defined(term(), gb_tree()) -> boolean().
 
 is_defined(Key, {_, T}) ->
     is_defined_1(Key, T).

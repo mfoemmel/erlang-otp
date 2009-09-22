@@ -68,7 +68,7 @@ SKIP_BUILDING_BINARIES := true
 endif
 else
 AR_OUT = rcv
-CC_FLAGS =
+CC_FLAGS = @DED_CFLAGS@
 LIBRARY = $(LIBDIR)/libic.a
 SKIP_BUILDING_BINARIES := false
 endif

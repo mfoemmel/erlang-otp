@@ -63,7 +63,7 @@ concat_1([]) ->
 concat_1(Name) ->
     erlang:error({badarg, Name}).
 
--spec is_valid(package_name()) -> bool().
+-spec is_valid(package_name()) -> boolean().
 is_valid(Name) when is_atom(Name) ->
     is_valid_1(atom_to_list(Name));
 is_valid([$. | _]) ->
@@ -97,7 +97,7 @@ split_1(_, _) ->
 %% length larger than one (i.e., if the name can be split into two or
 %% more segments), but is cheaper.
 
--spec is_segmented(package_name()) -> bool().
+-spec is_segmented(package_name()) -> boolean().
 is_segmented(Name) when is_atom(Name) ->
     is_segmented_1(atom_to_list(Name));
 is_segmented(Name) ->

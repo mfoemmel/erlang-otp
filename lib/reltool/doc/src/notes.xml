@@ -36,6 +36,61 @@
     thus constitutes one section in this document. The title of each
     section is the version number of Reltool.</p>
 
+
+    <section><title>Reltool 0.5</title>
+
+        <section><title>Improvements and New Features</title>
+          <list>
+            <item>
+              <p>
+                The tool is still experimental. Feedback is appreciated. </p>
+              <p>
+                Major improvements of the target system generation has
+                been performed. Now it is possible to generate a
+                relocatable target system that does not need to be
+                re-installed if it is moved to a new location. Archive
+                files are automatically generated. A detailed
+                specification of the target system can be generated
+                without actually creating the target system. Relocatable
+                escripts are put in the bin directory of the target
+                system. etc. etc.</p>
+              <p>
+                Some new functions has been introduced in the
+                <c>reltool</c> module: <c>start/1, start_link/1,
+                get_config/3, get_target_spec/1 and
+                eval_target_spec/3</c>.</p>
+              <p>
+                Some new configuration parameters has been introduced:
+                <c>profile, incl_sys_filters, excl_sys_filters,
+                incl_app_filters, excl_app_filters, incl_archive_filters,
+                excl_archive_filters, archive_opts, escript and
+                relocatable</c>.</p>
+              <p>
+                Some parameters have been obsoleted and given new
+                semantics: <c>incl_erts_dirs (incl_sys_filters),
+                excl_erts_dirs (excl_sys_filters), incl_app_dirs
+                (incl_app_filters), excl_app_dirs (excl_app_filters) and
+                escripts (escript).</c></p>
+              <p>
+                *** POTENTIAL INCOMPATIBILITY ***</p>
+              <p>
+                Own Id: OTP-7949</p>
+            </item>
+          </list>
+        </section>
+
+     <section>
+      <title>Known Bugs and Problems</title>
+      <list>
+        <item>
+          <p>
+            The application is experimental. Feedback is appreciated.</p>
+        </item>
+      </list>
+    </section>
+
+    </section>
+
     <section>
       <title>Reltool 0.2.2</title>
       
@@ -45,7 +100,7 @@
 	  <item>
 	    <p>
 	      The tool crashed when rel, script and boot files were
-	    generated via the. This has been fixed.</p>
+	    generated via the GUI. This has been fixed.</p>
 	    <p>
 	    Own Id: OTP-7999</p>
 	  </item>

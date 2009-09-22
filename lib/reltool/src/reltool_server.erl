@@ -20,15 +20,16 @@
 
 %% Public
 -export([
-         start/0, start/1,
-	 get_config/1, load_config/2, save_config/2,
-	 get_rel/2, get_script/2,
-	 reset_config/1, undo_config/1,
+         start_link/0, start_link/1,
+         get_config/3, load_config/2, save_config/4,
+         get_rel/2, get_script/2,
+         reset_config/1, undo_config/1,
          get_mod/2,
          get_app/2, set_app/2,
-	 get_apps/2, set_apps/2,
+         get_apps/2, set_apps/2,
          get_sys/1, set_sys/2,
-	 gen_rel_files/2, gen_target/2
+         get_status/1,
+         gen_rel_files/2, gen_target/2, gen_spec/1
         ]).
 
 %% Internal
@@ -45,135 +46,130 @@
 
 -record(state, 
         {options,
-	 parent_pid,
+         parent_pid,
          common,
          sys,
-	 old_sys}).
+         old_sys,
+         status,
+         old_status}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Client
 
-start() ->
-    start([]).
+start_link() ->
+    start_link([]).
 
-start(Options) ->
+start_link(Options) ->
     proc_lib:start_link(?MODULE, init, [[{parent, self()} | Options]], infinity, []).
 
-get_config(Pid) ->
-    call(Pid, get_config).
+get_config(Pid, InclDefaults, InclDerivates) ->
+    reltool_utils:call(Pid, {get_config, InclDefaults, InclDerivates}).
 
 load_config(Pid, FilenameOrConfig) ->
-    call(Pid, {load_config, FilenameOrConfig}).
+    reltool_utils:call(Pid, {load_config, FilenameOrConfig}).
 
-save_config(Pid, Filename) ->
-    call(Pid, {save_config, Filename}).
+save_config(Pid, Filename, InclDefaults, InclDerivates) ->
+    reltool_utils:call(Pid, {save_config, Filename, InclDefaults, InclDerivates}).
 
 reset_config(Pid) ->
-    call(Pid, reset_config).
+    reltool_utils:call(Pid, reset_config).
 
 undo_config(Pid) ->
-    call(Pid, undo_config).
+    reltool_utils:call(Pid, undo_config).
 
 get_rel(Pid, RelName) ->
-    call(Pid, {get_rel, RelName}).
+    reltool_utils:call(Pid, {get_rel, RelName}).
 
 get_script(Pid, RelName) ->
-    call(Pid, {get_script, RelName}).
+    reltool_utils:call(Pid, {get_script, RelName}).
 
 get_mod(Pid, ModName) ->
-    call(Pid, {get_mod, ModName}).
+    reltool_utils:call(Pid, {get_mod, ModName}).
 
 get_app(Pid, AppName) ->
-    call(Pid, {get_app, AppName}).
+    reltool_utils:call(Pid, {get_app, AppName}).
 
 set_app(Pid, App) ->
-    call(Pid, {set_app, App}).
+    reltool_utils:call(Pid, {set_app, App}).
 
 get_apps(Pid, Kind) ->
-    call(Pid, {get_apps, Kind}).
+    reltool_utils:call(Pid, {get_apps, Kind}).
 
 set_apps(Pid, Apps) ->
-    call(Pid, {set_apps, Apps}).
+    reltool_utils:call(Pid, {set_apps, Apps}).
 
 get_sys(Pid) ->
-    call(Pid, get_sys).
+    reltool_utils:call(Pid, get_sys).
 
 set_sys(Pid, Sys) ->
-    call(Pid, {set_sys, Sys}).
+    reltool_utils:call(Pid, {set_sys, Sys}).
+
+get_status(Pid) ->
+    reltool_utils:call(Pid, get_status).
 
 gen_rel_files(Pid, Dir) ->
-    call(Pid, {gen_rel_files, Dir}).
+    reltool_utils:call(Pid, {gen_rel_files, Dir}).
 
 gen_target(Pid, Dir) ->
-    call(Pid, {gen_target, Dir}).
+    reltool_utils:call(Pid, {gen_target, Dir}).
 
-call(Name, Msg) when is_atom(Name) ->
-    call(whereis(Name), Msg);
-call(Pid, Msg) when is_pid(Pid) ->
-    Ref = erlang:monitor(process, Pid),
-    %% io:format("Send~p: ~p\n", [self(), Msg]),
-    Pid ! {self(), Ref, Msg},
-    receive
-        {Ref, Reply} ->
-	    %% io:format("Rec~p: ~p\n", [self(), Reply]),
-            erlang:demonitor(Ref, [flush]),
-            Reply;
-        {'DOWN', Ref, _, _, Reason} ->
-            {error, Reason}
-    end.
+gen_spec(Pid) ->
+    reltool_utils:call(Pid, gen_spec).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Server
 
-reply(Pid, Ref, Msg) ->
-    Pid ! {Ref, Msg}.
-
 init(Options) ->
     try
-	do_init(Options)
+        do_init(Options)
     catch
-	error:Reason ->
-	    exit({Reason, erlang:get_stacktrace()})
+        error:Reason ->
+            exit({Reason, erlang:get_stacktrace()})
     end.
 
 do_init(Options) ->
     case parse_options(Options) of
         {#state{parent_pid = ParentPid, common = C, sys = Sys} = S, Status} ->
-	    %% process_flag(trap_exit, (S#state.common)#common.trap_exit),
+            %% process_flag(trap_exit, (S#state.common)#common.trap_exit),
             proc_lib:init_ack(ParentPid, {ok, self(), C, Sys#sys{apps = undefined}}),
             {S2, Status2} = refresh(S, true, Status),
-	    {S3, Status3} = analyse(S2#state{old_sys = S2#state.sys}, Status2),
-	    case Status3 of
-		{ok, _} ->
-		    loop(S3);
-		{error, Reason} ->
-		    exit(Reason)
-	    end
+            {S3, Status3} = analyse(S2#state{old_sys = S2#state.sys}, Status2),
+            case Status3 of
+                {ok, _Warnings} ->
+                    loop(S3#state{status = Status3, old_status = {ok, []}});
+                {error, Reason} ->
+                    exit(Reason)
+            end
     end.
 
 parse_options(Opts) ->
     AppTab = ets:new(reltool_apps, [public, ordered_set, {keypos, #app.name}]),
     ModTab = ets:new(reltool_mods, [public, ordered_set, {keypos, #mod.name}]),
     ModUsesTab = ets:new(reltool_mod_uses, [public, bag, {keypos, 1}]),
-    Sys = #sys{incl_cond = ?DEFAULT_INCL_COND,
-	       mod_cond = ?DEFAULT_MOD_COND,
-	       debug_info = ?DEFAULT_DEBUG_INFO,
-	       app_file = ?DEFAULT_APP_FILE,
-	       emu_name = "beam",
-	       profile = development,
-	       incl_erts_dirs = ?DEFAULT_INCL_ERTS_DIRS,
-	       excl_erts_dirs = ?DEFAULT_EXCL_ERTS_DIRS,
-	       incl_app_dirs = ?DEFAULT_INCL_APP_DIRS,
-	       excl_app_dirs = ?DEFAULT_EXCL_APP_DIRS,
-	       root_dir = reltool_utils:root_dir(),
-	       lib_dirs = reltool_utils:erl_libs(),
-	       escripts = [],
-	       apps = [],
-	       boot_rel = ?DEFAULT_REL_NAME,
-	       rels = reltool_utils:default_rels()},
+    Sys = #sys{root_dir          = reltool_utils:root_dir(),
+               lib_dirs          = reltool_utils:erl_libs(),
+	       escripts          = [],
+               incl_cond         = ?DEFAULT_INCL_COND,
+               mod_cond          = ?DEFAULT_MOD_COND,
+               apps              = ?DEFAULT_APPS,
+               boot_rel          = ?DEFAULT_REL_NAME,
+               rels              = reltool_utils:default_rels(),
+               emu_name          = ?DEFAULT_EMU_NAME,
+               profile           = ?DEFAULT_PROFILE,
+               incl_sys_filters    = reltool_utils:decode_regexps(incl_sys_filters, ?DEFAULT_INCL_SYS_FILTERS, []),
+               excl_sys_filters    = reltool_utils:decode_regexps(excl_sys_filters, ?DEFAULT_EXCL_SYS_FILTERS, []),
+               incl_app_filters    = reltool_utils:decode_regexps(incl_app_filters, ?DEFAULT_INCL_APP_FILTERS, []),
+               excl_app_filters    = reltool_utils:decode_regexps(excl_app_filters, ?DEFAULT_EXCL_APP_FILTERS, []),
+               relocatable       = ?DEFAULT_RELOCATABLE,
+               app_type          = ?DEFAULT_APP_TYPE,
+               app_file          = ?DEFAULT_APP_FILE,
+               incl_archive_filters = reltool_utils:decode_regexps(incl_archive_filters, ?DEFAULT_INCL_ARCHIVE_FILTERS, []),
+               excl_archive_filters = reltool_utils:decode_regexps(excl_archive_filters, ?DEFAULT_EXCL_ARCHIVE_FILTERS, []),
+               archive_opts      = ?DEFAULT_ARCHIVE_OPTS,
+               debug_info        = ?DEFAULT_DEBUG_INFO},
     C2 = #common{sys_debug = [],
                  wx_debug = 0,
-		 trap_exit = true,
+                 trap_exit = true,
                  app_tab = AppTab,
                  mod_tab = ModTab,
                  mod_used_by_tab = ModUsesTab},
@@ -191,191 +187,201 @@ parse_options([{Key, Val} | KeyVals], S, C, Sys, Status) ->
         trap_exit ->
             parse_options(KeyVals, S, C#common{trap_exit = Val}, Sys, Status);
         config ->
-	    {Sys2, Status2} = read_config(Sys, Val, Status),
+            {Sys2, Status2} = read_config(Sys, Val, Status),
             parse_options(KeyVals, S, C, Sys2, Status2);
-        incl_cond ->
-            parse_options(KeyVals, S, C, Sys#sys{incl_cond = Val}, Status);
-        mod_cond ->
-            parse_options(KeyVals, S, C, Sys#sys{mod_cond = Val}, Status);
-        root_dir ->
-            parse_options(KeyVals, S, C, Sys#sys{root_dir = Val}, Status);
-        lib_dirs ->
-            parse_options(KeyVals, S, C, Sys#sys{lib_dirs = Val}, Status);
-        escripts ->
-            parse_options(KeyVals, S, C, Sys#sys{escripts = Val}, Status);
+        sys ->
+            {Sys2, Status2} = read_config(Sys, {sys, Val}, Status),
+            parse_options(KeyVals, S, C, Sys2, Status2);
         _ ->
-	    Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
-	    Status2 = reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text),
+            Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
+            Status2 = reltool_utils:return_first_error(Status, "Illegal option: " ++ Text),
             parse_options(KeyVals, S, C, Sys, Status2)
     end;
 parse_options([], S, C, Sys, Status) ->
-    {S#state{common = C, sys = Sys}, Status}.
+    {S#state{common = C, sys = Sys}, Status};
+parse_options(KeyVals, S, C, Sys, Status) ->
+    Text = lists:flatten(io_lib:format("~p", [KeyVals])),
+    Status2 = reltool_utils:return_first_error(Status, "Illegal options: " ++ Text),
+    {S#state{common = C, sys = Sys}, Status2}.
 
 loop(#state{common = C, sys = Sys} = S) ->
     receive
         {system, From, Msg} ->
             sys:handle_system_msg(Msg, From, S#state.parent_pid, ?MODULE, C#common.sys_debug, S);
-        {ReplyTo, Ref, get_config} ->
-	    Reply = do_get_config(S),
-	    reply(ReplyTo, Ref, Reply),
+        {call, ReplyTo, Ref, {get_config, InclDefaults, InclDerivates}} ->
+            Reply = do_get_config(S, InclDefaults, InclDerivates),
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S);
-        {ReplyTo, Ref, {load_config, SysConfig}} ->
-	    {S2, Reply} = do_load_config(S, SysConfig),
-	    reply(ReplyTo, Ref, Reply),
+        {call, ReplyTo, Ref, {load_config, SysConfig}} ->
+            {S2, Reply} = do_load_config(S, SysConfig),
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S2);
-        {ReplyTo, Ref, {save_config, Filename}} ->
-            Reply = do_save_config(S, Filename),
-	    reply(ReplyTo, Ref, Reply),
+        {call, ReplyTo, Ref, {save_config, Filename, InclDefaults, InclDerivates}} ->
+            Reply = do_save_config(S, Filename, InclDefaults, InclDerivates),
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S);
-        {ReplyTo, Ref, reset_config} ->
-	    {S2, Status} = parse_options(S#state.options),
-	    S3 = shrink_sys(S2),
-	    {S4, Status2} = refresh(S3, true, Status),
-	    {S5, Status3} = analyse(S4#state{old_sys = S4#state.sys}, Status2),
-	    S6 = 
-		case Status3 of
-		    {ok, _} ->
-			S5;
-		    {error, _} ->
-			S
-		end,
-	    reply(ReplyTo, Ref, Status2),
+        {call, ReplyTo, Ref, reset_config} ->
+            {S2, Status} = parse_options(S#state.options),
+            S3 = shrink_sys(S2),
+            {S4, Status2} = refresh(S3, true, Status),
+            {S5, Status3} = analyse(S4#state{old_sys = S4#state.sys}, Status2),
+            S6 = 
+                case Status3 of
+                    {ok, _Warnings} ->
+                        S5#state{status = Status3, old_status = S#state.status};
+                    {error, _} ->
+                        S
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Status3),
             ?MODULE:loop(S6);
-        {ReplyTo, Ref, undo_config} ->
-	    reply(ReplyTo, Ref, ok),
-            ?MODULE:loop(S#state{sys = S#state.old_sys, old_sys = S#state.sys});
-        {ReplyTo, Ref, {get_rel, RelName}} ->
-	    Sys = S#state.sys,
-	    Reply = 
-		case lists:keysearch(RelName, #rel.name, Sys#sys.rels) of
-		    {value, Rel} ->
-			{ok, reltool_target:gen_rel(Rel, Sys)};
-		    false ->
-			{error, "No such release"}
-		end,
-	    reply(ReplyTo, Ref, Reply),
+        {call, ReplyTo, Ref, undo_config} ->
+            reltool_utils:reply(ReplyTo, Ref, ok),
+            S2 = S#state{sys = S#state.old_sys, 
+                         old_sys = S#state.sys,
+                         status = S#state.old_status,
+                         old_status = S#state.status},
+            ?MODULE:loop(S2);
+        {call, ReplyTo, Ref, {get_rel, RelName}} ->
+            Sys = S#state.sys,
+            Reply = 
+                case lists:keysearch(RelName, #rel.name, Sys#sys.rels) of
+                    {value, Rel} ->
+                        {ok, reltool_target:gen_rel(Rel, Sys)};
+                    false ->
+                        {error, "No such release"}
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S);
-        {ReplyTo, Ref, {get_script, RelName}} ->
-	    Sys = S#state.sys,
-	    Reply = 
-		case lists:keysearch(RelName, #rel.name, Sys#sys.rels) of
-		    {value, Rel} ->
-			PathFlag = true,
-			Variables = [],
-			reltool_target:gen_script(Rel, Sys, PathFlag, Variables);
-		    false ->
-			{error, "No such release"}
-		end,
-	    reply(ReplyTo, Ref, Reply),
+        {call, ReplyTo, Ref, {get_script, RelName}} ->
+            Sys = S#state.sys,
+            Reply = 
+                case lists:keysearch(RelName, #rel.name, Sys#sys.rels) of
+                    {value, Rel} ->
+                        PathFlag = true,
+                        Variables = [],
+                        reltool_target:gen_script(Rel, Sys, PathFlag, Variables);
+                    false ->
+                        {error, "No such release"}
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S);
-        {ReplyTo, Ref, {get_mod, ModName}} ->
+        {call, ReplyTo, Ref, {get_mod, ModName}} ->
             Reply =
-		case ets:lookup(C#common.mod_tab, ModName) of
-		    [M] ->
-			{ok, M};
-		    [] ->
-			{ok, missing_mod(ModName, ?MISSING_APP)}
-		end,
-            reply(ReplyTo, Ref, Reply),
+                case ets:lookup(C#common.mod_tab, ModName) of
+                    [M] ->
+                        {ok, M};
+                    [] ->
+                        {ok, missing_mod(ModName, ?MISSING_APP)}
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S);
-        {ReplyTo, Ref, {get_app, AppName}} when is_atom(AppName) ->
-	    Reply = 
-		case lists:keysearch(AppName, #app.name, Sys#sys.apps) of
-		    {value, App} ->
-			{ok, App};
-		    false ->
-			{error, enoent}
-		end,
-	    reply(ReplyTo, Ref, Reply),
+        {call, ReplyTo, Ref, {get_app, AppName}} when is_atom(AppName) ->
+            Reply = 
+                case lists:keysearch(AppName, #app.name, Sys#sys.apps) of
+                    {value, App} ->
+                        {ok, App};
+                    false ->
+                        {error, enoent}
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Reply),
             ?MODULE:loop(S);
-        {ReplyTo, Ref, {set_app, App}} ->
-	    {S2, Status} = do_set_app(S, App, {ok, []}),
-	    {S3, Status2} = analyse(S2, Status),
-	    case Status2 of
-		{ok, Warnings} ->
-		    App2 = ?KEYSEARCH(App#app.name,
-				      #app.name,
-				      (S3#state.sys)#sys.apps),
-		    reply(ReplyTo, Ref, {ok, App2, Warnings}),
-		    ?MODULE:loop(S3);
-		{error, Reason} ->
-		    reply(ReplyTo, Ref, {error, Reason}),
-		    ?MODULE:loop(S)
-	    end;
-	{ReplyTo, Ref, {get_apps, Kind}} ->
-	    AppNames =
-		case Kind of
-		    whitelist -> 
-			[A ||
-			    A <- Sys#sys.apps,
-			    A#app.is_pre_included =:= true];
-		    blacklist -> 
-			[A ||
-			    A <- Sys#sys.apps,
-			    A#app.is_pre_included =:= false];
-		    source -> 
-			[A ||
-			    A <- Sys#sys.apps,
-			    A#app.is_included =/= true,
-			    A#app.is_pre_included =/= false];
-		    derived ->
-			[A ||
-			    A <- Sys#sys.apps,
-			    A#app.is_included =:= true,
-			    A#app.is_pre_included =/= true]
-		end,
-	    reply(ReplyTo, Ref, {ok, AppNames}),
-	    ?MODULE:loop(S);
-	{ReplyTo, Ref, {set_apps, Apps}} ->
-	    {S2, Status} = lists:foldl(fun(A, {X, Y}) -> do_set_app(X, A, Y) end, {S, {ok, []}}, Apps),
-	    {S3, Status2} = analyse(S2, Status),
-	    reply(ReplyTo, Ref, Status2),
-	    ?MODULE:loop(S3);
-	{ReplyTo, Ref, get_sys} ->
-	    reply(ReplyTo, Ref, {ok, Sys#sys{apps = undefined}}),
-	    ?MODULE:loop(S);
-	{ReplyTo, Ref, {set_sys, Sys2}} ->
-	    S2 = S#state{sys = Sys2#sys{apps = Sys#sys.apps}},
-	    Force = 
-		(Sys2#sys.root_dir =/= Sys#sys.root_dir) orelse
-		(Sys2#sys.lib_dirs =/= Sys#sys.lib_dirs) orelse
-	        (Sys2#sys.escripts =/= Sys#sys.escripts),
-	    {S3, Status} = refresh(S2, Force, {ok, []}),
-	    {S4, Status2} = analyse(S3#state{old_sys = S#state.sys}, Status),
-	    S6 = 
-		case Status2 of
-		    {ok, _} ->
-			S4;
-		    {error, _} ->
-			S
-		end,
-	    reply(ReplyTo, Ref, Status),
-	    ?MODULE:loop(S6);
-	{ReplyTo, Ref, {gen_rel_files, Dir}} ->
-	    Status = 
-		case reltool_target:gen_rel_files(S#state.sys, Dir) of
-		    ok ->
-			{ok, []};
-		    {error, Reason} ->
-			{error, Reason}
-		end,
-	    reply(ReplyTo, Ref, Status),
-	    ?MODULE:loop(S);
-	{ReplyTo, Ref, {gen_target, Dir}} ->
-	    Reply = reltool_target:gen_target(S#state.sys, Dir),
-	    reply(ReplyTo, Ref, Reply),
-	    ?MODULE:loop(S);
-	{'EXIT', Pid, Reason} when Pid =:= S#state.parent_pid ->
-	    exit(Reason);
-	{ReplyTo, Ref, Msg} when is_pid(ReplyTo), is_reference(Ref) ->
-	    error_logger:format("~p~p got unexpected call:\n\t~p\n",
-				[?MODULE, self(), Msg]),
-	    reply(ReplyTo, Ref, {error, {invalid_call, Msg}}),
-	    ?MODULE:loop(S);
-	Msg ->
-	    error_logger:format("~p~p got unexpected message:\n\t~p\n",
-				[?MODULE, self(), Msg]),
-	    ?MODULE:loop(S)
+        {call, ReplyTo, Ref, {set_app, App}} ->
+            {S2, Status} = do_set_app(S, App, {ok, []}),
+            {S3, Status2} = analyse(S2, Status),
+            case Status2 of
+                {ok, Warnings} ->
+                    App2 = ?KEYSEARCH(App#app.name,
+                                      #app.name,
+                                      (S3#state.sys)#sys.apps),
+                    reltool_utils:reply(ReplyTo, Ref, {ok, App2, Warnings}),
+                    ?MODULE:loop(S3);
+                {error, Reason} ->
+                    reltool_utils:reply(ReplyTo, Ref, {error, Reason}),
+                    ?MODULE:loop(S)
+            end;
+        {call, ReplyTo, Ref, {get_apps, Kind}} ->
+            AppNames =
+                case Kind of
+                    whitelist -> 
+                        [A ||
+                            A <- Sys#sys.apps,
+                            A#app.is_pre_included =:= true];
+                    blacklist -> 
+                        [A ||
+                            A <- Sys#sys.apps,
+                            A#app.is_pre_included =:= false];
+                    source -> 
+                        [A ||
+                            A <- Sys#sys.apps,
+                            A#app.is_included =/= true,
+                            A#app.is_pre_included =/= false];
+                    derived ->
+                        [A ||
+                            A <- Sys#sys.apps,
+                            A#app.is_included =:= true,
+                            A#app.is_pre_included =/= true]
+                end,
+            reltool_utils:reply(ReplyTo, Ref, {ok, AppNames}),
+            ?MODULE:loop(S);
+        {call, ReplyTo, Ref, {set_apps, Apps}} ->
+            {S2, Status} = lists:foldl(fun(A, {X, Y}) -> do_set_app(X, A, Y) end,
+                                       {S, {ok, []}},
+                                       Apps),
+            {S3, Status2} = analyse(S2, Status),
+            reltool_utils:reply(ReplyTo, Ref, Status2),
+            ?MODULE:loop(S3);
+        {call, ReplyTo, Ref, get_sys} ->
+            reltool_utils:reply(ReplyTo, Ref, {ok, Sys#sys{apps = undefined}}),
+            ?MODULE:loop(S);
+        {call, ReplyTo, Ref, {set_sys, Sys2}} ->
+            S2 = S#state{sys = Sys2#sys{apps = Sys#sys.apps}},
+            Force = 
+                (Sys2#sys.root_dir =/= Sys#sys.root_dir) orelse
+                (Sys2#sys.lib_dirs =/= Sys#sys.lib_dirs) orelse
+                (Sys2#sys.escripts =/= Sys#sys.escripts),
+            {S3, Status} = refresh(S2, Force, {ok, []}),
+            {S4, Status2} = analyse(S3#state{old_sys = S#state.sys}, Status),
+            S6 = 
+                case Status2 of
+                    {ok, _Warnings} ->
+                        S4#state{status = Status2, old_status = S#state.status};
+                    {error, _} ->
+                        S
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Status2),
+            ?MODULE:loop(S6);
+        {call, ReplyTo, Ref, get_status} ->
+            reltool_utils:reply(ReplyTo, Ref, S#state.status),
+            ?MODULE:loop(S);
+        {call, ReplyTo, Ref, {gen_rel_files, Dir}} ->
+            Status = 
+                case reltool_target:gen_rel_files(S#state.sys, Dir) of
+                    ok ->
+                        {ok, []};
+                    {error, Reason} ->
+                        {error, Reason}
+                end,
+            reltool_utils:reply(ReplyTo, Ref, Status),
+            ?MODULE:loop(S);
+        {call, ReplyTo, Ref, {gen_target, Dir}} ->
+            Reply = reltool_target:gen_target(S#state.sys, Dir),
+            reltool_utils:reply(ReplyTo, Ref, Reply),
+            ?MODULE:loop(S);
+        {call, ReplyTo, Ref, gen_spec} ->
+            Reply = reltool_target:gen_spec(S#state.sys),
+            reltool_utils:reply(ReplyTo, Ref, Reply),
+            ?MODULE:loop(S);
+        {'EXIT', Pid, Reason} when Pid =:= S#state.parent_pid ->
+            exit(Reason);
+        {call, ReplyTo, Ref, Msg} when is_pid(ReplyTo), is_reference(Ref) ->
+            error_logger:format("~p~p got unexpected call:\n\t~p\n",
+                                [?MODULE, self(), Msg]),
+            reltool_utils:reply(ReplyTo, Ref, {error, {invalid_call, Msg}}),
+            ?MODULE:loop(S);
+        Msg ->
+            error_logger:format("~p~p got unexpected message:\n\t~p\n",
+                                [?MODULE, self(), Msg]),
+            ?MODULE:loop(S)
     end.
 
  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -385,7 +391,8 @@ do_set_app(#state{sys = Sys} = S, App, Status) ->
     {App2, Status2} = refresh_app(App, false, Status),
     Apps = Sys#sys.apps,
     Apps2 = lists:keystore(AppName, #app.name, Apps, App2),
-    Sys2 = Sys#sys{apps = Apps2},
+    Escripts = [A#app.active_dir || A <- Apps2, A#app.is_escript],
+    Sys2 = Sys#sys{apps = Apps2, escripts = Escripts},
     {S#state{sys = Sys2}, Status2}.
 
 analyse(#state{common = C, sys = #sys{apps = Apps0} = Sys} = S, Status) ->
@@ -396,33 +403,33 @@ analyse(#state{common = C, sys = #sys{apps = Apps0} = Sys} = S, Status) ->
     MissingApp = default_app(?MISSING_APP, "missing"),
     ets:insert(C#common.app_tab, MissingApp),
 
-    Apps2 = app_init_is_included(C, Sys, Apps, []),
+    Apps2 = lists:map(fun(App) -> app_init_is_included(C, Sys, App) end, Apps),
     Apps3 = 
-	case app_propagate_is_included(C, Sys, Apps2, []) of
-	    [] ->
-		Apps2;
-	    MissingMods ->
-		%% io:format("Missing mods: ~p\n", [MissingMods]),
-		MissingApp2 = MissingApp#app{label = ?MISSING_APP_TEXT,
-					     info = missing_app_info(""),
-					     mods = MissingMods, 
-					     status = missing,
-					     uses_mods = []},
-		[MissingApp2 | Apps2]
-	end,
+        case app_propagate_is_included(C, Sys, Apps2, []) of
+            [] ->
+                Apps2;
+            MissingMods ->
+                %% io:format("Missing mods: ~p\n", [MissingMods]),
+                MissingApp2 = MissingApp#app{label = ?MISSING_APP_TEXT,
+                                             info = missing_app_info(""),
+                                             mods = MissingMods, 
+                                             status = missing,
+                                             uses_mods = []},
+                [MissingApp2 | Apps2]
+        end,
     app_propagate_is_used_by(C, Apps3),
     Apps4 = read_apps(C, Sys, Apps3, []),
     %% io:format("Missing app: ~p\n", [lists:keysearch(?MISSING_APP, #app.name, Apps4)]),
     Sys2 = Sys#sys{apps = Apps4},
     try
-	Status2 = verify_config(Sys2, Status),
-	{S#state{sys = Sys2}, Status2}
+        Status2 = verify_config(Sys2, Status),
+        {S#state{sys = Sys2}, Status2}
     catch
-	throw:{error, Status3} ->
-	    {S, Status3}
+        throw:{error, Status3} ->
+            {S, Status3}
     end.
 
-app_init_is_included(C, Sys, [#app{mods = Mods} = A | Apps], Acc) ->
+app_init_is_included(C, Sys, #app{mods = Mods} = A) ->
     AppCond = 
         case A#app.incl_cond of
             undefined -> Sys#sys.incl_cond;
@@ -441,12 +448,11 @@ app_init_is_included(C, Sys, [#app{mods = Mods} = A | Apps], Acc) ->
         end,
     A2 = A#app{is_pre_included = IsIncl, is_included = IsIncl},
     ets:insert(C#common.app_tab, A2),
-    mod_init_is_included(C, Mods, ModCond, AppCond),
-    app_init_is_included(C, Sys, Apps, [A2 | Acc]);
-app_init_is_included(_C, _Sys, [], Acc) ->
-    lists:reverse(Acc).
+    lists:foreach(fun(Mod) -> mod_init_is_included(C, Mod, ModCond, AppCond, undefined) end, Mods),
+    %%app_mod_init_is_included(C, AppName, Info, ModCond, AppCond),
+    A2.
 
-mod_init_is_included(C, [M | Mods], ModCond, AppCond) ->
+mod_init_is_included(C, M, ModCond, AppCond, Default) ->
     %% print(M#mod.name, hipe, "incl_cond -> ~p\n", [AppCond]),
     IsIncl =
         case AppCond of
@@ -462,7 +468,7 @@ mod_init_is_included(C, [M | Mods], ModCond, AppCond) ->
                             all     -> true;
                             app     -> false_to_undefined(M#mod.is_app_mod);
                             ebin    -> false_to_undefined(M#mod.is_ebin_mod);
-                            derived -> undefined;
+                            derived -> Default;
                             none    -> false
                         end
                 end;
@@ -475,15 +481,12 @@ mod_init_is_included(C, [M | Mods], ModCond, AppCond) ->
                     exclude ->
                         false;
                     undefined ->
-                        undefined
+                        Default
                 end
         end,
     M2 = M#mod{is_pre_included = IsIncl, is_included = IsIncl},
     %% print(M#mod.name, hipe, "~p -> ~p\n", [M2, IsIncl]),
-    ets:insert(C#common.mod_tab, M2),
-    mod_init_is_included(C, Mods, ModCond, AppCond);
-mod_init_is_included(_C, [], _ModCond, _AppCond) ->
-    ok.
+    ets:insert(C#common.mod_tab, M2).
 
 false_to_undefined(Bool) ->
     case Bool of
@@ -502,92 +505,92 @@ mod_propagate_is_included(C, Sys, A, [#mod{name = ModName} | Mods], Acc) ->
     %% print(ModName, file, "Maybe Prop ~p -> ~p\n", [M2, M2#mod.is_included]),
     %% print(ModName, filename, "Maybe Prop ~p -> ~p\n", [M2, M2#mod.is_included]),
     Acc2 = 
-	case M2#mod.is_included of
-	    true ->
-		%% Propagate include mark
-		mod_mark_is_included(C, Sys, ModName, M2#mod.uses_mods, Acc);
-	    false ->
-		Acc;
-	    undefined ->
-		Acc
-	end,
+        case M2#mod.is_included of
+            true ->
+                %% Propagate include mark
+                mod_mark_is_included(C, Sys, ModName, M2#mod.uses_mods, Acc);
+            false ->
+                Acc;
+            undefined ->
+                Acc
+        end,
     mod_propagate_is_included(C, Sys, A, Mods, Acc2);
 mod_propagate_is_included(_C, _Sys, _A, [], Acc) ->
     Acc.
 
 mod_mark_is_included(C, Sys, UsedByName, [ModName | ModNames], Acc) ->
     Acc3 = 
-	case ets:lookup(C#common.mod_tab, ModName) of
-	    [M] -> 
-		%% print(UsedByName, file, "Maybe Mark ~p -> ~p\n", [M, M#mod.is_included]),
-		%% print(UsedByName, filename, "Maybe Mark ~p -> ~p\n", [M, M#mod.is_included]),
-		case M#mod.is_included of
-		    true ->
-			%% Already marked
-			Acc;
-		    false ->
-			%% Already marked
-			Acc;
-		    undefined ->
-			%% Mark and propagate
-			M2 = 
-			    case M#mod.incl_cond of
-				include ->
-				    M#mod{is_pre_included = true, is_included = true};
-				exclude ->
-				    M#mod{is_pre_included = true, is_included = true};
-				undefined ->
-				    M#mod{is_included = true}
-			    end,
-			ets:insert(C#common.mod_tab, M2),
-			%% io:format("Propagate mod: ~p -> ~p (~p)\n", [UsedByName, ModName, M#mod.incl_cond]),
-			[A] = ets:lookup(C#common.app_tab, M2#mod.app_name),
-			Acc2 = 
-			    case A#app.is_included of
-				true ->
-				    Acc;
-				false ->
-				    Acc;
-				undefined ->
-				    ModCond =
-					case A#app.mod_cond of
-					    undefined -> Sys#sys.mod_cond;
-					    _         -> A#app.mod_cond
-					end,
-				    Filter = 
-					fun(M3) ->
-						case ModCond of
-						    all     -> true;
-						    app     -> M3#mod.is_app_mod;
-						    ebin    -> M3#mod.is_ebin_mod;
-						    derived -> false;
-						    none    -> false
-						end
-					end,
-				    Mods = lists:filter(Filter, A#app.mods),
-				    %% io:format("Propagate app: ~p ~p -> ~p\n",
-				    %% [UsedByName, A#app.name, [M3#mod.name || M3 <- Mods]]),
-				    A2 = A#app{is_included = true},
-				    ets:insert(C#common.app_tab, A2),				    
-				    mod_mark_is_included(C, Sys, ModName, [M3#mod.name || M3 <- Mods], Acc)
-			    end,
-			mod_mark_is_included(C, Sys, ModName, M2#mod.uses_mods, Acc2)
-		end;
-	    [] ->
-		M = missing_mod(ModName, ?MISSING_APP),
-		M2 = M#mod{is_included = true},
-		ets:insert(C#common.mod_tab, M2),
-		ets:insert(C#common.mod_used_by_tab, {UsedByName, ModName}),
-		[M2 | Acc]
-	end,
+        case ets:lookup(C#common.mod_tab, ModName) of
+            [M] -> 
+                %% print(UsedByName, file, "Maybe Mark ~p -> ~p\n", [M, M#mod.is_included]),
+                %% print(UsedByName, filename, "Maybe Mark ~p -> ~p\n", [M, M#mod.is_included]),
+                case M#mod.is_included of
+                    true ->
+                        %% Already marked
+                        Acc;
+                    false ->
+                        %% Already marked
+                        Acc;
+                    undefined ->
+                        %% Mark and propagate
+                        M2 = 
+                            case M#mod.incl_cond of
+                                include ->
+                                    M#mod{is_pre_included = true, is_included = true};
+                                exclude ->
+                                    M#mod{is_pre_included = true, is_included = true};
+                                undefined ->
+                                    M#mod{is_included = true}
+                            end,
+                        ets:insert(C#common.mod_tab, M2),
+                        %% io:format("Propagate mod: ~p -> ~p (~p)\n", [UsedByName, ModName, M#mod.incl_cond]),
+                        [A] = ets:lookup(C#common.app_tab, M2#mod.app_name),
+                        Acc2 = 
+                            case A#app.is_included of
+                                true ->
+                                    Acc;
+                                false ->
+                                    Acc;
+                                undefined ->
+                                    ModCond =
+                                        case A#app.mod_cond of
+                                            undefined -> Sys#sys.mod_cond;
+                                            _         -> A#app.mod_cond
+                                        end,
+                                    Filter = 
+                                        fun(M3) ->
+                                                case ModCond of
+                                                    all     -> true;
+                                                    app     -> M3#mod.is_app_mod;
+                                                    ebin    -> M3#mod.is_ebin_mod;
+                                                    derived -> false;
+                                                    none    -> false
+                                                end
+                                        end,
+                                    Mods = lists:filter(Filter, A#app.mods),
+                                    %% io:format("Propagate app: ~p ~p -> ~p\n",
+                                    %% [UsedByName, A#app.name, [M3#mod.name || M3 <- Mods]]),
+                                    A2 = A#app{is_included = true},
+                                    ets:insert(C#common.app_tab, A2),                               
+                                    mod_mark_is_included(C, Sys, ModName, [M3#mod.name || M3 <- Mods], Acc)
+                            end,
+                        mod_mark_is_included(C, Sys, ModName, M2#mod.uses_mods, Acc2)
+                end;
+            [] ->
+                M = missing_mod(ModName, ?MISSING_APP),
+                M2 = M#mod{is_included = true},
+                ets:insert(C#common.mod_tab, M2),
+                ets:insert(C#common.mod_used_by_tab, {UsedByName, ModName}),
+                [M2 | Acc]
+        end,
     mod_mark_is_included(C, Sys, UsedByName, ModNames, Acc3);
 mod_mark_is_included(_C, _Sys, _UsedByName, [], Acc) ->
     Acc.
 
 app_propagate_is_used_by(C, [#app{mods = Mods, name = Name} | Apps]) ->
     case Name =:= ?MISSING_APP of
-	true -> ok;
-	false -> ok
+        true -> ok;
+        false -> ok
     end,
     mod_propagate_is_used_by(C, Mods),
     app_propagate_is_used_by(C, Apps);
@@ -630,8 +633,8 @@ read_apps(C, Sys, [#app{mods = Mods, is_included = IsIncl} = A | Apps], Acc) ->
                status = Status,
                uses_mods = UsesMods2,
                used_by_mods = UsedByMods2,
-	       uses_apps = UsesApps2,
-	       used_by_apps = UsedByApps2,
+               uses_apps = UsesApps2,
+               used_by_apps = UsedByApps2,
                is_included = IsIncl2},
     read_apps(C, Sys, Apps, [A2 | Acc]);
 read_apps(_C, _Sys, [], Acc) ->
@@ -639,7 +642,7 @@ read_apps(_C, _Sys, [], Acc) ->
 
 read_apps(C, Sys, A, [#mod{name = ModName} | Mods], Acc, IsIncl) ->
     [M2] = ets:lookup(C#common.mod_tab, ModName),
-    Status = get_status(M2),
+    Status = do_get_status(M2),
     %% print(M2#mod.name, hipe, "status -> ~p\n", [Status]),
     {IsIncl2, M3} = 
         case M2#mod.is_included of
@@ -654,7 +657,7 @@ read_apps(C, Sys, A, [#mod{name = ModName} | Mods], Acc, IsIncl) ->
 read_apps(_C, _Sys, _A, [], Acc, IsIncl) ->
     {lists:reverse(Acc), IsIncl}.
 
-get_status(M) ->
+do_get_status(M) ->
     if
         M#mod.exists =:= false, M#mod.is_included =/= false ->
             missing;
@@ -668,88 +671,109 @@ shrink_sys(#state{sys = #sys{apps = Apps} = Sys} = S) ->
 
 filter_app(A) -> 
     Mods = [M#mod{is_app_mod = undefined,
-		  is_ebin_mod = undefined,
-		  uses_mods = undefined,
-		  exists = false,
-		  is_pre_included = undefined,
-		  is_included = undefined} ||
-	       M <- A#app.mods, 
-	       M#mod.incl_cond =/= undefined],
+                  is_ebin_mod = undefined,
+                  uses_mods = undefined,
+                  exists = false,
+                  is_pre_included = undefined,
+                  is_included = undefined} ||
+               M <- A#app.mods, 
+               M#mod.incl_cond =/= undefined],
     if
-	Mods =:= [],
-	A#app.mod_cond =:= undefined,
-	A#app.incl_cond =:= undefined,
-	A#app.use_selected_vsn =:= undefined ->
-	    false;
-	true ->
-	    {Dir, Dirs} = 
-		case A#app.use_selected_vsn of
-		    true -> {A#app.active_dir, [A#app.active_dir]};
-		    false -> {shrinked, []};
-		    undefined -> {shrinked, []}
-		end,
-	    OptVsn =
-		case A#app.use_selected_vsn of
-		    undefined -> undefined;
-		    false -> undefined;
-		    true -> A#app.vsn
-		end,
-	    {true, A#app{active_dir = Dir,
-			 sorted_dirs = Dirs,
-			 vsn = OptVsn,
-			 label = undefined,
-			 info = undefined,
-			 mods = Mods,
-			 uses_mods = undefined,
-			 is_included = undefined}}
+	A#app.is_escript ->
+	    {true, A#app{vsn = undefined,
+                         label = undefined,
+                         info = undefined,
+                         mods = [],
+                         uses_mods = undefined,
+                         is_included = undefined}};
+        Mods =:= [],
+        A#app.mod_cond =:= undefined,
+        A#app.incl_cond =:= undefined,
+        A#app.use_selected_vsn =:= undefined ->
+            false;
+        true ->
+            {Dir, Dirs} = 
+                case A#app.use_selected_vsn of
+                    undefined -> 
+			{shrinked, []};
+                    false ->
+			{shrinked, []};
+                    true ->
+			{A#app.active_dir, [A#app.active_dir]};
+		    _ when A#app.is_escript ->
+			{A#app.active_dir, [A#app.active_dir]}
+                end,
+            OptVsn =
+                case A#app.use_selected_vsn of
+                    undefined -> undefined;
+                    false -> undefined;
+                    true -> A#app.vsn
+                end,
+            {true, A#app{active_dir = Dir,
+                         sorted_dirs = Dirs,
+                         vsn = OptVsn,
+                         label = undefined,
+                         info = undefined,
+                         mods = Mods,
+                         uses_mods = undefined,
+                         is_included = undefined}}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 refresh_app(#app{name = AppName,
                  is_escript = IsEscript,
-		 active_dir = ActiveDir,
-		 label = OptLabel,
+                 active_dir = ActiveDir,
+                 label = OptLabel,
                  mods = Mods} = App,
             Force,
-	    Status) ->
+            Status) ->
     if
         Force; OptLabel =:= undefined ->
-	    {AppInfo, EbinMods, Status3} = 
-		case IsEscript of
-		    false ->
-			
-			%% Add info from .app file
-			Base = get_base(AppName, ActiveDir),
-			{_, DefaultVsn} = reltool_utils:split_app_name(Base),
-			Ebin = filename:join([ActiveDir, "ebin"]),
-			AppFile = filename:join([Ebin, atom_to_list(AppName) ++ ".app"]),
-			{AI, Status2} = read_app_info(AppFile, AppFile, AppName, DefaultVsn, Status),
-			{AI, read_ebin_mods(Ebin, AppName), Status2};
-		    true ->
-			{App#app.info, Mods, Status}
-		end,
-	    
-	    %% Add non-existing modules 
-            AppModNames = AppInfo#app_info.modules,
+            {AppInfo, EbinMods, Status3} = 
+                case IsEscript of
+                    false ->
+                        
+                        %% Add info from .app file
+                        Base = get_base(AppName, ActiveDir),
+                        {_, DefaultVsn} = reltool_utils:split_app_name(Base),
+                        Ebin = filename:join([ActiveDir, "ebin"]),
+                        AppFile = filename:join([Ebin, atom_to_list(AppName) ++ ".app"]),
+                        {AI, Status2} = read_app_info(AppFile, AppFile, AppName, DefaultVsn, Status),
+                        {AI, read_ebin_mods(Ebin, AppName), Status2};
+                    true ->
+                        {App#app.info, Mods, Status}
+                end,
+            
+            %% Add non-existing modules
+            AppModNames =
+                case AppInfo#app_info.mod of
+                    {StartModName, _} ->
+                        case lists:member(StartModName, AppInfo#app_info.modules) of
+                            true  -> AppInfo#app_info.modules;
+                            false -> [StartModName | AppInfo#app_info.modules]
+                        end;
+                    undefined -> 
+                        AppInfo#app_info.modules
+                end,
             MissingMods = add_missing_mods(AppName, EbinMods, AppModNames),
-	    
+            
             %% Add optional user config for each module
             Mods2 = add_mod_config(MissingMods ++ EbinMods, Mods),
-	    
+            
             %% Set app flag for each module in app file
             Mods3 = set_mod_flags(Mods2, AppModNames),
-	    AppVsn = AppInfo#app_info.vsn,
-	    AppLabel =
-		case AppVsn of
-		    "" -> atom_to_list(AppName);
-		    _  -> atom_to_list(AppName) ++ "-" ++ AppVsn
-		end,
+            AppVsn = AppInfo#app_info.vsn,
+            AppLabel =
+                case AppVsn of
+                    "" -> atom_to_list(AppName);
+                    _  -> atom_to_list(AppName) ++ "-" ++ AppVsn
+                end,
             App2 = App#app{vsn = AppVsn,
-			   label = AppLabel, 
-			   info = AppInfo,
-			   mods = lists:keysort(#mod.name, Mods3)},
-	    {App2, Status3};
+                           label = AppLabel, 
+                           info = AppInfo,
+                           mods = lists:keysort(#mod.name, Mods3)},
+            {App2, Status3};
         true ->
             {App, Status}
     end.
@@ -760,16 +784,19 @@ missing_app_info(Vsn) ->
 read_app_info(_AppFileOrBin, _AppFile, erts, DefaultVsn, Status) ->
     {missing_app_info(DefaultVsn), Status};
 read_app_info(AppFileOrBin, AppFile, AppName, DefaultVsn, Status) ->
+    EnoentText = file:format_error(enoent),
     case reltool_utils:prim_consult(AppFileOrBin) of
         {ok,  [{application, AppName, Info}]} ->
-	    AI = #app_info{vsn = DefaultVsn},
+            AI = #app_info{vsn = DefaultVsn},
             parse_app_info(AppFile, Info, AI, Status);
         {ok, _BadApp} ->
-	    Text = lists:concat([AppName, ": Illegal contents in app file ", AppFile]),
-	    {missing_app_info(DefaultVsn), reltool_utils:add_warning(Status, Text)};
-	{error, Text} ->
-	    Text2 = lists:concat([AppName, ": Cannot parse app file ", AppFile, " (", Text, ")."]),
-	    {missing_app_info(DefaultVsn), reltool_utils:add_warning(Status, Text2)}
+            Text = lists:concat([AppName, ": Illegal contents in app file ", AppFile]),
+            {missing_app_info(DefaultVsn), reltool_utils:add_warning(Status, Text)};
+        {error, Text} when Text =:= EnoentText->
+            {missing_app_info(DefaultVsn), Status};
+        {error, Text} ->
+            Text2 = lists:concat([AppName, ": Cannot parse app file ", AppFile, " (", Text, ")."]),
+            {missing_app_info(DefaultVsn), reltool_utils:add_warning(Status, Text2)}
     end.
 
 parse_app_info(File, [{Key, Val} | KeyVals], AI, Status) ->
@@ -796,11 +823,11 @@ read_ebin_mods(Ebin, AppName) ->
         {ok, Files} ->
             Ext = code:objfile_extension(),
             InitMod = fun(F) ->
-			      File = filename:join([Ebin, F]),
-			      init_mod(AppName, File, File, Ext) 
-		      end,
+                              File = filename:join([Ebin, F]),
+                              init_mod(AppName, File, File, Ext) 
+                      end,
             Files2 = [F || F <- Files, filename:extension(F) =:= Ext],
-	    pmap(InitMod, Files2);
+            pmap(InitMod, Files2);
         error ->
             []
     end.
@@ -825,11 +852,11 @@ pmap(Fun, List) ->
 %%     [PR#pmap_res.res || PR <- lists:keysort(#pmap_res.count, Results)];
 %% pmap(Fun, List, N, Max, Count, WaitFor, Results) ->
 %%     receive
-%% 	#pmap_res{ref = Ref} = PR ->
-%% 	    WaitFor2 = lists:keydelete(Ref, #pmap_wait.ref, WaitFor),
-%% 	    pmap(Fun, List, N - 1, Max, Count, WaitFor2, [PR | Results]);
-%% 	{'EXIT', Reason} ->
-%% 	    exit(Reason)
+%%      #pmap_res{ref = Ref} = PR ->
+%%          WaitFor2 = lists:keydelete(Ref, #pmap_wait.ref, WaitFor),
+%%          pmap(Fun, List, N - 1, Max, Count, WaitFor2, [PR | Results]);
+%%      {'EXIT', Reason} ->
+%%          exit(Reason)
 %%     end.
 
 init_mod(AppName, File, FileOrBin, Ext) ->
@@ -837,20 +864,20 @@ init_mod(AppName, File, FileOrBin, Ext) ->
     Base = filename:basename(File, Ext),
     ModName = list_to_atom(Base),
     #mod{name = ModName,
-	 app_name = AppName,
-	 incl_cond = undefined,
-	 is_ebin_mod = true,
-	 uses_mods = UsesMods,
-	 exists = true}.
+         app_name = AppName,
+         incl_cond = undefined,
+         is_ebin_mod = true,
+         uses_mods = UsesMods,
+         exists = true}.
 
 xref_mod({Base, Bin}) when is_binary(Bin) ->
     Dir = filename:absname("reltool_server.tmp"),
-    ok = filelib:ensure_dir(filename:join([Dir, "foo"])),
+    ok = reltool_utils:recursive_delete(Dir),
+    ok = file:make_dir(Dir),
     File = filename:join([Dir, Base]),
     ok = file:write_file(File, Bin),
     Res = xref_mod(File),
-    ok = file:delete(File),
-    ok = file:del_dir(Dir),
+    ok = reltool_utils:recursive_delete(Dir),
     Res;
 xref_mod(File) when is_list(File) ->
     {ok, Pid} = xref:start([{xref_mode, modules}]),
@@ -862,9 +889,21 @@ xref_mod(File) when is_list(File) ->
     %% {ok, ExportedFuns} = xref:q(Pid, "X", []),
     %% io:format("Unres: ~p\n", [xref:variables(Pid, [predefined])]),
     %% io:format("Q: ~p\n", [xref:q(Pid, "XU", [])]),
+    Ref = erlang:monitor(process, Pid),
     unlink(Pid),
     xref:stop(Pid),
+    wait_for_processto_die(Ref, Pid, File),
     UnknownMods.
+
+wait_for_processto_die(Ref, Pid, File) ->
+    receive
+	{'DOWN', Ref, _Type, _Object, _Info} ->
+	    ok
+    after timer:seconds(30) ->
+	    error_logger:error_msg("~p(~p): Waiting for process ~p to die ~p\n",
+				   [?MODULE, ?LINE, Pid, File]),
+	    wait_for_processto_die(Ref, Pid, File)
+    end.
 
 add_missing_mods(AppName, EbinMods, AppModNames) ->
     EbinModNames = [M#mod.name || M <- EbinMods],
@@ -879,7 +918,7 @@ missing_mod(ModName, AppName) ->
          is_ebin_mod = false,
          exists = false,
          status = missing,
-	 uses_mods = []}.
+         uses_mods = []}.
 
 add_mod_config(Mods, ModConfigs) ->
     AddConfig =
@@ -904,14 +943,18 @@ set_mod_flags(Mods, AppModNames) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-do_get_config(S) ->
-    S2 = shrink_sys(S),
-    {ok, reltool_target:gen_config(S2#state.sys)}.
+do_get_config(S, InclDefaults, InclDerivates) ->
+    S2 =
+        case InclDerivates of
+            false -> shrink_sys(S);
+            true  -> S
+        end,
+    {ok, reltool_target:gen_config(S2#state.sys, InclDefaults)}.
 
-do_save_config(S, Filename) ->
-    {ok, Config} = do_get_config(S),
+do_save_config(S, Filename, InclDefaults, InclDerivates) ->
+    {ok, Config} = do_get_config(S, InclDefaults, InclDerivates),
     IoList = io_lib:format("%% config generated at ~w ~w\n~p.\n\n",
-			   [date(), time(), Config]),
+                           [date(), time(), Config]),
     file:write_file(Filename, IoList).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -922,48 +965,54 @@ do_load_config(S, SysConfig) ->
     ShrinkedSys = S2#state.sys,
     {NewSys, Status} = read_config(ShrinkedSys#sys{apps = []}, SysConfig, {ok, []}),
     case Status of
-	{ok, _Warnings} ->
-	    Force = false,
-	    {MergedSys, Status2} = merge_config(OldSys, NewSys, Force, Status),
-	    {S3, Status3} = analyse(S2#state{sys = MergedSys, old_sys = OldSys}, Status2),
-	    S4 = 
-		case Status3 of
-		    {ok, _} ->
-			S3;
-		    {error, _} ->
-			S
-		end,
-	    {S4, Status3};
-	{error, _} ->
-	    %% Keep old state
-	    {S, Status}
+        {ok, _Warnings} ->
+            Force = false,
+            {MergedSys, Status2} = merge_config(OldSys, NewSys, Force, Status),
+            {S3, Status3} = analyse(S2#state{sys = MergedSys, old_sys = OldSys}, Status2),
+            S4 = 
+                case Status3 of
+                    {ok, _Warnings2} ->
+                        S3#state{status = Status3, old_status = S#state.status};
+                    {error, _} ->
+                        S
+                end,
+            {S4, Status3};
+        {error, _} ->
+            %% Keep old state
+            {S, Status}
     end.
 
 read_config(OldSys, Filename, Status) when is_list(Filename) ->
     case file:consult(Filename) of
-	{ok, [SysConfig | _]} ->
-	    read_config(OldSys, SysConfig, Status);
-	{ok, Content} ->
-	    Text = lists:flatten(io_lib:format("~p", [Content])),
-	    {OldSys, reltool_utils:return_first_error(Status, "Illegal file content: " ++ Text)};
-	{error, Reason} ->
-	    Text = file:format_error(Reason),
-	    {OldSys, reltool_utils:return_first_error(Status, "File access: " ++ Text)}
+        {ok, [SysConfig | _]} ->
+            read_config(OldSys, SysConfig, Status);
+        {ok, Content} ->
+            Text = lists:flatten(io_lib:format("~p", [Content])),
+            {OldSys, reltool_utils:return_first_error(Status, "Illegal file content: " ++ Text)};
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            {OldSys, reltool_utils:return_first_error(Status, "File access: " ++ Text)}
     end;
 read_config(OldSys, {sys, KeyVals}, Status) ->
-    {NewSys, Status2} = decode(OldSys#sys{apps = [], rels = []}, KeyVals, Status),
+    {NewSys, Status2} =
+        try
+            decode(OldSys#sys{apps = [], rels = []}, KeyVals, Status)
+        catch
+            throw:{error, Text} ->
+                {OldSys, reltool_utils:return_first_error(Status, Text)}
+        end,
     Apps = [A#app{mods = lists:sort(A#app.mods)} || A <- NewSys#sys.apps],
     case NewSys#sys.rels of
-	[]   -> Rels = reltool_utils:default_rels();
-	Rels -> ok
+        []   -> Rels = reltool_utils:default_rels();
+        Rels -> ok
     end,
-    NewSys2 = NewSys#sys{apps = lists:sort(Apps), rels = lists:sort(Rels)},			 
+    NewSys2 = NewSys#sys{apps = lists:sort(Apps), rels = lists:sort(Rels)},                      
     case lists:keysearch(NewSys2#sys.boot_rel, #rel.name, NewSys2#sys.rels) of
-	{value, _} ->
-	    {NewSys2, Status2};
-	false ->
-	    Text = "Missing rel: " ++ NewSys2#sys.boot_rel,
-	    {OldSys, reltool_utils:return_first_error(Status2, Text)}
+        {value, _} ->
+            {NewSys2, Status2};
+        false ->
+            Text2 = "Missing rel: " ++ NewSys2#sys.boot_rel,
+            {OldSys, reltool_utils:return_first_error(Status2, Text2)}
     end;
 read_config(OldSys, BadConfig, Status) ->
     Text = lists:flatten(io_lib:format("~p", [BadConfig])),
@@ -979,158 +1028,206 @@ decode(#sys{apps = Apps} = Sys, [{app, Name, AppKeyVals} | SysKeyVals], Status)
     App = default_app(Name),
     {App2, Status2} = decode(App, AppKeyVals, Status),
     decode(Sys#sys{apps = [App2 | Apps]}, SysKeyVals, Status2);
-decode(Sys, [{boot_rel, RelName} | SysKeyVals], Status)
-  when is_list(RelName) ->
-    decode(Sys#sys{boot_rel = RelName}, SysKeyVals, Status);
+decode(#sys{apps = Apps, escripts = Escripts} = Sys, [{escript, File, AppKeyVals} | SysKeyVals], Status)
+  when is_list(File), is_list(AppKeyVals) ->
+    {Name, Label} = split_escript_name(File),
+    App = default_app(Name, File),
+    App2 = App#app{is_escript = true,
+		   label = Label,
+		   info = missing_app_info(""),
+		   active_dir = File,
+		   sorted_dirs = [File]},
+    {App3, Status2} = decode(App2, AppKeyVals, Status),
+    decode(Sys#sys{apps = [App3 | Apps], escripts = [File | Escripts]}, SysKeyVals, Status2);
 decode(#sys{rels = Rels} = Sys, [{rel, Name, Vsn, RelApps} | SysKeyVals], Status)
   when is_list(Name), is_list(Vsn), is_list(RelApps) ->
     Rel = #rel{name = Name, vsn = Vsn, rel_apps = []},
     {Rel2, Status2} = decode(Rel, RelApps, Status),
     decode(Sys#sys{rels = [Rel2 | Rels]}, SysKeyVals, Status2);
 decode(#sys{} = Sys, [{Key, Val} | KeyVals], Status) ->
-    {Sys2, Status2} = 
-	case Key of
-	    mod_cond when Val =:= all; Val =:= app;
-			  Val =:= ebin; Val =:= derived;
-			  Val =:= none -> 
-		{Sys#sys{mod_cond = Val}, Status};
-	    incl_cond when Val =:= include; Val =:= exclude;
-			   Val =:= derived -> 
-		{Sys#sys{incl_cond = Val}, Status};
-	    profile when Val =:= standalone; Val =:= development; Val =:= embedded ->
-		{Sys#sys{profile = Val}, Status};
-            emu_name when is_list(Val) -> 
-		{Sys#sys{emu_name = Val}, Status};
-	    debug_info when Val =:= keep; Val =:= strip -> 
-		{Sys#sys{debug_info = Val}, Status};
-	    app_file when Val =:= keep; Val =:= strip, Val =:= all -> 
-		{Sys#sys{app_file = Val}, Status};
-	    incl_erts_dirs ->
-		decode_dirs(Key, Val, #sys.incl_erts_dirs, Sys, Status);
-	    excl_erts_dirs ->
-		decode_dirs(Key, Val, #sys.excl_erts_dirs, Sys, Status);
-	    incl_app_dirs ->
-		decode_dirs(Key, Val, #sys.incl_app_dirs, Sys, Status);
-	    excl_app_dirs ->
-		decode_dirs(Key, Val, #sys.excl_app_dirs, Sys, Status);
-	    root_dir when is_list(Val) ->
-		{Sys#sys{root_dir = Val}, Status};
-	    lib_dirs when is_list(Val) ->
-		{Sys#sys{lib_dirs = Val}, Status};
-	    escripts when is_list(Val) ->
-		{Sys#sys{escripts = Val}, Status};
-	    _ ->
-		Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
-		{Sys, reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text)}
-	end,
-    decode(Sys2, KeyVals, Status2);
+    {Sys3, Status3} = 
+        case Key of
+            root_dir when is_list(Val) ->
+                {Sys#sys{root_dir = Val}, Status};
+            lib_dirs when is_list(Val) ->
+                {Sys#sys{lib_dirs = Val}, Status};
+            mod_cond when Val =:= all; Val =:= app;
+                          Val =:= ebin; Val =:= derived;
+                          Val =:= none -> 
+                {Sys#sys{mod_cond = Val}, Status};
+            incl_cond when Val =:= include; Val =:= exclude;
+                           Val =:= derived -> 
+                {Sys#sys{incl_cond = Val}, Status};
+            boot_rel when is_list(Val) ->
+                {Sys#sys{boot_rel = Val}, Status};
+            emu_name when is_list(Val) ->
+                {Sys#sys{emu_name = Val}, Status};
+            profile when Val =:= development ->
+                Val = ?DEFAULT_PROFILE, % assert,
+                {Sys#sys{profile = Val,
+                         incl_sys_filters = reltool_utils:decode_regexps(incl_sys_filters,
+									 ?DEFAULT_INCL_SYS_FILTERS,
+									 Sys#sys.incl_sys_filters),
+                         excl_sys_filters = reltool_utils:decode_regexps(excl_sys_filters,  
+									 ?DEFAULT_EXCL_SYS_FILTERS,
+									 Sys#sys.excl_sys_filters),
+                         incl_app_filters = reltool_utils:decode_regexps(incl_app_filters,
+									 ?DEFAULT_INCL_APP_FILTERS, 
+									 Sys#sys.incl_app_filters),
+                         excl_app_filters = reltool_utils:decode_regexps(excl_app_filters, 
+									 ?DEFAULT_EXCL_APP_FILTERS, 
+									 Sys#sys.excl_app_filters)},
+                 Status};
+            profile when Val =:= embedded ->
+                {Sys#sys{profile = Val,
+                         incl_sys_filters = reltool_utils:decode_regexps(incl_sys_filters, 
+									 ?EMBEDDED_INCL_SYS_FILTERS,
+									 Sys#sys.incl_sys_filters),
+                         excl_sys_filters = reltool_utils:decode_regexps(excl_sys_filters,
+									 ?EMBEDDED_EXCL_SYS_FILTERS,
+									 Sys#sys.excl_sys_filters),
+                         incl_app_filters = reltool_utils:decode_regexps(incl_app_filters,
+									 ?EMBEDDED_INCL_APP_FILTERS, 
+									 Sys#sys.incl_app_filters),
+                         excl_app_filters = reltool_utils:decode_regexps(excl_app_filters, 
+									 ?EMBEDDED_EXCL_APP_FILTERS,
+									 Sys#sys.excl_app_filters)},
+                 Status};
+            profile when Val =:= standalone ->
+                {Sys#sys{profile = Val,
+                         incl_sys_filters = reltool_utils:decode_regexps(incl_sys_filters, 
+									 ?STANDALONE_INCL_SYS_FILTERS,
+									 Sys#sys.incl_sys_filters),
+                         excl_sys_filters = reltool_utils:decode_regexps(excl_sys_filters,
+									 ?STANDALONE_EXCL_SYS_FILTERS,
+									 Sys#sys.excl_sys_filters),
+                         incl_app_filters = reltool_utils:decode_regexps(incl_app_filters, 
+									 ?STANDALONE_INCL_APP_FILTERS,
+									 Sys#sys.incl_app_filters),
+                         excl_app_filters = reltool_utils:decode_regexps(excl_app_filters, 
+									 ?STANDALONE_EXCL_APP_FILTERS,
+									 Sys#sys.excl_app_filters)},
+                 Status};
+            incl_sys_filters ->
+                {Sys#sys{incl_sys_filters = reltool_utils:decode_regexps(Key, Val, Sys#sys.incl_sys_filters)}, Status};
+            excl_sys_filters ->
+                {Sys#sys{excl_sys_filters = reltool_utils:decode_regexps(Key, Val, Sys#sys.excl_sys_filters)}, Status};
+            incl_app_filters ->
+                {Sys#sys{incl_app_filters = reltool_utils:decode_regexps(Key, Val, Sys#sys.incl_app_filters)}, Status};
+            excl_app_filters ->
+                {Sys#sys{excl_app_filters = reltool_utils:decode_regexps(Key, Val, Sys#sys.excl_app_filters)}, Status};
+            incl_archive_filters ->
+                {Sys#sys{incl_archive_filters = reltool_utils:decode_regexps(Key, Val, Sys#sys.incl_archive_filters)}, Status};
+            excl_archive_filters ->
+                {Sys#sys{excl_archive_filters = reltool_utils:decode_regexps(Key, Val, Sys#sys.excl_archive_filters)}, Status};
+            archive_opts when is_list(Val) ->
+                {Sys#sys{archive_opts = Val}, Status};
+            relocatable when Val =:= true; Val =:= false ->
+                {Sys#sys{relocatable = Val}, Status};
+            app_type when Val =:= permanent; Val =:= transient; Val =:= temporary;
+                          Val =:= load; Val =:= none -> 
+                {Sys#sys{app_type = Val}, Status};
+            app_file when Val =:= keep; Val =:= strip, Val =:= all -> 
+                {Sys#sys{app_file = Val}, Status};
+            debug_info when Val =:= keep; Val =:= strip -> 
+                {Sys#sys{debug_info = Val}, Status};
+            _ ->
+                Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
+                {Sys, reltool_utils:return_first_error(Status, "Illegal option: " ++ Text)}
+        end,
+    decode(Sys3, KeyVals, Status3);
 decode(#app{} = App, [{Key, Val} | KeyVals], Status) ->
     {App2, Status2} = 
-	case Key of
-	    mod_cond when Val =:= all; Val =:= app; Val =:= ebin; Val =:= derived; Val =:= none -> 
-		{App#app{mod_cond = Val}, Status};
-	    incl_cond when Val =:= include; Val =:= exclude; Val =:= derived -> 
-		{App#app{incl_cond = Val}, Status};
-	    debug_info when Val =:= keep; Val =:= strip -> 
-		{App#app{debug_info = Val}, Status};
-	    app_file when Val =:= keep; Val =:= strip, Val =:= all -> 
-		{App#app{app_file = Val}, Status};
-	    incl_app_dirs ->
-		decode_dirs(Key, Val, #app.incl_app_dirs, App, Status);
-	    excl_app_dirs ->
-		decode_dirs(Key, Val, #app.excl_app_dirs, App, Status);
-	    vsn when is_list(Val) -> 
-		{App#app{use_selected_vsn = true, vsn = Val}, Status};
-	    _ ->
-		Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
-		{App, reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text)}
-	end,
+        case Key of
+            mod_cond when Val =:= all; Val =:= app; Val =:= ebin; Val =:= derived; Val =:= none -> 
+                {App#app{mod_cond = Val}, Status};
+            incl_cond when Val =:= include; Val =:= exclude; Val =:= derived -> 
+                {App#app{incl_cond = Val}, Status};
+
+            debug_info when Val =:= keep; Val =:= strip -> 
+                {App#app{debug_info = Val}, Status};
+            app_file when Val =:= keep; Val =:= strip, Val =:= all -> 
+                {App#app{app_file = Val}, Status};
+            app_type when Val =:= permanent; Val =:= transient; Val =:= temporary;
+                          Val =:= load; Val =:= none -> 
+                {App#app{app_type = Val}, Status};
+            incl_app_filters ->
+                {App#app{incl_app_filters = reltool_utils:decode_regexps(Key, Val, App#app.incl_app_filters)}, Status};
+            excl_app_filters ->
+                {App#app{excl_app_filters = reltool_utils:decode_regexps(Key, Val, App#app.excl_app_filters)}, Status};
+            incl_archive_filters ->
+                {App#app{incl_archive_filters = reltool_utils:decode_regexps(Key, Val, App#app.incl_archive_filters)}, Status};
+            excl_archive_filters ->
+                {App#app{excl_archive_filters = reltool_utils:decode_regexps(Key, Val, App#app.excl_archive_filters)}, Status};
+            archive_opts when is_list(Val) ->
+                {App#app{archive_opts = Val}, Status};
+            vsn when is_list(Val) -> 
+                {App#app{use_selected_vsn = true, vsn = Val}, Status};
+            _ ->
+                Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
+                {App, reltool_utils:return_first_error(Status, "Illegal option: " ++ Text)}
+        end,
     decode(App2, KeyVals, Status2);
 decode(#app{mods = Mods} = App, [{mod, Name, ModKeyVals} | AppKeyVals], Status) ->
     {Mod, Status2} = decode(#mod{name = Name}, ModKeyVals, Status),
     decode(App#app{mods = [Mod | Mods]}, AppKeyVals, Status2);
 decode(#mod{} = Mod, [{Key, Val} | KeyVals], Status) ->
     {Mod2, Status2} = 
-	case Key of
-	    incl_cond when Val =:= include; Val =:= exclude; Val =:= derived -> 
-		{Mod#mod{incl_cond = Val}, Status};
-	    debug_info when Val =:= keep; Val =:= strip -> 
-		{Mod#mod{debug_info = Val}, Status};
-	    _ ->
-		Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
-		{Mod, reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text)}
-	end,
+        case Key of
+            incl_cond when Val =:= include; Val =:= exclude; Val =:= derived -> 
+                {Mod#mod{incl_cond = Val}, Status};
+            debug_info when Val =:= keep; Val =:= strip -> 
+                {Mod#mod{debug_info = Val}, Status};
+            _ ->
+                Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
+                {Mod, reltool_utils:return_first_error(Status, "Illegal option: " ++ Text)}
+        end,
     decode(Mod2, KeyVals, Status2);
 decode(#rel{rel_apps = RelApps} = Rel, [RelApp | KeyVals], Status) ->
     RA =
-	case RelApp of
-	    Name when is_atom(Name) ->
-		#rel_app{name = Name, type = undefined, incl_apps = []};
-	    {Name, Type} when is_atom(Name) ->
-		#rel_app{name = Name, type = Type, incl_apps = []};
-	    {Name, InclApps} when is_atom(Name), is_list(InclApps) ->
-		#rel_app{name = Name, type = undefined, incl_apps = InclApps};
-	    {Name, Type, InclApps} when is_atom(Name), is_list(InclApps) ->
-		#rel_app{name = Name, type = Type, incl_apps = InclApps};
-	    _ ->
-		#rel_app{incl_apps = []}
-	end,
-    IsType = is_type(RA#rel_app.type),
+        case RelApp of
+            Name when is_atom(Name) ->
+                #rel_app{name = Name, app_type = undefined, incl_apps = []};
+            {Name, Type} when is_atom(Name) ->
+                #rel_app{name = Name, app_type = Type, incl_apps = []};
+            {Name, InclApps} when is_atom(Name), is_list(InclApps) ->
+                #rel_app{name = Name, app_type = undefined, incl_apps = InclApps};
+            {Name, Type, InclApps} when is_atom(Name), is_list(InclApps) ->
+                #rel_app{name = Name, app_type = Type, incl_apps = InclApps};
+            _ ->
+                #rel_app{incl_apps = []}
+        end,
+    IsType = is_type(RA#rel_app.app_type),
     NonAtoms = [IA || IA <- RA#rel_app.incl_apps, not is_atom(IA)],
     if
-	IsType, NonAtoms =:= [] ->
-	    decode(Rel#rel{rel_apps = RelApps ++ [RA]}, KeyVals, Status);
-	true ->
-	    Text = lists:flatten(io_lib:format("~p", [RelApp])),
-	    Status2 = reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text),
-	    decode(Rel, KeyVals, Status2)
+        IsType, NonAtoms =:= [] ->
+            decode(Rel#rel{rel_apps = RelApps ++ [RA]}, KeyVals, Status);
+        true ->
+            Text = lists:flatten(io_lib:format("~p", [RelApp])),
+            Status2 = reltool_utils:return_first_error(Status, "Illegal option: " ++ Text),
+            decode(Rel, KeyVals, Status2)
     end;
 decode(Acc, [], Status) ->
     {Acc, Status};
 decode(Acc, KeyVal, Status) ->
     Text = lists:flatten(io_lib:format("~p", [KeyVal])),
-    {Acc, reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text)}.
-
-decode_dirs(Key,Val, Pos, Rec, Status) ->
-    case Val of
-	all ->
-	    {setelement(Pos, Rec, Val), Status};
-	List when is_list(List) ->
-	    {setelement(Pos, Rec, Val), Status};
-	{add, List} when is_list(List) ->	
-	    New =
-		case element(Pos, Rec) of
-		    all ->
-			all;
-		    Old when is_list(Old) ->
-			lists:usort(Old ++ List)
-		end,
-	    {setelement(Pos, Rec, New), Status};
-	{del, List} when is_list(List) ->
-	    New =
-		case element(Pos, Rec) of
-		    all ->
-			all;
-		    Old when is_list(Old) ->
-			Old -- List
-		end,
-	    {setelement(Pos, Rec, New), Status};
-	_ ->
-	    Text = lists:flatten(io_lib:format("~p", [{Key, Val}])),
-	    {Rec, reltool_utils:return_first_error(Status, "Illegal parameter: " ++ Text)}
-    end.
+    {Acc, reltool_utils:return_first_error(Status, "Illegal option: " ++ Text)}.
 
 is_type(Type) ->
     case Type of
-	undefined -> true;
-	permanent -> true;
-	transient -> true;
-	temporary -> true;
-	load      -> true;
-	none      -> true;
-	_         -> false
+        undefined -> true;
+        permanent -> true;
+        transient -> true;
+        temporary -> true;
+        load      -> true;
+        none      -> true;
+        _         -> false
     end.
-	    
+
+split_escript_name(File) when is_list(File) ->
+    Label = filename:basename(File, ".escript"),
+    {list_to_atom("*escript* " ++ Label), Label}.
+          
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 refresh(#state{sys = Sys} = S, Force, Status) ->
@@ -1142,255 +1239,241 @@ merge_config(OldSys, NewSys, Force, Status) ->
     LibDirs = [filename:absname(D) || D <- NewSys#sys.lib_dirs],
     Escripts = [filename:absname(E) || E <- NewSys#sys.escripts],
     {SourceDirs, Status2} =
-	libs_to_dirs(RootDir, LibDirs, Status),
+        libs_to_dirs(RootDir, LibDirs, Status),
     MergedApps = merge_app_dirs(SourceDirs, NewSys#sys.apps, OldSys#sys.apps),
     {AllApps, Status3} =
-	escripts_to_apps(Escripts, MergedApps, Status2),
+        escripts_to_apps(Escripts, MergedApps, OldSys#sys.apps, Status2),
     {RefreshedApps, Status4} =
-	refresh_apps(OldSys#sys.apps, AllApps, [], Force, Status3),
+        refresh_apps(OldSys#sys.apps, AllApps, [], Force, Status3),
     {PatchedApps, Status5} = patch_erts_version(RootDir, RefreshedApps, Status4),
+    Escripts2 = [A#app.active_dir || A <- PatchedApps, A#app.is_escript],
     NewSys2 = NewSys#sys{root_dir = RootDir,
-			 lib_dirs = LibDirs,
-			 escripts = Escripts,
-			 apps = PatchedApps},
+                         lib_dirs = LibDirs,
+                         escripts = Escripts2,
+                         apps = PatchedApps},
     {NewSys2, Status5}.
 
 verify_config(Sys, Status) ->
-    check_dir("erts_dirs", "bin", Sys#sys.incl_erts_dirs, Sys#sys.excl_erts_dirs, Status),
-    check_dir("app_dirs", "ebin", Sys#sys.incl_app_dirs,  Sys#sys.excl_app_dirs, Status),
-    lists:foreach(fun(App) -> check_app(App, Sys, Status) end, Sys#sys.apps),
     case lists:keymember(Sys#sys.boot_rel, #rel.name, Sys#sys.rels) of
-	true -> 
-	    lists:foreach(fun(Rel)-> check_rel(Rel, Sys, Status) end, Sys#sys.rels),
-	    Status;
-	false ->
-	    Text = lists:concat([Sys#sys.boot_rel, ": release is mandatory"]),
-	    Status2 = reltool_utils:return_first_error(Status, Text),
-	    throw({error, Status2})
-    end.
-
-check_dir(Label, SubDir, Incl, Excl, Status) ->
-    case lists:member(SubDir, Incl -- Excl) of
-	true ->
-	    Status;
-	false ->
-	    Text = lists:concat([Label, ": directory ", SubDir, " is mandatory"]),
-	    Status2 = reltool_utils:return_first_error(Status, Text),
-	    throw({error, Status2})
-    end.
-
-check_app(App, Sys, Status) ->
-    Incl = default_val(App#app.incl_app_dirs, Sys#sys.incl_app_dirs),
-    Excl = default_val(App#app.excl_app_dirs, Sys#sys.excl_app_dirs),
-    check_dir(App#app.name, "ebin", Incl, Excl, Status).
-
-default_val(Val, Default) ->
-    case Val of
-	undefined -> Default;
-	_         -> Val
+        true -> 
+            lists:foreach(fun(Rel)-> check_rel(Rel, Sys, Status) end, Sys#sys.rels),
+            Status;
+        false ->
+            Text = lists:concat([Sys#sys.boot_rel, ": release is mandatory"]),
+            Status2 = reltool_utils:return_first_error(Status, Text),
+            throw({error, Status2})
     end.
 
 check_rel(#rel{name = RelName, rel_apps = RelApps}, #sys{apps = Apps}, Status) ->
     EnsureApp =
-	fun(AppName) ->
-		case lists:keymember(AppName, #rel_app.name, RelApps) of
-		    true ->
-			ok;
-		    false ->
-			Text = lists:concat([RelName, ": ", AppName, " is not included."]),
-			Status2 = reltool_utils:return_first_error(Status, Text),
-			throw({error, Status2})
-		end
-	end,
+        fun(AppName) ->
+                case lists:keymember(AppName, #rel_app.name, RelApps) of
+                    true ->
+                        ok;
+                    false ->
+                        Text = lists:concat([RelName, ": ", AppName, " is not included."]),
+                        Status2 = reltool_utils:return_first_error(Status, Text),
+                        throw({error, Status2})
+                end
+        end,
     EnsureApp(kernel),
     EnsureApp(stdlib),
     CheckRelApp =
-	fun(#rel_app{name = AppName}) ->
-		case lists:keysearch(AppName, #app.name, Apps) of
-		    {value, App} when App#app.is_pre_included ->
-			ok;
-		    {value, App} when App#app.is_included ->
-			ok;
-		    _ ->
-			Text = lists:concat([RelName, ": uses application ",
-					     AppName, " that not is included."]),
-			Status2 = reltool_utils:return_first_error(Status, Text),
-			%% throw BUGBUG: add throw
-			({error, Status2})
-		end
-	end,
+        fun(#rel_app{name = AppName}) ->
+                case lists:keysearch(AppName, #app.name, Apps) of
+                    {value, App} when App#app.is_pre_included ->
+                        ok;
+                    {value, App} when App#app.is_included ->
+                        ok;
+                    _ ->
+                        Text = lists:concat([RelName, ": uses application ",
+                                             AppName, " that not is included."]),
+                        Status2 = reltool_utils:return_first_error(Status, Text),
+                        %% throw BUGBUG: add throw
+                        ({error, Status2})
+                end
+        end,
     lists:foreach(CheckRelApp, RelApps).
 
 patch_erts_version(RootDir, Apps, Status) ->
     AppName = erts,
     case lists:keysearch(AppName, #app.name, Apps) of
-	{value, Erts} ->
-	    LocalRoot = code:root_dir(),
-	    Vsn = Erts#app.vsn,
-	    if
-		LocalRoot =:= RootDir, Vsn =:= "" ->
-		    Vsn2 = erlang:system_info(version),
-		    Erts2 = Erts#app{vsn = Vsn2, label = "erts-" ++ Vsn2},
-		    Apps2 = lists:keystore(AppName, #app.name, Apps, Erts2),
-		    {Apps2, Status};
-		Vsn =:= "" ->
-		    {Apps, reltool_utils:add_warning(Status, "erts has no version")};
-		true ->
-		    {Apps, Status}
-	    end;
-	false ->
-	    Text = "erts cannnot be found in the root directory " ++ RootDir,
-	    Status2 = reltool_utils:return_first_error(Status, Text),	    
-	    {Apps, Status2}
+        {value, Erts} ->
+            LocalRoot = code:root_dir(),
+            Vsn = Erts#app.vsn,
+            if
+                LocalRoot =:= RootDir, Vsn =:= "" ->
+                    Vsn2 = erlang:system_info(version),
+                    Erts2 = Erts#app{vsn = Vsn2, label = "erts-" ++ Vsn2},
+                    Apps2 = lists:keystore(AppName, #app.name, Apps, Erts2),
+                    {Apps2, Status};
+                Vsn =:= "" ->
+                    {Apps, reltool_utils:add_warning(Status, "erts has no version")};
+                true ->
+                    {Apps, Status}
+            end;
+        false ->
+            Text = "erts cannnot be found in the root directory " ++ RootDir,
+            Status2 = reltool_utils:return_first_error(Status, Text),       
+            {Apps, Status2}
     end.
 
 libs_to_dirs(RootDir, LibDirs, Status) ->
     case file:list_dir(RootDir) of
         {ok, RootFiles} ->
-	    RootLibDir = filename:join([RootDir, "lib"]),
-	    SortedLibDirs = lists:sort(LibDirs),
-	    AllLibDirs = [RootLibDir | SortedLibDirs],
-	    case AllLibDirs -- lists:usort(AllLibDirs) of
-		[] ->
-		    Fun = fun(Base) ->
-				  AppDir = filename:join([RootLibDir, Base]),
-				  case filelib:is_dir(filename:join([AppDir, "ebin"]), erl_prim_loader) of
-				      true ->
-					  AppDir;
-				      false ->
-					  filename:join([RootDir, Base, "preloaded"])
-				  end
-			  end,
-		    ErtsFiles = [{erts, Fun(F)} || F <- RootFiles, lists:prefix("erts", F)],
-		    app_dirs2(AllLibDirs, [ErtsFiles], Status);
-		[Duplicate | _] ->
-		    {[], reltool_utils:return_first_error(Status, "Duplicate library: " ++ Duplicate)}
-	    end;
+            RootLibDir = filename:join([RootDir, "lib"]),
+            AllLibDirs = [RootLibDir | LibDirs],
+            case AllLibDirs -- lists:usort(AllLibDirs) of
+                [] ->
+                    Fun = fun(Base) ->
+                                  AppDir = filename:join([RootLibDir, Base]),
+                                  case filelib:is_dir(filename:join([AppDir, "ebin"]), erl_prim_loader) of
+                                      true ->
+                                          AppDir;
+                                      false ->
+                                          filename:join([RootDir, Base, "preloaded"])
+                                  end
+                          end,
+                    ErtsFiles = [{erts, Fun(F)} || F <- RootFiles, lists:prefix("erts", F)],
+                    app_dirs2(AllLibDirs, [ErtsFiles], Status);
+                [Duplicate | _] ->
+                    {[], reltool_utils:return_first_error(Status, "Duplicate library: " ++ Duplicate)}
+            end;
         {error, Reason} ->
-	    Text = file:format_error(Reason),
-	    {[], reltool_utils:return_first_error(Status, "Missing root library " ++ RootDir ++ ": " ++ Text)}
+            Text = file:format_error(Reason),
+            {[], reltool_utils:return_first_error(Status, "Missing root library " ++ RootDir ++ ": " ++ Text)}
     end.
 
 app_dirs2([Lib | Libs], Acc, Status) ->
     case file:list_dir(Lib) of
         {ok, Files} ->
-	    Filter =
-		fun(Base) ->
-			AppDir = filename:join([Lib, Base]),
-			EbinDir = filename:join([AppDir, "ebin"]),
-			case filelib:is_dir(EbinDir, erl_prim_loader) of
-			    true -> 
-				{Name, _Vsn} = reltool_utils:split_app_name(Base),
-				case Name of
-				    erts -> false;
-				    _    -> {true, {Name, AppDir}}
-				end;
-			    false ->
-				false
-			end
-		end,
-	    Files2 = lists:zf(Filter, Files),
+            Filter =
+                fun(Base) ->
+                        AppDir = filename:join([Lib, Base]),
+                        EbinDir = filename:join([AppDir, "ebin"]),
+                        case filelib:is_dir(EbinDir, erl_prim_loader) of
+                            true -> 
+                                {Name, _Vsn} = reltool_utils:split_app_name(Base),
+                                case Name of
+                                    erts -> false;
+                                    _    -> {true, {Name, AppDir}}
+                                end;
+                            false ->
+                                false
+                        end
+                end,
+            Files2 = lists:zf(Filter, Files),
             app_dirs2(Libs, [Files2 | Acc], Status);
         {error, Reason} ->
-	    Text = file:format_error(Reason),
+            Text = file:format_error(Reason),
             {[], reltool_utils:return_first_error(Status, "Illegal library " ++ Lib ++ ": " ++ Text)}
     end;
 app_dirs2([], Acc, Status) ->
     {lists:sort(lists:append(Acc)), Status}.
 
-escripts_to_apps([Escript | Escripts], Apps, Status) ->
-    EscriptAppName = list_to_atom("*escript* " ++ filename:basename(Escript)),
+escripts_to_apps([Escript | Escripts], Apps, OldApps, Status) ->
+    {EscriptAppName, _Label} = split_escript_name(Escript),
     Ext = code:objfile_extension(),
     Fun = fun(FullName, _GetInfo, GetBin, {FileAcc, StatusAcc}) ->
-		  Components = filename:split(FullName),
-		  case Components of
-		      [AppLabel, "ebin", File] ->
-			  case filename:extension(File) of
-			      ".app" ->
-				  {AppName, DefaultVsn} = reltool_utils:split_app_name(AppLabel),
-				  AppFileName = filename:join([Escript, FullName]),
-				  {Info, StatusAcc2} =
-				      read_app_info(GetBin(), AppFileName, AppName, DefaultVsn, Status),
-				  Dir = filename:join([Escript, AppName]),
-				  {[{AppName, app, Dir, Info} | FileAcc], StatusAcc2};
-			      E when E =:= Ext ->
-				  {AppName, _} = reltool_utils:split_app_name(AppLabel),
-				  Mod = init_mod(AppName, File, {File, GetBin()}, Ext),
-				  Dir = filename:join([Escript, AppName]),
-				  {[{AppName, mod, Dir, Mod} | FileAcc], StatusAcc};
-			      _ ->
-				  {FileAcc, StatusAcc}
-			  end;
-		      ["."] ->
-			  Bin = GetBin(),
-			  {ok, {ModName, _}} = beam_lib:version(Bin),
-			  ModStr = atom_to_list(ModName) ++ Ext,
-			  Mod = init_mod(EscriptAppName, ModStr, {ModStr, GetBin()}, Ext),
-			  {[{EscriptAppName, mod, Escript, Mod} | FileAcc], StatusAcc};
-		      [File] ->
-			  case filename:extension(File) of
-			      E when E =:= Ext ->
-				  Mod = init_mod(EscriptAppName, File, {File, GetBin()}, Ext),
-				  {[{EscriptAppName, mod, File, Mod} | FileAcc], StatusAcc};
-			      _ ->
-				  {FileAcc, StatusAcc}
-			  end;
-		      _ ->
-			  {FileAcc, StatusAcc}
-		  end
-	  end,
+                  Components = filename:split(FullName),
+                  case Components of
+                      [AppLabel, "ebin", File] ->
+                          case filename:extension(File) of
+                              ".app" ->
+                                  {AppName, DefaultVsn} = reltool_utils:split_app_name(AppLabel),
+                                  AppFileName = filename:join([Escript, FullName]),
+                                  {Info, StatusAcc2} =
+                                      read_app_info(GetBin(), AppFileName, AppName, DefaultVsn, Status),
+                                  Dir = filename:join([Escript, AppName]),
+                                  {[{AppName, app, Dir, Info} | FileAcc], StatusAcc2};
+                              E when E =:= Ext ->
+                                  {AppName, _} = reltool_utils:split_app_name(AppLabel),
+                                  Mod = init_mod(AppName, File, {File, GetBin()}, Ext),
+                                  Dir = filename:join([Escript, AppName]),
+                                  {[{AppName, mod, Dir, Mod} | FileAcc], StatusAcc};
+                              _ ->
+                                  {FileAcc, StatusAcc}
+                          end;
+                      ["."] ->
+                          Bin = GetBin(),
+                          {ok, {ModName, _}} = beam_lib:version(Bin),
+                          ModStr = atom_to_list(ModName) ++ Ext,
+                          Mod = init_mod(EscriptAppName, ModStr, {ModStr, GetBin()}, Ext),
+                          {[{EscriptAppName, mod, Escript, Mod} | FileAcc], StatusAcc};
+                      [File] ->
+                          case filename:extension(File) of
+                              E when E =:= Ext ->
+                                  Mod = init_mod(EscriptAppName, File, {File, GetBin()}, Ext),
+                                  {[{EscriptAppName, mod, File, Mod} | FileAcc], StatusAcc};
+                              _ ->
+                                  {FileAcc, StatusAcc}
+                          end;
+                      _ ->
+                          {FileAcc, StatusAcc}
+                  end
+          end,
     try
-	case escript:foldl(Fun, {[], Status}, Escript) of
-	    {ok, {Files, Status2}} ->
-		{Apps2, Status3} = files_to_apps(Escript, lists:sort(Files), Apps, Apps, Status2),
-		escripts_to_apps(Escripts, Apps2, Status3);
-	    {error, Reason} ->
-		Text = lists:flatten(io_lib:format("~p", [Reason])),
-		{[], reltool_utils:return_first_error(Status, "Illegal escript " ++ Escript ++ ": " ++ Text)}
-	end
+        case escript:foldl(Fun, {[], Status}, Escript) of
+            {ok, {Files, Status2}} ->
+                {Apps2, Status3} = files_to_apps(Escript, lists:sort(Files), Apps, Apps, OldApps, Status2),
+                escripts_to_apps(Escripts, Apps2, OldApps, Status3);
+            {error, Reason} ->
+                Text = lists:flatten(io_lib:format("~p", [Reason])),
+                {[], reltool_utils:return_first_error(Status, "Illegal escript " ++ Escript ++ ": " ++ Text)}
+        end
     catch 
-	throw:Reason2 when is_list(Reason2) ->
-	    {[], reltool_utils:return_first_error(Status, "Illegal escript " ++ Escript ++ ": " ++ Reason2)}
+        throw:Reason2 when is_list(Reason2) ->
+            {[], reltool_utils:return_first_error(Status, "Illegal escript " ++ Escript ++ ": " ++ Reason2)}
     end;
-escripts_to_apps([], Apps, Status) ->
+escripts_to_apps([], Apps, _OldApps, Status) ->
     {Apps, Status}.
 
 %% Assume that all files for an app are in consecutive order
 %% Assume the app info is before the mods
-files_to_apps(Escript, [{AppName, Type, Dir, ModOrInfo} | Files] = AllFiles, Acc, Apps, Status) ->
+files_to_apps(Escript, [{AppName, Type, Dir, ModOrInfo} | Files] = AllFiles, Acc, Apps, OldApps, Status) ->
     case Type of
-	mod ->
-	    case Acc of
-		[] ->
-		    Info = missing_app_info(""),
-		    {NewApp, Status2} = new_escript_app(AppName, Dir, Info, [ModOrInfo], Apps, Status),
-		    files_to_apps(Escript, AllFiles, [NewApp | Acc], Apps, Status2);
-		[App | Acc2] when App#app.name =:= ModOrInfo#mod.app_name ->
-		    App2 = App#app{mods = [ModOrInfo | App#app.mods]},
-		    files_to_apps(Escript, Files, [App2 | Acc2], Apps, Status);
-		[App | Acc2] ->
-		    PrevApp = App#app{mods = lists:keysort(#mod.name, App#app.mods)},
-		    Info = missing_app_info(""),
-		    {NewApp, Status2} = new_escript_app(AppName, Dir, Info, [ModOrInfo], Apps, Status),
-		    files_to_apps(Escript, Files, [NewApp, PrevApp | Acc2], Apps, Status2)
-	    end;
-	app ->
-	    {App, Status2} = new_escript_app(AppName, Dir, ModOrInfo, [], Apps, Status),
-	    files_to_apps(Escript, Files, [App | Acc], Apps, Status2)
+        mod ->
+            case Acc of
+                [] ->
+                    Info = missing_app_info(""),
+                    {NewApp, Status2} = merge_escript_app(AppName, Dir, Info, [ModOrInfo], Apps, OldApps, Status),
+                    files_to_apps(Escript, AllFiles, [NewApp | Acc], Apps, OldApps, Status2);
+                [App | Acc2] when App#app.name =:= ModOrInfo#mod.app_name ->
+                    App2 = App#app{mods = [ModOrInfo | App#app.mods]},
+                    files_to_apps(Escript, Files, [App2 | Acc2], Apps, OldApps, Status);
+                [App | Acc2] ->
+                    PrevApp = App#app{mods = lists:keysort(#mod.name, App#app.mods)},
+                    Info = missing_app_info(""),
+                    {NewApp, Status2} = merge_escript_app(AppName, Dir, Info, [ModOrInfo], Apps, OldApps, Status),
+                    files_to_apps(Escript, Files, [NewApp, PrevApp | Acc2], Apps, OldApps, Status2)
+            end;
+        app ->
+            {App, Status2} = merge_escript_app(AppName, Dir, ModOrInfo, [], Apps, OldApps, Status),
+	    files_to_apps(Escript, Files, [App | Acc], Apps, OldApps, Status2)
     end;
-files_to_apps(_Escript, [], Acc, _Apps, Status) ->
+files_to_apps(_Escript, [], Acc, _Apps, _OldApps, Status) ->
     {lists:keysort(#app.name, Acc), Status}.
 
-new_escript_app(AppName, Dir, Info, Mods, Apps, Status) ->
-    App = default_app(AppName, Dir),
-    App2 = App#app{is_escript = true, info = Info, mods = Mods},
+merge_escript_app(AppName, Dir, Info, Mods, Apps, OldApps, Status) ->
+    case lists:keysearch(AppName, #app.name, OldApps) of
+        {value, App} ->
+            ok;
+        false ->
+	    App = default_app(AppName, Dir)
+    end,
+    App2 = App#app{is_escript = true,
+		   label = filename:basename(Dir, ".escript"),
+		   info = Info,
+		   mods = Mods,
+		   active_dir = Dir,
+		   sorted_dirs = [Dir]},
     case lists:keysearch(AppName, #app.name, Apps) of
-	{value, _} ->
-	    Error = lists:concat([AppName, ": Application name clash. ",
-				  "Escript ", Dir," contains application ", AppName, "."]),
-	    {App2, reltool_utils:return_first_error(Status, Error)};
-	false ->
-	    {App2, Status}
+        {value, _} ->
+            Error = lists:concat([AppName, ": Application name clash. ",
+                                  "Escript ", Dir," contains application ", AppName, "."]),
+            {App2, reltool_utils:return_first_error(Status, Error)};
+        false ->
+            {App2, Status}
     end.
 
 merge_app_dirs([{Name, Dir} | Rest], [App | Apps], OldApps) 
@@ -1402,29 +1485,29 @@ merge_app_dirs([{Name, Dir} | Rest], Apps, OldApps) ->
     %% Initate app
     Apps2 = sort_app_dirs(Apps),
     Apps4 =
-	case lists:keysearch(Name, #app.name, Apps) of
-	    false ->
-		case lists:keysearch(Name, #app.name, OldApps) of
-		    {value, OldApp} when OldApp#app.active_dir =:= Dir ->
-			[OldApp | Apps2];
-		    {value, OldApp} ->
-			App = 
-			    case filter_app(OldApp) of
-				{true, NewApp} ->
-				    NewApp#app{active_dir = Dir, sorted_dirs = [Dir]};
-				false ->
-				    default_app(Name, Dir)
-			    end,
-			[App | Apps2];
-		    false ->
-			App = default_app(Name, Dir),
-			[App | Apps2]
-		end;
-	    {value, OldApp} ->
-		Apps3 = lists:keydelete(Name, #app.name, Apps2),
-		App = OldApp#app{sorted_dirs = [Dir | OldApp#app.sorted_dirs]},
-		[App | Apps3]
-	end,
+        case lists:keysearch(Name, #app.name, Apps) of
+            false ->
+                case lists:keysearch(Name, #app.name, OldApps) of
+                    {value, OldApp} when OldApp#app.active_dir =:= Dir ->
+                        [OldApp | Apps2];
+                    {value, OldApp} ->
+                        App = 
+                            case filter_app(OldApp) of
+                                {true, NewApp} ->
+                                    NewApp#app{active_dir = Dir, sorted_dirs = [Dir]};
+                                false ->
+                                    default_app(Name, Dir)
+                            end,
+                        [App | Apps2];
+                    false ->
+                        App = default_app(Name, Dir),
+                        [App | Apps2]
+                end;
+            {value, OldApp} ->
+                Apps3 = lists:keydelete(Name, #app.name, Apps2),
+                App = OldApp#app{sorted_dirs = [Dir | OldApp#app.sorted_dirs]},
+                [App | Apps3]
+        end,
     merge_app_dirs(Rest, Apps4, OldApps);
 merge_app_dirs([], Apps, _OldApps) ->
     Apps2 = sort_app_dirs(Apps),
@@ -1433,8 +1516,8 @@ merge_app_dirs([], Apps, _OldApps) ->
 sort_app_dirs([#app{sorted_dirs = Dirs} = App | Acc]) ->
     SortedDirs = lists:sort(fun reltool_utils:app_dir_test/2, Dirs),
     case SortedDirs of
-	[ActiveDir | _] -> ok;
-	[] -> ActiveDir = undefined
+        [ActiveDir | _] -> ok;
+        [] -> ActiveDir = undefined
     end,
     [App#app{active_dir = ActiveDir, sorted_dirs = SortedDirs} | Acc];
 sort_app_dirs([]) ->
@@ -1443,40 +1526,42 @@ sort_app_dirs([]) ->
 default_app(Name, Dir) ->
     App = default_app(Name),
     App#app{active_dir = Dir,
-	    sorted_dirs = [Dir]}.
+            sorted_dirs = [Dir]}.
 
 default_app(Name) ->
     #app{name = Name,
-	 is_escript = false,
-	 label = undefined,
-	 mod_cond = undefined,
-	 incl_cond = undefined,
-	 use_selected_vsn = undefined,
-	 active_dir = undefined,
-	 sorted_dirs = [],
-	 vsn = undefined,
-	 info = undefined,
-	 mods = [],
-	 status = missing,
-	 uses_mods = undefined,
-	 is_pre_included = undefined,
-	 is_included = undefined}.
+         is_escript = false,
+         use_selected_vsn = undefined,
+         active_dir = undefined,
+         sorted_dirs = [],
+         vsn = undefined,
+         label = undefined,
+         info = undefined,
+         mods = [],
+
+         mod_cond = undefined,
+         incl_cond = undefined,
+
+         status = missing,
+         uses_mods = undefined,
+         is_pre_included = undefined,
+         is_included = undefined}.
 
 %% Assume that the application are sorted    
 refresh_apps([Old | OldApps], [New | NewApps], Acc, Force, Status) when New#app.name =:= Old#app.name ->
     {Info, ActiveDir, Status2} = ensure_app_info(New, Status),
     OptLabel = 
-	case Info#app_info.vsn =:= New#app.vsn of
-	    true -> New#app.label;
-	    false -> undefined % Cause refresh
-	end,
+        case Info#app_info.vsn =:= New#app.vsn of
+            true -> New#app.label;
+            false -> undefined % Cause refresh
+        end,
     {Refreshed, Status3} =
-	refresh_app(New#app{label = OptLabel,
-			    active_dir = ActiveDir,
-			    vsn = Info#app_info.vsn,
-			    info = Info}, 
-		    Force,
-		    Status2),
+        refresh_app(New#app{label = OptLabel,
+                            active_dir = ActiveDir,
+                            vsn = Info#app_info.vsn,
+                            info = Info}, 
+                    Force,
+                    Status2),
     refresh_apps(OldApps, NewApps, [Refreshed | Acc], Force, Status3);
 refresh_apps([Old | OldApps], [New | NewApps], Acc, Force, Status) when New#app.name < Old#app.name ->
     %% No old app version exists. Use new as is.
@@ -1486,13 +1571,13 @@ refresh_apps([Old | OldApps], [New | NewApps], Acc, Force, Status) when New#app.
 refresh_apps([Old | OldApps], [New | NewApps], Acc, Force, Status) when New#app.name > Old#app.name ->
     %% No new version. Remove the old.
     Status2 =
-	case Old#app.name =:= ?MISSING_APP of
-	    true ->
-		Status;
-	    false ->
-		Warning = lists:concat([Old#app.name, ": The source dirs does not contain the application anymore."]),
-		reltool_utils:add_warning(Status, Warning)
-	end,
+        case Old#app.name =:= ?MISSING_APP of
+            true ->
+                Status;
+            false ->
+                Warning = lists:concat([Old#app.name, ": The source dirs does not contain the application anymore."]),
+                reltool_utils:add_warning(Status, Warning)
+        end,
     refresh_apps(OldApps, [New | NewApps], Acc, Force, Status2);
 refresh_apps([], [New | NewApps], Acc, Force, Status) ->
     %% No old app version exists. Use new as is.
@@ -1501,14 +1586,14 @@ refresh_apps([], [New | NewApps], Acc, Force, Status) ->
 refresh_apps([Old | OldApps], [], Acc, Force, Status) ->
     %% No new version. Remove the old.
     Status2 =
-	case Old#app.name =:= ?MISSING_APP of
-	    true ->
-		Status;
-	    false ->
-		Warning = lists:concat([Old#app.name, ": The source dirs ",
-					"does not contain the application anymore."]),
-		reltool_utils:add_warning(Status, Warning)
-	end,
+        case Old#app.name =:= ?MISSING_APP of
+            true ->
+                Status;
+            false ->
+                Warning = lists:concat([Old#app.name, ": The source dirs ",
+                                        "does not contain the application anymore."]),
+                reltool_utils:add_warning(Status, Warning)
+        end,
     refresh_apps(OldApps, [], Acc, Force, Status2);
 refresh_apps([], [], Acc, _Force, Status) ->
     {lists:reverse(Acc), Status}.
@@ -1521,41 +1606,41 @@ ensure_app_info(#app{name = Name, sorted_dirs = []}, Status) ->
     {missing_app_info(""), undefined, Status2};
 ensure_app_info(#app{name = Name, vsn = Vsn, sorted_dirs = Dirs, info = undefined}, Status) ->
     ReadInfo =
-	fun(Dir, StatusAcc) ->
-		Base = get_base(Name, Dir),
-		Ebin = filename:join([Dir, "ebin"]),
-		{_, DefaultVsn} = reltool_utils:split_app_name(Base),
-		AppFile = filename:join([Ebin, atom_to_list(Name) ++ ".app"]),
-		read_app_info(AppFile, AppFile, Name, DefaultVsn, StatusAcc)
-	end,
+        fun(Dir, StatusAcc) ->
+                Base = get_base(Name, Dir),
+                Ebin = filename:join([Dir, "ebin"]),
+                {_, DefaultVsn} = reltool_utils:split_app_name(Base),
+                AppFile = filename:join([Ebin, atom_to_list(Name) ++ ".app"]),
+                read_app_info(AppFile, AppFile, Name, DefaultVsn, StatusAcc)
+        end,
     {AllInfo, Status2} = lists:mapfoldl(ReadInfo, Status, Dirs),
     AllVsns = [I#app_info.vsn || I <- AllInfo],
     Status3 =
-	case AllVsns -- lists:usort(AllVsns) of
-	    [] ->
-		%% No redundant info
-		Status2;
-	    [BadVsn | _] ->
-		Error2 = lists:concat([Name, ": Application version clash. ",
-				       "Multiple directories contains version \"", BadVsn, "\"."]),
-		reltool_utils:return_first_error(Status2, Error2)
-	end,
+        case AllVsns -- lists:usort(AllVsns) of
+            [] ->
+                %% No redundant info
+                Status2;
+            [BadVsn | _] ->
+                Error2 = lists:concat([Name, ": Application version clash. ",
+                                       "Multiple directories contains version \"", BadVsn, "\"."]),
+                reltool_utils:return_first_error(Status2, Error2)
+        end,
     FirstInfo = hd(AllInfo),
     FirstDir = hd(Dirs),
     if
-	Vsn =:= undefined ->
-	    {FirstInfo, FirstDir, Status3};
-	Vsn =:= FirstInfo#app_info.vsn ->
-	    {FirstInfo, FirstDir, Status3};
-	true ->
-	    case find_vsn(Vsn, AllInfo, Dirs) of
-		{Info, VsnDir} ->
-		    {Info, VsnDir, Status3};
-		false ->
-		    Error3 = lists:concat([Name, ": No application directory contains selected version \"", Vsn, "\"."]),
-		    Status4 = reltool_utils:return_first_error(Status3, Error3),
-		    {FirstInfo, FirstDir, Status4}
-	    end
+        Vsn =:= undefined ->
+            {FirstInfo, FirstDir, Status3};
+        Vsn =:= FirstInfo#app_info.vsn ->
+            {FirstInfo, FirstDir, Status3};
+        true ->
+            case find_vsn(Vsn, AllInfo, Dirs) of
+                {Info, VsnDir} ->
+                    {Info, VsnDir, Status3};
+                false ->
+                    Error3 = lists:concat([Name, ": No application directory contains selected version \"", Vsn, "\"."]),
+                    Status4 = reltool_utils:return_first_error(Status3, Error3),
+                    {FirstInfo, FirstDir, Status4}
+            end
     end;
 ensure_app_info(#app{active_dir = Dir, info = Info}, Status) ->
     {Info, Dir, Status}.
@@ -1569,15 +1654,15 @@ find_vsn(_, [], []) ->
 
 get_base(Name, Dir) ->
     case Name of
-	erts ->
-	    case filename:basename(Dir) of
-		"preloaded" ->
-		    filename:basename(filename:dirname(Dir));
-		TmpBase ->
-		    TmpBase
-	    end;
-	_ ->
-	    filename:basename(Dir)
+        erts ->
+            case filename:basename(Dir) of
+                "preloaded" ->
+                    filename:basename(filename:dirname(Dir));
+                TmpBase ->
+                    TmpBase
+            end;
+        _ ->
+            filename:basename(Dir)
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -128,11 +128,16 @@ extern ErtsAllocatorThrSpec_t erts_allctr_thr_spec[ERTS_ALC_A_MAX+1];
 int erts_alc_get_thr_ix(void);
 void erts_alloc_reg_scheduler_id(Uint id);
 
-void erts_alloc_enomem(ErtsAlcType_t,Uint)		__noreturn;
-void erts_alloc_n_enomem(ErtsAlcType_t,Uint)		__noreturn;
-void erts_realloc_enomem(ErtsAlcType_t,void*,Uint)	__noreturn;
-void erts_realloc_n_enomem(ErtsAlcType_t,void*,Uint)	__noreturn;
-void erts_alc_fatal_error(int,int,ErtsAlcType_t,...)	__noreturn;
+__decl_noreturn void erts_alloc_enomem(ErtsAlcType_t,Uint)		
+     __noreturn;
+__decl_noreturn void erts_alloc_n_enomem(ErtsAlcType_t,Uint)		
+     __noreturn;
+__decl_noreturn void erts_realloc_enomem(ErtsAlcType_t,void*,Uint)	
+     __noreturn;
+__decl_noreturn void erts_realloc_n_enomem(ErtsAlcType_t,void*,Uint)	
+     __noreturn;
+__decl_noreturn void erts_alc_fatal_error(int,int,ErtsAlcType_t,...)	
+     __noreturn;
 
 /* --- DO *NOT* USE THESE DEPRECATED FUNCTIONS ---    Instead use:       */
 void *safe_alloc(Uint)               __deprecated; /* erts_alloc()       */

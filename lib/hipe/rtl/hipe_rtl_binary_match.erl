@@ -197,7 +197,7 @@ gen_rtl(bs_validate_unicode_retract, [NewMs], [Src,Ms], TrueLblName, FalseLblNam
 gen_rtl({bs_test_tail, NumBits}, [NewMs], [Ms], TrueLblName, FalseLblName) ->
   {[Offset,BinSize], ExCode} = extract_matchstate_vars([offset,binsize], Ms),
     update_ms(NewMs, Ms) ++ ExCode ++
-    [hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(NumBits)),
+    [add_to_offset(Offset, Offset, hipe_rtl:mk_imm(NumBits), FalseLblName),
      hipe_rtl:mk_branch(Offset, eq, BinSize, TrueLblName, FalseLblName)];
 gen_rtl({bs_test_unit, Unit}, [], [Ms], TrueLblName, FalseLblName) ->
   {[Offset,BinSize], ExCode} = extract_matchstate_vars([offset,binsize], Ms),
@@ -208,7 +208,7 @@ gen_rtl({bs_test_unit, Unit}, [], [Ms], TrueLblName, FalseLblName) ->
 gen_rtl({bs_test_tail, NumBits}, [], [Ms], TrueLblName, FalseLblName) ->
   {[Offset,BinSize], ExCode} = extract_matchstate_vars([offset,binsize], Ms),
     ExCode ++
-    [hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(NumBits)),
+    [add_to_offset(Offset, Offset, hipe_rtl:mk_imm(NumBits), FalseLblName),
      hipe_rtl:mk_branch(Offset, eq, BinSize, TrueLblName, FalseLblName)];
 gen_rtl({bs_skip_bits_all, Unit, _Flags}, Dst, [Ms], 
 	TrueLblName, FalseLblName) ->
@@ -375,7 +375,7 @@ create_loops(N, Unit, String, IntFun) ->
    create_loops(N-1, Unit, RestString, IntFun)].
 
 update_and_test(Reg, Unit, Offset, Value, FalseLblName) ->
-  [hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(Unit*?BYTE_SIZE)),
+  [add_to_offset(Offset, Offset, hipe_rtl:mk_imm(Unit*?BYTE_SIZE), FalseLblName),
    just_test(Reg, Value, FalseLblName)].
 
 just_test(Reg, Value, FalseLblName) ->
@@ -631,17 +631,19 @@ get_slow_test_code(Size,Unit,SLblName,FalseLblName) ->
 
 skip_bits2(Ms, NoOfBits, TrueLblName, FalseLblName) ->
   [NewOffset] = create_gcsafe_regs(1),
-  [SuccessLbl,TempLbl] = create_lbls(2),
+  [TempLbl] = create_lbls(1),
   {[Offset,BinSize], ExCode} = extract_matchstate_vars([offset,binsize], Ms),
   ExCode ++
-  [hipe_rtl:mk_alub(NewOffset, NoOfBits, add, Offset, overflow, 
-		    FalseLblName, hipe_rtl:label_name(SuccessLbl),0.01),
-   SuccessLbl,
-   hipe_rtl:mk_branch(BinSize, lt, NewOffset, FalseLblName, 
-		      hipe_rtl:label_name(TempLbl), 0.01),
-   TempLbl,
-   update_offset(NewOffset,Ms),
-   hipe_rtl:mk_goto(TrueLblName)].
+    add_to_offset(NewOffset, NoOfBits, Offset, FalseLblName) ++
+    [hipe_rtl:mk_branch(BinSize, 'ltu', NewOffset, FalseLblName, 
+			hipe_rtl:label_name(TempLbl), 0.01),
+     TempLbl,
+     update_offset(NewOffset,Ms),
+     hipe_rtl:mk_goto(TrueLblName)].
+
+add_to_offset(Result, Extra, Original, _FalseLblName) ->
+  %% TODO: MAke this unsigned overflow to FalseLblName
+  [hipe_rtl:mk_alu(Result, Extra, add, Original)].
 
 %%%%%%%%%%%%%%%%%%%%%%% Code for start match %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -707,7 +709,7 @@ extract_matchstate_vars(List, Ms) ->
   lists:unzip([extract_matchstate_var(Name, Ms) || Name <- List]).
 
 check_size(Offset, Size, BinSize, Tmp1, ContLblName, FalseLblName) ->
-  [hipe_rtl:mk_alu(Tmp1, Offset, add, Size),
+  [add_to_offset(Tmp1, Offset, Size, FalseLblName),
    hipe_rtl:mk_branch(Tmp1, leu, BinSize, ContLblName, FalseLblName, 0.99)].
 
 check_size(Offset, Size, _BinSize, Tmp1, true, ContLblName, _FalseLblName) ->
@@ -1006,7 +1008,7 @@ load_bytes(Dst, Base, Offset, {Signedness, Endianess},3) ->
        hipe_rtl:mk_alu(Dst, Dst, 'or', Tmp1),
        hipe_rtl:mk_alu(Offset, Offset, add, hipe_rtl:mk_imm(1))]
   end; 
-load_bytes(Dst, Base, Offset, {Signedness, Endianess},4) ->
+load_bytes(Dst, Base, Offset, {Signedness, Endianess}, 4) ->
   case Endianess of
     big ->
       hipe_rtl_arch:load_big_4(Dst, Base, Offset, Signedness);

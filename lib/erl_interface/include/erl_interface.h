@@ -53,25 +53,29 @@
 #define ERL_U_SMALL_BIG 14
 #define ERL_FUNCTION    (15 | ERL_COMPOUND)
 #define ERL_BIG         16
+#define ERL_LONGLONG	17
+#define ERL_U_LONGLONG	18
 
 
 #define ERL_TYPE(x)       (ERL_HEADER(x)->type)
 
 /* FIXME some macros left in erl_eterm.h should probably be documented */
 
-#define ERL_IS_INTEGER(x)  (ERL_TYPE(x) == ERL_INTEGER)
+#define ERL_IS_INTEGER(x)           (ERL_TYPE(x) == ERL_INTEGER)
 #define ERL_IS_UNSIGNED_INTEGER(x)  (ERL_TYPE(x) == ERL_U_INTEGER)
-#define ERL_IS_FLOAT(x)    (ERL_TYPE(x) == ERL_FLOAT)
-#define ERL_IS_ATOM(x)     (ERL_TYPE(x) == ERL_ATOM)
-#define ERL_IS_PID(x)      (ERL_TYPE(x) == ERL_PID)
-#define ERL_IS_PORT(x)     (ERL_TYPE(x) == ERL_PORT)
-#define ERL_IS_REF(x)      (ERL_TYPE(x) == ERL_REF)
-#define ERL_IS_TUPLE(x)    (ERL_TYPE(x) == ERL_TUPLE)
-#define ERL_IS_BINARY(x)   (ERL_TYPE(x) == ERL_BINARY)
-#define ERL_IS_NIL(x)      (ERL_TYPE(x) == ERL_NIL)
-#define ERL_IS_EMPTY_LIST(x) ERL_IS_NIL(x)
-#define ERL_IS_CONS(x)     (ERL_TYPE(x) == ERL_CONS)
-#define ERL_IS_LIST(x)     (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
+#define ERL_IS_LONGLONG(x)          (ERL_TYPE(x) == ERL_LONGLONG)
+#define ERL_IS_UNSIGNED_LONGLONG(x) (ERL_TYPE(x) == ERL_U_LONGLONG)
+#define ERL_IS_FLOAT(x)             (ERL_TYPE(x) == ERL_FLOAT)
+#define ERL_IS_ATOM(x)              (ERL_TYPE(x) == ERL_ATOM)
+#define ERL_IS_PID(x)               (ERL_TYPE(x) == ERL_PID)
+#define ERL_IS_PORT(x)              (ERL_TYPE(x) == ERL_PORT)
+#define ERL_IS_REF(x)               (ERL_TYPE(x) == ERL_REF)
+#define ERL_IS_TUPLE(x)             (ERL_TYPE(x) == ERL_TUPLE)
+#define ERL_IS_BINARY(x)            (ERL_TYPE(x) == ERL_BINARY)
+#define ERL_IS_NIL(x)               (ERL_TYPE(x) == ERL_NIL)
+#define ERL_IS_EMPTY_LIST(x)        ERL_IS_NIL(x)
+#define ERL_IS_CONS(x)              (ERL_TYPE(x) == ERL_CONS)
+#define ERL_IS_LIST(x)              (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
 
 /*
  * Macros used for XXXX
@@ -84,8 +88,10 @@
  * Macros used for retrieving values from Erlang terms.
  */
 
-#define ERL_INT_VALUE(x) ((x)->uval.ival.i)
+#define ERL_INT_VALUE(x)  ((x)->uval.ival.i)
 #define ERL_INT_UVALUE(x) ((x)->uval.uival.u)
+#define ERL_LL_VALUE(x)   ((x)->uval.llval.i)
+#define ERL_LL_UVALUE(x)  ((x)->uval.ullval.u)
 
 #define ERL_FLOAT_VALUE(x) ((x)->uval.fval.f)
 
@@ -160,6 +166,16 @@ typedef struct {
   Erl_Header h;
   unsigned int u;
 } Erl_Uinteger;
+
+typedef struct {
+  Erl_Header h;
+  long long i;
+} Erl_LLInteger;
+
+typedef struct {
+  Erl_Header h;
+  unsigned long long u;
+} Erl_ULLInteger;
 
 typedef struct {
   Erl_Header h;
@@ -253,20 +269,22 @@ typedef struct {
 
 typedef struct _eterm {
   union {
-    Erl_Integer   ival;
-    Erl_Uinteger  uival; 
-    Erl_Float     fval;
-    Erl_Atom      aval;
-    Erl_Pid       pidval;     
-    Erl_Port      portval;    
-    Erl_Ref       refval;   
-    Erl_List      lval;
-    Erl_EmptyList nval;
-    Erl_Tuple     tval;
-    Erl_Binary    bval;
-    Erl_Variable  vval;
-    Erl_Function  funcval;
-    Erl_Big       bigval;
+    Erl_Integer    ival;
+    Erl_Uinteger   uival; 
+    Erl_LLInteger  llval;
+    Erl_ULLInteger ullval;
+    Erl_Float      fval;
+    Erl_Atom       aval;
+    Erl_Pid        pidval;     
+    Erl_Port       portval;    
+    Erl_Ref        refval;   
+    Erl_List       lval;
+    Erl_EmptyList  nval;
+    Erl_Tuple      tval;
+    Erl_Binary     bval;
+    Erl_Variable   vval;
+    Erl_Function   funcval;
+    Erl_Big        bigval;
   } uval;
 } ETERM;
 
@@ -345,6 +363,7 @@ ETERM *erl_mk_empty_list(void);
 ETERM *erl_mk_estring(const char*, int);
 ETERM *erl_mk_float(double);
 ETERM *erl_mk_int(int);
+ETERM *erl_mk_longlong(long long);
 ETERM *erl_mk_list(ETERM**,int);
 ETERM *erl_mk_pid(const char*,unsigned int,unsigned int,unsigned char);
 ETERM *erl_mk_port(const char*,unsigned int,unsigned char);
@@ -354,6 +373,7 @@ ETERM *erl_mk_long_ref(const char*,unsigned int,unsigned int,
 ETERM *erl_mk_string(const char*);
 ETERM *erl_mk_tuple(ETERM**,int);
 ETERM *erl_mk_uint(unsigned int);
+ETERM *erl_mk_ulonglong(unsigned long long);
 ETERM *erl_mk_var(const char*);
 int    erl_print_term(FILE*,const ETERM*);
 /* int    erl_sprint_term(char*,const ETERM*); */

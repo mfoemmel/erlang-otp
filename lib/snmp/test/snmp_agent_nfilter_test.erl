@@ -55,10 +55,10 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(_Case, Config) when list(Config) ->
+init_per_testcase(_Case, Config) when is_list(Config) ->
     Config.
 
-fin_per_testcase(_Case, Config) when list(Config) ->
+fin_per_testcase(_Case, Config) when is_list(Config) ->
     Config.
 
 %%======================================================================

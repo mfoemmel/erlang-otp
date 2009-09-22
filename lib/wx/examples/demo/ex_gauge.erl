@@ -18,7 +18,7 @@
 
 -module(ex_gauge).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 -include_lib("wx/include/wx.hrl").
 
@@ -56,24 +56,24 @@ do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxPanel:new(Parent, []),
 
-    %% Horizontal gauge
+    %% Setup sizers
+    MainSizer = wxBoxSizer:new(?wxVERTICAL),
+    AlignSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
+				      [{label, "wxGauge"}]),
+
+    %% Create two horizontal gauges with range 0-100
     Range = 100,
     NormalGauge = wxGauge:new(Panel, 1, Range, [{size, {200, -1}},
 						{style, ?wxGA_HORIZONTAL}]),
     UndetGauge = wxGauge:new(Panel, 2, Range, [{size, {200, -1}},
 					       {style, ?wxGA_HORIZONTAL}]),
     
-    %% Setup sizers
-    MainSizer = wxBoxSizer:new(?wxVERTICAL),
-    AlignSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				      [{label, "wxGauge"}]),
+    %% Add to sizers
     wxSizer:add(AlignSizer, NormalGauge, [{flag, ?wxEXPAND}]),
     wxSizer:add(AlignSizer, UndetGauge, [{flag, ?wxEXPAND}]),
     {OptSizer, SimulateButton, SimulateUndetermButton}
 	= create_option_sizer(Panel),
 
-
-    %% Add to MainSizer
     wxSizer:add(MainSizer, AlignSizer, [{flag, ?wxEXPAND}]),
     wxSizer:add(MainSizer, OptSizer, []),
 
@@ -101,7 +101,7 @@ handle_info(tick, State=#state{normal_gauge = Gauge=#gauge{obj = Obj,
 		wxToggleButton:setValue(Button, false),
 		wxToggleButton:setLabel(Button, "Simulate load"),
 		wxGauge:setValue(Obj, Range),
-		demo:format(State#state.config, "Simulation finished.\n", []),
+		demo:format(State#state.config, "Simulation finished.\n", []),
 		Timer;
 	   true ->
 		simulate_load(Obj, Value)
@@ -112,10 +112,7 @@ handle_info(tick, State=#state{normal_gauge = Gauge=#gauge{obj = Obj,
 handle_info(pulse, State=#state{undeterminate_gauge = Gauge=#gauge{obj = Obj}}) ->
     wxGauge:pulse(Obj),
     Timer = erlang:send_after(300, self(), pulse),
-    {noreply, State#state{undeterminate_gauge = Gauge#gauge{timer = Timer}}};
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
-    {noreply, State}.
+    {noreply, State#state{undeterminate_gauge = Gauge#gauge{timer = Timer}}}.
 
 handle_call(Msg, _From, State) ->
     demo:format(State#state.config,"Got Call ~p\n",[Msg]),

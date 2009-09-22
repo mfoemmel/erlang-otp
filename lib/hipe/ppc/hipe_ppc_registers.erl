@@ -166,8 +166,7 @@ is_fixed(Reg) ->
 nr_args() -> ?PPC_NR_ARG_REGS.
 
 args(Arity) when is_integer(Arity) ->
-  Max = ?PPC_NR_ARG_REGS,
-  N = if Arity > Max -> Max; true -> Arity end,
+  N = erlang:min(Arity, ?PPC_NR_ARG_REGS),
   args(N-1, []).
 
 args(I, Rest) when is_integer(I), I < 0 -> Rest;

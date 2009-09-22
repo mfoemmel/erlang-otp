@@ -49,29 +49,30 @@
 %%--------------------------------------------------------------------
 
 -include("dialyzer.hrl").
--include("dialyzer_callgraph.hrl").
 
 %%--------------------------------------------------------------------
 %% State record -- local to this module
 
 -type parent() :: 'none' | pid().
 
--record(st, {callgraph      :: #dialyzer_callgraph{},
-	     codeserver     :: #dialyzer_codeserver{},
+-record(st, {callgraph      :: dialyzer_callgraph:callgraph(),
+	     codeserver     :: dialyzer_codeserver:codeserver(),
 	     no_warn_unused :: set(),
 	     parent = none  :: parent(),
-	     plt            :: #dialyzer_plt{}}).
+	     plt            :: dialyzer_plt:plt()}).
 
 %%--------------------------------------------------------------------
 
--spec analyze_callgraph(#dialyzer_callgraph{}, #dialyzer_plt{}, #dialyzer_codeserver{}) ->
-	 #dialyzer_plt{}.
+-spec analyze_callgraph(dialyzer_callgraph:callgraph(), dialyzer_plt:plt(),
+			dialyzer_codeserver:codeserver()) ->
+	 dialyzer_plt:plt().
 
 analyze_callgraph(Callgraph, Plt, Codeserver) ->
   analyze_callgraph(Callgraph, Plt, Codeserver, none).
 
--spec analyze_callgraph(#dialyzer_callgraph{}, #dialyzer_plt{},
-			#dialyzer_codeserver{}, parent()) -> #dialyzer_plt{}.
+-spec analyze_callgraph(dialyzer_callgraph:callgraph(), dialyzer_plt:plt(),
+			dialyzer_codeserver:codeserver(), parent()) ->
+         dialyzer_plt:plt().
 
 analyze_callgraph(Callgraph, Plt, Codeserver, Parent) ->
   State = #st{callgraph = Callgraph, plt = Plt, 
@@ -102,10 +103,11 @@ get_refined_success_typings(State) ->
       end
   end.
 
--type doc_plt() :: 'undefined' | #dialyzer_plt{}.
--spec get_warnings(#dialyzer_callgraph{}, #dialyzer_plt{}, doc_plt(), 
-		   #dialyzer_codeserver{}, set(), pid()) -> 
-	 {[dial_warning()], #dialyzer_plt{}, doc_plt()}.
+-type doc_plt() :: 'undefined' | dialyzer_plt:plt().
+-spec get_warnings(dialyzer_callgraph:callgraph(), dialyzer_plt:plt(),
+		   doc_plt(), dialyzer_codeserver:codeserver(), set(),
+		   pid()) -> 
+	 {[dial_warning()], dialyzer_plt:plt(), doc_plt()}.
 
 get_warnings(Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused, Parent) ->
   InitState = #st{callgraph = Callgraph, codeserver = Codeserver,
@@ -120,19 +122,19 @@ get_warnings_from_modules([M|Ms], State, DocPlt, Acc) when is_atom(M) ->
   send_log(State#st.parent, io_lib:format("Getting warnings for ~w\n", [M])),
   #st{callgraph = Callgraph, codeserver = Codeserver,
       no_warn_unused = NoWarnUnused, plt = Plt} = State,
-  {ok, Tree} = dialyzer_codeserver:lookup(M, Codeserver),
-  Records = dialyzer_codeserver:lookup_records(M, Codeserver),
-  Contracts = dialyzer_codeserver:lookup_contracts(M, Codeserver),
-  AllFuns = collect_fun_info([Tree]),
+  ModCode = dialyzer_codeserver:lookup_mod_code(M, Codeserver),
+  Records = dialyzer_codeserver:lookup_mod_records(M, Codeserver),
+  Contracts = dialyzer_codeserver:lookup_mod_contracts(M, Codeserver),
+  AllFuns = collect_fun_info([ModCode]),
   %% Check if there are contracts for functions that do not exist
   Warnings1 = 
     dialyzer_contracts:contracts_without_fun(Contracts, AllFuns, Callgraph),
-  {Warnings2, FunTypes, RaceVarMap, RaceCode, PublicTables, NamedTables} =
-    dialyzer_dataflow:get_warnings(Tree, Plt, Callgraph, Records, NoWarnUnused),
+  {Warnings2, FunTypes, RaceCode, PublicTables, NamedTables} =
+    dialyzer_dataflow:get_warnings(ModCode, Plt, Callgraph, Records, NoWarnUnused),
   NewDocPlt = insert_into_doc_plt(FunTypes, Callgraph, DocPlt),
   NewCallgraph =
-    callgraph__renew_race_stuff(RaceVarMap, RaceCode, PublicTables,
-    NamedTables, Callgraph),
+    dialyzer_callgraph:renew_race_info(Callgraph, RaceCode, PublicTables,
+                                       NamedTables),
   State1 = st__renew_state_calls(NewCallgraph, State),
   get_warnings_from_modules(Ms, State1, NewDocPlt, [Warnings1,Warnings2|Acc]);
 get_warnings_from_modules([], #st{plt = Plt}, DocPlt, Acc) ->
@@ -163,32 +165,25 @@ refine_succ_typings([], State, Fixpoint) ->
 
 refine_one_module(M, State) ->
   #st{callgraph = Callgraph, codeserver = CodeServer, plt = PLT} = State,
-  {ok, Tree} = dialyzer_codeserver:lookup(M, CodeServer),
-  AllFuns = collect_fun_info([Tree]),
+  ModCode = dialyzer_codeserver:lookup_mod_code(M, CodeServer),
+  AllFuns = collect_fun_info([ModCode]),
   FunTypes = get_fun_types_from_plt(AllFuns, State),
-  Records = dialyzer_codeserver:lookup_records(M, CodeServer),
-  {NewFunTypes, RaceVarMap, RaceCode, PublicTables, NamedTables} =
-    dialyzer_dataflow:get_fun_types(Tree, PLT, Callgraph, Records),
+  Records = dialyzer_codeserver:lookup_mod_records(M, CodeServer),
+  {NewFunTypes, RaceCode, PublicTables, NamedTables} =
+    dialyzer_dataflow:get_fun_types(ModCode, PLT, Callgraph, Records),
   NewCallgraph =
-    callgraph__renew_race_stuff(RaceVarMap, RaceCode, PublicTables,
-    NamedTables, Callgraph),
+    dialyzer_callgraph:renew_race_info(Callgraph, RaceCode, PublicTables,
+                                       NamedTables),
   case reached_fixpoint(FunTypes, NewFunTypes) of
     true ->
       State1 = st__renew_state_calls(NewCallgraph, State),
-      {State1, []};
+      {State1, ordsets:new()};
     {false, NotFixpoint} ->
       ?debug("Not fixpoint\n", []),
       NewState = insert_into_plt(dict:from_list(NotFixpoint), State),
       NewState1 = st__renew_state_calls(NewCallgraph, NewState),
       {NewState1, ordsets:from_list([FunLbl || {FunLbl,_Type} <- NotFixpoint])}
   end.
-
-callgraph__renew_race_stuff(RaceVarMap, RaceCode, PublicTables,
-                            NamedTables, Callgraph) ->
-  Callgraph#dialyzer_callgraph{race_var_map = RaceVarMap,
-                               race_code = RaceCode,
-                               public_tables = PublicTables,
-                               named_tables = NamedTables}.
 
 st__renew_state_calls(Callgraph, State) ->
   State#st{callgraph = Callgraph}.
@@ -290,32 +285,30 @@ find_succ_typings(#st{callgraph = Callgraph, parent = Parent} = State,
   end.
 
 analyze_scc(SCC, #st{codeserver = Codeserver} = State) ->
-  SCC1 = [{MFA, 
-	   dialyzer_codeserver:lookup(MFA, Codeserver),
-	   dialyzer_codeserver:lookup_records(M, Codeserver)}
-	  || {M, _, _} = MFA <- SCC],
-  false = lists:any(fun({_, X, _}) -> X =:= error end, SCC1),
-  SCC2 = [{MFA, Def, Rec} || {MFA, {ok, Def}, Rec} <- SCC1],
-  Contracts1 = [{MFA, dialyzer_codeserver:lookup_contract(MFA, Codeserver)}
+  SCC_Info = [{MFA, 
+	       dialyzer_codeserver:lookup_mfa_code(MFA, Codeserver),
+	       dialyzer_codeserver:lookup_mod_records(M, Codeserver)}
+	      || {M, _, _} = MFA <- SCC],
+  Contracts1 = [{MFA, dialyzer_codeserver:lookup_mfa_contract(MFA, Codeserver)}
 		|| {_, _, _} = MFA <- SCC],
   Contracts2 = [{MFA, Contract} || {MFA, {ok, Contract}} <- Contracts1],
   Contracts3 = orddict:from_list(Contracts2),
   {SuccTypes, PltContracts, NotFixpoint} = 
-    find_succ_types_for_scc(SCC2, Contracts3, State),
+    find_succ_types_for_scc(SCC_Info, Contracts3, State),
   State1 = insert_into_plt(SuccTypes, State),
   ContrPlt = dialyzer_plt:insert_contract_list(State1#st.plt, PltContracts),
   {State1#st{plt = ContrPlt}, NotFixpoint}.
 
-find_succ_types_for_scc(SCC, Contracts, 
+find_succ_types_for_scc(SCC_Info, Contracts, 
 			#st{codeserver = Codeserver, 
 			    callgraph = Callgraph, plt = Plt} = State) ->
   %% Assume that the PLT contains the current propagated types
-  AllFuns = collect_fun_info([Fun || {_MFA, {_Var, Fun}, _Rec} <- SCC]),
+  AllFuns = collect_fun_info([Fun || {_MFA, {_Var, Fun}, _Rec} <- SCC_Info]),
   PropTypes = get_fun_types_from_plt(AllFuns, State),
-  MFAs = [MFA || {MFA, {_Var, _Fun}, _Rec} <- SCC],
-  NextLabel = dialyzer_codeserver:next_core_label(Codeserver),
+  MFAs = [MFA || {MFA, {_Var, _Fun}, _Rec} <- SCC_Info],
+  NextLabel = dialyzer_codeserver:get_next_core_label(Codeserver),
   Plt1 = dialyzer_plt:delete_contract_list(Plt, MFAs),
-  FunTypes = dialyzer_typesig:analyze_scc_get_all_fun_types(SCC, NextLabel, 
+  FunTypes = dialyzer_typesig:analyze_scc_get_all_fun_types(SCC_Info, NextLabel, 
 							    Callgraph, Plt1, 
 							    PropTypes),
   AllFunSet = sets:from_list([X || {X, _} <- AllFuns]),
@@ -455,7 +448,7 @@ doit(Module) ->
   ok.
 
 -spec get_top_level_signatures(core_records(), dict(), dict()) ->
-		[{{atom(), arity()}, erl_type()}].
+	 [{{atom(), arity()}, erl_types:erl_type()}].
 
 get_top_level_signatures(Code, Records, Contracts) ->
   Tree = cerl:from_records(Code),
@@ -495,7 +488,7 @@ pp_signatures([{{M, F, _A}, Type}|Left], Records) ->
     case cerl:is_literal(Type) of
       true -> io_lib:format("~w", [cerl:concrete(Type)]);
       false -> "fun(" ++ String = erl_types:t_to_string(Type, Records),
-	       string:strip(String, right, $))
+	       string:substr(String, 1, length(String)-1)
     end,
   io:format("~w:~w~s\n", [M, F, TypeString]),
   pp_signatures(Left, Records);
@@ -525,23 +518,19 @@ debug_pp(_Tree, _Map) ->
 %%
 %% Analysis of a single module
 %%
-analyze_module(LabeledTree, NextLabel, Plt, Records, Contracts) ->
+analyze_module(LabeledTree, NextLbl, Plt, Records, Contracts) ->
   debug_pp(LabeledTree, dict:new()),
-  Callgraph1 = dialyzer_callgraph:new(),
-  Callgraph2 = dialyzer_callgraph:scan_core_tree(LabeledTree, Callgraph1),
-  {Callgraph3, _Ext} = dialyzer_callgraph:remove_external(Callgraph2),
-  Callgraph4 = dialyzer_callgraph:finalize(Callgraph3),
-  Codeserver1 = dialyzer_codeserver:new(),
-  ModuleName = cerl:concrete(cerl:module_name(LabeledTree)),
-  Insert = [{ModuleName, LabeledTree}],
-  Codeserver2 = dialyzer_codeserver:insert(Insert, Codeserver1),
-  Codeserver3 =
-    dialyzer_codeserver:update_next_core_label(NextLabel, Codeserver2),
-  Codeserver4 =
-    dialyzer_codeserver:store_records(ModuleName, Records, Codeserver3),
-  Codeserver5 =
-    dialyzer_codeserver:store_contracts(ModuleName, Contracts, Codeserver4),
-  Res = analyze_callgraph(Callgraph4, Plt, Codeserver5),
-  dialyzer_callgraph:delete(Callgraph4),
-  dialyzer_codeserver:delete(Codeserver5),
+  CallGraph1 = dialyzer_callgraph:new(),
+  CallGraph2 = dialyzer_callgraph:scan_core_tree(LabeledTree, CallGraph1),
+  {CallGraph3, _Ext} = dialyzer_callgraph:remove_external(CallGraph2),
+  CallGraph4 = dialyzer_callgraph:finalize(CallGraph3),
+  CodeServer1 = dialyzer_codeserver:new(),
+  Mod = cerl:concrete(cerl:module_name(LabeledTree)),
+  CodeServer2 = dialyzer_codeserver:insert(Mod, LabeledTree, CodeServer1),
+  CodeServer3 = dialyzer_codeserver:set_next_core_label(NextLbl, CodeServer2),
+  CodeServer4 = dialyzer_codeserver:store_records(Mod, Records, CodeServer3),
+  CodeServer5 = dialyzer_codeserver:store_contracts(Mod, Contracts, CodeServer4),
+  Res = analyze_callgraph(CallGraph4, Plt, CodeServer5),
+  dialyzer_callgraph:delete(CallGraph4),
+  dialyzer_codeserver:delete(CodeServer5),
   Res.

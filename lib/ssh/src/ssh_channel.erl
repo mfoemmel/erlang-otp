@@ -26,7 +26,7 @@
 -behaviour(gen_server).
 
 %%% API
--export([behaviour_info/1, start/4, start_link/4, call/2, call/3,
+-export([behaviour_info/1, start/4, start/5, start_link/4, start_link/5, call/2, call/3,
 	 cast/2, reply/2, enter_loop/1]).
 
 %% gen_server callbacks
@@ -92,17 +92,25 @@ reply(From, Msg) ->
 %% Description: Starts the server
 %%--------------------------------------------------------------------
 start(ConnectionManager, ChannelId, CallBack, CbInitArgs) ->
+    start(ConnectionManager, ChannelId, CallBack, CbInitArgs, undefined).
+
+start(ConnectionManager, ChannelId, CallBack, CbInitArgs, Exec) ->
     Options = [{channel_cb, CallBack},
 	       {channel_id, ChannelId},
 	       {init_args, CbInitArgs},
-	       {cm, ConnectionManager}],	  
+	       {cm, ConnectionManager},
+	       {exec, Exec}],	  
     gen_server:start(?MODULE, [Options], []).
 
 start_link(ConnectionManager, ChannelId, CallBack, CbInitArgs) ->
+    start_link(ConnectionManager, ChannelId, CallBack, CbInitArgs, undefined).
+
+start_link(ConnectionManager, ChannelId, CallBack, CbInitArgs, Exec) ->
     Options = [{channel_cb, CallBack},
 	       {channel_id, ChannelId},
 	       {init_args, CbInitArgs},
-	       {cm, ConnectionManager}],	  
+	       {cm, ConnectionManager},
+	       {exec, Exec}],	  
     gen_server:start_link(?MODULE, [Options], []).
 
 enter_loop(State) ->
@@ -124,7 +132,14 @@ init([Options]) ->
     ConnectionManager =  proplists:get_value(cm, Options),
     ChannelId = proplists:get_value(channel_id, Options),
     process_flag(trap_exit, true),
-    try Cb:init(proplists:get_value(init_args, Options)) of
+    InitArgs =
+	case proplists:get_value(exec, Options) of
+	    undefined ->
+		proplists:get_value(init_args, Options);
+	    Exec ->
+		proplists:get_value(init_args, Options) ++ [Exec]
+	end,
+    try Cb:init(InitArgs) of
 	{ok, ChannelState} ->
 	    State = #state{cm = ConnectionManager, 
 			   channel_cb = Cb,
@@ -138,7 +153,9 @@ init([Options]) ->
 			   channel_id = ChannelId,
 			   channel_state = ChannelState},
 	    self() ! {ssh_channel_up, ChannelId, ConnectionManager}, 
-	    {ok, State, Timeout}
+	    {ok, State, Timeout};
+	{stop, Why} ->
+	    {stop, Why}
     catch 
 	_:Reason ->
 	    {stop, Reason}
@@ -194,7 +211,8 @@ handle_info({ssh_cm, ConnectionManager, {closed, _ChannelId}},
 handle_info({ssh_cm, ConnectionManager, {closed, ChannelId}},  
 	    #state{cm = ConnectionManager, 
 		   close_sent = false} = State) ->
-    ssh_connection:close(ConnectionManager, ChannelId),
+    %% To be on the safe side, i.e. the manager has already been terminated.
+    (catch ssh_connection:close(ConnectionManager, ChannelId)),
     {stop, normal, State};
 
 handle_info({ssh_cm, _, _} = Msg, #state{cm = ConnectionManager,

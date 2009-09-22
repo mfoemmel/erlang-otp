@@ -283,6 +283,15 @@ io_request({get_until,Enc,_Prompt,Mod,Func,XtraArgs},
 io_request({get_chars,Enc,_Prompt,N}, 
 	   #state{}=State) ->
     get_chars(N, Enc, State);
+
+%%
+%% This optimization gives almost nothing - needs more working... 
+%% Disabled for now. /PaN
+%%
+%% io_request({get_line,Enc,_Prompt}, 
+%%  	   #state{unic=latin1}=State) ->
+%%     get_line(Enc,State);
+
 io_request({get_line,Enc,_Prompt}, 
 	   #state{}=State) ->
     get_chars(io_lib, collect_line, [], Enc, State);
@@ -356,7 +365,57 @@ put_chars(Chars, InEncoding, #state{handle=Handle, unic=OutEncoding}=State) ->
 	    {stop,normal,{error,{no_translation, InEncoding, OutEncoding}},State}
     end.
 
-
+%%
+%% Process the I/O request get_line for latin1 encoding of file specially
+%% Unfortunately this function gives almost nothing, it needs more work
+%% I disable it for now /PaN
+%%
+%% srch(<<>>,_,_) ->
+%%     nomatch;
+%% srch(<<X:8,_/binary>>,X,N) ->
+%%     {match,N};
+%% srch(<<_:8,T/binary>>,X,N) ->
+%%     srch(T,X,N+1).
+%% get_line(OutEnc, #state{handle=Handle,buf = <<>>,unic=latin1}=State) ->
+%%     case ?PRIM_FILE:read(Handle,?READ_SIZE_BINARY) of
+%% 	{ok, B} ->
+%% 	    get_line(OutEnc, State#state{buf = B});
+%% 	eof ->
+%% 	    {reply,eof,State};
+%% 	{error,Reason}=Error ->
+%% 	    {stop,Reason,Error,State}
+%%     end;
+%% get_line(OutEnc, #state{handle=Handle,buf=Buf,read_mode=ReadMode,unic=latin1}=State) ->
+%%     case srch(Buf,$\n,0) of
+%% 	nomatch ->
+%% 	    case ?PRIM_FILE:read(Handle,?READ_SIZE_BINARY) of
+%% 		{ok, B} ->
+%% 		    get_line(OutEnc,State#state{buf = <<Buf/binary,B/binary>>});
+%% 		eof ->
+%% 		    std_reply(cast(Buf, ReadMode,latin1,OutEnc), State);
+%% 		{error,Reason}=Error ->
+%% 		    {stop,Reason,Error,State#state{buf= <<>>}}
+%% 	    end;
+%% 	{match,Pos} when Pos >= 1->
+%% 	    PosP1 = Pos + 1,
+%% 	    <<Res0:PosP1/binary,NewBuf/binary>> = Buf,
+%% 	    PosM1 = Pos - 1,
+%% 	    Res = case Res0 of
+%% 		      <<Chomped:PosM1/binary,$\r:8,$\n:8>> ->
+%% 			  cat(Chomped, <<"\n">>, ReadMode,latin1,OutEnc);
+%% 		      _Other ->
+%% 			  cast(Res0, ReadMode,latin1,OutEnc)
+%% 		  end,
+%% 	    {reply,Res,State#state{buf=NewBuf}};
+%% 	 {match,Pos} ->
+%% 	    PosP1 = Pos + 1,
+%% 	    <<Res:PosP1/binary,NewBuf/binary>> = Buf,
+%% 	    {reply,Res,State#state{buf=NewBuf}}
+%%     end;
+%% get_line(_, #state{}=State) ->
+%%     {error,{error,get_line},State}.
+	    
+%%    
 %% Process the I/O request get_chars
 %%
 get_chars(0, Enc, #state{read_mode=ReadMode,unic=InEncoding}=State) ->

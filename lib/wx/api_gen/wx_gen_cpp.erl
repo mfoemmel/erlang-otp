@@ -184,8 +184,9 @@ gen_funcs(Defs) ->
     w("    wxeReturn error = wxeReturn(WXE_DRV_PORT, Ecmd.caller, false);"),
     w("    error.addAtom(\"_wxe_error_\");~n"),
     w("    error.addInt((int) Ecmd.op);~n"),
-    w("    error.addAtom(\"undef\");~n"),
+    w("    error.addAtom(\"not_supported\");~n"),
     w("    error.addTupleCount(3);~n"),
+    w("    error.send();~n"),
     w("    return ;~n"),
     w("  }~n"),
     w("}  // switch~n"),
@@ -325,10 +326,10 @@ declare_type(N,true,Def,#type{base={class,_},single=true,name=Type,ref=reference
 declare_type(N,true,Def,#type{base=Base,single=true,name=Type,by_val=false,ref={pointer,1}}) 
   when Base =:= int; Base =:= long; Base =:= float; Base =:= double; Base =:= bool ->
     w(" ~s *~s=~s;~n", [Type,N,Def]);
-declare_type(N,true,Def,#type{single=true,name="wxString"}) ->
-    w(" wxString ~s= ~s;~n", [N,Def]);
 declare_type(N,true,Def,#type{single=true,name="wxArtClient"}) ->
     w(" wxArtClient ~s= ~s;~n", [N,Def]);
+declare_type(N,true,Def,#type{single=true,base=string}) ->
+    w(" wxString ~s= ~s;~n", [N,Def]);
 %% declare_type(N,true,_Def,#type{name="wxString"}) ->
 %%     w(" wxString ~s= wxEmptyString;~n", [N]);
 declare_type(N,true,Def,#type{base=binary, name=char}) ->
@@ -405,11 +406,14 @@ decode_arg(N,#type{base=long,single=true,name=Type},arg,A0) ->
     A = align(A0,64),
     w(" long * ~s = (~s *) bp; bp += 8;~n", [N,Type]),
     A;
-decode_arg(N,#type{base=int,single=true,mod=Mod0,name=Type},Arg,A0) ->
+decode_arg(N,#type{base=int,single=true,mod=Mod0,name=Type,ref=Ref},Arg,A0) ->
     Mod = mods(Mod0),
     case Arg of
 	arg -> w(" ~s~s * ~s = (~s~s *) bp; bp += 4;~n", [Mod,int,N,Mod,int]);
-	opt -> w(" ~s = (~s)*(~s~s *) bp; bp += 4;~n", [N,Type,Mod,int])
+	opt when Ref =:= {pointer,1} ->
+	    w(" ~s = (~s *) bp; bp += 4;~n", [N,int]);
+	opt ->
+	    w(" ~s = (~s)*(~s~s *) bp; bp += 4;~n", [N,Type,Mod,int])
     end,
     align(A0,32);
 decode_arg(N,#type{base=float,single=true,name=Type},arg,A0) ->
@@ -485,8 +489,13 @@ decode_arg(N,#type{name="wxChar", single=S},Arg,A0)
     wa(" wxString", []," ~s = wxString(bp, wxConvUTF8);~n", [N],Arg),
     w(" bp += *~sLen+((8-((~p+ *~sLen) & 7)) & 7);~n", [N,4*((A0+1) rem 2),N]),
     0;
-decode_arg(N,#type{base=[int], name=Name},Arg,A0) 
-  when Name =:= "wxString"; Name =:= "wxArtClient" ->
+decode_arg(N,#type{base=string, name="wxFileName"},Arg,A0)  ->
+    w(" int * ~sLen = (int *) bp; bp += 4;~n", [N]),
+    wa(" wxString", []," ~sStr = wxString(bp, wxConvUTF8);~n", [N],Arg),
+    w(" bp += *~sLen+((8-((~p+ *~sLen) & 7)) & 7);~n", [N,4*((A0+1) rem 2),N]),    
+    w(" wxFileName ~s = wxFileName(~sStr);~n",[N,N]),
+    0;
+decode_arg(N,#type{base=string},Arg,A0)  ->
     w(" int * ~sLen = (int *) bp; bp += 4;~n", [N]),
     wa(" wxString", []," ~s = wxString(bp, wxConvUTF8);~n", [N],Arg),
     w(" bp += *~sLen+((8-((~p+ *~sLen) & 7)) & 7);~n", [N,4*((A0+1) rem 2),N]),
@@ -855,7 +864,7 @@ build_ret(Name,_,#type{name="wxUIntPtr", ref={pointer,1}, single=true}) ->
     w(" rt.add(~s);~n", [Name]);
 build_ret(Name,_,#type{base={enum,_Type},single=true}) ->
     w(" rt.addInt(~s);~n",[Name]);
-build_ret(Name,_,#type{base={comp,_,{record, wxMouseState}},single=true}) ->
+build_ret(Name,_,#type{base={comp,_,{record, _}},single=true}) ->
     w(" rt.add(~s);~n", [Name]);
 build_ret(Name,_,#type{base={comp,_,_},single=true, ref=reference}) ->
     w(" rt.add((*~s));~n",[Name]);
@@ -897,7 +906,7 @@ build_ret(Name,_,#type{base=float,single=true}) ->
     w(" rt.addFloat(~s);~n",[Name]);
 build_ret(Name,_,#type{base=double,single=true}) ->
     w(" rt.addFloat(~s);~n",[Name]);
-build_ret(Name,_,#type{name="wxString",single=true}) ->
+build_ret(Name,_,#type{base=string,single=true}) ->
     w(" rt.add(~s);~n",[Name]);
 build_ret(Name,_,#type{name="wxArrayString", single=array}) ->
     w(" rt.add(~s);~n", [Name]);
@@ -989,6 +998,9 @@ gen_macros() ->
     w("#include <wx/toolbook.h>~n"),
     w("#include <wx/listbook.h>~n"),
     w("#include <wx/treebook.h>~n"),
+    w("#include <wx/html/htmlwin.h>~n"),
+    w("#include <wx/html/htmlcell.h>~n"),
+    w("#include <wx/filename.h>~n"),
     
     w("~n~n", []),
     [w("#define ~s_~s ~p~n", [Class,Name,Id]) || 
@@ -1037,7 +1049,7 @@ build_events() ->
 initEventTable(Evs) ->
     w("void initEventTable() ~n{~n"),
     w("  struct { ",[]),
-    w("int ev_type;  int class_id; char * ev_name;} event_types[] = ~n  {~n",[]),
+    w("int ev_type;  int class_id; const char * ev_name;} event_types[] = ~n  {~n",[]),
 
     lists:foreach(fun(Ev) -> init_event_classes(Ev) end, 
 		  [#class{id=0,event=[wxEVT_NULL]}|Evs]),

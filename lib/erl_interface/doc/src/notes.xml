@@ -29,6 +29,95 @@
   </header>
   <p>This document describes the changes made to the Erl_interface application.</p>
 
+<section><title>Erl_Interface 3.6.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    The manual states that erl_receive() return the reason in
+	    the <c>ErlMessage</c> struct. This was not the case and
+	    the function is now corrected.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-4969</p>
+        </item>
+        <item>
+          <p>
+	    In <c>send_exit.c</c> an errorneous size of memory
+	    allocation could occur when reallocating a buffer.</p>
+          <p>
+	    In <c>ei_decode_trace.c</c> the index could be updated
+	    when the decoding failed.</p>
+          <p>
+	    In <c>ei_printterm.c</c> the index could be updated when
+	    the decoding failed in lists and tuples.</p>
+          <p>
+	    In <c>ei_decode_term.c</c> when decoding a double
+	    (ERL_FLOAT_EXT) no check was done to ensure that the last
+	    of the 31 bytes was null terminated.</p>
+          <p>
+	    In <c>ei_decode_term.c</c> when decoding references, only
+	    the first 3 bytes are read, but the index did not
+	    increment by the total size.</p>
+          <p>
+	    In <c>ei_decode_fun.c</c> no check of correct buffer
+	    allocation or data length was done.</p>
+          <p>
+	    In <c>ei_decode_string.c</c> the integer list string case
+	    did not decode the NIL tail correctly.</p>
+          <p>
+	    These errors has now been fixed. (Thanks to Romain
+	    Lenglet, Paul Mineiro and Paul Guyot).</p>
+          <p>
+	    Own Id: OTP-6117</p>
+        </item>
+        <item>
+          <p>
+	    <c>ei_decode_big</c> could be decoded with a garbage
+	    byte.</p>
+          <p>
+	    <c>ei_encode_big</c> and <c>ei_x_encode_big</c> is now
+	    available.</p>
+          <p>
+	    Own Id: OTP-7554</p>
+        </item>
+        <item>
+          <p>
+	    The function <c>erl_init_resolve()</c> did not conform to
+	    C99 standard which caused a build error on some
+	    platforms. This has now been fixed.</p>
+          <p>
+	    Own Id: OTP-8093</p>
+        </item>
+        <item>
+          <p>
+	    <c>Makefile.in</c> has been updated to use the LDFLAGS
+	    environment variable (if set). (Thanks to Davide
+	    Pesavento.)</p>
+          <p>
+	    Own Id: OTP-8157</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Added support for 64-bit integers in encoding/decoding.</p>
+          <p>
+	    Added support for better printouts of binaries.</p>
+          <p>
+	    Own Id: OTP-6091</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Erl_Interface 3.6.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

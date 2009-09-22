@@ -236,8 +236,8 @@ file(File, Context, Env, Opts) ->
     case file:read_file(File) of
 	{ok, Bin} ->
 	    {ok, text(binary_to_list(Bin), Context, Env, Opts, File)};
-	{error, R} ->
-	    {error, R}
+	{error, _R} = Error ->
+	    Error
     end.
 
 
@@ -293,11 +293,11 @@ get_module_info(Forms, File) ->
 	    R ->
 		throw(R)
 	end,
-    {Name, Vars} = case lists:keysearch(module, 1, L) of
-		       {value, {module, N}} when is_atom(N) ->
+    {Name, Vars} = case lists:keyfind(module, 1, L) of
+		       {module, N} when is_atom(N) ->
 			   {N, none};
-		       {value, {module, {N, Vs}}} when is_atom(N) ->
-			   {N, Vs};
+		       {module, {N, _Vs} = NVs} when is_atom(N) ->
+			   NVs;
 		       _ ->
 			   report(File, "module name missing.", []),
 			   exit(error)
@@ -314,8 +314,8 @@ get_module_info(Forms, File) ->
 	    records = Records}.
 
 get_list_keyval(Key, L) ->
-    case lists:keysearch(Key, 1, L) of
-	{value, {Key, As}} ->
+    case lists:keyfind(Key, 1, L) of
+	{Key, As} ->
 	    ordsets:from_list(As);
 	_ ->
 	    []

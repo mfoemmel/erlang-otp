@@ -515,12 +515,12 @@ setColor(Node, Colour, {colmap, ColMap} = Col) ->
 initAlias(NrNodes) ->
   {alias, hipe_bifs:array(NrNodes, [])}.
 
-getAlias(Node, {alias,AliasMap}) ->
+getAlias(Node, {alias, AliasMap} = Alias) ->
   case hipe_bifs:array_sub(AliasMap, Node) of
     [] ->
       Node;
     AliasNode ->
-      getAlias(AliasNode, {alias,AliasMap})
+      getAlias(AliasNode, Alias)
   end.
 
 setAlias(Node, AliasNode, {alias, AliasMap} = Alias) ->

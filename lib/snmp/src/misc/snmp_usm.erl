@@ -155,6 +155,11 @@ md5_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) == 12 ->
     %% 6.3.2.5
     MAC = binary_to_list(crypto:md5_mac_96(AuthKey, Packet2)),
     %% 6.3.2.6
+%%     ?vtrace("md5_auth_in -> entry with"
+%% 	    "~n   Packet2:    ~w"
+%% 	    "~n   AuthKey:    ~w"
+%% 	    "~n   AuthParams: ~w"
+%% 	    "~n   MAC:        ~w", [Packet2, AuthKey, AuthParams, MAC]),
     MAC == AuthParams;
 md5_auth_in(_AuthKey, _AuthParams, _Packet) ->
     %% 6.3.2.1
@@ -174,7 +179,7 @@ sha_auth_out(AuthKey, Message, UsmSecParams) ->
     %% 7.3.1.5
     set_msg_auth_params(Message, UsmSecParams, MAC).
 
-sha_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) == 12 ->
+sha_auth_in(AuthKey, AuthParams, Packet) when length(AuthParams) =:= 12 ->
     %% 7.3.2.3
     Packet2 = patch_packet(binary_to_list(Packet)),
     %% 7.3.2.5
@@ -199,7 +204,8 @@ des_encrypt(PrivKey, Data, SaltFun) ->
     EncData = crypto:des_cbc_encrypt(DesKey, IV, [Data,Tail]),
     {ok, binary_to_list(EncData), Salt}.
 
-des_decrypt(PrivKey, MsgPrivParams, EncData) when length(MsgPrivParams) == 8 ->
+des_decrypt(PrivKey, MsgPrivParams, EncData) 
+  when length(MsgPrivParams) =:= 8 ->
     [A,B,C,D,E,F,G,H | PreIV] = PrivKey,
     DesKey = [A,B,C,D,E,F,G,H],
     Salt = MsgPrivParams,
@@ -315,7 +321,7 @@ split_len([Hd|Tl]) ->
 	    {[Hd | DigList], Rest}
     end.
 
-dec_len(D) when integer(D) ->
+dec_len(D) when is_integer(D) ->
     D;
 dec_len([_LongOctet|T]) ->
     dl(T).

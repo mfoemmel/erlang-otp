@@ -124,7 +124,7 @@ start(Type) ->
 
 get_db_dir(Opts) ->
     case get_opt(snmp_db_dir, Opts) of
-	{value, Dir} when list(Dir) ->
+	{value, Dir} when is_list(Dir) ->
 	    Dir;
 	{value, Bad} ->
 	    exit({bad_config, {db_dir, Bad}});
@@ -137,7 +137,7 @@ get_db_dir(Opts) ->
 
 get_priority(Opts) ->
     case get_opt(snmp_priority, Opts) of
-	{value, Prio} when atom(Prio) ->
+	{value, Prio} when is_atom(Prio) ->
 	    Prio;
 	_ ->
 	    normal
@@ -183,7 +183,7 @@ get_audit_trail_log(Opts) ->
 
 get_audit_trail_log_dir(Opts) ->
     case get_opt(audit_trail_log_dir, Opts) of
-	{value, Dir} when list(Dir) ->
+	{value, Dir} when is_list(Dir) ->
 	    Dir;
 	{value, Bad} -> 
 	    exit({bad_config, {audit_trail_log_dir, Bad}});
@@ -193,7 +193,7 @@ get_audit_trail_log_dir(Opts) ->
 
 get_audit_trail_log_size(Opts) ->
     case get_opt(audit_trail_log_size, Opts) of
-	{value, {MB, MF} = Sz} when integer(MB), integer(MF) ->
+	{value, {MB, MF} = Sz} when is_integer(MB) andalso is_integer(MF) ->
 	    Sz;
 	{value, Bad} -> 
 	    exit({bad_config, {audit_trail_log_size, Bad}});
@@ -306,7 +306,7 @@ get_agent_type(Opts) ->
 
 get_config_dir(Opts) ->
     case get_opt(snmp_config_dir, Opts) of
-	{value, Dir} when list(Dir) -> Dir;
+	{value, Dir} when is_list(Dir) -> Dir;
 	{value, Bad} ->
 	    exit({bad_config, {config_dir, Bad}});
 	_ -> 

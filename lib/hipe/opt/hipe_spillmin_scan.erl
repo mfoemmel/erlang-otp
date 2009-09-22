@@ -434,31 +434,19 @@ add_def_point([], _, I) ->
 extend_interval(Pos, {Beginning, End}) ->
   %% If this position occurs before the beginning of the interval,
   %% then extend the beginning to this position.
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
+  NewBeginning = erlang:min(Pos, Beginning),
   %% If this position occurs after the end of the interval, then
   %% extend the end to this position.
-  NewEnd = 
-    if Pos > End -> Pos;
-       true      -> End
-    end,
+  NewEnd = erlang:max(Pos, End),
   {NewBeginning, NewEnd}.
 
 extend_def_interval(Pos, {Beginning, End}) ->
   %% If this position occurs before the beginning of the interval,
   %% then extend the beginning to this position.
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
+  NewBeginning = erlang:min(Pos, Beginning),
   %% If this position occurs after the end of the interval, then
   %% extend the end to this position.
-  NewEnd = 
-    if Pos > End -> Pos;
-       true      -> End
-    end,
+  NewEnd = erlang:max(Pos, End),
   {NewBeginning, NewEnd};
 extend_def_interval(Pos, [{Beginning, none}|More]) ->
   [{Pos,none}, {Beginning, none}|More];
@@ -534,16 +522,10 @@ extend_interval(Pos, {Beginning, End})
   when is_integer(Beginning), is_integer(End) ->
   %% If this position occurs before the beginning of the interval,
   %% then extend the beginning to this position.
-  NewBeginning = 
-    if Pos < Beginning -> Pos;
-       true            -> Beginning
-    end,
+  NewBeginning = erlang:min(Pos, Beginning),
   %% If this position occurs after the end of the interval, then
   %% extend the end to this position.
-  NewEnd =
-    if Pos > End -> Pos;
-       true      -> End
-    end,
+  NewEnd = erlang:max(Pos, End),
   {NewBeginning, NewEnd}.
 
 -endif. %% gb_intervals

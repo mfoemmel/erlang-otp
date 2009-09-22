@@ -82,10 +82,21 @@ ETERM *erl_mk_int (int i)
     return ep;
 }
 
+ETERM *erl_mk_longlong (long long i)
+{
+    ETERM *ep;
+
+    ep = erl_alloc_eterm(ERL_LONGLONG);
+    ERL_COUNT(ep) = 1;
+    ERL_LL_VALUE(ep) = i;
+    return ep;
+}
+
 /*
  * Create an UNSIGNED INTEGER. Depending on its 
  * value it may end up as a BigNum.
  */
+
 ETERM *erl_mk_uint (unsigned int u)
 {
     ETERM *ep;
@@ -93,6 +104,16 @@ ETERM *erl_mk_uint (unsigned int u)
     ep = erl_alloc_eterm(ERL_U_INTEGER);
     ERL_COUNT(ep) = 1;
     ERL_INT_UVALUE(ep) = u;
+    return ep;
+}
+
+ETERM *erl_mk_ulonglong (unsigned long long i)
+{
+    ETERM *ep;
+
+    ep = erl_alloc_eterm(ERL_U_LONGLONG);
+    ERL_COUNT(ep) = 1;
+    ERL_LL_UVALUE(ep) = i;
     return ep;
 }
 
@@ -589,8 +610,8 @@ int erl_length(const ETERM *ep)
       n++;
       ep = TAIL(ep);
     }
-    if (!ERL_IS_EMPTY_LIST(ep))
-      return -1;
+
+    if (!ERL_IS_EMPTY_LIST(ep)) return -1;
 
     return n;
 }
@@ -945,9 +966,17 @@ int erl_print_term(FILE *fp, const ETERM *ep)
       putc('}', fp);
       ch_written++;
       break;
-    case ERL_BINARY:
-      ch_written += fprintf(fp, "#Bin");
-      break;
+    case ERL_BINARY: {
+	int sz = (ERL_BIN_SIZE(ep) > 20) ? 20 : ERL_BIN_SIZE(ep);
+	unsigned char *ptr = ERL_BIN_PTR(ep);
+	ch_written += fprintf(fp, "#Bin<");
+	for (i = 0; i < sz; i++) { 
+	    putc(ptr[i], fp); ch_written++;
+	}
+	if (sz == 20) ch_written += fprintf(fp, "(%d)....>", ERL_BIN_SIZE(ep)-20);
+	else ch_written += fprintf(fp, ">");
+	break;
+      }
     case ERL_INTEGER:
     case ERL_SMALL_BIG:
       ch_written += fprintf(fp, "%d", ERL_INT_VALUE(ep));
@@ -955,6 +984,10 @@ int erl_print_term(FILE *fp, const ETERM *ep)
     case ERL_U_INTEGER:
     case ERL_U_SMALL_BIG:
       ch_written += fprintf(fp, "%d", ERL_INT_UVALUE(ep));
+      break;
+    case ERL_LONGLONG:
+    case ERL_U_LONGLONG:
+      ch_written += fprintf(fp, "%lld", ERL_LL_UVALUE(ep));
       break;
     case ERL_FLOAT:
       ch_written += fprintf(fp, "%f", ERL_FLOAT_VALUE(ep));

@@ -160,11 +160,11 @@ gregorian_seconds_to_datetime(Secs) when Secs >= 0 ->
 
 %% is_leap_year(Year) = true | false
 %%
--spec is_leap_year(year()) -> bool().
+-spec is_leap_year(year()) -> boolean().
 is_leap_year(Y) when is_integer(Y), Y >= 0 ->
     is_leap_year1(Y).
 
--spec is_leap_year1(year()) -> bool().
+-spec is_leap_year1(year()) -> boolean().
 is_leap_year1(Year) when Year rem 4 =:= 0, Year rem 100 > 0 ->
     true;
 is_leap_year1(Year) when Year rem 400 =:= 0 ->
@@ -336,17 +336,17 @@ universal_time_to_local_time(DateTime) ->
 %% valid_date(Year, Month, Day) = true | false
 %% valid_date({Year, Month, Day}) = true | false
 %%
--spec valid_date(integer(), integer(), integer()) -> bool().
+-spec valid_date(integer(), integer(), integer()) -> boolean().
 valid_date(Y, M, D) when is_integer(Y), is_integer(M), is_integer(D) ->
     valid_date1(Y, M, D).
 
--spec valid_date1(integer(), integer(), integer()) -> bool().
+-spec valid_date1(integer(), integer(), integer()) -> boolean().
 valid_date1(Y, M, D) when Y >= 0, M > 0, M < 13, D > 0 ->
     D =< last_day_of_the_month(Y, M);
 valid_date1(_, _, _) ->
     false.
 
--spec valid_date({integer(),integer(),integer()}) -> bool().
+-spec valid_date({integer(),integer(),integer()}) -> boolean().
 valid_date({Y, M, D}) ->
     valid_date(Y, M, D).
 

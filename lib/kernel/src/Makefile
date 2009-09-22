@@ -122,7 +122,7 @@ HRL_FILES= ../include/file.hrl ../include/inet.hrl ../include/inet_sctp.hrl
 INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
         net_address.hrl inet_dns.hrl inet_res.hrl \
         inet_boot.hrl inet_config.hrl inet_int.hrl \
-	dist.hrl dist_util.hrl
+	dist.hrl dist_util.hrl inet_dns_record_adts.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -180,6 +180,9 @@ EPMD_FLAGS = -Depmd_port_no=$(EPMD_PORT_NO)	\
              -Depmd_dist_high=$(EPMD_DIST_HIGH)	\
              -Derlang_daemon_port=$(EPMD_PORT_NO)
 
+$(ESRC)/inet_dns_record_adts.hrl: $(ESRC)/inet_dns_record_adts.pl
+	LANG=C $(PERL) $< > $@
+
 $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
 	$(ERLC) $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) -o$(EBIN) $<
 
@@ -225,7 +228,7 @@ $(EBIN)/inet6_udp.beam: inet_int.hrl
 $(EBIN)/inet6_sctp.beam: inet_int.hrl
 $(EBIN)/inet_config.beam: inet_config.hrl ../include/inet.hrl
 $(EBIN)/inet_db.beam: ../include/inet.hrl inet_int.hrl inet_res.hrl inet_dns.hrl inet_config.hrl
-$(EBIN)/inet_dns.beam: inet_int.hrl inet_dns.hrl
+$(EBIN)/inet_dns.beam: inet_int.hrl inet_dns.hrl inet_dns_record_adts.hrl
 $(EBIN)/inet_gethost_native.beam: ../include/inet.hrl
 $(EBIN)/inet_hosts.beam: ../include/inet.hrl
 $(EBIN)/inet_parse.beam: ../include/file.hrl

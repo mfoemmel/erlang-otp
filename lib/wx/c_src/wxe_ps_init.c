@@ -18,37 +18,36 @@
  */
 
 #include <stdio.h>
-
+#include "wxe_driver.h"
 /* Platform specific initialisation stuff */ 
 #ifdef _MACOSX
 
-#include "wxe_macosx.h"
 #include <Cocoa/Cocoa.h>
 #include <objc/objc-runtime.h>
 
 void * wxe_ps_init() 
 {
-   /* COCOA */
-   CPSProcessSerNum PSN;
-   OSErr err;
-   void *rel_pool;
+   ProcessSerialNumber psn;
+   NSAutoreleasePool *pool;
+   // Enable GUI 
+   GetCurrentProcess(&psn);
+   TransformProcessType(&psn, kProcessTransformToForegroundApplication);
+   SetFrontProcess(&psn);
+   // Enable Cocoa calls from Carbon app
+   NSApplicationLoad();
 
-   rel_pool = [[NSAutoreleasePool alloc] init];
-   [NSApplication sharedApplication];
+   // Setup and enable gui
+   pool = [[NSAutoreleasePool alloc] init];
 
-/*    objc_msgSend(objc_msgSend(objc_getClass("NSAutoreleasePool"),  */
-/* 			     @selector(alloc)), @selector(init)); */
- 
-/*    objc_msgSend(objc_getClass("NSApplication"), */
-/* 		@selector(sharedApplication)); */
+   NSApplication *app = [NSApplication sharedApplication];
+   // Load and set icon
+   
+   NSMutableString *file = [[NSMutableString alloc] init];
+   [file appendFormat:@"%s/%s", erl_wx_privdir, "erlang-logo64.png"];
+   NSImage *icon = [[NSImage alloc] initWithContentsOfFile: file];
+   [app setApplicationIconImage: icon];
 
-   /* To get a Menu & a dock icon : */
-   assert(!(err = CPSGetCurrentProcess(&PSN)));
-   assert(!(err = CPSSetProcessName(&PSN,"Erlang")));
-   assert(!(err = CPSEnableForegroundOperation(&PSN,0x03,0x3C,0x2C,0x1103)));
-   assert(!(err = CPSSetFrontProcess(&PSN)));
-
-   return rel_pool;
+   return (void *) pool;
 }
 /* _MACOSX */
 #else

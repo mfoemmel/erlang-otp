@@ -100,7 +100,7 @@ encode_action_requests(_EC, ActReqs) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_request(_EC, ActReq) 
-  when record(ActReq, 'ActionRequest') ->
+  when is_record(ActReq, 'ActionRequest') ->
     case (catch enc_ActionRequest(ActReq)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
@@ -116,7 +116,7 @@ encode_action_request(_EC, ActReq)
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_command_request(_EC, CmdReq) 
-  when record(CmdReq, 'CommandRequest') ->
+  when is_record(CmdReq, 'CommandRequest') ->
     case (catch enc_CommandRequest(CmdReq)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
@@ -132,7 +132,7 @@ encode_command_request(_EC, CmdReq)
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_reply(_EC, ActRep) 
-  when record(ActRep, 'ActionReply') ->
+  when is_record(ActRep, 'ActionReply') ->
     case (catch enc_ActionReply(ActRep)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};

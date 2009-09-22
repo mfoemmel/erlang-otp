@@ -37,11 +37,17 @@
 %%%-----------------------------------------------------------------
 -record(state, {links = [] :: [pid()]}).
 
+-spec start_link() -> {'ok', pid()} | {'error', term()}.
+
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+-spec start() -> {'ok', pid()} | {'error', term()}.
+
 start() ->
     ensure_started().
+
+-spec create(term()) -> 'ok'.
 
 create(Name) ->
     ensure_started(),
@@ -56,6 +62,8 @@ create(Name) ->
     end,
     ok.
 
+-spec delete(term()) -> 'ok'.
+
 delete(Name) ->
     ensure_started(),
     global:trans({{?MODULE, Name}, self()},
@@ -63,6 +71,8 @@ delete(Name) ->
 			 gen_server:multi_call(?MODULE, {delete, Name})
 		 end),
     ok.
+
+-spec join(term(), pid()) -> 'ok' | {'error', {'no_such_group', term()}}.
 
 join(Name, Pid) when is_pid(Pid) ->
     ensure_started(),
@@ -78,6 +88,8 @@ join(Name, Pid) when is_pid(Pid) ->
 	    ok
     end.
 
+-spec leave(term(), pid()) -> 'ok' | {'error', {'no_such_group', term()}}.
+
 leave(Name, Pid) when is_pid(Pid) ->
     ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
@@ -91,7 +103,11 @@ leave(Name, Pid) when is_pid(Pid) ->
                          end),
             ok
     end.
-    
+
+-type get_members_ret() :: [pid()] | {'error', {'no_such_group', term()}}.
+
+-spec get_members(term()) -> get_members_ret().
+   
 get_members(Name) ->
     ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
@@ -99,12 +115,16 @@ get_members(Name) ->
 	[] -> {error, {no_such_group, Name}}
     end.
 
+-spec get_local_members(term()) -> get_members_ret().
+
 get_local_members(Name) ->
     ensure_started(),
     case ets:lookup(pg2_table, {local_members, Name}) of
 	[{_, Members}] -> Members;
 	[] -> {error, {no_such_group, Name}}
     end.
+
+-spec which_groups() -> [term()].
 
 which_groups() ->
     ensure_started(),
@@ -120,6 +140,10 @@ which_groups() ->
 %% This is a common dispatch function.  If there's a local
 %% member, use it.  Otherwise choose one randomly.
 %%-----------------------------------------------------------------
+
+-spec get_closest_pid(term()) -> pid() | {'no_process', term()}
+                                       | {'no_such_group', term()}.
+
 get_closest_pid(Name) ->
     case get_local_members(Name) of
 	[Pid] ->
@@ -141,7 +165,9 @@ get_closest_pid(Name) ->
 %%%-----------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%-----------------------------------------------------------------
+
 -spec init([]) -> {'ok', #state{}}.
+
 init([]) ->
     process_flag(trap_exit, true),
     Ns = nodes(),
@@ -154,6 +180,14 @@ init([]) ->
     ets:new(pg2_table, [set, protected, named_table]),
     {ok, #state{}}.
 
+-type call() :: {'create', term()}
+              | {'delete', term()}
+              | {'join', term(), pid()}
+              | {'leave', term(), pid()}.
+
+-spec handle_call(call(), _, #state{}) -> 
+        {'reply', 'ok' | 'no_such_group', #state{}}.
+
 handle_call({create, Name}, _From, S) ->
     case ets:lookup(pg2_table, {local_members, Name}) of
 	[] ->
@@ -163,7 +197,6 @@ handle_call({create, Name}, _From, S) ->
 	    ok
     end,
     {reply, ok, S};
-
 handle_call({join, Name, Pid}, _From, S) ->
     case ets:lookup(pg2_table, {members, Name}) of
 	[{_, Members}] ->
@@ -185,7 +218,6 @@ handle_call({join, Name, Pid}, _From, S) ->
 	[] ->
 	    {reply, no_such_group, S}
     end;
-
 handle_call({leave, Name, Pid}, _From, S) ->
     case ets:lookup(pg2_table, {members, Name}) of
         [{_, Members}] ->
@@ -216,39 +248,42 @@ handle_call({leave, Name, Pid}, _From, S) ->
         [] ->
             {reply, no_such_group, S}
     end;
- 
 handle_call({delete, Name}, _From, S) ->
     ets:delete(pg2_table, {local_members, Name}),
     ets:delete(pg2_table, {members, Name}),
     {reply, ok, S}.
 
+-type cast() :: {'exchange', node(), [[term(),...]]}
+              | {'del_member', term(), pid()}.
+
+-spec handle_cast(cast(), #state{}) -> {'noreply', #state{}}.
+
 handle_cast({exchange, Node, List}, S) ->
     store(List, Node),
     {noreply, S};
-
 handle_cast({del_member, Name, Pid}, S) ->
     del_member(members, Name, Pid),
     {noreply, S}.
+
+-spec handle_info(tuple(), #state{}) -> {'noreply', #state{}}.
 
 handle_info({'EXIT', Pid, _}, S) ->
     del_members(ets:match(pg2_table, {{local_members, '$1'}, '$2'}), Pid),
     NewLinks = delete(S#state.links, Pid),
     {noreply, S#state{links = NewLinks}};
-
 handle_info({nodeup, Node}, S) ->
     gen_server:cast({?MODULE, Node}, {exchange, node(), all_members()}),
     {noreply, S};
-
 handle_info({new_pg2, Node}, S) ->
     gen_server:cast({?MODULE, Node}, {exchange, node(), all_members()}),
     {noreply, S};
-
 handle_info({nodedown, Node}, S) ->
     del_node_members(ets:match(pg2_table, {{members, '$1'}, '$2'}), Node),
     {noreply, S};
-
 handle_info(_, S) ->
     {noreply, S}.
+
+-spec terminate(term(), #state{}) -> 'ok'.
 
 terminate(_Reason, S) ->
     ets:delete(pg2_table),
@@ -268,7 +303,7 @@ del_members([[Name, Pids] | T], Pid) ->
 	 (_) -> ok
       end, Pids),
     del_members(T, Pid);
-del_members([],_Pid) -> ok.
+del_members([], _Pid) -> ok.
 
 del_member(KeyTag, Name, Pid) ->
     [{_, Members}] = ets:lookup(pg2_table, {KeyTag, Name}),
@@ -276,13 +311,10 @@ del_member(KeyTag, Name, Pid) ->
 
 %% Delete all members on Node in all groups.
 del_node_members([[Name, Pids] | T], Node) ->
-    NewMembers = 
-	lists:filter(fun(Pid) when node(Pid) =:= Node -> false;
-			(_) -> true
-		     end, Pids),
+    NewMembers = [Pid || Pid <- Pids, node(Pid) =/= Node],
     ets:insert(pg2_table, {{members, Name}, NewMembers}),
     del_node_members(T, Node);
-del_node_members([],_Node) -> ok.
+del_node_members([], _Node) -> ok.
 
 %% delete _all_ occurences of X in list
 delete([X | T], X) -> delete(T, X);

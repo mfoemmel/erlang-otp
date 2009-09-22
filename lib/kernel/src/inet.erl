@@ -81,46 +81,46 @@
 -type socket_setopt() ::
       {'raw', non_neg_integer(), non_neg_integer(), binary()} |
       %% TCP/UDP options
-      {'reuseaddr',       bool()} |
-      {'keepalive',       bool()} |
-      {'dontroute',       bool()} |
-      {'linger',          {bool(), non_neg_integer()}} |
-      {'broadcast',       bool()} |
+      {'reuseaddr',       boolean()} |
+      {'keepalive',       boolean()} |
+      {'dontroute',       boolean()} |
+      {'linger',          {boolean(), non_neg_integer()}} |
+      {'broadcast',       boolean()} |
       {'sndbuf',          non_neg_integer()} |
       {'recbuf',          non_neg_integer()} |
       {'priority',        non_neg_integer()} |
       {'tos',             non_neg_integer()} |
-      {'nodelay',         bool()} |
+      {'nodelay',         boolean()} |
       {'multicast_ttl',   non_neg_integer()} |
-      {'multicast_loop',  bool()} |
+      {'multicast_loop',  boolean()} |
       {'multicast_if',    ip_address()} |
       {'add_membership',  {ip_address(), ip_address()}} |
       {'drop_membership', {ip_address(), ip_address()}} |
       {'header',          non_neg_integer()} |
       {'buffer',          non_neg_integer()} |
-      {'active',          bool() | 'once'} |
+      {'active',          boolean() | 'once'} |
       {'packet',        
        0 | 1 | 2 | 4 | 'raw' | 'sunrm' |  'asn1' |
        'cdr' | 'fcgi' | 'line' | 'tpkt' | 'http' | 'httph' | 'http_bin' | 'httph_bin' } |
       {'mode',           list() | binary()} |
       {'port',           'port', 'term'} |
-      {'exit_on_close',   bool()} |
+      {'exit_on_close',   boolean()} |
       {'low_watermark',   non_neg_integer()} |
       {'high_watermark',  non_neg_integer()} |
       {'bit8',            'clear' | 'set' | 'on' | 'off'} |
       {'send_timeout',    non_neg_integer() | 'infinity'} |
-      {'send_timeout_close', bool()} |
-      {'delay_send',      bool()} |
+      {'send_timeout_close', boolean()} |
+      {'delay_send',      boolean()} |
       {'packet_size',     non_neg_integer()} |
       {'read_packets',    non_neg_integer()} |
       %% SCTP options
       {'sctp_rtoinfo',               #sctp_rtoinfo{}} |
       {'sctp_associnfo',             #sctp_assocparams{}} |
       {'sctp_initmsg',               #sctp_initmsg{}} |
-      {'sctp_nodelay',               bool()} |
+      {'sctp_nodelay',               boolean()} |
       {'sctp_autoclose',             non_neg_integer()} |
-      {'sctp_disable_fragments',     bool()} |
-      {'sctp_i_want_mapped_v4_addr', bool()} |
+      {'sctp_disable_fragments',     boolean()} |
+      {'sctp_i_want_mapped_v4_addr', boolean()} |
       {'sctp_maxseg',                non_neg_integer()} |
       {'sctp_primary_addr',          #sctp_prim{}} |
       {'sctp_set_peer_primary_addr', #sctp_setpeerprim{}} |
@@ -884,32 +884,20 @@ gethostbyname_tm(Name, Type, Timer, [_ | Opts]) ->
 gethostbyname_tm(Name, inet, _Timer, []) ->
     case inet_parse:ipv4_address(Name) of
 	{ok,IP4} ->
-	    {ok, 
-	     #hostent{
-	       h_name = Name,
-	       h_aliases = [],
-	       h_addrtype = inet,
-	       h_length = 4,
-	       h_addr_list = [IP4]}};
+	    {ok,make_hostent(Name, [IP4], [], inet)};
 	_ ->
-	    {error,nxdomain}
+	    gethostbyname_self(Name)
     end;
 gethostbyname_tm(Name, inet6, _Timer, []) ->
     case inet_parse:ipv6_address(Name) of
 	{ok,IP6} ->
-	    {ok, 
-	     #hostent{
-	       h_name = Name,
-	       h_aliases = [],
-	       h_addrtype = inet6,
-	       h_length = 16,
-	       h_addr_list = [IP6]}};
+	    {ok,make_hostent(Name, [IP6], [], inet6)};
 	_ ->
 	    %% Even if Name is a valid IPv4 address, we can't
 	    %% assume it's correct to return it on a IPv6
 	    %% format ( {0,0,0,0,0,16#ffff,?u16(A,B),?u16(C,D)} ).
 	    %% This host might not support IPv6.
-	    {error,nxdomain}
+	    gethostbyname_self(Name)
     end.
 
 gethostbyname_tm_native(Name, Type, Timer, Opts) ->
@@ -921,7 +909,36 @@ gethostbyname_tm_native(Name, Type, Timer, Opts) ->
 	Result -> Result
     end.
 
+%% Make sure we always can look up our own hostname.
+gethostbyname_self(Name) ->
+    Type = case inet_db:res_option(inet6) of
+	       true -> inet6;
+	       false -> inet
+	   end,
+    case inet_db:gethostname() of
+	Name ->
+	    {ok,make_hostent(Name, [translate_ip(loopback, Type)],
+			 [], Type)};
+	Self ->
+	    case inet_db:res_option(domain) of
+		"" -> {error,nxdomain};
+		Domain ->
+		    case lists:append([Self,".",Domain]) of
+			Name ->
+			    {ok,make_hostent(Name,
+					     [translate_ip(loopback, Type)],
+					     [], Type)};
+			_ -> {error,nxdomain}
+		    end
+	    end
+    end.
 
+make_hostent(Name, Addrs, Aliases, Type) ->
+    #hostent{h_name = Name,
+	     h_aliases = Aliases,
+	     h_addrtype = Type,
+	     h_length = case Type of inet -> 4; inet6 -> 16 end,
+	     h_addr_list = Addrs}.
 
 %%
 %% gethostbyaddr with option search
@@ -952,9 +969,22 @@ gethostbyaddr_tm(Addr, Timer, [native | Opts]) ->
     gethostbyaddr_tm_native(Addr, Timer, Opts);
 gethostbyaddr_tm(Addr, Timer, [_ | Opts]) ->
     gethostbyaddr_tm(Addr, Timer, Opts);
+gethostbyaddr_tm({127,0,0,1}=IP, _Timer, []) ->
+    gethostbyaddr_self(IP, inet);
+gethostbyaddr_tm({0,0,0,0,0,0,0,1}=IP, _Timer, []) ->
+    gethostbyaddr_self(IP, inet6);
 gethostbyaddr_tm(_Addr, _Timer, []) ->
     {error, nxdomain}.
 
+gethostbyaddr_self(IP, Type) ->
+    Name = inet_db:gethostname(),
+    case inet_db:res_option(domain) of
+	"" ->
+	    {ok,make_hostent(Name, [IP], [], Type)};
+	Domain ->
+	    {ok,make_hostent(Name++"."++Domain, [IP], [Name], Type)}
+    end.
+	    
 gethostbyaddr_tm_native(Addr, Timer, Opts) ->
     %% Fixme: user timer for timeoutvalue
     case inet_gethost_native:gethostbyaddr(Addr) of

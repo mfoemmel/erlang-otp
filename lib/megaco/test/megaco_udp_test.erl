@@ -332,7 +332,7 @@ sendreceive(suite) ->
     [];
 sendreceive(doc) ->
     ["Test send and receive with the UDP transport. "];
-sendreceive(Config) when list(Config) ->
+sendreceive(Config) when is_list(Config) ->
     put(sname, "sendreceive"),
     p("BEGIN TEST-CASE"),
 
@@ -368,7 +368,8 @@ sendreceive(Config) when list(Config) ->
 	    {'EXIT', Server, {skip, Reason}} ->
 		?SKIP(Reason);
 	    {'EXIT', Client, {skip, Reason}} ->
-		?SKIP(Reason)        after 5000 ->
+		?SKIP(Reason)        
+	after 5000 ->
                 {error, server_timeout}
         end,
 

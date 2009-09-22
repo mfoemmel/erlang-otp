@@ -133,7 +133,7 @@ collect(_) ->
     io:format("No tables found\n", []),
     error(bad_header).
 
-collect_data(Tabs, [{Line, Term} | Tail]) when tuple(Term) ->
+collect_data(Tabs, [{Line, Term} | Tail]) when is_tuple(Term) ->
     case lists:keysearch(element(1, Term), 1, Tabs) of
 	{value, _} ->
 	    [Term | collect_data(Tabs, Tail)];

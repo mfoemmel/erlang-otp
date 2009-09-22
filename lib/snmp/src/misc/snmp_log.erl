@@ -78,7 +78,7 @@ sync(Log) ->
 
 info(Log) ->
     case disk_log:info(Log) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Items = [no_current_bytes, no_current_items, 
 		     current_file, no_overflows],
 	    info_filter(Items, Info, []);
@@ -137,7 +137,7 @@ log_to_txt(Log, FileName, Dir, Mibs, TextFile, Start) ->
     log_to_txt(Log, FileName, Dir, Mibs, TextFile, Start, null).
 
 log_to_txt(Log, FileName, Dir, Mibs, TextFile, Start, Stop) 
-  when list(Mibs), list(TextFile) ->
+  when is_list(Mibs) andalso is_list(TextFile) ->
     ?vtrace("log_to_txt -> entry with"
 	    "~n   Log:      ~p"
 	    "~n   FileName: ~p"
@@ -163,7 +163,7 @@ log_to_io(Log, FileName, Dir, Mibs, Start) ->
     log_to_io(Log, FileName, Dir, Mibs, Start, null).
 
 log_to_io(Log, FileName, Dir, Mibs, Start, Stop) 
-  when list(Mibs) ->
+  when is_list(Mibs) ->
     File = filename:join(Dir, FileName),
     Converter = fun(L) ->
 			do_log_to_io(L, Mibs, Start, Stop)
@@ -203,9 +203,9 @@ log_convert(Log, File, Converter) ->
 	    end
     end.
 
-convert_name(Name) when list(Name) ->
+convert_name(Name) when is_list(Name) ->
     Name ++ "_tmp";
-convert_name(Name) when atom(Name) ->
+convert_name(Name) when is_atom(Name) ->
     list_to_atom(atom_to_list(Name) ++ "_tmp");
 convert_name(Name) ->
     lists:flatten(io_lib:format("~w_tmp", [Name])).
@@ -287,7 +287,7 @@ format_msg({TimeStamp, {V3Hdr, ScopedPdu}, Addr, Port},
     case timestamp_filter(TimeStamp, Start, Stop) of
         true ->
             case (catch snmp_pdus:dec_scoped_pdu(ScopedPdu)) of
-                ScopedPDU when record(ScopedPDU, scopedPdu) -> 
+                ScopedPDU when is_record(ScopedPDU, scopedPdu) -> 
                     Msg = #message{version = 'version-3',
                                    vsn_hdr = V3Hdr,
                                    data    = ScopedPDU},
@@ -305,7 +305,7 @@ format_msg({TimeStamp, Packet, Addr, Port}, Mib, Start, Stop) ->
     case timestamp_filter(TimeStamp, Start, Stop) of
         true ->
             case (catch snmp_pdus:dec_message(binary_to_list(Packet))) of
-                Msg when record(Msg, message) ->
+                Msg when is_record(Msg, message) ->
                     f(ts2str(TimeStamp), Msg, Addr, Port, Mib);
                 {'EXIT', Reason} ->
                     format_tab("** error in log file ~p\n\n", [Reason])
@@ -442,7 +442,7 @@ format_pdu(Pdu, Mib) ->
 
 get_type(#scopedPdu{data = Pdu}) ->
     get_type(Pdu);
-get_type(Pdu) when record(Pdu, trappdu) ->
+get_type(Pdu) when is_record(Pdu, trappdu) ->
     trappdu;
 get_type(#pdu{type = Type}) ->
     Type.
@@ -572,7 +572,7 @@ log_owners(Log) ->
 
 log_info(Log) ->
     case disk_log:info(Log) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	_ ->
 	    []

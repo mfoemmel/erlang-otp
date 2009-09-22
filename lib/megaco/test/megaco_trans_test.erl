@@ -175,7 +175,7 @@ single_ack(suite) ->
     [];
 single_ack(doc) ->
     [];
-single_ack(Config) when list(Config) ->
+single_ack(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        single_ack),
@@ -326,7 +326,7 @@ multi_ack_maxcount(suite) ->
     [];
 multi_ack_maxcount(doc) ->
     [];
-multi_ack_maxcount(Config) when list(Config) ->
+multi_ack_maxcount(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_ack_maxcount),
@@ -411,7 +411,7 @@ single_trans_req(suite) ->
     [];
 single_trans_req(doc) ->
     [];
-single_trans_req(Config) when list(Config) ->
+single_trans_req(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        single_trans_req),
@@ -691,7 +691,7 @@ str_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 -else.
 -define(str_mg_connect_verify_fun(), 
         fun str_mg_verify_handle_connect/1).
--define(str_mg_service_change_reply_verify_fun(Mid),
+-define(str_mg_service_change_reply_verify_fun(),
         fun str_mg_verify_service_change_reply/1).
 -define(str_mg_notify_reply_verify_fun(),
 	fun str_mg_verify_notify_reply/1).
@@ -846,7 +846,7 @@ multi_trans_req_timeout(suite) ->
     [];
 multi_trans_req_timeout(doc) ->
     [];
-multi_trans_req_timeout(Config) when list(Config) ->
+multi_trans_req_timeout(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_timeout),
@@ -1292,7 +1292,7 @@ multi_trans_req_maxcount1(suite) ->
     [];
 multi_trans_req_maxcount1(doc) ->
     "Test that a message is sent when req_maxcount is reached";
-multi_trans_req_maxcount1(Config) when list(Config) ->
+multi_trans_req_maxcount1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_maxcount1),
@@ -1744,7 +1744,7 @@ multi_trans_req_maxcount2(suite) ->
 multi_trans_req_maxcount2(doc) ->
     "Test that the message is sent when req_maxcount is reached "
 	"with a request bigger then maxsize limit";
-multi_trans_req_maxcount2(Config) when list(Config) ->
+multi_trans_req_maxcount2(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_maxcount2),
@@ -2248,7 +2248,7 @@ multi_trans_req_maxsize1(suite) ->
     [];
 multi_trans_req_maxsize1(doc) ->
     "Test that the message is sent when req_maxsize is reached";
-multi_trans_req_maxsize1(Config) when list(Config) ->
+multi_trans_req_maxsize1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_maxsize1),
@@ -2700,7 +2700,7 @@ multi_trans_req_maxsize2(suite) ->
 multi_trans_req_maxsize2(doc) ->
     "Test that the message is sent when req_maxsize is reached, "
 	"when the 'last' message is bigger then req_maxsize itself";
-multi_trans_req_maxsize2(Config) when list(Config) ->
+multi_trans_req_maxsize2(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_maxsize2),
@@ -3194,7 +3194,7 @@ single_trans_req_and_ack(suite) ->
     [];
 single_trans_req_and_ack(doc) ->
     [];
-single_trans_req_and_ack(Config) when list(Config) ->
+single_trans_req_and_ack(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        single_trans_req_and_ack),
@@ -3675,7 +3675,7 @@ multi_trans_req_and_ack_timeout(suite) ->
     [];
 multi_trans_req_and_ack_timeout(doc) ->
     [];
-multi_trans_req_and_ack_timeout(Config) when list(Config) ->
+multi_trans_req_and_ack_timeout(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_and_ack_timeout),
@@ -4166,7 +4166,7 @@ multi_trans_req_and_ack_ackmaxcount(suite) ->
     [];
 multi_trans_req_and_ack_ackmaxcount(doc) ->
     [];
-multi_trans_req_and_ack_ackmaxcount(Config) when list(Config) ->
+multi_trans_req_and_ack_ackmaxcount(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_and_ack_ackmaxcount),
@@ -4664,7 +4664,7 @@ multi_trans_req_and_ack_reqmaxcount(suite) ->
     [];
 multi_trans_req_and_ack_reqmaxcount(doc) ->
     [];
-multi_trans_req_and_ack_reqmaxcount(Config) when list(Config) ->
+multi_trans_req_and_ack_reqmaxcount(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_and_ack_reqmaxcount),
@@ -5161,7 +5161,7 @@ multi_trans_req_and_ack_maxsize1(suite) ->
     [];
 multi_trans_req_and_ack_maxsize1(doc) ->
     [];
-multi_trans_req_and_ack_maxsize1(Config) when list(Config) ->
+multi_trans_req_and_ack_maxsize1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_and_ack_maxsize1),
@@ -5657,7 +5657,7 @@ multi_trans_req_and_ack_maxsize2(suite) ->
     [];
 multi_trans_req_and_ack_maxsize2(doc) ->
     [];
-multi_trans_req_and_ack_maxsize2(Config) when list(Config) ->
+multi_trans_req_and_ack_maxsize2(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_and_ack_maxsize2),
@@ -6176,7 +6176,7 @@ single_trans_req_and_pending(suite) ->
     [];
 single_trans_req_and_pending(doc) ->
     [];
-single_trans_req_and_pending(Config) when list(Config) ->
+single_trans_req_and_pending(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -6186,7 +6186,7 @@ multi_trans_req_and_pending(suite) ->
     [];
 multi_trans_req_and_pending(doc) ->
     [];
-multi_trans_req_and_pending(Config) when list(Config) ->
+multi_trans_req_and_pending(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -6196,7 +6196,7 @@ multi_trans_req_and_ack_and_pending(suite) ->
     [];
 multi_trans_req_and_ack_and_pending(doc) ->
     [];
-multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
+multi_trans_req_and_ack_and_pending(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        mtraaap),
@@ -6764,7 +6764,7 @@ multi_ack_and_pending(suite) ->
     [];
 multi_ack_and_pending(doc) ->
     [];
-multi_ack_and_pending(Config) when list(Config) ->
+multi_ack_and_pending(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -6774,7 +6774,7 @@ multi_trans_req_and_reply(suite) ->
     [];
 multi_trans_req_and_reply(doc) ->
     [];
-multi_trans_req_and_reply(Config) when list(Config) ->
+multi_trans_req_and_reply(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -6784,7 +6784,7 @@ multi_trans_req_and_ack_and_reply(suite) ->
     [];
 multi_trans_req_and_ack_and_reply(doc) ->
     [];
-multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
+multi_trans_req_and_ack_and_reply(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        multi_trans_req_and_ack_and_reply),
@@ -7357,7 +7357,7 @@ multi_ack_and_reply(suite) ->
     [];
 multi_ack_and_reply(doc) ->
     [];
-multi_ack_and_reply(Config) when list(Config) ->
+multi_ack_and_reply(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -9106,19 +9106,19 @@ cre_notifyReq(Tid, EvsDesc) ->
     #'NotifyRequest'{terminationID            = Tid, 
 		     observedEventsDescriptor = EvsDesc}.
 
-cre_command(R) when record(R, 'NotifyRequest') ->
+cre_command(R) when is_record(R, 'NotifyRequest') ->
     {notifyReq, R};
-cre_command(R) when record(R, 'ServiceChangeRequest') ->
+cre_command(R) when is_record(R, 'ServiceChangeRequest') ->
     {serviceChangeReq, R}.
 
 cre_cmdReq(Cmd) ->
     #'CommandRequest'{command = Cmd}.
 
-cre_actionReq(CtxId, CmdReqs) when list(CmdReqs) ->
+cre_actionReq(CtxId, CmdReqs) when is_list(CmdReqs) ->
     #'ActionRequest'{contextId       = CtxId,
 		     commandRequests = CmdReqs}.
 
-cre_transReq(TransId, ARs) when list(ARs) ->
+cre_transReq(TransId, ARs) when is_list(ARs) ->
     #'TransactionRequest'{transactionId = TransId,
 			  actions       = ARs}.
 
@@ -9127,18 +9127,18 @@ cre_transReq(TransId, ARs) when list(ARs) ->
 cre_serviceChangeResParm(Mid) ->
     #'ServiceChangeResParm'{serviceChangeMgcId = Mid}.
 
-cre_serviceChangeResult(SCRP) when record(SCRP, 'ServiceChangeResParm') ->
+cre_serviceChangeResult(SCRP) when is_record(SCRP, 'ServiceChangeResParm') ->
     {serviceChangeResParms, SCRP};
-cre_serviceChangeResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_serviceChangeResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {errorDescriptor, ED}.
 
 cre_serviceChangeReply(Tid, Res) ->
     #'ServiceChangeReply'{terminationID       = Tid, 
 			  serviceChangeResult = Res}.
 
-cre_cmdReply(R) when record(R, 'NotifyReply') ->
+cre_cmdReply(R) when is_record(R, 'NotifyReply') ->
     {notifyReply, R};
-cre_cmdReply(R) when record(R, 'ServiceChangeReply') ->
+cre_cmdReply(R) when is_record(R, 'ServiceChangeReply') ->
     {serviceChangeReply, R}.
     
 cre_notifyReply(Tid) ->
@@ -9148,9 +9148,9 @@ cre_actionReply(CtxId, CmdRep) ->
     #'ActionReply'{contextId    = CtxId,
                    commandReply = CmdRep}.
 
-cre_transResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_transResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {transactionError, ED};
-cre_transResult([AR|_] = ARs) when record(AR, 'ActionReply') ->
+cre_transResult([AR|_] = ARs) when is_record(AR, 'ActionReply') ->
     {actionReplies, ARs}.
 
 cre_transReply(TransId, Res) ->
@@ -9160,20 +9160,20 @@ cre_transReply(TransId, Res) ->
 
 %% --
 
-cre_serviceChangeProf(Name, Ver) when list(Name), integer(Ver) ->
+cre_serviceChangeProf(Name, Ver) when is_list(Name) andalso is_integer(Ver) ->
     #'ServiceChangeProfile'{profileName = Name, 
 			    version     = Ver}.
 
-cre_transaction(Trans) when record(Trans, 'TransactionRequest') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionRequest') ->
     {transactionRequest, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionPending') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionPending') ->
     {transactionPending, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionReply') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionReply') ->
     {transactionReply, Trans};
-cre_transaction(Trans) when record(Trans, 'TransactionAck') ->
+cre_transaction(Trans) when is_record(Trans, 'TransactionAck') ->
     {transactionResponseAck, Trans}.
 
-cre_transactions(Trans) when list(Trans) ->
+cre_transactions(Trans) when is_list(Trans) ->
     {transactions, Trans}.
 
 cre_message(Version, Mid, Body) ->
@@ -9213,7 +9213,7 @@ decode_msg_fun(Mod, Conf, Ver) ->
 await_ack(_User, 0, Timeout, _Expected) ->
     d("await_ack -> done when Timeout = ~p", [Timeout]),
     ok;
-await_ack(User, N, Timeout, Expected) when N > 0, integer(Timeout) ->
+await_ack(User, N, Timeout, Expected) when (N > 0) andalso is_integer(Timeout) ->
     d("await_ack -> entry with N: ~p, Timeout: ~p", [N,Timeout]),
     T = tim(),
     receive
@@ -9240,7 +9240,7 @@ await_ack(User, N, infinity, Expected) when N > 0 ->
 await_req(_User, 0, Timeout) ->
     d("await_req -> done when Timeout = ~p", [Timeout]),
     ok;
-await_req(User, N, Timeout) when N > 0, integer(Timeout) ->
+await_req(User, N, Timeout) when (N > 0) andalso is_integer(Timeout) ->
     d("await_req -> entry with N: ~p, Timeout: ~p", [N,Timeout]),
     T = tim(),
     receive
@@ -9262,7 +9262,7 @@ await_req(User, N, infinity) when N > 0 ->
 
 await_req1(N, []) when N >= 0 ->
     N;
-await_req1(N, [AR|ARs]) when N > 0, record(AR, 'ActionRequest') ->
+await_req1(N, [AR|ARs]) when (N > 0) andalso is_record(AR, 'ActionRequest') ->
     await_req1(N-1, ARs);
 await_req1(N, ARs) ->
     exit({unexpected_req_result, N, ARs}).

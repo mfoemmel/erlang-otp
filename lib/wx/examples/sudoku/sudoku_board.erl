@@ -77,7 +77,7 @@ draw(Board, DC, Size) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init([ParentObj, ParentPid]) ->
-    Win = wxWindow:new(ParentObj, ?wxID_ANY, [{style, ?wxFULL_REPAINT_ON_RESIZE}]),
+    Win = wxPanel:new(ParentObj, [{style, ?wxFULL_REPAINT_ON_RESIZE}]),
     wxWindow:setFocus(Win), %% Get keyboard focus
     wxWindow:setSizeHints(Win, {250,250}),
     wxWindow:connect(Win, paint,  [callback]),
@@ -344,12 +344,14 @@ create_popup_menu1(GFX,Butt,Port,X,Y,Frame) ->
     wxEvtHandler:connect(PopupMenu, command_menu_selected),
     wxWindow:popupMenu(Frame,PopupMenu,X,Y),
     receive 
+	#wx{event=#wxCommand{type=command_menu_selected},id=10} ->
+	    GFX ! {set_val,Butt,0};
 	#wx{event=#wxCommand{type=command_menu_selected},id=What} ->
 	    GFX ! {set_val,Butt,What}
     end.
 
 create_popup_menu2(N,PP) when N > 9 ->
-    wxMenu:append(PP, 0, "Clear");
+    wxMenu:append(PP, 10, "Clear");
 create_popup_menu2(N,PP) ->
     wxMenu:append(PP, N,integer_to_list(N)),
     create_popup_menu2(N+1,PP).

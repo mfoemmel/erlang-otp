@@ -29,6 +29,23 @@
   </header>
   <p>This document describes the changes made to the SASL application.</p>
 
+<section><title>SASL 2.1.7</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The Windows utility Erlsrv, run in interactive mode now
+	    accepts options for registering internal service name and
+	    description field of Windows registry database.</p>
+          <p>
+	    Own Id: OTP-8132</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>SASL 2.1.6</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

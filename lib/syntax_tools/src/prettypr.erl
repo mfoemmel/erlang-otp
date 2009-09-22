@@ -52,7 +52,7 @@
 -record(nest, {n, d}).
 -record(beside, {d1, d2}).
 -record(above, {d1, d2}).
--record(sep, {ds, i = 0 :: integer(), p = false :: bool()}).
+-record(sep, {ds, i = 0 :: integer(), p = false :: boolean()}).
 
 
 %% ---------------------------------------------------------------------
@@ -486,7 +486,7 @@ format(D, W, R) ->
 %%		   | #nest{n = integer(), d = document()}
 %%		   | #beside{d1 = document(), d2 = document()}
 %%		   | #above{d1 = document(), d2 = document()}
-%%		   | #sep{ds = [document()], i = integer(), p = bool()}
+%%		   | #sep{ds = [document()], i = integer(), p = boolean()}
 %%		   | null
 %%
 %% A `text' node simply represents a string (which should not contain
@@ -583,7 +583,7 @@ flatrev([], As, []) ->
 %%	#c_above_nest{d = doc(), i = integer(), c = ctxt()}
 %%	#c_beside{d = doc(), c = ctxt()}
 %%	#c_text_beside{s = string(), c = ctxt()}
-%%	#c_sep_nest{ds = [doc()], i = integer(), p = bool(),
+%%	#c_sep_nest{ds = [doc()], i = integer(), p = boolean(),
 %%		    c = ctxt()}
 %%	#c_best_nest_or{w = integer(), r = integer(), i = integer(),
 %%			d = doc()}

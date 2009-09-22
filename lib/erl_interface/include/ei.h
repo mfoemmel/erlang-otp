@@ -238,10 +238,11 @@ typedef struct {
     char* free_vars;
 } erlang_fun;
 
+/* a big */
 typedef struct {
-    unsigned arity;
-    int      is_neg;
-    void    *digits;
+    unsigned int arity;
+    int is_neg;
+    void *digits;
 } erlang_big;
 
 typedef struct {
@@ -766,11 +767,13 @@ int ei_send_reg_encoded_tmo(int fd, const erlang_pid *from, const char *to,
 
 
 /* FIXME: is this really the best way to handle bignums? */
+int ei_encode_big(char *buf, int *index, erlang_big* big);
+int ei_x_encode_big(ei_x_buff* x, erlang_big* big);
 int ei_decode_big(const char *buf, int *index, erlang_big* p);
 int ei_big_comp(erlang_big *x, erlang_big *y);
 int ei_big_to_double(erlang_big *b, double *resp);
 int ei_small_to_big(int s, erlang_big *b);
-erlang_big *ei_alloc_big(int arity);
+erlang_big *ei_alloc_big(unsigned int arity);
 void ei_free_big(erlang_big *b);
 
 #endif /* USE_EI_UNDOCUMENTED */

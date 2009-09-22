@@ -118,7 +118,7 @@ send_segmented_msg_plain1(suite) ->
 send_segmented_msg_plain1(doc) ->
     "First plain test that it is possible to send segmented messages. "
 	"Send window = infinity. ";
-send_segmented_msg_plain1(Config) when list(Config) ->
+send_segmented_msg_plain1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        ssmp1),
@@ -721,7 +721,7 @@ send_segmented_msg_plain2(suite) ->
 send_segmented_msg_plain2(doc) ->
     "Second plain test that it is possible to send segmented messages. "
 	"Send window = infinity. ";
-send_segmented_msg_plain2(Config) when list(Config) ->
+send_segmented_msg_plain2(Config) when is_list(Config) ->
     %% <CONDITIONAL-SKIP>
     Skippable = [{unix, [linux]}],
     Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
@@ -1318,7 +1318,7 @@ send_segmented_msg_plain3(suite) ->
 send_segmented_msg_plain3(doc) ->
     "Third plain test that it is possible to send segmented messages. "
 	"Send window = 1. ";
-send_segmented_msg_plain3(Config) when list(Config) ->
+send_segmented_msg_plain3(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        ssmp3),
@@ -2005,7 +2005,7 @@ send_segmented_msg_plain4(suite) ->
 send_segmented_msg_plain4(doc) ->
     "Forth plain test that it is possible to send segmented messages. "
 	"Send window = 3. ";
-send_segmented_msg_plain4(Config) when list(Config) ->
+send_segmented_msg_plain4(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        ssmp4),
@@ -2686,7 +2686,7 @@ send_segmented_msg_ooo1(doc) ->
 	"Tests that it is possible to send segmented messages, when the "
 	"segment reply is sent out-of-order. "
 	"Send window = 3. ";
-send_segmented_msg_ooo1(Config) when list(Config) ->
+send_segmented_msg_ooo1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        ssmo1),
@@ -3367,7 +3367,7 @@ send_segmented_msg_missing_seg_reply1(doc) ->
 	"Tests that the callbacks and error messages are delivered "
 	"when a segment reply goes missing. Ack expected. "
 	"Send window = 3. ";
-send_segmented_msg_missing_seg_reply1(Config) when list(Config) ->
+send_segmented_msg_missing_seg_reply1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        ssmmsr1),
@@ -4133,7 +4133,7 @@ send_segmented_msg_missing_seg_reply2(doc) ->
 	"Tests that the callbacks and error messages are delivered "
 	"when a segment reply goes missing. Ack expected. "
 	"Send window = 1. ";
-send_segmented_msg_missing_seg_reply2(Config) when list(Config) ->
+send_segmented_msg_missing_seg_reply2(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        ssmmsr2),
@@ -4873,7 +4873,7 @@ recv_segmented_msg_plain(suite) ->
     [];
 recv_segmented_msg_plain(doc) ->
     "Received segmented megaco message [plain]";
-recv_segmented_msg_plain(Config) when list(Config) ->
+recv_segmented_msg_plain(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        rsmp),
@@ -5542,7 +5542,7 @@ recv_segmented_msg_ooo_seg(suite) ->
     [];
 recv_segmented_msg_ooo_seg(doc) ->
     "Received segmented megaco message [out-of-order segments]";
-recv_segmented_msg_ooo_seg(Config) when list(Config) ->
+recv_segmented_msg_ooo_seg(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        rsmos),
@@ -6209,7 +6209,7 @@ recv_segmented_msg_missing_seg1(suite) ->
 recv_segmented_msg_missing_seg1(doc) ->
     "Received segmented megaco message with one segment missing "
 	"using plain integer recv segment timer";
-recv_segmented_msg_missing_seg1(Config) when list(Config) ->
+recv_segmented_msg_missing_seg1(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        rsmms1),
@@ -6877,7 +6877,7 @@ recv_segmented_msg_missing_seg2(suite) ->
 recv_segmented_msg_missing_seg2(doc) ->
     "Received segmented megaco message with one segment missing "
 	"using incremental recv segment timer";
-recv_segmented_msg_missing_seg2(Config) when list(Config) ->
+recv_segmented_msg_missing_seg2(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        rsmms2),
@@ -7641,9 +7641,9 @@ cre_actionReply(CtxId, CmdRep) ->
     #'ActionReply'{contextId    = CtxId,
                    commandReply = CmdRep}.
 
-cre_transResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_transResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {transactionError, ED};
-cre_transResult([AR|_] = ARs) when record(AR, 'ActionReply') ->
+cre_transResult([AR|_] = ARs) when is_record(AR, 'ActionReply') ->
     {actionReplies, ARs}.
 
 %% cre_transReply(TransId, Res) ->
@@ -7667,7 +7667,7 @@ cre_transAck(TransId) ->
 
 %% --
 
-cre_serviceChangeProf(Name, Ver) when list(Name), integer(Ver) ->
+cre_serviceChangeProf(Name, Ver) when is_list(Name) andalso is_integer(Ver) ->
     #'ServiceChangeProfile'{profileName = Name, 
                             version     = Ver}.
 

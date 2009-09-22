@@ -69,7 +69,7 @@ exec_prefix = @exec_prefix@
 libdir      = @libdir@
 
 install: 
-	escript ./install.es $(libdir)
+	escript ./install.es $(INSTALLDIR)
 
 release: 
 	escript ./install.es --create_release

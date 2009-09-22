@@ -52,6 +52,7 @@
 #include <openssl/objects.h>
 #include <openssl/rc4.h>
 #include <openssl/rc2.h>
+#include <openssl/blowfish.h>
 
 #ifdef DEBUG
 #  define ASSERT(e) \
@@ -208,6 +209,9 @@ static ErlDrvEntry crypto_driver_entry = {
 #define DRV_SHA512_UPDATE       57
 #define DRV_SHA512_FINAL        58
 #endif
+
+#define DRV_BF_CFB64_ENCRYPT     59
+#define DRV_BF_CFB64_DECRYPT     60
 
 /* #define DRV_CBC_IDEA_ENCRYPT    34 */
 /* #define DRV_CBC_IDEA_DECRYPT    35 */
@@ -368,7 +372,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
     DH *dh_params;
 /*     IDEA_KEY_SCHEDULE idea, idea2; */
     unsigned char hmacbuf[SHA_DIGEST_LENGTH];
-    unsigned char *rsa_s, *dsa_s;
+    unsigned char *rsa_s, *dsa_s;   
     /* char hmacbuf[SHA_LEN]; */
 #if SSL_VERSION_0_9_8
     SHA256_CTX sha256_ctx;
@@ -502,6 +506,33 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
         DES_ncbc_encrypt(des_dbuf, bin, dlen, &schedule, des_ivec, 
                          (command == DRV_CBC_DES_ENCRYPT));
         return dlen;
+
+    case DRV_BF_CFB64_ENCRYPT:
+    case DRV_BF_CFB64_DECRYPT:
+    {
+	/* buf = klen[4] key ivec[8] data */
+	char* ivec;
+	unsigned char bf_tkey[8]; /* blowfish ivec */    
+	int bf_n; /* blowfish ivec pos */    
+	int bf_direction;
+	const unsigned char *bf_dbuf; /* blowfish input data */   
+	BF_KEY bf_key; /* blowfish key 8 */
+	
+	klen = get_int32(buf);
+	key = buf + 4;
+	ivec = key + klen;
+	bf_dbuf = ivec + 8;
+	dlen = len - 4 - klen - 8;
+	if (dlen < 0) return -1;
+	BF_set_key(&bf_key, klen, key);
+	memcpy(bf_tkey, ivec, 8);
+	bin = return_binary(rbuf,rlen,dlen);
+	if (bin==NULL) return -1;
+	bf_direction = command == DRV_BF_CFB64_ENCRYPT ? BF_ENCRYPT : BF_DECRYPT;
+	bf_n = 0;
+	BF_cfb64_encrypt(bf_dbuf, bin, dlen, &bf_key, bf_tkey, &bf_n, bf_direction);
+	return dlen;
+    }
 
 /*     case DRV_CBC_IDEA_ENCRYPT: */
 /*     case DRV_CBC_IDEA_DECRYPT: */

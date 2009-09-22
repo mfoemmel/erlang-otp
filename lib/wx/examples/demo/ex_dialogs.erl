@@ -18,7 +18,7 @@
 
 -module(ex_dialogs).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -54,6 +54,7 @@ do_init(Config) ->
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "Dialogs"}]),
+
     Buttons =
 	[wxButton:new(Panel, 1,  [{label, "wxDirDialog"}]),
 	 wxButton:new(Panel, 2,  [{label, "wxFileDialog"}]),
@@ -98,15 +99,6 @@ do_init(Config) ->
 		   dialogs = Dialogs, choices = Choices}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxCommand{type = command_button_clicked},
 		 userData = Module},
@@ -151,6 +143,15 @@ handle_event(#wx{event = #wxCommand{type = command_button_clicked},
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

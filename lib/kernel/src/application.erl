@@ -62,13 +62,13 @@ behaviour_info(_Other) ->
 %%%-----------------------------------------------------------------
 
 -spec load(Application :: atom() | application_spec()) ->
-	     'ok' | {'error', any()}.
+	     'ok' | {'error', term()}.
 
 load(Application) ->
     load(Application, []).
 
 -spec load(Application :: atom() | application_spec(),
-	   Distributed :: any()) -> 'ok' | {'error', any()}.
+	   Distributed :: any()) -> 'ok' | {'error', term()}.
 
 load(Application, DistNodes) ->
     case application_controller:load_application(Application) of
@@ -85,12 +85,12 @@ load(Application, DistNodes) ->
 	    Else
     end.
 
--spec unload(Application :: atom()) -> 'ok' | {'error', any()}.
+-spec unload(Application :: atom()) -> 'ok' | {'error', term()}.
 
 unload(Application) ->
     application_controller:unload_application(Application).
 
--spec start(Application :: atom()) -> 'ok' | {'error', any()}.
+-spec start(Application :: atom()) -> 'ok' | {'error', term()}.
 
 start(Application) ->
     start(Application, temporary).
@@ -109,13 +109,13 @@ start(Application, RestartType) ->
 	    Error
     end.
 
--spec start_boot(Application :: atom()) -> 'ok' | {'error', any()}.
+-spec start_boot(Application :: atom()) -> 'ok' | {'error', term()}.
 
 start_boot(Application) ->
     start_boot(Application, temporary).
 
 -spec start_boot(Application :: atom(), RestartType :: restart_type()) ->
-	     'ok' | {'error', any()}.
+	     'ok' | {'error', term()}.
 
 start_boot(Application, RestartType) ->
     application_controller:start_boot_application(Application, RestartType).
@@ -125,7 +125,7 @@ start_boot(Application, RestartType) ->
 takeover(Application, RestartType) ->
     dist_ac:takeover_application(Application, RestartType).
 
--spec permit(Application :: atom(), Bool :: bool()) -> 'ok' | {'error', any()}.
+-spec permit(Application :: atom(), Bool :: boolean()) -> 'ok' | {'error', term()}.
 
 permit(Application, Bool) ->
     case Bool of
@@ -142,7 +142,7 @@ permit(Application, Bool) ->
 	    LocalResult
     end.
 
--spec stop(Application :: atom()) -> 'ok' | {'error', any()}.
+-spec stop(Application :: atom()) -> 'ok' | {'error', term()}.
 
 stop(Application) ->
     application_controller:stop_application(Application).
@@ -194,12 +194,12 @@ unset_env(Application, Key, infinity) ->
 unset_env(Application, Key, Timeout) when is_integer(Timeout), Timeout>=0 ->
     application_controller:unset_env(Application, Key, Timeout).
 
--spec get_env(atom()) -> 'undefined' | {'ok', any()}.
+-spec get_env(atom()) -> 'undefined' | {'ok', term()}.
 
 get_env(Key) -> 
     application_controller:get_pid_env(group_leader(), Key).
 
--spec get_env(atom(), atom()) -> 'undefined' | {'ok', any()}.
+-spec get_env(atom(), atom()) -> 'undefined' | {'ok', term()}.
 
 get_env(Application, Key) -> 
     application_controller:get_env(Application, Key).
@@ -209,17 +209,17 @@ get_env(Application, Key) ->
 get_all_env() -> 
     application_controller:get_pid_all_env(group_leader()).
 
--spec get_all_env(atom()) -> [] | [{atom(),any()}].
+-spec get_all_env(atom()) -> [] | [{atom(), any()}].
 
 get_all_env(Application) -> 
     application_controller:get_all_env(Application).
 
--spec get_key(atom()) -> 'undefined' | {'ok', any()}.
+-spec get_key(atom()) -> 'undefined' | {'ok', term()}.
 
 get_key(Key) -> 
     application_controller:get_pid_key(group_leader(), Key).
 
--spec get_key(atom(), atom()) -> 'undefined' | {'ok', any()}.
+-spec get_key(atom(), atom()) -> 'undefined' | {'ok', term()}.
 
 get_key(Application, Key) -> 
     application_controller:get_key(Application, Key).

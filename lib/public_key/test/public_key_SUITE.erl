@@ -134,6 +134,9 @@ pem_to_der(Config) when is_list(Config) ->
 	public_key:pem_to_der(filename:join(Datadir, "rsa.pem")),
     {ok,[{rsa_private_key, _, _}]} = 
 	public_key:pem_to_der(filename:join(Datadir, "rsa.pem"), "abcd1234"),
+    {ok, Bin0} = file:read_file(filename:join(Datadir, "rsa.pem")), 
+    {ok, [{rsa_private_key, _, _}]} = public_key:pem_to_der(Bin0, "abcd1234"),
+
     {ok,[{dh_params, _, _}]} = 
 	public_key:pem_to_der(filename:join(Datadir, "dh.pem")),
     {ok,[{cert, _, not_encrypted}]} = 
@@ -142,6 +145,10 @@ pem_to_der(Config) when is_list(Config) ->
 	public_key:pem_to_der(filename:join(Datadir, "req.pem")),
     {ok,[{cert, _, _}, {cert, _, _}]} = 
 	public_key:pem_to_der(filename:join(Datadir, "cacerts.pem")),
+
+    {ok, Bin1} = file:read_file(filename:join(Datadir, "cacerts.pem")),    
+    {ok, [{cert, _, _}, {cert, _, _}]} = public_key:pem_to_der(Bin1),
+    
     ok.
 %%--------------------------------------------------------------------
 decode_private_key(doc) -> 

@@ -19,8 +19,9 @@
 %%
 
 -module(hipe_sparc_ra_postconditions).
--export([check_and_rewrite/3]).
--export([check_and_rewrite2/3]).
+
+-export([check_and_rewrite/3, check_and_rewrite2/3]).
+
 -include("hipe_sparc.hrl").
 
 check_and_rewrite(Defun, Coloring, Allocator) ->
@@ -185,9 +186,7 @@ fix_src(Src, TempMap, RegOpt) ->
   case temp_is_spilled(Src, TempMap) of
     true ->
       NewSrc = clone(Src, RegOpt),
-      {[hipe_sparc:mk_pseudo_move(Src, NewSrc)],
-       NewSrc,
-       true};
+      {[hipe_sparc:mk_pseudo_move(Src, NewSrc)], NewSrc, true};
     _ ->
       {[], Src, false}
   end.
@@ -196,9 +195,7 @@ fix_dst(Dst, TempMap, Strategy) ->
   case temp_is_spilled(Dst, TempMap) of
     true ->
       NewDst = clone(Dst, temp1(Strategy)),
-      {[hipe_sparc:mk_pseudo_move(NewDst, Dst)],
-       NewDst,
-       true};
+      {[hipe_sparc:mk_pseudo_move(NewDst, Dst)], NewDst, true};
     _ ->
       {[], Dst, false}
   end.
@@ -211,10 +208,7 @@ temp_is_spilled(Temp, TempMap) ->
   case hipe_sparc:temp_is_allocatable(Temp) of
     true ->
       Reg = hipe_sparc:temp_reg(Temp),
-      case tuple_size(TempMap) > Reg of
-	true -> hipe_temp_map:is_spilled(Reg, TempMap);
-	false -> false
-      end;
+      tuple_size(TempMap) > Reg andalso hipe_temp_map:is_spilled(Reg, TempMap);
     false -> true
   end.
 

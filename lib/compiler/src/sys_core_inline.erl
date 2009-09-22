@@ -57,8 +57,8 @@
 		arity :: byte(),		%         arity
 		def,				%Original definition
 		weight=0,			%Weight
-		inline=false :: bool(),		%Inline func flag
-		modified=false}).		%Mod flag
+		inline=false   :: boolean(),	%Inline func flag
+		modified=false :: boolean()}).	%Mod flag
 
 %% Inlineable function info.
 -record(ifun, {func  :: atom(),			%Function name

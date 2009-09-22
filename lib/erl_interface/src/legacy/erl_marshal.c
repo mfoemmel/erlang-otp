@@ -130,6 +130,24 @@ void erl_init_marshal(void)
   }
 }
 
+/* The encoder calls length, if erl_length() should return */
+/* -1 for dotted pairs (why !!!!) we can't use erl_length() */
+/* from the encoder in erl_marshal.c */
+ 
+static int erl_length_x(const ETERM *ep) {
+    int n = 0;
+
+    if (!ep) return -1;
+
+    while (ERL_TYPE(ep) == ERL_LIST) {
+       n++;
+       ep = TAIL(ep);
+    }
+
+    return n;
+}
+
+
 /*==============================================================
  * Marshalling routines.
  *==============================================================
@@ -143,6 +161,8 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 {
     int i;
     unsigned int u;
+    long long l;
+    unsigned long long ul;
     
     switch(ERL_TYPE(ep)) 
     {
@@ -209,11 +229,74 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	*(*ext)++ = (u >> 8) & 0xff;
 	*(*ext)++ = u  & 0xff;
 	return 0;
+    case ERL_LONGLONG:
+	l = ep->uval.llval.i;
+	/* ERL_SMALL_BIG */
+	if ((l > ((long long) ERL_MAX)) ||
+	    (l < ((long long) ERL_MIN))) { 
+	    *(*ext)++ = ERL_SMALL_BIG_EXT; 
+	    *(*ext)++ = 8;              /* eight bytes */ 
+	    if ((*(*ext)++ = ((l>>63) & 0x01))) /* sign byte  */ 
+	    	l = -l;
+	    *(*ext)++ = l  & 0xff;      /* LSB first  */
+	    *(*ext)++ = (l >>  8) & 0xff;
+	    *(*ext)++ = (l >> 16) & 0xff;
+	    *(*ext)++ = (l >> 24) & 0xff;
+	    *(*ext)++ = (l >> 32) & 0xff;
+	    *(*ext)++ = (l >> 40) & 0xff;
+	    *(*ext)++ = (l >> 48) & 0xff;
+	    *(*ext)++ = (l >> 56) & 0x7f; /* Don't include the sign bit */
+	    return 0;
+	} 
+	/* SMALL_INTEGER */
+	if ((l < 256) && (l >= 0)) {
+	*(*ext)++ = ERL_SMALL_INTEGER_EXT;
+	*(*ext)++ = l & 0xff;
+	return 0;
+	}
+	/* INTEGER */
+	*(*ext)++ = ERL_INTEGER_EXT;
+	*(*ext)++ = (l >> 24) & 0xff;
+	*(*ext)++ = (l >> 16) & 0xff;
+	*(*ext)++ = (l >>  8) & 0xff;
+	*(*ext)++ = l  & 0xff;
+	return 0;
+
+    case ERL_U_LONGLONG:
+	ul = ep->uval.ullval.u;
+	/* ERL_U_SMALL_BIG */
+	if (ul > ((unsigned long long) ERL_MAX)) {
+	    *(*ext)++ = ERL_SMALL_BIG_EXT;
+	    *(*ext)++ = 8; /* eight bytes */
+	    *(*ext)++ = 0; /* sign byte  */ 
+	    *(*ext)++ =  ul        & 0xff; /* LSB first  */
+	    *(*ext)++ = (ul >>  8) & 0xff;
+	    *(*ext)++ = (ul >> 16) & 0xff;
+	    *(*ext)++ = (ul >> 24) & 0xff; 
+	    *(*ext)++ = (ul >> 32) & 0xff; 
+	    *(*ext)++ = (ul >> 40) & 0xff; 
+	    *(*ext)++ = (ul >> 48) & 0xff; 
+	    *(*ext)++ = (ul >> 56) & 0xff; 
+	    return 0;
+	}
+	/* SMALL_INTEGER */
+	if ((ul < 256) && (ul >= 0)) {
+	    *(*ext)++ = ERL_SMALL_INTEGER_EXT;
+	    *(*ext)++ = ul & 0xff;
+	    return 0;
+	}
+	/* INTEGER */
+	*(*ext)++ = ERL_INTEGER_EXT;
+	*(*ext)++ = (ul >> 24) & 0xff;
+	*(*ext)++ = (ul >> 16) & 0xff;
+	*(*ext)++ = (ul >>  8) & 0xff;
+	*(*ext)++ =  ul        & 0xff;
+	return 0;
 
     case ERL_PID:
 	*(*ext)++ = ERL_PID_EXT;    
 	/* First poke in node as an atom */    
-	i = strlen(ERL_PID_NODE(ep));
+	i = strlen((char *)ERL_PID_NODE(ep));
 	*(*ext)++ = ERL_ATOM_EXT;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
@@ -221,14 +304,14 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	*ext += i;
 	/* And then fill in the integer fields */
 	i = ERL_PID_NUMBER(ep);
-	*(*ext)++ = (i >>24) &0xff;
-	*(*ext)++ = (i >>16) &0xff;
-	*(*ext)++ = (i >>8) &0xff;
+	*(*ext)++ = (i >> 24) &0xff;
+	*(*ext)++ = (i >> 16) &0xff;
+	*(*ext)++ = (i >>  8) &0xff;
 	*(*ext)++ = i &0xff;
 	i = ERL_PID_SERIAL(ep);
-	*(*ext)++ = (i >>24) &0xff;
-	*(*ext)++ = (i >>16) &0xff;
-	*(*ext)++ = (i >>8) &0xff;
+	*(*ext)++ = (i >> 24) &0xff;
+	*(*ext)++ = (i >> 16) &0xff;
+	*(*ext)++ = (i >>  8) &0xff;
 	*(*ext)++ = i &0xff;
 	*(*ext)++ = ERL_PID_CREATION(ep);
 	return 0;
@@ -241,13 +324,13 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 
 	    *(*ext)++ = ERL_NEW_REFERENCE_EXT;
 
-	    i = strlen(ERL_REF_NODE(ep));
+	    i = strlen((char *)ERL_REF_NODE(ep));
 	    len = ERL_REF_LEN(ep);
-	    *(*ext)++ = (len >>8) &0xff;
+	    *(*ext)++ = (len >> 8) &0xff;
 	    *(*ext)++ = len &0xff;
 
 	    *(*ext)++ = ERL_ATOM_EXT;
-	    *(*ext)++ = (i >>8) &0xff;
+	    *(*ext)++ = (i >> 8) &0xff;
 	    *(*ext)++ = i &0xff;
 	    memcpy(*ext, ERL_REF_NODE(ep), i);
 	    *ext += i;
@@ -255,9 +338,9 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	    /* Then the integer fields */
 	    for (j = 0; j < ERL_REF_LEN(ep); j++) {
 		i = ERL_REF_NUMBERS(ep)[j];
-		*(*ext)++ = (i >>24) &0xff;
-		*(*ext)++ = (i >>16) &0xff;
-		*(*ext)++ = (i >>8) &0xff;
+		*(*ext)++ = (i >> 24) &0xff;
+		*(*ext)++ = (i >> 16) &0xff;
+		*(*ext)++ = (i >>  8) &0xff;
 		*(*ext)++ = i &0xff;
 	    }
 	}
@@ -265,7 +348,7 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
     case ERL_PORT:
 	*(*ext)++ = ERL_PORT_EXT;
 	/* First poke in node as an atom */
-	i = strlen(ERL_PORT_NODE(ep));
+	i = strlen((char *)ERL_PORT_NODE(ep));
 	*(*ext)++ = ERL_ATOM_EXT;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
@@ -273,9 +356,9 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	*ext += i;
 	/* Then the integer fields */
 	i = ERL_PORT_NUMBER(ep);
-	*(*ext)++ = (i >>24) &0xff;
-	*(*ext)++ = (i >>16) &0xff;
-	*(*ext)++ = (i >>8) &0xff;
+	*(*ext)++ = (i >> 24) &0xff;
+	*(*ext)++ = (i >> 16) &0xff;
+	*(*ext)++ = (i >>  8) &0xff;
 	*(*ext)++ = i &0xff;
 	*(*ext)++ = ERL_PORT_CREATION(ep);
 	return 0;
@@ -294,11 +377,11 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	    }
 	    break;
 	} else {		/* List. */
-	    i = erl_length(ep);
+	    i = erl_length_x(ep);
 	    *(*ext)++ = ERL_LIST_EXT;
-	    *(*ext)++ = (i >>24) &0xff;
-	    *(*ext)++ = (i >>16) &0xff;
-	    *(*ext)++ = (i >>8) &0xff;
+	    *(*ext)++ = (i >> 24) &0xff;
+	    *(*ext)++ = (i >> 16) &0xff;
+	    *(*ext)++ = (i >>  8) &0xff;
 	    *(*ext)++ = i &0xff;
 	    while (ERL_TYPE(ep) == ERL_LIST) {
 		if (erl_encode_it(HEAD(ep), ext, dist))
@@ -317,8 +400,8 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	else {
 	    *(*ext)++ = ERL_LARGE_TUPLE_EXT;
 	    *(*ext)++ = (i >> 24) & 0xff;
-	    *(*ext)++ = (i >> 16 ) & 0xff;
-	    *(*ext)++ = (i >> 8) & 0xff;
+	    *(*ext)++ = (i >> 16) & 0xff;
+	    *(*ext)++ = (i >>  8) & 0xff;
 	    *(*ext)++ = i & 0xff;
 	}
 	for (i=0; i<ep->uval.tval.size; i++)
@@ -336,7 +419,7 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	i = ep->uval.bval.size;
 	*(*ext)++ = (i >> 24) & 0xff;
 	*(*ext)++ = (i >> 16) & 0xff;
-	*(*ext)++ = (i >> 8) & 0xff;
+	*(*ext)++ = (i >>  8) & 0xff;
 	*(*ext)++ = i  & 0xff;
 	memcpy((char *) *ext, (char*) ep->uval.bval.b, i);
 	*ext += i;
@@ -369,7 +452,7 @@ int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	    i = ERL_CLOSURE_SIZE(ep);
 	    *(*ext)++ = (i >> 24) & 0xff;
 	    *(*ext)++ = (i >> 16) & 0xff;
-	    *(*ext)++ = (i >> 8) & 0xff;
+	    *(*ext)++ = (i >>  8) & 0xff;
 	    *(*ext)++ = i  & 0xff;
 	    erl_encode_it(ERL_FUN_CREATOR(ep), ext, dist);
 	    erl_encode_it(ERL_FUN_MODULE(ep), ext, dist);
@@ -426,6 +509,8 @@ static int erl_term_len_helper(ETERM *ep, int dist)
   int len = 0;
   int i;
   unsigned int u;
+  long long l;
+  unsigned long long ul;
 
   if (ep) {
     switch (ERL_TYPE(ep)) {
@@ -448,14 +533,29 @@ static int erl_term_len_helper(ETERM *ep, int dist)
       else len = 5;
       break;
 
+    case ERL_LONGLONG:
+      l = ep->uval.llval.i;
+      if ((l > ((long long) ERL_MAX)) || 
+         (l < ((long long) ERL_MIN))) len = 11;
+      else if ((l < 256) && (l >= 0)) len = 2; 
+      else len = 5;
+      break;
+
+    case ERL_U_LONGLONG:
+      ul = ep->uval.ullval.u;
+      if (ul > ((unsigned long long) ERL_MAX)) len = 11;
+      else if (ul  < 256) len = 2;
+      else len = 5;
+      break;
+
     case ERL_PID:
       /* 1 + N + 4 + 4 + 1 where N = 3 + strlen */
-      i = strlen(ERL_PID_NODE(ep));
+      i = strlen((char *)ERL_PID_NODE(ep));
       len = 13 + i;
       break;
 
     case ERL_REF:
-      i = strlen(ERL_REF_NODE(ep));
+      i = strlen((char *)ERL_REF_NODE(ep));
       if (dist >= 4 && ERL_REF_LEN(ep) > 1) {
 	  len = 1 + 2 + (i+3) + 1 + ERL_REF_LEN(ep) * 4;
       } else {
@@ -466,7 +566,7 @@ static int erl_term_len_helper(ETERM *ep, int dist)
 
     case ERL_PORT:
       /* 1 + N + 4 + 1 where N = 3 + strlen */
-      i = strlen(ERL_PORT_NODE(ep));
+      i = strlen((char *)ERL_PORT_NODE(ep));
       len = 9 + i;
       break;
 
@@ -627,23 +727,23 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	*ext += 4;
     big_cont:
 	sign = *(*ext)++; 
-	if (arity != 4)             
+	if (arity > 8)             
 	    goto big_truncate;
-	if ((*ext)[3] & 0x80) { 
+
+	if (arity == 8 && ((*ext)[7] & 0x80) && sign) {
 	    /* MSB already occupied ! */
-	    if (sign)
-		goto big_truncate;
-	    else {                
-		/* It will fit into an unsigned int !! */
-		u = (((*ext)[3] << 24)|((*ext)[2])<< 16|((*ext)[1]) << 8 |(**ext));
-		ERL_TYPE(ep) = ERL_U_INTEGER;
-		ep->uval.uival.u = u;
-		/* *ext += i; */
-		*ext += arity;
-		return ep;
-	    }
+	    goto big_truncate;
 	}
-	else {       
+
+	if (arity == 4 && ((*ext)[3] & 0x80) && !sign) {
+	    /* It will fit into an unsigned int !! */
+	    u = (((*ext)[3] << 24)|((*ext)[2])<< 16|((*ext)[1]) << 8 |(**ext));
+	    ERL_TYPE(ep) = ERL_U_INTEGER;
+	    ep->uval.uival.u = u;
+	    /* *ext += i; */
+	    *ext += arity;
+	    return ep;
+	} else if (arity == 4 && !((*ext)[3] & 0x80)) {
 	    /* It will fit into an int !! 
 	     * Note: It comes in "one's-complement notation" 
 	     */
@@ -653,7 +753,36 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    else
 		i = (int) (((*ext)[3] << 24) | ((*ext)[2])<< 16 |
 			   ((*ext)[1]) << 8 | (**ext));
+	    ERL_TYPE(ep) = ERL_INTEGER;
 	    ep->uval.ival.i = i;
+	    *ext += arity;
+	    return ep;
+	} else if (arity == 8 && ((*ext)[7] & 0x80) && !sign) {
+	    /* Fits in an unsigned long long */
+	    int x;
+	    unsigned long long ul = 0LL;
+
+	    for(x = 0 ; x < arity ; x++) {
+		ul |= ((unsigned long long)(*ext)[x]) << ((unsigned long long)(8*x));
+	    }
+	   
+	    ERL_TYPE(ep) = ERL_U_LONGLONG;
+	    ep->uval.ullval.u = ul;
+	    *ext += arity;
+	    return ep;
+	} else {
+	    /* Fits in a long long */
+	    int x;
+	    long long l = 0LL;
+
+	    for(x = 0 ; x < arity ; x++) {
+		l |= ((long long)(*ext)[x]) << ((long long)(8*x));
+	    }
+
+	    if (sign) l = (long long) (~l | (unsigned long long) sign);
+
+	    ERL_TYPE(ep) = ERL_LONGLONG;
+	    ep->uval.llval.i = l;
 	    *ext += arity;
 	    return ep;
 	}
@@ -662,6 +791,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 #ifdef DEBUG
 	erl_err_msg("<WARNING> erl_decode_it: Integer truncated...");
 #endif
+	ERL_TYPE(ep) = ERL_INTEGER;
 	ep->uval.ival.i = sign?-1:1;
 	*ext += arity;
 	return ep;

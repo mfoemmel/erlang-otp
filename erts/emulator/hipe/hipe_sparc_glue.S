@@ -348,6 +348,10 @@ nbif_3_gc_after_bif:
  * NSP has not been saved in P.
  * TEMP_LR contains a copy of LR
  */
+	.global	nbif_0_simple_exception
+nbif_0_simple_exception:
+	ba	.nbif_simple_exception
+	mov	0, %o1		/* delay slot */
 	.global	nbif_1_simple_exception
 nbif_1_simple_exception:
 	ba	.nbif_simple_exception
@@ -392,9 +396,6 @@ nbif_3_simple_exception:
 	 * - HP has not been read from P
 	 * - NSP has not been saved in P
 	 */
-	.global	nbif_0_trap_exception
-nbif_0_trap_exception:
-	mov	0, %o1
 .handle_trap:
 	mov	HIPE_MODE_SWITCH_RES_TRAP, %o0
 .bif_exit:

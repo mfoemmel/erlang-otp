@@ -23,62 +23,62 @@
 #include "eiext.h"
 #include "putget.h"
 
+int ei_decode_big(const char *buf, int *index, erlang_big *b) {
+    unsigned int digit_bytes;
+    const unsigned char *s = (unsigned char*) buf + *index;
+    const unsigned char *s0 = s;
 
-int ei_decode_big(const char *buf, int *index, erlang_big *b)
-{
-  long digit_bytes;
-  const char *s = buf + *index;
-  const char *s0 = s;
-
-  switch ( get8(s) ) {
-    case ERL_SMALL_BIG_EXT:
-      digit_bytes = get8(s);
-      break;
+    switch ( get8(s) ) {
+	case ERL_SMALL_BIG_EXT:
+	digit_bytes = get8(s);
+	break;
     case ERL_LARGE_BIG_EXT:
-      digit_bytes = get32be(s);
-      break;
+	digit_bytes = get32be(s);
+	break;
     default:
-      return -1;
-  }
-  if ( b ) {
-      unsigned short *dt = b->digits;
-      int i;
-      unsigned char *u;
+	return -1;
+    }
+    if ( b ) {
+	unsigned short *dt = b->digits;
+	unsigned int n = (digit_bytes+1)/2;
+	int i;
 
-      if ( ((digit_bytes+1)/2) != b->arity ) {
-          return -1;
-      }
-      b->is_neg = get8(s);
-      u = (unsigned char *) s;
-      for (i = 0; i < b->arity; ++i) {
-	  dt[i] = u[i*2];
-	  dt[i] |= ((unsigned short) u[(i*2)+1]) << 8;
-      }
-  } else {
-      s++; /* skip sign byte */
-  }
+	if ( digit_bytes != b->arity ) {
+	    return -1;
+	}
 
-  s += digit_bytes;
+	b->is_neg = get8(s);
+	  
+	for (i = 0; i < n; ++i) {
+	    dt[i] = s[i*2];
+	    if ((i*2 + 1) < digit_bytes) {
+		dt[i] |= ((unsigned short) s[(i*2)+1]) << 8;
+	    }
+	}
+    } else {
+	s++; /* skip sign byte */
+    }
 
-  *index += s-s0; 
+    s += digit_bytes;
+
+    *index += s-s0; 
   
-  return 0; 
+    return 0; 
 }
 
-
-erlang_big *ei_alloc_big(int arity)
-{
+erlang_big *ei_alloc_big(unsigned int digit_bytes) {
     erlang_big *b;
+    unsigned int n = (digit_bytes+1)/2;
 
     if ( (b = malloc(sizeof(erlang_big))) == NULL) return NULL;
     memset(b,(char)0,sizeof(erlang_big));
-    if ( (b->digits = malloc(arity*2)) == NULL) {
+    if ( (b->digits = malloc(2*n)) == NULL) {
         free(b);
         return 0;
     }
-    
-    b->arity = arity;
-    memset(b->digits,(char)0,arity*2);
+   
+    b->arity = digit_bytes;
+    memset(b->digits,(char)0, 2*n);
     return b;
 }
 
@@ -120,7 +120,7 @@ static int I_comp(digit_t *x, dsize_t xl, digit_t *y, dsize_t yl)
 int ei_big_comp(erlang_big *x, erlang_big *y)
 {
     if ( x->is_neg == y->is_neg ) {
-        int c = I_comp(x->digits,x->arity,y->digits,y->arity);
+        int c = I_comp(x->digits,(x->arity+1)/2,y->digits,(y->arity+1)/2);
         if ( x->is_neg ) 
             return -c;
         else
@@ -218,7 +218,7 @@ static int blength(unsigned long l)
 
 static int bblength(erlang_big *b)
 {
-    unsigned wholebytes = b->arity;
+    unsigned int wholebytes = (b->arity+1)/2;
     digit_t *dp = b->digits;
 
     while(wholebytes > 0 && dp[--wholebytes] == 0U)
@@ -288,7 +288,7 @@ int ei_big_to_double(erlang_big *b, double *resp)
     double d_base = 1.0;
 
     digit_t* s = (digit_t *)b->digits;
-    dsize_t xl = b->arity;
+    dsize_t xl = (b->arity + 1)/2;
     short xsgn = b->is_neg;
     ERTS_SAVE_FP_EXCEPTION();
 
@@ -318,8 +318,9 @@ int ei_big_to_double(erlang_big *b, double *resp)
 int ei_small_to_big(int s, erlang_big *b)
 {
     digit_t *d;
+    unsigned int n = (b->arity+1)/2;
 
-    if ( b->arity < 2 ) return -1;
+    if ( n < 2 ) return -1;
 
     b->is_neg = ( s < 0 );
     d = (digit_t *)b->digits;

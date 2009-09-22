@@ -547,7 +547,6 @@ profile_send(Eterm message) {
 
 	/* not smp */
 	
-    	erts_smp_mtx_lock(&smq_mtx);
 	
 	profiler_port = &erts_port[internal_port_index(profiler)];
 	
@@ -557,7 +556,6 @@ profile_send(Eterm message) {
 			SYS_MSG_TYPE_SYSPROF,
 			message);
     	
-	erts_smp_mtx_unlock(&smq_mtx);
     } else {
 	ASSERT(is_internal_pid(profiler)
                 && internal_pid_index(profiler) < erts_max_processes);
@@ -2509,13 +2507,16 @@ profile_scheduler_q(Eterm scheduler_id, Eterm state, Eterm no_schedulers, Uint M
     hp = bp->mem;
 #endif
 
+    erts_smp_mtx_lock(&smq_mtx);
+
     timestamp = TUPLE3(hp, make_small(Ms), make_small(s), make_small(us)); hp += 4;
     msg = TUPLE6(hp, am_profile, am_scheduler, scheduler_id, state, no_schedulers, timestamp); hp += 7;
 #ifndef ERTS_SMP
     profile_send(msg);
 #else
-    enqueue_sys_msg(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
+    enqueue_sys_msg_unlocked(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
 #endif
+    erts_smp_mtx_unlock(&smq_mtx);
 
 }
 
@@ -2747,6 +2748,7 @@ profile_runnable_port(Port *p, Eterm status) {
     hp = bp->mem;
 #endif
 
+    erts_smp_mtx_lock(&smq_mtx);
 
     GET_NOW(&Ms, &s, &us);
     timestamp = TUPLE3(hp, make_small(Ms), make_small(s), make_small(us)); hp += 4;
@@ -2755,8 +2757,9 @@ profile_runnable_port(Port *p, Eterm status) {
 #ifndef ERTS_SMP
     profile_send(msg);
 #else
-    enqueue_sys_msg(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
+    enqueue_sys_msg_unlocked(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
 #endif
+    erts_smp_mtx_unlock(&smq_mtx);
 }
 
 /* Process profiling */
@@ -2767,59 +2770,44 @@ profile_runnable_proc(Process *p, Eterm status){
     Eterm where = am_undefined;
 
 #ifndef ERTS_SMP
-    Eterm local_heap[4 + 4 + 6];
+    Eterm local_heap[4 + 6 + 4];
     hp = local_heap;
-	
-    if (p->current == NULL) {
-        p->current = find_function_from_pc(p->i);
-    }
-    if (p->current == NULL) {
-	where = make_small(0);
-    } else {
-	where = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2]));
-	hp += 4;
-    }
-
-    GET_NOW(&Ms, &s, &us);
-    
-    timestamp = TUPLE3(hp, make_small(Ms), make_small(s), make_small(us)); hp += 4;
-    msg = TUPLE5(hp, am_profile, p->id, status, where, timestamp); hp += 6;
-        
-    profile_send(msg);
-
 #else
-    /* SMP */
     ErlHeapFragment *bp;
-    Uint hsz;
-
-    if (p->current == NULL) {
+    Uint hsz = 4 + 6 + 4;
+#endif
+	
+    if (!p->current) {
         p->current = find_function_from_pc(p->i);
     }
-    if (p->current == NULL) {
+
+#ifdef ERTS_SMP
+    if (!p->current) {
 	hsz = 4 + 6;
-    } else {
-	hsz = 4 + 6 + 4;
     }
 
     bp = new_message_buffer(hsz);
     hp = bp->mem;
-	
-    if (p->current == NULL) {
-	where = make_small(0);
+#endif
+
+    if (p->current) {
+	where = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2])); hp += 4;
     } else {
-	where = TUPLE3(hp, p->current[0], p->current[1], make_small(p->current[2]));
-	hp += 4;
+	where = make_small(0);
     }
+	
+    erts_smp_mtx_lock(&smq_mtx);
 
     GET_NOW(&Ms, &s, &us);
     timestamp = TUPLE3(hp, make_small(Ms), make_small(s), make_small(us)); hp += 4;
-    msg = TUPLE5(hp, am_profile, p->id, status, where, timestamp);
-    hp += 6;
-
-    enqueue_sys_msg(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
+    msg = TUPLE5(hp, am_profile, p->id, status, where, timestamp); hp += 6;
+#ifndef ERTS_SMP
+    profile_send(msg);
+#else
+    enqueue_sys_msg_unlocked(SYS_MSG_TYPE_SYSPROF, NIL, NIL, msg, bp);
 #endif
+    erts_smp_mtx_unlock(&smq_mtx);
 }
-
 /* End system_profile tracing */
 
 

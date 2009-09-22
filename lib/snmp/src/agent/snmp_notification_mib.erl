@@ -288,6 +288,48 @@ type(2,      Timeout, Retry) -> {inform, Timeout, Retry}.  %% OTP-4329
 %%-----------------------------------------------------------------
 %% Instrumentation Functions
 %%-----------------------------------------------------------------
+%% Op = print - Used for debugging purposes
+snmpNotifyTable(print) ->
+    Table = snmpNotifyTable, 
+    DB    = db(Table),
+    FOI   = foi(Table),
+    PrintRow = 
+	fun(Prefix, Row) ->
+		lists:flatten(
+		  io_lib:format("~sName:        ~p"
+				"~n~sTag:         ~p"
+				"~n~sType:        ~p (~w)"
+				"~n~sStorageType: ~p (~w)"
+				"~n~sStatus:      ~p (~w)", 
+				[Prefix, element(?snmpNotifyName, Row),
+				 Prefix, element(?snmpNotifyTag, Row),
+				 Prefix, element(?snmpNotifyType, Row),
+				 case element(?snmpNotifyType, Row) of
+				     ?snmpNotifyType_inform -> inform;
+				     ?snmpNotifyType_trap -> trap;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?snmpNotifyStorageType, Row),
+				 case element(?snmpNotifyStorageType, Row) of
+				     ?'snmpNotifyStorageType_readOnly' -> readOnly;
+				     ?'snmpNotifyStorageType_permanent' -> permanent;
+				     ?'snmpNotifyStorageType_nonVolatile' -> nonVolatile;
+				     ?'snmpNotifyStorageType_volatile' -> volatile;
+				     ?'snmpNotifyStorageType_other' -> other;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?snmpNotifyRowStatus, Row),
+				 case element(?snmpNotifyRowStatus, Row) of
+				     ?'snmpNotifyRowStatus_destroy' -> destroy;
+				     ?'snmpNotifyRowStatus_createAndWait' -> createAndWait;
+				     ?'snmpNotifyRowStatus_createAndGo' -> createAndGo;
+				     ?'snmpNotifyRowStatus_notReady' -> notReady;
+				     ?'snmpNotifyRowStatus_notInService' -> notInService;
+				     ?'snmpNotifyRowStatus_active' -> active;
+				     _ -> undefined
+				 end]))
+	end,
+    snmpa_mib_lib:print_table(Table, DB, FOI, PrintRow);
 %% Op == new | delete
 snmpNotifyTable(Op) ->
     snmp_generic:table_func(Op, db(snmpNotifyTable)).

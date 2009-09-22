@@ -75,7 +75,8 @@ analyse(List, _Mod, Exports) ->
 %% Return    : 
 %% Notes     : 
 %%>----------------------------------------------------------------------<
-mkTable(List) -> mkTable(List, {[], []}).
+mkTable(List) ->
+  mkTable(List, {[], []}).
 
 mkTable([{MFA, Icode} | List], Table) ->
   %% New Icode
@@ -166,7 +167,8 @@ skipToLabel(Code, L) ->
     NewCode ->
       NewCode
   end.
-skipToLabel2([#icode_label{name=L}|Code],L) -> Code;
+
+skipToLabel2([#icode_label{name = L}|Code],L) -> Code;
 skipToLabel2([_|Code], L) -> skipToLabel2(Code, L);
 skipToLabel2([], _) -> noLabel.
 
@@ -435,7 +437,8 @@ filterTable([Fun|FunLst], CallLst, MaxRets, Exports, {Funs, Calls} = FCs) ->
   end;
 filterTable([], _, _, _, Res) -> Res.
 
-removeDuplicateCalls(Calls) -> removeDuplicateCalls(Calls, []).
+removeDuplicateCalls(Calls) ->
+  removeDuplicateCalls(Calls, []).
 
 removeDuplicateCalls([Call|CallsToKeep], Res) -> 
   case lists:member(Call, CallsToKeep) of
@@ -463,12 +466,13 @@ containRecursiveCalls([], _) -> false.
 %% Return    : 
 %% Notes     : 
 %%>----------------------------------------------------------------------<
-checkCalls(CallLst, MFA, Rets) -> checkCalls(CallLst, MFA, Rets, [], []).
+checkCalls(CallLst, MFA, Rets) ->
+  checkCalls(CallLst, MFA, Rets, [], []).
 
-checkCalls([C = {callPair, _, {MFA, {matchSize,Rets,_}}}|CallLst], 
+checkCalls([C = {callPair, _, {MFA, {matchSize, Rets, _}}}|CallLst], 
 	   MFA, Rets, Res, Opt) ->
   checkCalls(CallLst, MFA, Rets, [C|Res], [true|Opt]);
-checkCalls([{callPair, _, {MFA, {matchSize,_,_}}}|CallLst], 
+checkCalls([{callPair, _, {MFA, {matchSize, _, _}}}|CallLst], 
 	   MFA, Rets, Res, Opt) ->
   checkCalls(CallLst, MFA, Rets, Res, [false|Opt]);
 checkCalls([_|CallLst], MFA, Rets, Res, Opt) ->
@@ -706,7 +710,7 @@ optimizeCall([{MFA, Icode}|List], MFA, Callee, DstLst, Res) ->
   optimizeCall(List, MFA, Callee, DstLst, [{MFA, NewIcode}|Res]);
 optimizeCall([I|List], Caller, Callee, DstLst, Res) ->
   optimizeCall(List, Caller, Callee, DstLst, [I|Res]);
-optimizeCall([],_,_,_,Res) -> lists:reverse(Res).
+optimizeCall([], _, _, _, Res) -> lists:reverse(Res).
 
 %%>----------------------------------------------------------------------<
 %% Procedure : findAndUpdateCall/3
@@ -734,7 +738,7 @@ findAndUpdateCalls(Cfg, [L|Labels], Callee, DstLst, Visited) ->
     false ->
       findAndUpdateCalls(Cfg, Labels, Callee, DstLst, [L|Visited])
   end;
-findAndUpdateCalls(Cfg,[],_,_,_) -> Cfg.
+findAndUpdateCalls(Cfg,[], _, _, _) -> Cfg.
 
 containCorrectCall(Cfg, Label, Callee, DstLst) ->
   Block = hipe_icode_cfg:bb(Cfg,Label),
@@ -747,7 +751,7 @@ containCorrectCall(Cfg, Label, Callee, DstLst) ->
       false
   end.
 
-checkForUnElems([], _,_,_) -> false;
+checkForUnElems([], _, _, _) -> false;
 checkForUnElems([Succ|Succs], OldVar, DstLst, Cfg) ->
   Block = hipe_icode_cfg:bb(Cfg,Succ),
   Code = hipe_bb:code(Block),
@@ -1019,13 +1023,8 @@ insertMiddleFailBlock(Cfg, NewFailLabel, OldFailLabel, OldVar, DstLst) ->
 
 
 isCallLocal(Instr, Fun) ->
-  case hipe_icode:is_call(Instr) of
-    true ->
-      ((hipe_icode:call_type(Instr) =:= local) andalso
-       (hipe_icode:call_fun(Instr) =:= Fun));
-    false ->
-      false
-  end.
+  hipe_icode:is_call(Instr) andalso (hipe_icode:call_type(Instr) =:= local)
+    andalso (hipe_icode:call_fun(Instr) =:= Fun).
 
 isCallPrimop(Instr, Fun) ->
   case hipe_icode:is_call(Instr) of
@@ -1153,7 +1152,6 @@ printCallList([]) -> io:format("~n").
 %% gotoLabel(L, [L|List]) -> List;
 %% gotoLabel(L, [_|List]) -> gotoLabel(L, List);
 %% gotoLabel(_, []) -> [].
-    
 
 
 %% %%>----------------------------------------------------------------------<

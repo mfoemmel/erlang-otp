@@ -1240,7 +1240,7 @@ key_to_frag_name(Tab, Key) ->
 %% Returns name of fragment table
 n_to_frag_name(Tab, 1) ->
     Tab;
-n_to_frag_name(Tab, N) when atom(Tab), integer(N) ->
+n_to_frag_name(Tab, N) when is_atom(Tab), is_integer(N) ->
     list_to_atom(atom_to_list(Tab) ++ "_frag" ++ integer_to_list(N));
 n_to_frag_name(Tab, N) ->
     mnesia:abort({bad_type, Tab, N}).

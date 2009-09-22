@@ -82,9 +82,9 @@ new() ->
     Empty = mk_seg(?seg_size),
     #set{empty = Empty, segs = {Empty}}.
 
-%% is_set(Set) -> bool().
+%% is_set(Set) -> boolean().
 %%  Return 'true' if Set is a set of elements, else 'false'.
--spec is_set(term()) -> bool().
+-spec is_set(term()) -> boolean().
 is_set(#set{}) -> true;
 is_set(_) -> false.
 
@@ -105,9 +105,9 @@ to_list(S) ->
 from_list(L) ->
     lists:foldl(fun (E, S) -> add_element(E, S) end, new(), L).
 
-%% is_element(Element, Set) -> bool().
+%% is_element(Element, Set) -> boolean().
 %%  Return 'true' if Element is an element of Set, else 'false'.
--spec is_element(term(), set()) -> bool().
+-spec is_element(term(), set()) -> boolean().
 is_element(E, S) ->
     Slot = get_slot(S, E),
     Bkt = get_bucket(S, Slot),
@@ -183,9 +183,9 @@ intersection1(S1, [S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
 intersection1(S1, []) -> S1.
 
-%% is_disjoint(Set1, Set2) -> true|false.
+%% is_disjoint(Set1, Set2) -> boolean().
 %%  Check whether Set1 and Set2 are disjoint.
--spec is_disjoint(set(), set()) -> bool().
+-spec is_disjoint(set(), set()) -> boolean().
 is_disjoint(S1, S2) when S1#set.size < S2#set.size ->
     fold(fun (_, false) -> false;
 	     (E, true) -> not is_element(E, S2)
@@ -202,10 +202,10 @@ is_disjoint(S1, S2) ->
 subtract(S1, S2) ->
     filter(fun (E) -> not is_element(E, S2) end, S1).
 
-%% is_subset(Set1, Set2) -> bool().
+%% is_subset(Set1, Set2) -> boolean().
 %%  Return 'true' when every element of Set1 is also a member of
 %%  Set2, else 'false'.
--spec is_subset(set(), set()) -> bool().
+-spec is_subset(set(), set()) -> boolean().
 is_subset(S1, S2) ->
     fold(fun (E, Sub) -> Sub andalso is_element(E, S2) end, true, S1).
 
@@ -216,7 +216,7 @@ fold(F, Acc, D) -> fold_set(F, Acc, D).
 
 %% filter(Fun, Set) -> Set.
 %%  Filter Set with Fun.
--spec filter(fun((_) -> bool()), set()) -> set().
+-spec filter(fun((_) -> boolean()), set()) -> set().
 filter(F, D) -> filter_set(F, D).
 
 %% get_slot(Hashdb, Key) -> Slot.

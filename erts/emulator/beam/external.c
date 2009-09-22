@@ -41,7 +41,7 @@
 #include "dist.h"
 #include "erl_binary.h"
 #include "erl_bits.h"
-#include "zlib.h"
+#include "erl_zlib.h"
 
 #ifdef HIPE
 #include "hipe_mode_switch.h"
@@ -803,7 +803,7 @@ erts_decode_dist_ext_size(ErtsDistExternal *edep, int no_refc_bins)
 {
     Sint res;
     byte *ep;
-    if (edep->extp+1 >= edep->ext_endp)
+    if (edep->extp >= edep->ext_endp)
 	goto fail;
 #ifndef ERTS_DEBUG_USE_DIST_SEP
     if (edep->flags & ERTS_DIST_EXT_DFLAG_HDR) {
@@ -846,7 +846,7 @@ erts_decode_dist_ext(Eterm** hpp,
     Eterm obj;
     byte* ep = edep->extp;
 
-    if (ep+1 >= edep->ext_endp)
+    if (ep >= edep->ext_endp)
 	goto error;
 #ifndef ERTS_DEBUG_USE_DIST_SEP
     if (edep->flags & ERTS_DIST_EXT_DFLAG_HDR) {
@@ -1039,7 +1039,7 @@ binary2term_prepare(ErtsBinary2TermState *state, byte *data, Sint data_size)
 	uLongf dest_len = get_int32(bytes+1);
 	state->extp = erts_alloc(ERTS_ALC_T_TMP, dest_len);
 	state->exttmp = 1;
-	if (uncompress(state->extp, &dest_len, bytes+5, size-5) != Z_OK)
+	if (erl_zlib_uncompress(state->extp, &dest_len, bytes+5, size-5) != Z_OK)
 	    goto error;
 	size = (Sint) dest_len;
     }
@@ -1190,7 +1190,7 @@ erts_term_to_binary(Process* p, Eterm Term, int level, Uint flags)
 	bin = new_binary(p, NULL, real_size+1);
 	out_bytes = binary_bytes(bin);
 	out_bytes[0] = VERSION_MAGIC;
-	if (compress2(out_bytes+6, &dest_len, bytes, real_size, level) != Z_OK) {
+	if (erl_zlib_compress2(out_bytes+6, &dest_len, bytes, real_size, level) != Z_OK) {
 	    sys_memcpy(out_bytes+1, bytes, real_size);
 	    bin = erts_realloc_binary(bin, real_size+1);
 	} else {
@@ -1851,8 +1851,9 @@ dec_term(ErtsDistExternal *edep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Et
 		break;
 	    }
 	case ATOM_CACHE_REF:
-	    if (!(edep->flags & ERTS_DIST_EXT_ATOM_TRANS_TAB))
+	    if (edep == 0 || (edep->flags & ERTS_DIST_EXT_ATOM_TRANS_TAB) == 0) {
 		goto error;
+	    }
 	    n = get_int8(ep);
 	    ep++;
 	    if (n >= edep->attab.size)
@@ -2623,7 +2624,7 @@ static Sint
 decoded_size(byte *ep, byte* endp, int no_refc_bins)
 {
     int heap_size = 0;
-    int terms = 1;
+    int terms;
     int atom_extra_skip = 0;
     Uint n;
 
@@ -2647,7 +2648,15 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	 if ((sz) > endp-ep) { return -1; }	\
     } while (0)
 
-    while (terms-- > 0) {
+#define ADDTERMS(n)				\
+    do {					\
+        int before = terms;		        \
+	terms += (n);                           \
+	if (terms < before) return -1;     	\
+    } while (0)
+
+
+    for (terms=1; terms > 0; terms--) {
 	int tag;
 
 	CHKSIZE(1);
@@ -2739,7 +2748,8 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	    CHKSIZE(4);
 	    n = get_int32(ep);
 	    ep += 4;
-	    terms += n + 1;
+	    ADDTERMS(n);
+	    terms++;
 	    heap_size += 2 * n;
 	    break;
 	case SMALL_TUPLE_EXT:
@@ -2752,7 +2762,7 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	    CHKSIZE(4);
 	    n = get_int32(ep);
 	    ep += 4;
-	    terms += n;
+	    ADDTERMS(n);
 	    heap_size += n + 1;
 	    break;
 	case STRING_EXT:
@@ -2797,13 +2807,12 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	    break;
 	case NEW_FUN_EXT:
 	    {
-		int num_free;
+		unsigned num_free;
 		Uint total_size;
 
-		CHKSIZE(4);
-		total_size = get_int32(ep);
-		CHKSIZE(total_size);
 		CHKSIZE(1+16+4+4);
+		total_size = get_int32(ep);
+		CHKSIZE(total_size);		
 		ep += 1+16+4+4;
 		/*FALLTHROUGH*/
 
@@ -2822,7 +2831,8 @@ decoded_size(byte *ep, byte* endp, int no_refc_bins)
 	    return -1;
 	}
     }
-    return heap_size;
+    /* 'terms' may be non-zero if it has wrapped around */
+    return terms==0 ? heap_size : -1;
 #undef SKIP
 #undef SKIP2
 #undef CHKSIZE

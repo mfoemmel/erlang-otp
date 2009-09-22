@@ -49,11 +49,27 @@ process(L, Stream,Lno,R) when is_list(L) ->
 	{'ERR',Reason} ->
 	    io:format("Tokeniser error on line: ~w ~w~n",[Lno,Reason]),
 	    exit(0);
+	{multiline_comment,NestingLevel} ->
+	    {RestL,Lno2} = process_skip_multiline_comment(Stream,Lno,NestingLevel),
+	    process(RestL,Stream,Lno2,R);
 	T ->
 	    %%io:format('toks:~w~n',[T]),
 	    process(Stream,Lno,[T|R])
     end. 
 
+process_skip_multiline_comment(Stream,Lno,NestingLevel) ->
+    process_skip_multiline_comment(io:get_line(Stream, ''),
+				   Stream, Lno + 1, NestingLevel).
+process_skip_multiline_comment(eof,_Stream,Lno,_NestingLevel) ->
+    io:format("Tokeniser error on line: ~w, premature end of multiline comment~n",[Lno]),
+    exit(0);
+process_skip_multiline_comment(Line,Stream,Lno,NestingLevel) ->
+    case catch skip_multiline_comment(Line,NestingLevel) of
+	{multiline_comment,NestingLevel2} ->
+	    process_skip_multiline_comment(Stream,Lno,NestingLevel2);
+	T ->
+	    {T,Lno}
+    end.
 
 tokenise([H|T],Lno) when $a =< H , H =< $z ->
     {X, T1} = get_name(T, [H]),
@@ -91,6 +107,10 @@ tokenise([H|T],Lno) when $0 =< H , H =< $9 ->
 
 tokenise([$-,$-|T],Lno) ->
     tokenise(skip_comment(T),Lno);
+
+tokenise([$/,$*|T],Lno) ->
+    tokenise(skip_multiline_comment(T,0),Lno);
+
 tokenise([$:,$:,$=|T],Lno) ->
     [{'::=',Lno}|tokenise(T,Lno)];
 
@@ -231,6 +251,19 @@ skip_comment([$-,$-|T]) ->
 skip_comment([_|T]) ->
     skip_comment(T).
 
+
+skip_multiline_comment([],L) ->
+    throw({multiline_comment,L});
+skip_multiline_comment([$*,$/|T],0) ->
+    T;
+skip_multiline_comment([$*,$/|T],Level) ->
+    skip_multiline_comment(T,Level - 1);
+skip_multiline_comment([$/,$*|T],Level) ->
+    skip_multiline_comment(T,Level + 1);
+skip_multiline_comment([_|T],Level) ->
+    skip_multiline_comment(T,Level).
+
+
 collect_quoted([$',$B|T],Lno, L) ->
     case check_bin(L) of
         true ->
@@ -292,10 +325,12 @@ reserved_word('CLASS') -> true;
 reserved_word('COMPONENT') -> true;
 reserved_word('COMPONENTS') -> true;
 reserved_word('CONSTRAINED') -> true;
+reserved_word('CONTAINING') -> true;
 reserved_word('DEFAULT') -> true;
 reserved_word('DEFINED') -> true;
 reserved_word('DEFINITIONS') -> true;
 reserved_word('EMBEDDED') -> true;
+reserved_word('ENCODED') -> true;
 reserved_word('END') -> true;
 reserved_word('ENUMERATED') -> true;
 reserved_word('EXCEPT') -> true;
@@ -327,6 +362,7 @@ reserved_word('ObjectDescriptor') -> true;
 reserved_word('OCTET') -> true;
 reserved_word('OF') -> true;
 reserved_word('OPTIONAL') -> true;
+reserved_word('PATTERN') -> true;
 reserved_word('PDV') -> true;
 reserved_word('PLUS-INFINITY') -> true;
 reserved_word('PRESENT') -> true;

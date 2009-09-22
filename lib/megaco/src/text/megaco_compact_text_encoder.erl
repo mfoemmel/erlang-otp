@@ -97,7 +97,6 @@ version_of(_EC, Bin) ->
 	    {error, {decode_failed, Reason, Line}}
     end.
 
-
 decode_message(EC, Bin) ->
     %% d("decode_message -> entry with"
     %%   "~n   EC: ~p", [EC]),
@@ -119,10 +118,10 @@ decode_message([], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	    scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,v3}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(v3) -> entry"),
@@ -140,10 +139,10 @@ decode_message([{version3,v3}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	    scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,prev3c}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(prev3c) -> entry"),
@@ -161,10 +160,10 @@ decode_message([{version3,prev3c}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	    scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,prev3b}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(prev3b) -> entry"),
@@ -182,10 +181,10 @@ decode_message([{version3,prev3b}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	    scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,prev3a}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(prev3a) -> entry"),
@@ -203,10 +202,10 @@ decode_message([{version3,prev3a}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	    scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{flex, Port}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(flex) -> entry"),
@@ -224,10 +223,10 @@ decode_message([{flex, Port}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	%% {error, Reason, Tokens, Line} ->
-	%%     parse_error(Reason, Line, Tokens, Bin);
+	%%     scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,v3},{flex, Port}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(v3,flex) -> entry"),
@@ -245,10 +244,10 @@ decode_message([{version3,v3},{flex, Port}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	%% {error, Reason, Tokens, Line} ->
-	%%     parse_error(Reason, Line, Tokens, Bin);
+	%%     scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,prev3c},{flex, Port}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(prev3c,flex) -> entry"),
@@ -266,10 +265,10 @@ decode_message([{version3,prev3c},{flex, Port}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	%% {error, Reason, Tokens, Line} ->
-	%%     parse_error(Reason, Line, Tokens, Bin);
+	%%     scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->
-	    parse_error(Reason, Line, [], Bin)
+	    scan_error(Reason, Line, Bin)
     end;
 decode_message([{version3,prev3b},{flex, Port}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(prev3b,flex) -> entry"),
@@ -287,10 +286,10 @@ decode_message([{version3,prev3b},{flex, Port}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	%% {error, Reason, Tokens, Line} ->
-	%%     parse_error(Reason, Line, Tokens, Bin);
+	%%     scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message([{version3,prev3a},{flex, Port}], _, Bin) when is_binary(Bin) ->
     %% d("decode_message(prev3a,flex) -> entry"),
@@ -308,10 +307,10 @@ decode_message([{version3,prev3a},{flex, Port}], _, Bin) when is_binary(Bin) ->
 	    {error, {unsupported_version, V}};
 
 	%% {error, Reason, Tokens, Line} ->
-	%%     parse_error(Reason, Line, Tokens, Bin);
+	%%     scan_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+	    scan_error(Reason, Line, Bin) %% OTP-4007
     end;
 decode_message(EC, _, Bin) when is_binary(Bin) ->
     {error, {bad_encoding_config, EC}};
@@ -341,29 +340,45 @@ decode_mini_message(EC, _, Bin) when is_binary(Bin) ->
     megaco_text_mini_decoder:decode_message(EC, Bin).
 
 
+scan_error(Reason, Line, Bin) ->
+    scan_error(Reason, Line, [], Bin).
+
+scan_error("bad_property_parm: " ++ Reason, _Line, _Tokens, _Bin) ->
+    {error, {bad_property_parm, Reason}};
+scan_error(Reason, Line, Tokens, Bin) ->
+    %%     io:format("scanner error: "
+    %% 	      "~n   Reason: ~p"
+    %% 	      "~n   Line:   ~p"
+    %% 	      "~n   Tokens: ~p"
+    %% 	      "~n   Bin:    ~p"
+    %% 	      "~n", [Reason, Line, Tokens, Bin]),
+    {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Bin}]}.
+
 parse_error(Reason, Tokens, Chars) ->
-    %%     io:format("parse_error -> entry with"
+    %%     io:format("parser error -> entry with"
     %%               "~n   Reason: ~p"
-    %%            "~n   Tokens: ~p"
-    %%            "~n", [Reason, Tokens]),
+    %%               "~n   Tokens: ~p"
+    %%               "~n", [Reason, Tokens]),
     case Reason of
-        "bad_property_parm: " ++ NewReason ->
-            {error, {bad_property_parm, NewReason}};
+	{Line, Mod, [Prefix, [$[, TokenStringRaw, $]]]} when 
+	      is_integer(Line) andalso 
+	      is_atom(Mod) andalso 
+	      is_list(Prefix) andalso 
+	      is_list(TokenStringRaw) ->
+	    TokenString = [l2i(X) || X <- TokenStringRaw, is_list(X)],
+	    ReasonStr = Prefix ++ TokenString,
+	    {error, [{reason, ReasonStr, Line}, {tokens, Tokens}, {chars, Chars}, {module, Mod}]};
         _ ->
             {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}
     end.
 
-parse_error(Reason, Line, Tokens, Chars) ->
-    %%     io:format("parse_error -> entry with"
-    %%               "~n   Reason: ~p"
-    %%               "~n   Line:   ~p"
-    %%               "~n   Tokens: ~p"
-    %%               "~n", [Reason, Line, Tokens]),
-    case Reason of
-        "bad_property_parm: " ++ NewReason ->
-            {error, {bad_property_parm, NewReason}};
-        _ ->
-            {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}
+
+l2i(L) when is_list(L) ->
+    case (catch list_to_integer(L)) of
+	I when is_integer(I) ->
+	    I;
+	_ ->
+	    L
     end.
 
 
@@ -398,28 +413,28 @@ encode_transaction(_EC, V, _Trans) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_requests([{version3,_}|EC], 1, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     megaco_compact_text_encoder_v1:encode_action_requests(EC, ActReqs);
-encode_action_requests(EC, 1, ActReqs) when list(ActReqs) ->
+encode_action_requests(EC, 1, ActReqs) when is_list(ActReqs) ->
     megaco_compact_text_encoder_v1:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,_}|EC], 2, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     megaco_compact_text_encoder_v2:encode_action_requests(EC, ActReqs);
-encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
+encode_action_requests(EC, 2, ActReqs) when is_list(ActReqs) ->
     megaco_compact_text_encoder_v2:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,prev3c}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     megaco_compact_text_encoder_prev3c:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,prev3b}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     megaco_compact_text_encoder_prev3b:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,prev3a}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     megaco_compact_text_encoder_prev3a:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,v3}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
+  when is_list(ActReqs) ->
     megaco_compact_text_encoder_v3:encode_action_requests(EC, ActReqs);
-encode_action_requests(EC, 3, ActReqs) when list(ActReqs) ->
+encode_action_requests(EC, 3, ActReqs) when is_list(ActReqs) ->
     megaco_compact_text_encoder_v3:encode_action_requests(EC, ActReqs);
 encode_action_requests(_EC, V, _ActReqs) ->
     {error, {bad_version, V}}.

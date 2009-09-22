@@ -37,6 +37,8 @@ extern "C" {
 #include <wx/grid.h>
 #include <wx/gbsizer.h>
 #include <wx/dynarray.h>
+#include <wx/html/htmlcell.h>
+
 
 // #define send() send_term(__FILE__, __LINE__)
 
@@ -107,6 +109,10 @@ public:
     void add(wxArrayInt val);
 
     void add(wxUIntPtr *val);
+
+    void add(const wxHtmlLinkInfo *val);
+
+    void add(const wxHtmlLinkInfo &val);
 
     int  send();
     

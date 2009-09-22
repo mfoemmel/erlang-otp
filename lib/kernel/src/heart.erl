@@ -85,18 +85,20 @@ init(Starter, Parent) ->
 	    Starter ! {start_error, self()}
     end.
 
--spec set_cmd(Cmd) -> 'ok' | {'error', {'bad_cmd', Cmd}}
-		      when is_subtype(Cmd, string()).
+-spec set_cmd(string()) -> 'ok' | {'error', {'bad_cmd', string()}}.
+
 set_cmd(Cmd) ->
     heart ! {self(), set_cmd, Cmd},
     wait().
 
 -spec get_cmd() -> 'ok'.
+
 get_cmd() ->
     heart ! {self(), get_cmd},
     wait().
 
 -spec clear_cmd() -> {'ok', string()}.
+
 clear_cmd() ->
     heart ! {self(), clear_cmd},
     wait().
@@ -104,6 +106,7 @@ clear_cmd() ->
 
 %%% Should be used solely by the release handler!!!!!!!
 -spec cycle() -> 'ok' | {'error', term()}.
+
 cycle() ->
     heart ! {self(), cycle},
     wait().
@@ -208,6 +211,7 @@ loop(Parent, Port, Cmd) ->
     end.
 
 -spec no_reboot_shutdown(port()) -> no_return().
+
 no_reboot_shutdown(Port) ->
     send_shutdown(Port),
     receive

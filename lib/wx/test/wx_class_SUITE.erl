@@ -55,7 +55,10 @@ all(suite) ->
      notebook,
      staticBoxSizer,
      clipboard,
-     helpFrame
+     helpFrame,
+     htmlWindow,
+     listCtrlSort,
+     radioBox
     ].
 
 %% The test cases
@@ -261,7 +264,7 @@ helpFrame(Config) ->
     Wx = wx:new(),
     MFrame = wx:batch(fun() ->
 			      MFrame = wxFrame:new(Wx, ?wxID_ANY, "Main Frame"),
-			      MPanel = wxPanel:new(MFrame, [{size, {600,400}}]),      
+			      wxPanel:new(MFrame, [{size, {600,400}}]),      
 			      wxWindow:show(MFrame),
 			      MFrame
 		      end),
@@ -287,3 +290,92 @@ helpFrame(Config) ->
     wxWindow:show(Comp),
     wx_test_lib:wx_destroy(MFrame,Config).
 
+htmlWindow(TestInfo) when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
+htmlWindow(Config) ->
+    Wx = wx:new(),
+    {MFrame,HPanel} =
+	wx:batch(fun() ->
+			 MFrame = wxFrame:new(Wx, ?wxID_ANY, "Main Frame"),
+			 HPanel = wxHtmlWindow:new(MFrame, [{size, {600,400}}]),  
+			 wxWindow:show(MFrame),
+			 {MFrame, HPanel}
+		 end),
+    timer:sleep(9),
+
+    WxMod = code:which(wx),
+    WxDir = filename:split(filename:dirname(WxMod)) -- ["ebin"],
+    Html = filename:join(filename:join(WxDir),filename:join("doc", "html")),
+    
+    Index = filename:join(Html, "wx.html"),
+
+    ?m(ok, wxHtmlWindow:connect(HPanel, command_html_link_clicked,
+				[{callback,
+				  fun(Ev,_) ->
+					  io:format("Link clicked: ~p~n",[Ev])
+				  end}])),
+    
+    case filelib:is_file(Index) of
+	true ->
+	    ?m(true, wxHtmlWindow:loadFile(HPanel, Index)),
+	    ok;
+	false ->
+	    ok
+    end,
+    
+    wx_test_lib:wx_destroy(MFrame,Config).
+
+
+listCtrlSort(TestInfo) when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
+listCtrlSort(Config) ->
+    Wx = wx:new(),
+    Frame = wxFrame:new(Wx, ?wxID_ANY, "Frame"),
+    
+    LC = wxListCtrl:new(Frame, [{style, ?wxLC_REPORT bor ?wxLC_SORT_ASCENDING}]),
+
+    %% must be done crashes in wxwidgets otherwise.
+    wxListCtrl:insertColumn(LC, 0, "Column"),
+    
+    Add = fun(Int) ->    
+		  wxListCtrl:insertItem(LC, Int, integer_to_list(Int)),
+		  %% ItemData Can only be integers currently
+		  wxListCtrl:setItemData(LC, Int, abs(2500-Int))
+	  end,
+    
+    wx:foreach(Add, lists:seq(0,5000)),
+    wxWindow:show(Frame),
+
+    timer:sleep(200),
+
+    Sort = fun() ->
+		   wxListCtrl:sortItems(LC, fun(A, B) ->
+						    %% io:format("S ~p ~p ~n",[A,B]),
+						    if A =:= B ->  0;
+						       A < B   -> -1;
+						       true    ->  1
+						    end
+					    end)
+	   end,
+    
+    Time = timer:tc(erlang, apply, [Sort,[]]),
+    io:format("Sorted ~p ~n",[Time]),
+    
+    wx_test_lib:wx_destroy(Frame,Config).
+
+
+radioBox(TestInfo) when is_atom(TestInfo) -> wx_test_lib:tc_info(TestInfo);
+radioBox(Config) ->
+    Wx = wx:new(),
+    Frame = wxFrame:new(Wx, ?wxID_ANY, "Frame"),
+
+    TrSortRadioBox = wxRadioBox:new(Frame, ?wxID_ANY, "Sort by:",
+				    {100, 100},{100, 100}, ["Timestamp"]),
+    
+    io:format("TrSortRadioBox ~p ~n", [TrSortRadioBox]),
+    %% If I uncomment any of these lines, it will crash
+
+    ?m(_, catch wxControlWithItems:setClientData(TrSortRadioBox, 0, timestamp)),
+    %?m(_, wxListBox:append(TrSortRadioBox, "Session Id", session_id)),
+    %?m(_, wxListBox:insert(TrSortRadioBox, "Session Id", 0, session_id)),
+
+    wxWindow:show(Frame),
+    wx_test_lib:wx_destroy(Frame,Config).

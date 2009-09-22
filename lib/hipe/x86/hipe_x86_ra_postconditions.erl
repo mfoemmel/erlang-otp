@@ -31,6 +31,7 @@
 -endif.
 
 -module(?HIPE_X86_RA_POSTCONDITIONS).
+
 -export([check_and_rewrite/3]).
 
 -include("../x86/hipe_x86.hrl").

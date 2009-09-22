@@ -30,7 +30,7 @@
 
 -record(add_opts,
 	{read_info,				% Fun to use for read file/link info.
-	 verbose = false :: bool()}).			% Verbose on/off.
+	 verbose = false :: boolean()}).	% Verbose on/off.
 
 %% Opens a tar archive.
 
@@ -423,12 +423,12 @@ split_filename([], Prefix, Suffix, _) ->
 
 -record(read_opts,
 	{cwd             :: string(),		% Current working directory.
-	 keep_old_files = false :: bool(),	% Owerwrite or not.
+	 keep_old_files = false :: boolean(),	% Owerwrite or not.
 	 files = all,				% Set of files to extract
 						% (or all).
 	 output = file   :: 'file' | 'memory',
 	 open_mode = [],			% Open mode options.
-	 verbose = false :: bool()}).		% Verbose on/off.
+	 verbose = false :: boolean()}).	% Verbose on/off.
 
 extract_opts(List) ->
     extract_opts(List, default_options()).

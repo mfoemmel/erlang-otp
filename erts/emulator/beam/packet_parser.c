@@ -470,10 +470,14 @@ more:
     return 0;
 
 remain:
-    if (max_plen != 0 && plen > max_plen) {
-        return -1;
-    }
-    return hlen+plen;
+    {
+        int tlen = hlen + plen;
+	if ((max_plen != 0 && plen > max_plen)
+	    || tlen < (int)hlen) { /* wrap-around protection */
+	    return -1;
+	}
+	return tlen;
+    }		
 
 done:
     return plen;

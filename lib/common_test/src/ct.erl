@@ -140,7 +140,8 @@ run(TestDirs) ->
 %%%               {silent_connections,Conns} | {cover,CoverSpecFile} | 
 %%%               {step,StepOpts} | {event_handler,EventHandlers} | {include,InclDirs} | 
 %%%               {auto_compile,Bool} | {repeat,N} | {duration,DurTime} | 
-%%%               {until,StopTime} | {force_stop,Bool} | {decrypt,DecryptKeyOrFile}
+%%%               {until,StopTime} | {force_stop,Bool} | {decrypt,DecryptKeyOrFile} |
+%%%               {basic_html,Bool}
 %%%   CfgFiles = [string()] | string()
 %%%   TestDirs = [string()] | string()
 %%%   Suites = [string()] | string()

@@ -38,12 +38,6 @@ typedef struct _reg_entry_desc {
 } RegEntryDesc;
 
 enum {
-#if defined(NOTYET)
-  Display,
-  Output,
-  User,
-  After,
-#endif
   StopAction,
   OnFail,
   Machine,
@@ -54,7 +48,8 @@ enum {
   Name,
   Args,
   DebugType,
-  InternalServiceName
+  InternalServiceName,
+  Comment
 };
 
 #define ON_FAIL_IGNORE 0

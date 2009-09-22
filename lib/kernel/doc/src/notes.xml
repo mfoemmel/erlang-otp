@@ -29,6 +29,99 @@
   </header>
   <p>This document describes the changes made to the Kernel application.</p>
 
+<section><title>Kernel 2.13.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p> The DNS resolver client inet_res has been rewritten,
+	    documented and released. See inet_res(3) and Erts User's
+	    Guide: Inet configuration. </p><p> It can formally not be
+	    incompatible with respect to earlier versions since there
+	    was no earlier official version. However it was used
+	    before and some details have changed. </p><p>
+	    Configuration now initializes from /etc/resolv.conf and
+	    /etc/hosts on all unix platforms regardless of which
+	    distribution mode the node is started in. The directory
+	    (/etc) these files are supposed to reside in can be
+	    changed via an environment variable. These configuration
+	    file locations can also be changed in the inet
+	    configuration. The files are monitored for change and
+	    re-read, which makes a few resolver configuration
+	    variables out of application control. The /etc/hosts
+	    entries have now their own cache table that is shadowed
+	    (with lookup method 'file' is used) by the application
+	    configured host entries. This problem (that inet_res
+	    configuration only worked for distribution mode long
+	    names) was among other reported by Matthew O'Gorman many
+	    moons ago. </p><p> The lookup methods are still 'native'
+	    only per default. Resolver configuration is done on all
+	    Unix platforms just to get a usable configuration for
+	    direct calls to inet_res. </p><p> The functions
+	    <c>inet_res:nslookup/3..5</c> and
+	    <c>inet_res:nnslookup/4..4</c> are no longer recommended
+	    to use, instead use <c>inet_res:lookup/3..5</c> and
+	    <c>inet_res:resolve/3..5</c> which provide clearer
+	    argument types and the possibility to override options in
+	    the call. </p><p> Users of previous unsupported versions
+	    of inet_res have included internal header files to get to
+	    the internal record definitions in order to examine DNS
+	    replies. This is still unsupported and there are access
+	    functions in inet_dns to use instead. These are
+	    documented in inet_res(3). </p><p> Bug fix: a compression
+	    reference loop would make DNS message decoding loop
+	    forever. Problem reported by Florian Weimer. </p><p> Bug
+	    fix and patch suggestion by Sergei Golovan: configuring
+	    IPv6 nameservers did not work. His patch (as he warned)
+	    created many UDP sockets; one per nameserver. This has
+	    been fixed in the released version. </p><p> Improvement:
+	    <c>inet_res</c> is now EDNS0 capable. The current
+	    implementation is simple and does not probe and cache
+	    EDNS info for nameservers, which a fully capable
+	    implementation probably should do. EDNS has to be enabled
+	    via resolver configuration, and if a nameserver replies
+	    that it does not support EDNS, <c>inet_res</c> falls back
+	    to a regular DNS query. </p><p> Improvement: now
+	    <c>inet_res</c> automatically falls back to TCP if it
+	    gets a truncated answer from a nameserver. </p><p>
+	    Warning: some of the ancient and exotic record types
+	    handled by <c>inet_res</c> and <c>inet_dns</c> are not
+	    supported by current versions of BIND, so they could not
+	    be tested after the rewrite, with reasonable effort, e.g
+	    MD, MF, NULL, and SPF. The risk for bugs in these
+	    particular records is still low since their code is
+	    mostly shared with other tested record types. </p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-7955 Aux Id: OTP-7107 OTP-6852 </p>
+        </item>
+        <item>
+          <p>
+	    A TCP socket with option <c>{packet,4}</c> could crash
+	    the emulator if it received a packet header with a very
+	    large size value (>2Gb). The same bug caused
+	    <c>erlang:decode_packet/3</c> to return faulty values.
+	    (Thanks to Georgos Seganos.)</p>
+          <p>
+	    Own Id: OTP-8102</p>
+        </item>
+        <item>
+          <p>
+	    The file module has now a read_line/1 function similar to
+	    the io:get_line/2, but with byte oriented semantics. The
+	    function file:read_line/1 works for raw files as well,
+	    but for good performance it is recommended to use it
+	    together with the 'read_ahead' option for raw file
+	    access.</p>
+          <p>
+	    Own Id: OTP-8108</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Kernel 2.13.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

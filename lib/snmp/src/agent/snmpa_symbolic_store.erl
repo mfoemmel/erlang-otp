@@ -595,7 +595,7 @@ code_change(_Vsn, S, _Extra) ->
 
 stop_backup_server(undefined) ->
     ok;
-stop_backup_server({Pid, _}) when pid(Pid) ->
+stop_backup_server({Pid, _}) when is_pid(Pid) ->
     exit(Pid, kill).
 
 

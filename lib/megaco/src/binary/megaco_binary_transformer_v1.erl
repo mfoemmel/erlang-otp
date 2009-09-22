@@ -58,7 +58,7 @@ resolve(Type, Item, State, Constraint) ->
 
 verify_constraint(Item, valid) ->
     Item;
-verify_constraint(Item, Constraint) when function(Constraint) ->
+verify_constraint(Item, Constraint) when is_function(Constraint) ->
     Constraint(Item).
 
 tr_message(MegaMsg, Mode, Config) ->
@@ -73,7 +73,7 @@ tr_message(MegaMsg, Mode, Config) ->
                            resolver_module  = ?DEFAULT_NAME_RESOLVER,
                            resolver_options = [8, 8, 8]},
             tr_MegacoMessage(MegaMsg, State);
-        [{binary_name_resolver, {Module, Options}}] when atom(Module) ->
+        [{binary_name_resolver, {Module, Options}}] when is_atom(Module) ->
             State = #state{mode             = Mode, 
                            resolver_module  = Module, 
                            resolver_options = Options},
@@ -92,7 +92,7 @@ tr_transaction(Trans, Mode, Config) ->
                            resolver_module  = ?DEFAULT_NAME_RESOLVER,
                            resolver_options = [8, 8, 8]},
             tr_Transaction(Trans, State);
-        [{binary_name_resolver, {Module, Options}}] when atom(Module) ->
+        [{binary_name_resolver, {Module, Options}}] when is_atom(Module) ->
             State = #state{mode             = Mode, 
                            resolver_module  = Module, 
                            resolver_options = Options},
@@ -139,7 +139,7 @@ tr_Message_messageBody({Tag, Val}, State) ->
     Val2 = 
         case Tag of
             messageError -> tr_ErrorDescriptor(Val, State);
-            transactions when list(Val) -> [tr_Transaction(T, State) || T <- Val]
+            transactions when is_list(Val) -> [tr_Transaction(T, State) || T <- Val]
         end,
     {Tag, Val2}.
 
@@ -212,7 +212,7 @@ tr_TransactionId(Id, State) ->
 
 tr_TransactionRequest(#'TransactionRequest'{transactionId = Id,
                                             actions       = Actions},
-                      State) when list(Actions) ->
+                      State) when is_list(Actions) ->
 
     #'TransactionRequest'{transactionId = tr_TransactionId(Id, State),
                           actions       = [tr_ActionRequest(ActReq, State) || ActReq <- Actions]}.
@@ -237,7 +237,7 @@ tr_TransactionReply_transactionResult({Tag, Val}, State) ->
         case Tag of
             transactionError ->
                 tr_ErrorDescriptor(Val, State);
-            actionReplies when list(Val), Val /= [] ->
+            actionReplies when is_list(Val) andalso (Val =/= []) ->
                 [tr_ActionReply(ActRep, State) || ActRep <- Val]
         end,
     {Tag, Val2}.
@@ -266,7 +266,7 @@ tr_ContextID(CtxId, State) ->
         ?megaco_all_context_id    -> ?megaco_all_context_id;
         ?megaco_null_context_id   -> ?megaco_null_context_id;
         ?megaco_choose_context_id -> ?megaco_choose_context_id;
-        Int when integer(Int)     -> tr_UINT32(Int, State)
+        Int when is_integer(Int)  -> tr_UINT32(Int, State)
     end.
 
 tr_ActionRequest(#'ActionRequest'{contextId           = CtxId,
@@ -479,7 +479,7 @@ tr_auditItem(Token, _State) ->
         eventBufferToken       -> eventBufferToken
     end.
 
-tr_TerminationAudit(ParmList, State) when list(ParmList) ->
+tr_TerminationAudit(ParmList, State) when is_list(ParmList) ->
     [tr_AuditReturnParameter(Parm, State) || Parm <- ParmList].
 
 tr_AuditReturnParameter({Tag, Val}, State) ->
@@ -538,7 +538,7 @@ tr_NotifyReply(#'NotifyReply'{terminationID   = IdList,
 
 tr_ObservedEventsDescriptor(#'ObservedEventsDescriptor'{requestId        = Id,
                                                         observedEventLst = Events},
-                            State) when list (Events) ->
+                            State) when is_list(Events) ->
     #'ObservedEventsDescriptor'{requestId        = tr_RequestID(Id, State),
                                 observedEventLst = [tr_ObservedEvent(E, State) || E <- Events]}.
 
@@ -610,7 +610,7 @@ tr_ServiceChangeResult({Tag, Val}, State) ->
 %% pathNAME             = ["*"] NAME *("/" / "*"/ ALPHA / DIGIT /"_" / "$" ) 
 %%                        ["@" pathDomainName ]
 
-tr_TerminationID(TermId, State) when State#state.mode /= verify ->
+tr_TerminationID(TermId, State) when State#state.mode =/= verify ->
     resolve(term_id, TermId, State, valid);
 tr_TerminationID(#'TerminationID'{wildcard = Wild,
                                   id       = Id},
@@ -633,7 +633,7 @@ tr_term_id_component(Sub, _State) ->
     case Sub of
         all    -> all;
         choose -> choose;
-        Char when integer(Char) -> Char
+        Char when is_integer(Char) -> Char
     end.
 
 %% mediaDescriptor      = MediaToken LBRKT mediaParm *(COMMA mediaParm) RBRKT
@@ -908,7 +908,7 @@ tr_opt_SignalsDescriptor(asn1_NOVALUE, _State) ->
 tr_opt_SignalsDescriptor(SigDesc, State) ->
     tr_SignalsDescriptor(SigDesc, State).
 
-tr_SignalsDescriptor(SigDesc, State)  when list(SigDesc) ->
+tr_SignalsDescriptor(SigDesc, State)  when is_list(SigDesc) ->
     [tr_SignalRequest(SigReq, State) || SigReq <- SigDesc].
 
 tr_SignalRequest({Tag, Val}, State) ->
@@ -922,7 +922,7 @@ tr_SignalRequest({Tag, Val}, State) ->
 
 tr_SeqSigList(#'SeqSigList'{id         = Id,
                             signalList = SigList},
-              State) when list(SigList) ->
+              State) when is_list(SigList) ->
     #'SeqSigList'{id         = tr_UINT16(Id, State),
                   signalList = [tr_Signal(Sig, State) || Sig <- SigList]}.
 
@@ -949,7 +949,7 @@ tr_opt_duration(Dur, State) ->
 
 tr_opt_NotifyCompletion(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
-tr_opt_NotifyCompletion(Items, State) when list(Items) ->
+tr_opt_NotifyCompletion(Items, State) when is_list(Items) ->
     [tr_notifyCompletionItem(I, State) || I <- Items].
 
 tr_notifyCompletionItem(Item, _State) ->
@@ -988,14 +988,14 @@ tr_opt_RequestID(asn1_NOVALUE, _State) ->
 tr_opt_RequestID(Id, State) ->
     tr_RequestID(Id, State).
 
-tr_RequestID(Id, _State) when Id == ?megaco_all_request_id ->
+tr_RequestID(Id, _State) when Id =:= ?megaco_all_request_id ->
     ?megaco_all_request_id;
 tr_RequestID(Id, State) ->
     tr_UINT32(Id, State).
 
 tr_ModemDescriptor(#'ModemDescriptor'{mtl = Types,
                                       mpl = Props},
-                   State) when list(Types), list(Props) -> 
+                   State) when is_list(Types) andalso is_list(Props) -> 
     %% BUGBUG: Does not handle extensionParameter
     #'ModemDescriptor'{mtl = [tr_ModemType(T, State) || T <- Types],
                        mpl = [tr_PropertyParm(P, State) || P <- Props]}.
@@ -1134,7 +1134,7 @@ tr_opt_portNumber(asn1_NOVALUE, _State) ->
 tr_opt_portNumber(Port, State) ->
     tr_portNumber(Port, State).
 
-tr_portNumber(Port, State) when integer(Port), Port >= 0 ->
+tr_portNumber(Port, State) when is_integer(Port) andalso (Port >= 0) ->
     tr_UINT16(Port, State).
 
 tr_ServiceChangeResParm(#'ServiceChangeResParm'{serviceChangeMgcId   = MgcId, 
@@ -1149,7 +1149,7 @@ tr_ServiceChangeResParm(#'ServiceChangeResParm'{serviceChangeMgcId   = MgcId,
                             serviceChangeProfile = tr_opt_ServiceChangeProfile(Profile, State),
 			    timeStamp            = tr_opt_TimeNotation(Time, State)}.
 
-tr_PackagesDescriptor(Items, State) when list(Items) ->
+tr_PackagesDescriptor(Items, State) when is_list(Items) ->
     [tr_PackagesItem(I, State) || I <- Items].
 
 tr_PackagesItem(#'PackagesItem'{packageName    = Name,
@@ -1159,7 +1159,7 @@ tr_PackagesItem(#'PackagesItem'{packageName    = Name,
     #'PackagesItem'{packageName    = resolve(package, Name, State, Constraint),
                     packageVersion = tr_UINT16(Version, State)}.
 
-tr_StatisticsDescriptor(Parms, State) when list(Parms) ->
+tr_StatisticsDescriptor(Parms, State) when is_list(Parms) ->
     [tr_StatisticsParameter(P, State) || P <- Parms].
 
 tr_StatisticsParameter(#'StatisticsParameter'{statName  = Name,
@@ -1186,34 +1186,34 @@ tr_opt_Value(asn1_NOVALUE, _State) ->
 tr_opt_Value(Value, State) ->
     tr_Value(Value, State).
 
-tr_Value(Strings, _State) when list(Strings) ->
+tr_Value(Strings, _State) when is_list(Strings) ->
     [[Char || Char <- String] || String <- Strings].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Encode an octet string, escape } by \ if necessary 
-tr_OCTET_STRING(String, _State, Min, Max) when list(String) ->
+tr_OCTET_STRING(String, _State, Min, Max) when is_list(String) ->
     verify_count(length(String), Min, Max),
     String.
 
-tr_QUOTED_STRING(String, _State) when list(String) ->
+tr_QUOTED_STRING(String, _State) when is_list(String) ->
     verify_count(length(String), 1, infinity),
     String.
 
 %% The internal format of hex digits is a list of octets
 %% Min and Max means #hexDigits
 %% Leading zeros are prepended in order to fulfill Min
-tr_HEXDIG(Octets, _State, Min, Max) when list(Octets) ->
+tr_HEXDIG(Octets, _State, Min, Max) when is_list(Octets) ->
     verify_count(length(Octets), Min, Max),
     Octets.
 
 tr_DIGIT(Val, State, Min, Max) ->
     tr_integer(Val, State, Min, Max).
 
-tr_STRING(String, _State) when list(String) ->
+tr_STRING(String, _State) when is_list(String) ->
     String.
 
-tr_STRING(String, _State, Min, Max) when list(String) ->
+tr_STRING(String, _State, Min, Max) when is_list(String) ->
     verify_count(length(String), Min, Max),
     String.
 
@@ -1230,13 +1230,13 @@ tr_integer(Int, _State, Min, Max) ->
 %% Verify that Count is within the range of Min and Max
 verify_count(Count, Min, Max) ->
     if
-        integer(Count) ->
+        is_integer(Count) ->
             if
-                integer(Min), Count >= Min ->
+                is_integer(Min) andalso (Count >= Min) ->
                     if
-                        integer(Max), Count =< Max ->
+                        is_integer(Max) andalso (Count =< Max) ->
                             Count;
-                        Max == infinity ->
+                        Max =:= infinity ->
                             Count;
                         true ->
                             ?error({count_too_large, Count, Max})

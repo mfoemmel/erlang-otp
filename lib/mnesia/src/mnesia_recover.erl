@@ -193,7 +193,7 @@ note_down(Node, Date, Time) ->
     
 note_master_nodes(Tab, []) ->
     ?ets_delete(mnesia_decision, Tab);
-note_master_nodes(Tab, Nodes) when list(Nodes) ->
+note_master_nodes(Tab, Nodes) when is_list(Nodes) ->
     Master = {master_nodes, Tab, Nodes},
     ?ets_insert(mnesia_decision, Master).
 
@@ -509,7 +509,7 @@ note_log_decisions([], _InitBy) ->
 note_log_decision(NewD, InitBy) when NewD#decision.outcome == pre_commit ->
     note_log_decision(NewD#decision{outcome = unclear}, InitBy);
 
-note_log_decision(NewD, _InitBy) when record(NewD, decision) ->
+note_log_decision(NewD, _InitBy) when is_record(NewD, decision) ->
     Tid = NewD#decision.tid,
     sync_trans_tid_serial(Tid),
     note_outcome(NewD);
@@ -557,7 +557,7 @@ set_trans_tid_serial(Val) ->
 incr_trans_tid_serial() ->
     ?ets_update_counter(mnesia_decision, serial, 1).
 
-sync_trans_tid_serial(ThatCounter) when integer(ThatCounter) ->
+sync_trans_tid_serial(ThatCounter) when is_integer(ThatCounter) ->
     ThisCounter = trans_tid_serial(),
     if
 	ThatCounter > ThisCounter ->
@@ -795,7 +795,7 @@ handle_cast({what_decision, Node, OtherD}, State) ->
     Decision = 
 	case decision(Tid) of
 	    no_decision -> OtherD;
-	    MyD when record(MyD, decision) -> MyD
+	    MyD when is_record(MyD, decision) -> MyD
 	end,
     announce([Node], [Decision], [], true),
     {noreply, State};
@@ -841,7 +841,7 @@ handle_info({connect_nodes, Ns, From}, State) ->
 handle_info(check_overload, S) ->
     %% Time to check if mnesia_tm is overloaded
     case whereis(mnesia_tm) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    
 	    Threshold = 100,
 	    Prev = S#state.tm_queue_len,
@@ -956,9 +956,9 @@ decision(Tid) ->
 
 decision(Tid, [Tab | Tabs]) ->
     case catch ?ets_lookup(Tab, Tid) of
-	[D] when record(D, decision) ->
+	[D] when is_record(D, decision) ->
 	    D;
-	[C] when record(C, transient_decision) ->
+	[C] when is_record(C, transient_decision) ->
 	    #decision{tid = C#transient_decision.tid,
 		      outcome =  C#transient_decision.outcome,
 		      disc_nodes = [],
@@ -1009,7 +1009,7 @@ merge_decisions(Node, D, NewD0) ->
 	    NewD#decision{disc_nodes = []};
 	D == no_decision ->
 	    NewD;
-	record(D, decision) ->
+	is_record(D, decision) ->
 	    DiscNs = D#decision.disc_nodes -- ([node(), Node]),
 	    OldD = filter_aborted(D#decision{disc_nodes = DiscNs}),
 %%	    mnesia_lib:dbg_out("merge ~w: NewD = ~w~n D = ~w~n OldD = ~w~n", 
@@ -1059,12 +1059,12 @@ merge_decisions(Node, D, NewD0) ->
 	    end
     end.
 
-add_remote_decisions(Node, [D | Tail], State) when record(D, decision) ->
+add_remote_decisions(Node, [D | Tail], State) when is_record(D, decision) ->
     State2 = add_remote_decision(Node, D, State),
     add_remote_decisions(Node, Tail, State2);
 
 add_remote_decisions(Node, [C | Tail], State)
-        when record(C, transient_decision) ->
+        when is_record(C, transient_decision) ->
     D = #decision{tid = C#transient_decision.tid,
 		  outcome = C#transient_decision.outcome,
 		  disc_nodes = [],
@@ -1166,7 +1166,7 @@ send_decisions([{Node, Decisions} | Tail]) ->
 send_decisions([]) ->
     ok.
 
-arrange([To | ToNodes], D, Acc, ForceSend) when record(D, decision) ->
+arrange([To | ToNodes], D, Acc, ForceSend) when is_record(D, decision) ->
     NeedsAdd = (ForceSend or
 		lists:member(To, D#decision.disc_nodes) or
 		lists:member(To, D#decision.ram_nodes)),

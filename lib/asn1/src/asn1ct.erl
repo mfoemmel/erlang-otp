@@ -831,18 +831,31 @@ generate({true,{M,_Module,GenTOrV}},OutFile,EncodingRule,Options) ->
 	_ -> ok
     end,
 
-    asn1ct_gen:pgen(OutFile,EncodingRule,M#module.name,GenTOrV),
+    Result = 
+	case (catch asn1ct_gen:pgen(OutFile,EncodingRule,
+				   M#module.name,GenTOrV)) of
+	    {'EXIT',Reason2} ->
+		io:format("ERROR: ~p~n",[Reason2]),
+		{error,Reason2};
+	    _ ->
+		ok
+	end,
     debug_off(Options),
     put(compact_bit_string,false),
     erase(encoding_options),
     erase(tlv_format), % used in ber_bin, optimize
     erase(class_default_type),% used in ber_bin, optimize
     ets:delete(check_functions),
-    case lists:member(sg,Options) of
-	true -> % terminate here , with .erl file generated
-	    {false,true};
-	false ->
-	    {true,true}
+    case Result of 
+	{error,_} ->
+	    {false,Result};
+	ok ->
+	    case lists:member(sg,Options) of
+		true -> % terminate here , with .erl file generated
+		    {false,true};
+		false ->
+		    {true,true}
+	    end
     end;
 generate({false,M},_,_,_) ->
     {false,M}.

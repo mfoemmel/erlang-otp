@@ -342,7 +342,7 @@ obsolete_1(_, _, _) ->
     no.
 
 
--spec is_snmp_agent_function(atom(), byte()) -> bool().
+-spec is_snmp_agent_function(atom(), byte()) -> boolean().
 
 is_snmp_agent_function(c,                     1) -> true;
 is_snmp_agent_function(c,                     2) -> true;

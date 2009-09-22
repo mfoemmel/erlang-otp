@@ -162,7 +162,7 @@
 -type array_indx() :: non_neg_integer().
 
 -type array_opt()  :: 'fixed' | non_neg_integer()
-                    | {'default', term()} | {'fixed', bool()}
+                    | {'default', term()} | {'fixed', boolean()}
                     | {'size', non_neg_integer()}.
 -type array_opts() :: array_opt() | [array_opt()].
 
@@ -288,13 +288,13 @@ find_max(_I, M) ->
     M.
 
 
-%% @spec (X::term()) -> bool()
+%% @spec (X::term()) -> boolean()
 %% @doc Returns `true' if `X' appears to be an array, otherwise `false'.
 %% Note that the check is only shallow; there is no guarantee that `X'
 %% is a well-formed array representation even if this function returns
 %% `true'.
 
--spec is_array(term()) -> bool().
+-spec is_array(term()) -> boolean().
 
 is_array(#array{size = Size, max = Max})
   when is_integer(Size), is_integer(Max) ->
@@ -411,12 +411,12 @@ fix(#array{}=A) ->
     A#array{max = 0}.
 
 
-%% @spec (array()) -> bool()
+%% @spec (array()) -> boolean()
 %% @doc Check if the array has fixed size. 
 %% Returns `true' if the array is fixed, otherwise `false'.
 %% @see fix/1
 
--spec is_fix(array()) -> bool().
+-spec is_fix(array()) -> boolean().
 
 is_fix(#array{max = 0}) -> true;
 is_fix(#array{}) -> false.

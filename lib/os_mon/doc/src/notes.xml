@@ -29,6 +29,22 @@
   </header>
   <p>This document describes the changes made to the OS_Mon application.</p>
 
+<section><title>Os_Mon 2.2.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A missing define in <c>memsup.c</c> caused a build error
+	    on IRIX machines. This has now been fixed.</p>
+          <p>
+	    Own Id: OTP-8094</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Os_Mon 2.2.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

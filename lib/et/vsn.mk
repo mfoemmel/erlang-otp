@@ -16,6 +16,7 @@
 # 
 # %CopyrightEnd%
 
-ET_VSN = 1.3.1
+ET_VSN = 1.3.2
 
-TICKETS = OTP-7830
+TICKETS = OTP-8078
+TICKETS_1.3.1 = OTP-7830

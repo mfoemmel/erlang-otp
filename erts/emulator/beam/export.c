@@ -27,8 +27,8 @@
 #include "export.h"
 #include "hash.h"
 
-#define EXPORT_SIZE   500
-#define EXPORT_LIMIT  (64*1024)
+#define EXPORT_INITIAL_SIZE   4000
+#define EXPORT_LIMIT  (512*1024)
 
 #define EXPORT_HASH(m,f,a) ((m)*(f)+(a))
 
@@ -119,7 +119,7 @@ init_export_table(void)
     f.free = (HFREE_FUN) export_free;
 
     erts_index_init(ERTS_ALC_T_EXPORT_TABLE, &export_table, "export_list",
-		    EXPORT_SIZE, EXPORT_LIMIT, f);
+		    EXPORT_INITIAL_SIZE, EXPORT_LIMIT, f);
     hash_init(ERTS_ALC_T_EXPORT_TABLE, &secondary_export_table,
 	      "secondary_export_table", 50, f);
 }

@@ -18,7 +18,7 @@
 
 -module(ex_canvas).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -52,38 +52,34 @@ do_init(Config) ->
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "Various shapes"}]),
+
     Button = wxButton:new(Panel, ?wxID_ANY, [{label, "Redraw"}]),
 
-    Canvas = wxPanel:new(Panel, []),
+    Canvas = wxPanel:new(Panel, [{style, ?wxFULL_REPAINT_ON_RESIZE}]),
+
+    wxPanel:connect(Canvas, paint, [callback]),
+    wxPanel:connect(Canvas, size),
+    wxPanel:connect(Button, command_button_clicked),
 
     %% Add to sizers
-    wxSizer:add(Sizer, Button),
+    wxSizer:add(Sizer, Button, [{border, 5}, {flag, ?wxALL}]),
+    wxSizer:addSpacer(Sizer, 5),
     wxSizer:add(Sizer, Canvas, [{flag, ?wxEXPAND},
 				{proportion, 1}]),
 
     wxSizer:add(MainSizer, Sizer, [{flag, ?wxEXPAND},
 				   {proportion, 1}]),
 
-    {W,H} = wxPanel:getSize(Canvas),
-    Bitmap = wxBitmap:new(W,H),
-
-    wxPanel:connect(Canvas, paint, [callback]),
-    wxPanel:connect(Canvas, size),
-    wxPanel:connect(Button, command_button_clicked),
     wxPanel:setSizer(Panel, MainSizer),
+    wxSizer:layout(MainSizer),
+
+    {W,H} = wxPanel:getSize(Canvas),
+    Bitmap = wxBitmap:new(erlang:max(W,30),erlang:max(30,H)),
+    
     {Panel, #state{parent=Panel, config=Config,
 		   canvas = Canvas, bitmap = Bitmap}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Sync event from callback events, paint event must be handled in callbacks
 %% otherwise nothing will be drawn on windows.
 handle_sync_event(#wx{event = #wxPaint{}}, _wxObj,
@@ -106,8 +102,8 @@ handle_event(#wx{event = #wxCommand{type = command_button_clicked}},
     Positions = lists:map(fun(_) ->
 				  get_pos(W,H)
 			  end, lists:seq(1,(W+H) div 20)),
-    draw(State#state.canvas, State#state.bitmap, fun(DC) -> wxDC:clear(DC) end),
     Fun = fun(DC) ->
+		  wxDC:clear(DC),
 		  lists:foreach(fun({X,Y}=Pos) ->
 					wxDC:setBrush(DC, ?wxTRANSPARENT_BRUSH),
 					wxDC:setPen(DC, wxPen:new(?wxBLACK, [{width, 2}])),
@@ -126,11 +122,11 @@ handle_event(#wx{event = #wxCommand{type = command_button_clicked}},
 					end
 				end, Positions)
 	  end,
-    draw(State#state.canvas, State#state.bitmap, Fun),
+    draw(State#state.canvas, State#state.bitmap, Fun),    
     wxBitmap:destroy(Bmp),
     {noreply, State};
-handle_event(#wx{event = #wxSize{size = {W,H}}},
-	     State = #state{bitmap = Prev}) ->
+handle_event(#wx{event = #wxSize{size={W,H}}},
+	     State = #state{bitmap=Prev}) ->
     Bitmap = wxBitmap:new(W,H),
     draw(State#state.canvas, Bitmap, fun(DC) -> wxDC:clear(DC) end),
     wxBitmap:destroy(Prev),
@@ -138,6 +134,15 @@ handle_event(#wx{event = #wxSize{size = {W,H}}},
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.
@@ -152,27 +157,21 @@ terminate(_Reason, _State) ->
 %% Buffered makes it all appear on the screen at the same time
 draw(Canvas, Bitmap, Fun) ->
     MemoryDC = wxMemoryDC:new(Bitmap),
-    CDC = wxClientDC:new(Canvas),
-
     Fun(MemoryDC),
-    
+
+    CDC = wxWindowDC:new(Canvas),
     wxDC:blit(CDC, {0,0},
 	      {wxBitmap:getWidth(Bitmap), wxBitmap:getHeight(Bitmap)},
-	      MemoryDC, {0,0}),
-    
-    wxClientDC:destroy(CDC),
+	      MemoryDC, {0,0}),    
+    wxWindowDC:destroy(CDC),
     wxMemoryDC:destroy(MemoryDC).
-
 
 redraw(DC, Bitmap) ->
     MemoryDC = wxMemoryDC:new(Bitmap),
-
     wxDC:blit(DC, {0,0},
 	      {wxBitmap:getWidth(Bitmap), wxBitmap:getHeight(Bitmap)},
 	      MemoryDC, {0,0}),
-
     wxMemoryDC:destroy(MemoryDC).
-
 
 get_pos(W,H) ->
     {random:uniform(W), random:uniform(H)}.

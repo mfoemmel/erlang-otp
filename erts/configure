@@ -309,7 +309,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING ERTS_INTERNAL_X_LIBS THR_LIBS THR_DEFS TERMCAP_LIB LIBSCTP HAVE_VALGRIND BITS64 LIBRT M4 TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL os_mon_programs CPU_SUP_LIBS JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH LIBCARBON RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING ERTS_INTERNAL_X_LIBS THR_LIBS THR_DEFS TERMCAP_LIB Z_LIB LIBSCTP HAVE_VALGRIND BITS64 LIBRT M4 TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL os_mon_programs CPU_SUP_LIBS JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -870,8 +870,10 @@ Optional Features:
   --enable-native-ethr-impls enable native ethread implementations
   --disable-native-ethr-impls disable native ethread implementations
   --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno
+  --enable-shared-zlib        enable using shared zlib library
+  --disable-shared-zlib       disable shared zlib, compile own zlib source (default)
   --enable-dynamic-ssl-lib        enable using dynamic openssl libraries
-   --disable-dynamic-ssl-lib       disable using dynamic openssl libraries
+  --disable-dynamic-ssl-lib       disable using dynamic openssl libraries
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -2816,6 +2818,20 @@ if test X${enable_darwin_64bit} = Xyes -o X${enable_m64_build} = Xyes; then
 			CFLAGS="-m64 $CFLAGS"
 			;;
 	esac
+else
+	case $host_os in
+		darwin*)
+			case $CFLAGS in
+			*-m32*)
+				;;
+			*)
+				CFLAGS="-m32 $CFLAGS"
+				;;
+			esac
+			;;
+		*)
+			;;
+	esac
 fi
 
 
@@ -4755,6 +4771,14 @@ echo "$as_me: Adjusting LDFLAGS for universal binaries" >&6;}
 					LDFLAGS="-arch i386 $LDFLAGS"
 					;;
 			esac
+		else
+			case $LDFLAGS in
+				*-m32*)
+					;;
+				*)
+					LDFLAGS="-m32 $LDFLAGS"
+					;;
+			esac
 		fi
 		;;
 	*)
@@ -4771,6 +4795,27 @@ echo "$as_me: Adjusting LDFLAGS to use -m64" >&6;}
 		fi
 		;;
 esac
+
+echo "$as_me:$LINENO: checking if VM has to be linked with Carbon framework" >&5
+echo $ECHO_N "checking if VM has to be linked with Carbon framework... $ECHO_C" >&6
+case $ARCH-$OPSYS in
+	amd64-darwin*)
+		LIBCARBON=
+		echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+		;;
+	*-darwin*)
+		LIBCARBON="-framework Carbon "
+		echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+		;;
+	*)
+		LIBCARBON=
+		echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+		;;
+esac
+
 
 
 ac_ext=c
@@ -7495,7 +7540,12 @@ _ACEOF
 
 fi
 
-	echo "$as_me:$LINENO: checking for pthread_rwlock_init" >&5
+	case $host_os in
+		linux*) # Writers may get starved
+			# TODO: write a test that tests the implementation
+			;;
+		*)
+			echo "$as_me:$LINENO: checking for pthread_rwlock_init" >&5
 echo $ECHO_N "checking for pthread_rwlock_init... $ECHO_C" >&6
 if test "${ac_cv_func_pthread_rwlock_init+set}" = set; then
   echo $ECHO_N "(cached) $ECHO_C" >&6
@@ -7594,6 +7644,8 @@ _ACEOF
 
 fi
 
+			;;
+	esac
 	echo "$as_me:$LINENO: checking for pthread_attr_setguardsize" >&5
 echo $ECHO_N "checking for pthread_attr_setguardsize... $ECHO_C" >&6
 if test "${ac_cv_func_pthread_attr_setguardsize+set}" = set; then
@@ -8678,6 +8730,104 @@ cat >>confdefs.h <<\_ACEOF
 _ACEOF
 
 fi
+
+
+# Check whether --enable-shared-zlib or --disable-shared-zlib was given.
+if test "${enable_shared_zlib+set}" = set; then
+  enableval="$enable_shared_zlib"
+   case "$enableval" in
+    no) enable_shared_zlib=no ;;
+    *)  enable_shared_zlib=yes ;;
+  esac
+else
+  enable_shared_zlib=no
+fi;
+
+Z_LIB=
+
+if test "x$enable_shared_zlib" = "xyes" ; then
+	echo "$as_me:$LINENO: checking for adler32_combine in -lz" >&5
+echo $ECHO_N "checking for adler32_combine in -lz... $ECHO_C" >&6
+if test "${ac_cv_lib_z_adler32_combine+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lz  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char adler32_combine ();
+int
+main ()
+{
+adler32_combine ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_z_adler32_combine=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_z_adler32_combine=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_z_adler32_combine" >&5
+echo "${ECHO_T}$ac_cv_lib_z_adler32_combine" >&6
+if test $ac_cv_lib_z_adler32_combine = yes; then
+  Z_LIB="-lz"
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_LIBZ 1
+_ACEOF
+
+else
+  { { echo "$as_me:$LINENO: error: cannot find any shared zlib" >&5
+echo "$as_me: error: cannot find any shared zlib" >&2;}
+   { (exit 1); exit 1; }; }
+fi
+
+else
+	{ echo "$as_me:$LINENO: Using own zlib source" >&5
+echo "$as_me: Using own zlib source" >&6;}
+fi
+
 
 
 #--------------------------------------------------------------------
@@ -10388,6 +10538,368 @@ _ACEOF
 fi
 
 done
+
+
+if test "${ac_cv_header_sys_resource_h+set}" = set; then
+  echo "$as_me:$LINENO: checking for sys/resource.h" >&5
+echo $ECHO_N "checking for sys/resource.h... $ECHO_C" >&6
+if test "${ac_cv_header_sys_resource_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_sys_resource_h" >&5
+echo "${ECHO_T}$ac_cv_header_sys_resource_h" >&6
+else
+  # Is the header compilable?
+echo "$as_me:$LINENO: checking sys/resource.h usability" >&5
+echo $ECHO_N "checking sys/resource.h usability... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <sys/resource.h>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_header_compiler=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6
+
+# Is the header present?
+echo "$as_me:$LINENO: checking sys/resource.h presence" >&5
+echo $ECHO_N "checking sys/resource.h presence... $ECHO_C" >&6
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/resource.h>
+_ACEOF
+if { (eval echo "$as_me:$LINENO: \"$ac_cpp conftest.$ac_ext\"") >&5
+  (eval $ac_cpp conftest.$ac_ext) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+    ac_cpp_err=$ac_cpp_err$ac_c_werror_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+rm -f conftest.err conftest.$ac_ext
+echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc:$ac_c_preproc_warn_flag in
+  yes:no: )
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: sys/resource.h: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h: proceeding with the compiler's result" >&5
+echo "$as_me: WARNING: sys/resource.h: proceeding with the compiler's result" >&2;}
+    ac_header_preproc=yes
+    ;;
+  no:yes:* )
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h: present but cannot be compiled" >&5
+echo "$as_me: WARNING: sys/resource.h: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h:     check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: sys/resource.h:     check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h: see the Autoconf documentation" >&5
+echo "$as_me: WARNING: sys/resource.h: see the Autoconf documentation" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h:     section \"Present But Cannot Be Compiled\"" >&5
+echo "$as_me: WARNING: sys/resource.h:     section \"Present But Cannot Be Compiled\"" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: sys/resource.h: proceeding with the preprocessor's result" >&2;}
+    { echo "$as_me:$LINENO: WARNING: sys/resource.h: in the future, the compiler will take precedence" >&5
+echo "$as_me: WARNING: sys/resource.h: in the future, the compiler will take precedence" >&2;}
+    (
+      cat <<\_ASBOX
+## ------------------------------------------ ##
+## Report this to the AC_PACKAGE_NAME lists.  ##
+## ------------------------------------------ ##
+_ASBOX
+    ) |
+      sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+echo "$as_me:$LINENO: checking for sys/resource.h" >&5
+echo $ECHO_N "checking for sys/resource.h... $ECHO_C" >&6
+if test "${ac_cv_header_sys_resource_h+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_cv_header_sys_resource_h=$ac_header_preproc
+fi
+echo "$as_me:$LINENO: result: $ac_cv_header_sys_resource_h" >&5
+echo "${ECHO_T}$ac_cv_header_sys_resource_h" >&6
+
+fi
+if test $ac_cv_header_sys_resource_h = yes; then
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_SYS_RESOURCE_H 1
+_ACEOF
+
+	 echo "$as_me:$LINENO: checking whether getrlimit is declared" >&5
+echo $ECHO_N "checking whether getrlimit is declared... $ECHO_C" >&6
+if test "${ac_cv_have_decl_getrlimit+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/resource.h>
+
+int
+main ()
+{
+#ifndef getrlimit
+  char *p = (char *) getrlimit;
+#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_have_decl_getrlimit=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_have_decl_getrlimit=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_have_decl_getrlimit" >&5
+echo "${ECHO_T}$ac_cv_have_decl_getrlimit" >&6
+if test $ac_cv_have_decl_getrlimit = yes; then
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_GETRLIMIT 1
+_ACEOF
+
+
+else
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_GETRLIMIT 0
+_ACEOF
+
+
+fi
+echo "$as_me:$LINENO: checking whether setrlimit is declared" >&5
+echo $ECHO_N "checking whether setrlimit is declared... $ECHO_C" >&6
+if test "${ac_cv_have_decl_setrlimit+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/resource.h>
+
+int
+main ()
+{
+#ifndef setrlimit
+  char *p = (char *) setrlimit;
+#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_have_decl_setrlimit=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_have_decl_setrlimit=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_have_decl_setrlimit" >&5
+echo "${ECHO_T}$ac_cv_have_decl_setrlimit" >&6
+if test $ac_cv_have_decl_setrlimit = yes; then
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_SETRLIMIT 1
+_ACEOF
+
+
+else
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_SETRLIMIT 0
+_ACEOF
+
+
+fi
+echo "$as_me:$LINENO: checking whether RLIMIT_STACK is declared" >&5
+echo $ECHO_N "checking whether RLIMIT_STACK is declared... $ECHO_C" >&6
+if test "${ac_cv_have_decl_RLIMIT_STACK+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <sys/resource.h>
+
+int
+main ()
+{
+#ifndef RLIMIT_STACK
+  char *p = (char *) RLIMIT_STACK;
+#endif
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_have_decl_RLIMIT_STACK=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_have_decl_RLIMIT_STACK=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_have_decl_RLIMIT_STACK" >&5
+echo "${ECHO_T}$ac_cv_have_decl_RLIMIT_STACK" >&6
+if test $ac_cv_have_decl_RLIMIT_STACK = yes; then
+
+cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_RLIMIT_STACK 1
+_ACEOF
+
+
+else
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_DECL_RLIMIT_STACK 0
+_ACEOF
+
+
+fi
+
+
+fi
+
 
 
 have_kernel_poll=no
@@ -20917,6 +21429,11 @@ case $host_os in
 			amd64)
 				DED_LDFLAGS="-m64 $DED_LDFLAGS"
 				;;
+			*)
+				if test X${enable_darwin_universal} != Xyes; then
+					DED_LDFLAGS="-m32 $DED_LDFLAGS"
+				fi
+				;;
 		esac
 		if test X${enable_darwin_universal} = Xyes; then
 		   	DED_LDFLAGS="-arch ppc -arch i386 $DED_LDFLAGS"
@@ -22035,7 +22552,7 @@ done
 
 
 
-                                                                                                                                                                                    ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in emulator/pcre/$host/Makefile:emulator/pcre/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in"
+                                                                                                                                                                                              ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in emulator/pcre/$host/Makefile:emulator/pcre/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in include/internal/$host/erts_internal.mk:include/internal/erts_internal.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -22567,6 +23084,7 @@ do
   "epmd/src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES epmd/src/$host/Makefile:epmd/src/Makefile.in" ;;
   "etc/common/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES etc/common/$host/Makefile:etc/common/Makefile.in" ;;
   "include/internal/$host/ethread.mk" ) CONFIG_FILES="$CONFIG_FILES include/internal/$host/ethread.mk:include/internal/ethread.mk.in" ;;
+  "include/internal/$host/erts_internal.mk" ) CONFIG_FILES="$CONFIG_FILES include/internal/$host/erts_internal.mk:include/internal/erts_internal.mk.in" ;;
   "lib_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES lib_src/$host/Makefile:lib_src/Makefile.in" ;;
   "Makefile" ) CONFIG_FILES="$CONFIG_FILES Makefile:Makefile.in" ;;
   "../make/$host/otp.mk" ) CONFIG_FILES="$CONFIG_FILES ../make/$host/otp.mk:../make/otp.mk.in" ;;
@@ -22695,6 +23213,7 @@ s,@CPP@,$CPP,;t t
 s,@EGREP@,$EGREP,;t t
 s,@OPSYS@,$OPSYS,;t t
 s,@ARCH@,$ARCH,;t t
+s,@LIBCARBON@,$LIBCARBON,;t t
 s,@RANLIB@,$RANLIB,;t t
 s,@ac_ct_RANLIB@,$ac_ct_RANLIB,;t t
 s,@YACC@,$YACC,;t t
@@ -22729,6 +23248,7 @@ s,@ERTS_INTERNAL_X_LIBS@,$ERTS_INTERNAL_X_LIBS,;t t
 s,@THR_LIBS@,$THR_LIBS,;t t
 s,@THR_DEFS@,$THR_DEFS,;t t
 s,@TERMCAP_LIB@,$TERMCAP_LIB,;t t
+s,@Z_LIB@,$Z_LIB,;t t
 s,@LIBSCTP@,$LIBSCTP,;t t
 s,@HAVE_VALGRIND@,$HAVE_VALGRIND,;t t
 s,@BITS64@,$BITS64,;t t

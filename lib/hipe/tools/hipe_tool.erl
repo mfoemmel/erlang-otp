@@ -54,7 +54,7 @@
 
 %%---------------------------------------------------------------------
 
--record(state, {win_created = false	:: bool(),
+-record(state, {win_created = false	:: boolean(),
 		mindex = 0		:: integer(),
 		mod			:: module(),
 		funs = []		:: [fa()],
@@ -387,7 +387,7 @@ native_code(Mod) ->
 mfas(Mod, Funs) ->
   [{Mod,F,A} || {F,A} <- Funs].
 
--spec fun_names(module(), [fa()], [fa_address()], bool()) -> string().
+-spec fun_names(module(), [fa()], [fa_address()], boolean()) -> string().
 
 fun_names(M, Funs, NativeCode, Prof) ->
   [list_to_atom(atom_to_list(F) ++ "/" ++ integer_to_list(A) ++
@@ -402,7 +402,7 @@ fun_names(M, Funs, NativeCode, Prof) ->
 		end) ||
       {F,A} <- Funs].
 
--spec in_native(atom(), arity(), [fa_address()]) -> bool().
+-spec in_native(atom(), arity(), [fa_address()]) -> boolean().
 
 in_native(F, A, NativeCode) ->
   lists:any(fun({Fun,Arity,_}) ->
@@ -461,7 +461,7 @@ get_compile(Info) ->
     false -> []
   end.
 
--spec is_profiled(module()) -> bool().
+-spec is_profiled(module()) -> boolean().
 
 is_profiled(Mod) ->
   case hipe_bifs:call_count_get({Mod,module_info,0}) of

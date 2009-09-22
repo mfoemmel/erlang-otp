@@ -107,10 +107,10 @@ parse(Xml, State) ->
     State1 =  event_callback(startDocument, State),
 
     case catch parse_document(Xml, State1#xmerl_sax_parser_state{ref_table=RefTable}) of
-	{ok, _Rest, State2} ->
+	{ok, Rest, State2} ->
 	    State3 =  event_callback(endDocument, State2),
 	    ets:delete(RefTable),
-	    {ok, State3#xmerl_sax_parser_state.event_state}; 
+	    {ok, State3#xmerl_sax_parser_state.event_state, Rest}; 
 	{fatal_error, {State2, Reason}} ->
 	    State3 =  event_callback(endDocument, State2),
 	    ets:delete(RefTable),
@@ -146,10 +146,10 @@ parse_dtd(Xml, State) ->
 	{event_receiver_error, State2, {Tag, Reason}} -> 
 	    State3 =  event_callback(endDocument, State2),
 	    format_error(Tag, State3, Reason);
-	{_Rest, State2} when is_record(State2, xmerl_sax_parser_state) ->
+	{Rest, State2} when is_record(State2, xmerl_sax_parser_state) ->
 	    State3 =  event_callback(endDocument, State2),
 	    ets:delete(RefTable),
-	    {ok, State3#xmerl_sax_parser_state.event_state}; 
+	    {ok, State3#xmerl_sax_parser_state.event_state, Rest}; 
 	Other ->
 	    _State2 = event_callback(endDocument, State1),
 	    ets:delete(RefTable),
@@ -439,14 +439,19 @@ parse_xml_decl_standalone(Bytes, State, Acc) ->
 %%----------------------------------------------------------------------
 parse_pi(?STRING_EMPTY, State) ->
     cf(?STRING_EMPTY, State, fun parse_pi/2);
-parse_pi(?STRING_UNBOUND_REST(C, Rest), State) ->
+parse_pi(?STRING_UNBOUND_REST(C, Rest) = Bytes, State) ->
     case is_name_start(C) of 
 	true ->
 	    {PiTarget, Rest1, State1} = 
 		parse_name(Rest, State, [C]),
 	    case string:to_lower(PiTarget) of  
 		"xml" ->
-		    ?fatal_error(State1, "<?xml  ...?> not first in document");
+		    case State#xmerl_sax_parser_state.end_tags of
+			[] ->
+			    {Bytes, State};
+			_ ->
+			    ?fatal_error(State1, "<?xml  ...?> not first in document")
+		    end;
 		_ ->
 		    {PiData, Rest2, State2} = parse_pi_1(Rest1, State1),
 		    State3 =  event_callback({processingInstruction, PiTarget, PiData}, State2),
@@ -701,9 +706,10 @@ parse_misc(?STRING_REST("<!--", Rest), State, Eod) ->
 parse_misc(?STRING_UNBOUND_REST(C, _) = Rest, State, Eod) when ?is_whitespace(C) -> 
     {_WS, Rest1, State1} = whitespace(Rest, State, []),
     parse_misc(Rest1, State1, Eod);
-parse_misc(Bytes, State, Eod) ->
-    unicode_incomplete_check([Bytes, State, Eod, fun parse_misc/3], 
-			     "expecting comment or PI").
+parse_misc(Rest, State, _Eod) ->
+    {Rest, State}.
+%%    unicode_incomplete_check([Bytes, State, Eod, fun parse_misc/3], 
+%%			     "expecting comment or PI").
 
 %%----------------------------------------------------------------------
 %% Function: parse_stag(Rest, State) -> Result
@@ -1009,8 +1015,8 @@ parse_etag(?STRING_UNBOUND_REST(C, Rest),
 	false ->
 	    ?fatal_error(State, "Name expected")
     end;
-parse_etag(?STRING_UNBOUND_REST(_C, _), #xmerl_sax_parser_state{end_tags=[]}= State) ->
-    ?fatal_error(State, "Endtag after outmost tag pair");
+parse_etag(?STRING_UNBOUND_REST(_C, _) = Rest, #xmerl_sax_parser_state{end_tags=[]}= State) ->
+    {Rest, State};
 parse_etag(Bytes, State) ->
     unicode_incomplete_check([Bytes, State, fun parse_etag/2], 
 			     undefined).
@@ -1077,21 +1083,21 @@ parse_content(?STRING_REST("<?", Rest), State, Acc, IgnorableWS) ->
     State1 = send_character_event(length(Acc), IgnorableWS, lists:reverse(Acc), State),
     {Rest1, State2} = parse_pi(Rest, State1),
     parse_content(Rest1, State2, [], true);
-parse_content(?STRING_REST("<!", Rest1), #xmerl_sax_parser_state{end_tags = ET} = State, Acc, IgnorableWS) ->
+parse_content(?STRING_REST("<!", Rest1) = Rest, #xmerl_sax_parser_state{end_tags = ET} = State, Acc, IgnorableWS) ->
     case ET of 
 	[] ->
-	     ?fatal_error(State, "CDATA section after the root element");
+	    {Rest, State}; %%LATH : Skicka ignorable WS ???
 	_ ->
 	    State1 = send_character_event(length(Acc), IgnorableWS, lists:reverse(Acc), State),
 	    parse_cdata(Rest1, State1)
     end;
-parse_content(?STRING_REST("<", Rest), #xmerl_sax_parser_state{end_tags = ET} = State, Acc, IgnorableWS) ->
+parse_content(?STRING_REST("<", Rest1) = Rest, #xmerl_sax_parser_state{end_tags = ET} = State, Acc, IgnorableWS) ->
     case ET of 
 	[] ->
-	     ?fatal_error(State, "start tag after the root element");
+	    {Rest, State}; %%LATH :  Skicka ignorable WS ???
 	_ ->
 	    State1 = send_character_event(length(Acc), IgnorableWS, lists:reverse(Acc), State),
-	    parse_stag(Rest, State1)
+	    parse_stag(Rest1, State1)
     end;
 parse_content(?STRING_REST("\n", Rest), State, Acc, IgnorableWS) ->
     N = State#xmerl_sax_parser_state.line_no,
@@ -1108,11 +1114,10 @@ parse_content(?STRING_REST("\t", Rest), State, Acc, IgnorableWS) ->
     parse_content(Rest, State,[?tab |Acc], IgnorableWS);
 parse_content(?STRING_REST("]]>", _Rest), State, _Acc, _IgnorableWS) ->
     ?fatal_error(State, "\"]]>\" is not allowed in content");
-parse_content(?STRING_UNBOUND_REST(_C, _), 
+parse_content(?STRING_UNBOUND_REST(_C, _) = Rest, 
 	      #xmerl_sax_parser_state{end_tags = []} = State, 
 	      _Acc, _IgnorableWS) ->
-        ?fatal_error(State, "Text may not appear after the root element");
-
+    {Rest, State};
 parse_content(?STRING_REST("&", Rest), State, Acc, _IgnorableWS) ->
     {Ref, Rest1, State1} = parse_reference(Rest, State, true),
     case Ref of 
@@ -1129,7 +1134,6 @@ parse_content(?STRING_REST("&", Rest), State, Acc, _IgnorableWS) ->
 	{unparsed, Name, _}  ->
 	    ?fatal_error(State1, "Unparsed entity reference in content: " ++ Name)
     end;
-
 parse_content(?STRING_UNBOUND_REST(C, Rest), State, Acc, _IgnorableWS) ->
     if 
 	?is_char(C) ->

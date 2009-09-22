@@ -18,7 +18,7 @@
 
 -module(ex_sashWindow).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -53,31 +53,27 @@ do_init(Config) ->
 
     %% Setup sizers
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
-    Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				 [{label, "wxSashWindow"}]),
+    Sizer = wxBoxSizer:new(?wxVERTICAL),
 
-    TopSash = wxSashWindow:new(Panel, [{id, ?TOP_SASH}]),
-    wxSashWindow:setBackgroundColour(TopSash, ?wxRED),
-    BottomSash = wxSashWindow:new(Panel, [{id, ?BOTTOM_SASH}]),
-    wxSashWindow:setBackgroundColour(BottomSash, ?wxBLUE),
-    {W,H} = wxPanel:getSize(Panel),
-    wxSashWindow:setMinSize(TopSash, {W,H div 2}),
-    wxSashWindow:setMinSize(BottomSash, {W,H div 2}),
-    wxSashWindow:setSize(TopSash, {0,0,W,H div 2}),
-    wxSashWindow:setSize(BottomSash, {0,H div 2,W,H div 2}),
+    TopSash = wxSashWindow:new(Panel, [{id, ?TOP_SASH},
+				       {style, ?wxSW_3D}]),
+    Win1 = wxPanel:new(TopSash, []),
+    wxStaticText:new(Win1, ?wxID_ANY, "This is the top sash", []),
+    BottomSash = wxSashWindow:new(Panel, [{id, ?BOTTOM_SASH},
+					  {style, ?wxSW_3D}]),
+    Win2 = wxPanel:new(BottomSash, []),
+    wxStaticText:new(Win2, ?wxID_ANY, "This is the bottom sash", []),
 
+    %% Make the bottom edge of the top sash dragable
     wxSashWindow:setSashVisible(TopSash, ?wxSASH_BOTTOM, true),
     wxPanel:connect(Panel, sash_dragged),
     wxPanel:connect(Panel, size),
-    %wxPanel:setMinSize(Panel, {100,100}),
 
     %% Add to sizers
     Options = [{flag, ?wxEXPAND}, {proportion, 1}],
-
     wxSizer:add(Sizer, TopSash, Options),
     wxSizer:add(Sizer, BottomSash, Options),
     wxSizer:add(MainSizer, Sizer, Options),
-
     wxPanel:setSizer(Panel, MainSizer),
     wxSizer:fit(MainSizer, Panel),
     wxSizer:setSizeHints(MainSizer, Panel),
@@ -85,15 +81,6 @@ do_init(Config) ->
 		   top_sash = TopSash, bottom_sash = BottomSash}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxSash{dragRect = {_X,Y, _W, H}}},
 	     State = #state{top_sash = TopSash,
@@ -110,30 +97,24 @@ handle_event(#wx{event = #wxSash{dragRect = {_X,Y, _W, H}}},
 handle_event(#wx{event = #wxSize{size = {W, H}}},
 	     State = #state{top_sash = TopSash,
 			    bottom_sash = BottomSash}) ->
-    wx:batch(fun() ->
-		     {OldX, OldY} = wxSashWindow:getPosition(BottomSash),
-		     {_OldW,OldH} = wxSashWindow:getSize(TopSash),
-		     NewH = H - OldH,
-		     if OldH < 10; H < 10 ->
-			     ignore;			 
-			 H < OldH +10 ->
-			     wxSashWindow:setMinSize(TopSash, {W,OldH-3}),
-			     wxSashWindow:setMinSize(BottomSash, {W,NewH}),
-			     wxSashWindow:setSize(TopSash, {W,OldH-3}),
-			     wxSashWindow:setSize(BottomSash, {OldX,OldY-3,W,NewH});
-			true ->
-			     wxSashWindow:setMinSize(TopSash, {W,OldH}),
-			     wxSashWindow:setMinSize(BottomSash, {W,NewH}),
-			     wxSashWindow:setSize(TopSash, {W,OldH}),
-			     wxSashWindow:setSize(BottomSash, {OldX,OldY,W,NewH})
-		     end,
-		     wxPanel:refresh(State#state.parent)
-	     end),
-
+    wxSashWindow:setMinSize(TopSash, {W, H div 2}),
+    wxSashWindow:setMinSize(BottomSash, {W, H div 2}),
+    wxSashWindow:setSize(TopSash, {W, H div 2}),
+    wxSashWindow:setSize(BottomSash, {0,H div 2,W,H div 2}),
+    wxPanel:refresh(State#state.parent),
     {noreply, State};
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

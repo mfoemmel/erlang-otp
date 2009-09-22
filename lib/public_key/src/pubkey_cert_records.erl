@@ -187,8 +187,11 @@ encode_extensions(Exts) ->
 	      end, Exts).
 
 transform(#'AttributeTypeAndValue'{type=Id,value=Value0} = ATAV, Func) ->
-    Type = attribute_type(Id),
-    {ok, Value} = 'OTP-PUB-KEY':Func(Type, Value0),
+    {ok, Value} =
+        case attribute_type(Id) of
+            Type when is_atom(Type) -> 'OTP-PUB-KEY':Func(Type, Value0);
+            _UnknownType            -> {ok, Value0}
+        end,
     ATAV#'AttributeTypeAndValue'{value=Value};
 transform(AKI = #'AuthorityKeyIdentifier'{authorityCertIssuer=ACI},Func) ->
     AKI#'AuthorityKeyIdentifier'{authorityCertIssuer=transform(ACI,Func)};
@@ -231,7 +234,8 @@ attribute_type(?'id-at-countryName') -> 'X520countryName';
 attribute_type(?'id-at-serialNumber') -> 'X520SerialNumber';
 attribute_type(?'id-at-pseudonym') -> 'X520Pseudonym';
 attribute_type(?'id-domainComponent') -> 'DomainComponent';
-attribute_type(?'id-emailAddress') -> 'EmailAddress'.
+attribute_type(?'id-emailAddress') -> 'EmailAddress';
+attribute_type(Type) -> Type.
 
 %%% Old code transforms
 

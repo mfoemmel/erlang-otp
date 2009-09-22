@@ -29,6 +29,62 @@
   </header>
   <p>This document describes the changes made to the asn1 application.</p>
 
+<section><title>Asn1 1.6.11</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            A new option <c>{n2n,TypeName}</c> can be used to
+	    enable generation of conversion functions from name to number 
+	    and vice versa for selected ENUMERATION types. 
+	    The option can be repeated many times in order to specify several 
+	    types in the same file.<br/>
+	    If the <c>TypeName</c> specified does not exists or is not an 
+	    ENUMERATION type, the compilation will be terminated with an 
+	    error code.<br/>
+	    Below follows an example on how to use the option from the command line with <c>erlc</c>:<br/>
+	    <c>erlc -bper_bin +optimize +driver +"{n2n,'CauseMisc'}" +"{n2n,'CausePcl'}" MyModyle.asn</c>
+	  </p>
+          <p>
+            Own Id: OTP-8136 Aux Id: seq11347 </p>
+        </item>
+        <item>
+          <p>
+            Range checks added for BIT STRING with fixed SIZE
+            constraint.</p>
+          <p>
+            Own Id: OTP-7972 Aux Id: seq11280 </p>
+        </item>
+        <item>
+          <p>
+            Now support multiple-line comments in asn1-specs as
+            specified in ASN1 X.680 (07/2002), section 11.6.4</p>
+          <p>
+            Own Id: OTP-8043</p>
+        </item>
+        <item>
+          <p>
+            Now parses and adds abstract syntax for PATTERN subtype
+            constraint. No other action is taken on this type of
+            constraint.</p>
+          <p>
+            Own Id: OTP-8046</p>
+        </item>
+        <item>
+          <p>
+            The ASN1 subtype constraint <c>CONTAINING Type</c>,
+            <c>CONTAINING Type ENCODED BY Value</c> and <c>ENCODED BY
+            Value</c> now is parsed. Abstract syntax is added but no
+            further action in generated code is taken.</p>
+          <p>
+            Own Id: OTP-8047</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Asn1 1.6.10</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

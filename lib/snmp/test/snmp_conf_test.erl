@@ -77,10 +77,10 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(_Case, Config) when list(Config) ->
+init_per_testcase(_Case, Config) when is_list(Config) ->
     Config.
 
-fin_per_testcase(_Case, Config) when list(Config) ->
+fin_per_testcase(_Case, Config) when is_list(Config) ->
     Config.
 
 %%======================================================================
@@ -113,7 +113,7 @@ all(suite) ->
 %%======================================================================
 
 check_mandatory(suite) -> [];
-check_mandatory(Config) when list(Config) ->
+check_mandatory(Config) when is_list(Config) ->
     ?P(check_mandatory),
     %% d("check_mandatory -> entry"),
     A1 = [{a, hej}, {b, hopp}, {c, 10}, {d, 10101}, {f, 10.88}],
@@ -163,7 +163,7 @@ verify_not_mandatory(A, B) ->
 %%======================================================================
 
 check_integer1(suite) -> [];
-check_integer1(Config) when list(Config) ->
+check_integer1(Config) when is_list(Config) ->
     ?P(check_integer1),
     ?line ok = verify_int(0),
     ?line ok = verify_int(16#FF),
@@ -197,7 +197,7 @@ verify_not_int(Val) ->
 %%======================================================================
 
 check_integer2(suite) -> [];
-check_integer2(Config) when list(Config) ->
+check_integer2(Config) when is_list(Config) ->
     ?P(check_integer2),
 
     ?line ok = verify_int(0,      any),
@@ -265,7 +265,7 @@ verify_not_int(Val, Cond) ->
 %%======================================================================
 
 check_string1(suite) -> [];
-check_string1(Config) when list(Config) ->
+check_string1(Config) when is_list(Config) ->
     ?P(check_string1),
     ?line ok = verify_string("kalle & hobbe"),
     ?line ok = verify_not_string(kalle_hobbe),
@@ -293,7 +293,7 @@ verify_not_string(Val) ->
 %%======================================================================
 
 check_string2(suite) -> [];
-check_string2(Config) when list(Config) ->
+check_string2(Config) when is_list(Config) ->
     ?P(check_string2),
     Str = "kalle & hobbe",
     ?line ok = verify_string(Str, any),
@@ -333,7 +333,7 @@ verify_not_string(Val, Limit) ->
 %%======================================================================
 
 check_atom(suite) -> [];
-check_atom(Config) when list(Config) ->
+check_atom(Config) when is_list(Config) ->
     ?P(check_atom),
     Atoms = [{kalle, "kalle"}, {hobbe, "hobbe"}, {dummy, "dummy"}],
     ?line ok = verify_atom(kalle, Atoms),
@@ -362,7 +362,7 @@ verify_not_atom(Val, Atoms) ->
 %%======================================================================
 
 check_ip(suite) -> [];
-check_ip(Config) when list(Config) ->
+check_ip(Config) when is_list(Config) ->
     ?P(check_ip),
     ?line ok = verify_ip([1,2,3,4]),
     ?line ok = verify_not_ip([1,2,3]),
@@ -393,7 +393,7 @@ verify_not_ip(Val) ->
 %%======================================================================
 
 check_taddress(suite) -> [];
-check_taddress(Config) when list(Config) ->
+check_taddress(Config) when is_list(Config) ->
     ?P(check_taddress),
     ?line ok = verify_taddress([1,2,3,4,5,6]),
     ?line ok = verify_not_taddress([1,2,3,4,5]),
@@ -424,7 +424,7 @@ verify_not_taddress(Val) ->
 %%======================================================================
 
 check_packet_size(suite) -> [];
-check_packet_size(Config) when list(Config) ->
+check_packet_size(Config) when is_list(Config) ->
     ?P(check_packet_size),
     Min = 484,
     Max = 2147483647,
@@ -459,7 +459,7 @@ verify_not_packet_size(Val) ->
 %%======================================================================
 
 check_oid(suite) -> [];
-check_oid(Config) when list(Config) ->
+check_oid(Config) when is_list(Config) ->
     ?P(check_oid),
     [_,_|Rest] = ?otpSnmpeaModule,
     ErrOid = [6,16|Rest],
@@ -493,7 +493,7 @@ verify_not_oid(Val) ->
 %%======================================================================
 
 check_sec_model1(suite) -> [];
-check_sec_model1(Config) when list(Config) ->
+check_sec_model1(Config) when is_list(Config) ->
     ?P(check_sec_model1),
     Exclude1 = [],
     Exclude2 = [v1],
@@ -529,7 +529,7 @@ verify_not_sec_model(Val, Exclude) ->
 %%======================================================================
 
 check_sec_model2(suite) -> [];
-check_sec_model2(Config) when list(Config) ->
+check_sec_model2(Config) when is_list(Config) ->
     ?P(check_sec_model2),
     ?line ok = verify_sec_model(v1,  v1,  []),
     ?line ok = verify_sec_model(v1,  v1,  [v2c]),
@@ -572,7 +572,7 @@ verify_not_sec_model(M1, M2, Exclude) ->
 %%======================================================================
 
 check_sec_level(suite) -> [];
-check_sec_level(Config) when list(Config) ->
+check_sec_level(Config) when is_list(Config) ->
     ?P(check_sec_level),
     ?line ok = verify_sec_level(noAuthNoPriv),
     ?line ok = verify_sec_level(authNoPriv),
@@ -608,7 +608,7 @@ verify_not_sec_level(Val) ->
 %%======================================================================
 
 check_timer(suite) -> [];
-check_timer(Config) when list(Config) ->
+check_timer(Config) when is_list(Config) ->
     ?P(check_timer),
     ?line ok = verify_timer(infinity),
     ?line ok = verify_timer(1),
@@ -656,7 +656,7 @@ verify_not_timer(Val) ->
 %%======================================================================
 
 read(suite) -> [];
-read(Config) when list(Config) ->
+read(Config) when is_list(Config) ->
     ?P(read),
     ?SKIP(not_implemented_yet).
 
@@ -664,7 +664,7 @@ read(Config) when list(Config) ->
 %%======================================================================
 
 read_files(suite) -> [];
-read_files(Config) when list(Config) ->
+read_files(Config) when is_list(Config) ->
     ?P(read_files),
     ?SKIP(not_implemented_yet).
 

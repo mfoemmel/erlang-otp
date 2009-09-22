@@ -112,13 +112,13 @@
 		        | 'sticky_directory'.	% for some functions only
 -type load_ret() :: {'error', load_error_rsn()} | {'module', atom()}.
 -type loaded_ret_atoms() :: 'cover_compiled' | 'preloaded'.
--type loaded_filename() :: string() | loaded_ret_atoms().
+-type loaded_filename() :: file:filename() | loaded_ret_atoms().
 
 %%----------------------------------------------------------------------------
 %% User interface
 %%----------------------------------------------------------------------------
 
--spec objfile_extension() -> string().
+-spec objfile_extension() -> file:filename().
 objfile_extension() ->
     init:objfile_extension().
 
@@ -131,7 +131,7 @@ ensure_loaded(Mod) when is_atom(Mod) ->
     call({ensure_loaded,Mod}).
 
 %% XXX File as an atom is allowed only for backwards compatibility.
--spec load_abs(Filename :: string()) -> load_ret().
+-spec load_abs(Filename :: file:filename()) -> load_ret().
 load_abs(File) when is_list(File); is_atom(File) -> call({load_abs,File,[]}).
 
 %% XXX Filename is also an atom(), e.g. 'cover_compiled'
@@ -155,51 +155,51 @@ load_native_sticky(Mod,Bin,WholeModule)
        (is_binary(WholeModule) orelse WholeModule =:= false) ->
     call({load_native_sticky,Mod,Bin,WholeModule}).
 
--spec delete(Module :: atom()) -> bool().
+-spec delete(Module :: atom()) -> boolean().
 delete(Mod) when is_atom(Mod) -> call({delete,Mod}).
 
--spec purge/1 :: (Module :: atom()) -> bool().
+-spec purge/1 :: (Module :: atom()) -> boolean().
 purge(Mod) when is_atom(Mod) -> call({purge,Mod}).
 
--spec soft_purge(Module :: atom()) -> bool().
+-spec soft_purge(Module :: atom()) -> boolean().
 soft_purge(Mod) when is_atom(Mod) -> call({soft_purge,Mod}).
 
--spec is_loaded(Module :: atom()) -> {'file', string() | loaded_ret_atoms()} | 'false'.
+-spec is_loaded(Module :: atom()) -> {'file', loaded_filename()} | 'false'.
 is_loaded(Mod) when is_atom(Mod) -> call({is_loaded,Mod}).
 
--spec get_object_code(Module :: atom()) -> {atom(), binary(), string()} | 'error'.
+-spec get_object_code(Module :: atom()) -> {atom(), binary(), file:filename()} | 'error'.
 get_object_code(Mod) when is_atom(Mod) -> call({get_object_code, Mod}).
 
--spec all_loaded() -> [{atom(), string() | loaded_ret_atoms()}].
+-spec all_loaded() -> [{atom(), loaded_filename()}].
 all_loaded() -> call(all_loaded).
 
 -spec stop() -> no_return().
 stop() -> call(stop).
 
--spec root_dir() -> string().
+-spec root_dir() -> file:filename().
 root_dir() -> call({dir,root_dir}).
 
--spec lib_dir() -> string().
+-spec lib_dir() -> file:filename().
 lib_dir() -> call({dir,lib_dir}).
 
 %% XXX is_list() is for backwards compatibility -- take out in future version
--spec lib_dir(App :: atom()) -> string() | {'error', 'bad_name'}.
+-spec lib_dir(App :: atom()) -> file:filename() | {'error', 'bad_name'}.
 lib_dir(App) when is_atom(App) ; is_list(App) -> call({dir,{lib_dir,App}}).
 
--spec lib_dir(App :: atom(), SubDir :: atom()) -> string() | {'error', 'bad_name'}.
+-spec lib_dir(App :: atom(), SubDir :: atom()) -> file:filename() | {'error', 'bad_name'}.
 lib_dir(App, SubDir) when is_atom(App), is_atom(SubDir) -> call({dir,{lib_dir,App,SubDir}}).
 
--spec compiler_dir() -> string().
+-spec compiler_dir() -> file:filename().
 compiler_dir() -> call({dir,compiler_dir}).
 
 %% XXX is_list() is for backwards compatibility -- take out in future version
--spec priv_dir(Appl :: atom()) -> string() | {'error', 'bad_name'}.
+-spec priv_dir(Appl :: atom()) -> file:filename() | {'error', 'bad_name'}.
 priv_dir(App) when is_atom(App) ; is_list(App) -> call({dir,{priv_dir,App}}).
 
--spec stick_dir(Directory :: string()) -> 'ok' | 'error'.
+-spec stick_dir(Directory :: file:filename()) -> 'ok' | 'error'.
 stick_dir(Dir) when is_list(Dir) -> call({stick_dir,Dir}).
 
--spec unstick_dir(Directory :: string()) -> 'ok' | 'error'.
+-spec unstick_dir(Directory :: file:filename()) -> 'ok' | 'error'.
 unstick_dir(Dir) when is_list(Dir) -> call({unstick_dir,Dir}).
 
 -spec stick_mod(Module :: atom()) -> 'true'.
@@ -208,39 +208,39 @@ stick_mod(Mod) when is_atom(Mod) -> call({stick_mod,Mod}).
 -spec unstick_mod(Module :: atom()) -> 'true'.
 unstick_mod(Mod) when is_atom(Mod) -> call({unstick_mod,Mod}).
 
--spec is_sticky(Module :: atom()) -> bool().
+-spec is_sticky(Module :: atom()) -> boolean().
 is_sticky(Mod) when is_atom(Mod) -> call({is_sticky,Mod}).
 
--spec set_path(Directories :: [string()]) -> 'true' | {'error', any()}.
+-spec set_path(Directories :: [file:filename()]) -> 'true' | {'error', term()}.
 set_path(PathList) when is_list(PathList) -> call({set_path,PathList}).
 
--spec get_path() -> [string()].
+-spec get_path() -> [file:filename()].
 get_path() -> call(get_path).
 
--spec add_path(Directory :: string()) -> 'true' | {'error', any()}.
+-spec add_path(Directory :: file:filename()) -> 'true' | {'error', term()}.
 add_path(Dir) when is_list(Dir) -> call({add_path,last,Dir}).
 
--spec add_pathz(Directory :: string()) -> 'true' | {'error', any()}.
+-spec add_pathz(Directory :: file:filename()) -> 'true' | {'error', term()}.
 add_pathz(Dir) when is_list(Dir) -> call({add_path,last,Dir}).
 
--spec add_patha(Directory :: string()) -> 'true' | {'error', any()}.
+-spec add_patha(Directory :: file:filename()) -> 'true' | {'error', term()}.
 add_patha(Dir) when is_list(Dir) -> call({add_path,first,Dir}).
 
--spec add_paths(Directories :: [string()]) -> 'ok'.
+-spec add_paths(Directories :: [file:filename()]) -> 'ok'.
 add_paths(Dirs) when is_list(Dirs) -> call({add_paths,last,Dirs}).
 
--spec add_pathsz(Directories :: [string()]) -> 'ok'.
+-spec add_pathsz(Directories :: [file:filename()]) -> 'ok'.
 add_pathsz(Dirs) when is_list(Dirs) -> call({add_paths,last,Dirs}).
 
--spec add_pathsa(Directories :: [string()]) -> 'ok'.
+-spec add_pathsa(Directories :: [file:filename()]) -> 'ok'.
 add_pathsa(Dirs) when is_list(Dirs) -> call({add_paths,first,Dirs}).
 
 %% XXX Contract's input argument differs from add_path/1 -- why?
--spec del_path(Name :: string() | atom()) -> bool() | {'error', 'bad_name'}.
+-spec del_path(Name :: file:filename() | atom()) -> boolean() | {'error', 'bad_name'}.
 del_path(Name) when is_list(Name) ; is_atom(Name) -> call({del_path,Name}).
 
 -type replace_path_error() :: {'error', 'bad_directory' | 'bad_name' | {'badarg',_}}.
--spec replace_path(Name:: atom(), Dir :: string()) -> 'true' | replace_path_error().
+-spec replace_path(Name:: atom(), Dir :: file:filename()) -> 'true' | replace_path_error().
 replace_path(Name, Dir) when (is_atom(Name) or is_list(Name)) and
 			     (is_atom(Dir) or is_list(Dir)) ->
     call({replace_path,Name,Dir}).
@@ -292,17 +292,17 @@ do_start(Flags) ->
 	{ok,[[Root0]]} ->
 	    Root = filename:join([Root0]), % Normalize.  Use filename
 	    case code_server:start_link([Root,Mode]) of
-		{ok,Pid} ->
+		{ok,_Pid} = Ok2 ->
 		    if 
 			Mode =:= interactive ->
-			    case lists:member(stick,Flags) of
+			    case lists:member(stick, Flags) of
 				true -> do_stick_dirs();
 				_    -> ok
 			    end;
 			true ->
 			    ok
 		    end,
-		    {ok,Pid};
+		    Ok2;
 		Other ->
 		    Other
 	    end;
@@ -350,7 +350,7 @@ get_mode(Flags) ->
 
 -type which_ret_atoms() :: loaded_ret_atoms() | 'non_existing'.
 
--spec which(Module :: atom()) -> string() | which_ret_atoms().
+-spec which(Module :: atom()) -> file:filename() | which_ret_atoms().
 
 which(Module) when is_atom(Module) ->
     case is_loaded(Module) of
@@ -366,7 +366,8 @@ which2(Module) ->
     Path = get_path(),
     which(File, filename:dirname(Base), Path).
 
--spec which(string(), string(), [string()]) -> 'non_existing' | string().
+-spec which(file:filename(), file:filename(), [file:filename()]) ->
+        'non_existing' | file:filename().
 
 which(_, _, []) ->
     non_existing;
@@ -390,7 +391,8 @@ which(File, Base, [Directory|Tail]) ->
 %% Search the code path for a specific file. Try to locate
 %% it in the code path cache if possible.
 
--spec where_is_file(Filename :: string()) -> 'non_existing' | string().
+-spec where_is_file(Filename :: file:filename()) ->
+        'non_existing' | file:filename().
 
 where_is_file(File) when is_list(File) ->
     case call({is_cached,File}) of
@@ -401,7 +403,8 @@ where_is_file(File) when is_list(File) ->
 	    filename:join(Dir, File)
     end.
 
--spec where_is_file(Path :: string(), Filename :: string()) -> string() | atom().
+-spec where_is_file(Path :: file:filename(), Filename :: file:filename()) ->
+        file:filename() | 'non_existing'.
 
 where_is_file(Path, File) when is_list(Path), is_list(File) ->
     CodePath = get_path(),
@@ -417,7 +420,7 @@ where_is_file(Path, File) when is_list(Path), is_list(File) ->
 	    which(File, ".", Path)
     end.
 
--spec set_primary_archive(ArchiveFile :: string(), ArchiveBin :: binary()) -> 'ok' | {'error', atom()}.
+-spec set_primary_archive(ArchiveFile :: file:filename(), ArchiveBin :: binary()) -> 'ok' | {'error', atom()}.
 
 set_primary_archive(ArchiveFile0, ArchiveBin) when is_list(ArchiveFile0), is_binary(ArchiveBin) ->
     ArchiveFile = filename:absname(ArchiveFile0),
@@ -428,8 +431,8 @@ set_primary_archive(ArchiveFile0, ArchiveBin) when is_list(ArchiveFile0), is_bin
 	    %% Prepend the code path with the ebins found in the archive
 	    Ebins2 = [filename:join([ArchiveFile, E]) || E <- Ebins],
 	    add_pathsa(Ebins2); % Returns ok
-	{error, Reason} ->
-	    {error, Reason}
+	{error, _Reason} = Error ->
+	    Error
     end.
     
 %% Search the entire path system looking for name clashes
@@ -445,14 +448,14 @@ clash() ->
 %% Internal for clash/0
 
 search([]) -> [];
-search([{Dir,File} | Tail]) ->
-    case lists:keysearch(File,2,Tail) of
+search([{Dir, File} | Tail]) ->
+    case lists:keyfind(File, 2, Tail) of
 	false -> 
 	    search(Tail);
-	{value,{Dir2,File}} ->
+	{Dir2, File} ->
 	    io:format("** ~s hides ~s~n",
-		      [filename:join(Dir,File),
-		       filename:join(Dir2,File)]),
+		      [filename:join(Dir, File),
+		       filename:join(Dir2, File)]),
 	    [clash | search(Tail)]
     end.
 

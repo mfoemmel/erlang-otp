@@ -40,6 +40,7 @@
 %% 5. Home   (user inetrc)
 %%
 %%
+-spec init() -> 'ok'.
 init() ->
     OsType = os:type(),
     case OsType of
@@ -50,7 +51,7 @@ init() ->
 		    ok;
 		_Other ->
 		    %% Setup reserved port for ose_inet driver (only OSE)
-		    case catch erlang:open_port({spawn,ose_inet}, [binary]) of
+		    case catch erlang:open_port({spawn,"ose_inet"}, [binary]) of
 			{'EXIT',Why} ->
 			    error("can't open port for ose_inet: ~p", [Why]);
 			OseInetPort ->
@@ -123,8 +124,33 @@ init() ->
 	_  -> error("syntax error in ~s~n", [RcFile])
     end,
 
-    %% Now test if we can lookup our own hostname.
-    standalone_host().
+    %% Set up a resolver configuration file for inet_res,
+    %% unless that already has been done
+    case OsType of
+	{unix,_} ->
+	    %% The Etc variable enables us to run tests with other 
+	    %% configuration files than the normal ones 
+	    Etc = case os:getenv("ERL_INET_ETC_DIR") of
+		      false -> ?DEFAULT_ETC;
+		      _EtcDir -> 
+			  _EtcDir			
+		  end,
+	    case inet_db:res_option(resolv_conf) of
+		undefined ->
+		    inet_db:set_resolv_conf(filename:join(Etc,
+							  ?DEFAULT_RESOLV));
+		_ -> ok
+	    end,
+	    case inet_db:res_option(hosts_file) of
+		undefined ->
+		    inet_db:set_hosts_file(filename:join(Etc,
+							 ?DEFAULT_HOSTS));
+		_ -> ok
+	    end;
+	_ -> ok
+    end.
+
+
 
 erl_dist_mode() ->
     case init:get_argument(sname) of
@@ -144,7 +170,7 @@ do_load_resolv({unix,Type}, longnames) ->
 	      _EtcDir -> 
 		  _EtcDir				 
 	  end,
-    load_resolv(filename:join(Etc,"resolv.conf"), resolv),
+    load_resolv(filename:join(Etc, ?DEFAULT_RESOLV), resolv),
     case Type of
 	freebsd ->	    %% we may have to check version (2.2.2)
 	    load_resolv(filename:join(Etc,"host.conf"), host_conf_freebsd);
@@ -225,41 +251,6 @@ do_load_resolv({ose,_Type}, _) ->
 
 do_load_resolv(_, _) ->
     inet_db:set_lookup([native]).
-
-%% This host seems to be standalone.  Add a shortcut to enable us to
-%% lookup our own hostname.
-standalone_host() ->
-    Name = inet_db:gethostname(),
-    case inet:gethostbyname(Name) of
-	{ok, #hostent{}} ->
-	    ok;
-	_ -> 
-	    case inet_db:res_option(domain) of
-		"" ->
-		    inet_db:add_host({127,0,0,1}, [Name]);
-		Domain ->
-		    FQName = lists:append([inet_db:gethostname(),
-					    ".", Domain]),
-		    case inet:gethostbyname(FQName) of
-			{ok, #hostent{
-			   h_name      = N,
-			   h_addr_list = [IP|_],
-			   h_aliases   = As}} ->
-			    inet_db:add_host(IP, [N | As] ++ [Name]);
-			_ ->
-			    inet_db:add_host({127,0,0,1}, [Name])
-		    end
-	    end,
-	    Lookup = inet_db:res_option(lookup),
-	    case lists:member(file, Lookup) of
-		true -> 
-		    ok;
-		false -> 
-		    inet_db:set_lookup(Lookup++[file]),
-		    ok
-	    end
-    end.
-
 
 add_dns_lookup(L) ->
     case lists:member(dns,L) of

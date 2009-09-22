@@ -42,7 +42,7 @@ check_ustruct([{key, Types}]) ->
     is_snmp_type(to_list(Types));
 check_ustruct(_) -> false.
     
-to_list(Tuple) when tuple(Tuple) -> tuple_to_list(Tuple);
+to_list(Tuple) when is_tuple(Tuple) -> tuple_to_list(Tuple);
 to_list(X) -> [X].
 
 is_snmp_type([integer    | T]) -> is_snmp_type(T);

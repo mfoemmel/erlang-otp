@@ -131,6 +131,7 @@
         <seealso marker="config_file_chapter#encrypted_config_files">encrypted configuration files</seealso>.</item>
       <item><c><![CDATA[-decrypt_file <key_file>]]></c>, points out a file containing a decryption key for 
         <seealso marker="config_file_chapter#encrypted_config_files">encrypted configuration files</seealso>.</item>
+      <item><c><![CDATA[-basic_html]]></c>, switches off html enhancements that might not be compatible with older browsers.</item>
     </list>
     
   </section>

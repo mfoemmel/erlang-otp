@@ -114,4 +114,4 @@ $(EBIN)/hipe_sparc_liveness_fpr.beam: ../flow/liveness.inc
 $(EBIN)/hipe_sparc_liveness_gpr.beam: ../flow/liveness.inc
 $(EBIN)/hipe_sparc_registers.beam: ../rtl/hipe_literals.hrl
 
-$(TARGET_FILES): hipe_sparc.hrl
+$(TARGET_FILES): hipe_sparc.hrl ../misc/hipe_consttab.hrl

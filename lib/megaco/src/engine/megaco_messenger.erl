@@ -3143,7 +3143,7 @@ call_proxy(Parent) ->
 call_proxy(Parent, CD, TransIds) ->
     Reply = proxy_wait_for_reply(CD, TransIds, []),
     Parent ! {reply, self(), Reply},
-    call_proxy_gc(CD, 5000).
+    call_proxy_gc(CD, CD#conn_data.call_proxy_gc_timeout).
 
 call_proxy_gc(CD, Timeout) when (Timeout > 0) ->
     T = t(),
@@ -3161,7 +3161,9 @@ call_proxy_gc(CD, Timeout) when (Timeout > 0) ->
 
     after Timeout ->
 	    exit(normal)
-    end.
+    end;
+call_proxy_gc(_CD, _Timeout) ->
+    exit(normal).
 
 proxy_wait_for_reply(_CD, [], Replies0) ->
     % Make sure they come in the same order as the requests where sent
@@ -3559,6 +3561,15 @@ override_req_send_options(ConnData, [{Key, Val} | Tail]) ->
                 false ->
                     {error, {bad_send_option, {Key, Val}}}
             end;
+	call_proxy_gc_timeout ->
+            case megaco_config:verify_val(Key, Val) of
+                true ->
+                    ConnData2 = 
+			ConnData#conn_data{call_proxy_gc_timeout = Val},
+                    override_req_send_options(ConnData2, Tail);
+                false ->
+                    {error, {bad_send_option, {Key, Val}}}
+            end;
         reply_data ->
             ConnData2 = ConnData#conn_data{reply_data = Val},
             override_req_send_options(ConnData2, Tail);
@@ -3568,7 +3579,7 @@ override_req_send_options(ConnData, [{Key, Val} | Tail]) ->
         user_args when is_list(Val) ->
             ConnData2 = ConnData#conn_data{user_args = Val},
             override_req_send_options(ConnData2, Tail);
-	trans_req when Val == false -> 
+	trans_req when Val =:= false -> 
 	    %% We only allow turning the transaction-sender off, since
 	    %% the opposite (turning it on) would causing to much headake...
 	    %% This will allow not using the transaction sender for

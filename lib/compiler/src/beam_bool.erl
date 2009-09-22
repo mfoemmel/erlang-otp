@@ -502,10 +502,20 @@ bopt_cg_not({'and',As0}) ->
 bopt_cg_not({'or',As0}) ->
     As = [bopt_cg_not(A) || A <- As0],
     {'and',As};
+bopt_cg_not({'not',Arg}) ->
+    bopt_cg_not_not(Arg);
 bopt_cg_not({test,Test,Fail,As}) ->
     {inverted_test,Test,Fail,As};
 bopt_cg_not({atom,Bool}) when is_boolean(Bool) ->
     {atom,not Bool}.
+
+bopt_cg_not_not({'and',As}) ->
+    {'and',[bopt_cg_not_not(A) || A <- As]};
+bopt_cg_not_not({'or',As}) ->
+    {'or',[bopt_cg_not_not(A) || A <- As]};
+bopt_cg_not_not({'not',Arg}) ->
+    bopt_cg_not(Arg);
+bopt_cg_not_not(Leaf) -> Leaf.
 
 bopt_cg_and([I|Is], Fail, Rs, Acc0, St0) ->
     {Acc,St} = bopt_cg(I, Fail, Rs, Acc0, St0),

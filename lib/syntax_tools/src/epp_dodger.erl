@@ -117,13 +117,13 @@ parse_file(File) ->
 %%
 %% Options:
 %% <dl>
-%%   <dt>{@type {no_fail, bool()@}}</dt>
+%%   <dt>{@type {no_fail, boolean()@}}</dt>
 %%   <dd>If `true', this makes `epp_dodger' replace any program forms
 %%   that could not be parsed with nodes of type `text' (see {@link
 %%   erl_syntax:text/1}), representing the raw token sequence of the
 %%   form, instead of reporting a parse error. The default value is
 %%   `false'.</dd>
-%%   <dt>{@type {clever, bool()@}}</dt>
+%%   <dt>{@type {clever, boolean()@}}</dt>
 %%   <dd>If set to `true', this makes `epp_dodger' try to repair the
 %%   source code as it seems fit, in certain cases where parsing would
 %%   otherwise fail. Currently, it inserts `++'-operators between string
@@ -350,7 +350,7 @@ quick_parse_form(Dev, L0) ->
 quick_parse_form(Dev, L0, Options) ->
     parse_form(Dev, L0, fun quick_parser/2, Options).
 
--record(opt, {clever = false :: bool()}).
+-record(opt, {clever = false :: boolean()}).
 
 parse_form(Dev, L0, Parser, Options) ->
     NoFail = proplists:get_bool(no_fail, Options),

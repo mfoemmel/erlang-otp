@@ -34,10 +34,6 @@
                   | ?RET_INTERNAL_ERROR 
                   | ?RET_DISCREPANCIES.
 
--define(SRC_COMPILE_OPTS, 
-	[no_copt, to_core, binary, return_errors, 
-	 no_inline, strict_record_tests, strict_record_updates]).
-
 %%--------------------------------------------------------------------
 %% Warning classification
 %%--------------------------------------------------------------------
@@ -58,7 +54,7 @@
 -define(WARN_CONTRACT_SUPERTYPE, warn_contract_supertype).
 -define(WARN_CALLGRAPH, warn_callgraph).
 -define(WARN_UNMATCHED_RETURN, warn_umatched_return).
--define(WARN_POSSIBLE_RACE, warn_possible_race).
+-define(WARN_RACE_CONDITION, warn_race_condition).
 
 %%
 %% The following type has double role:
@@ -72,14 +68,13 @@
                        | ?WARN_CONTRACT_TYPES | ?WARN_CONTRACT_SYNTAX
                        | ?WARN_CONTRACT_NOT_EQUAL | ?WARN_CONTRACT_SUBTYPE
                        | ?WARN_CONTRACT_SUPERTYPE | ?WARN_CALLGRAPH
-                       | ?WARN_UNMATCHED_RETURN | ?WARN_POSSIBLE_RACE.
+                       | ?WARN_UNMATCHED_RETURN | ?WARN_RACE_CONDITION.
 
 %%
 %% This is the representation of each warning as they will be returned
 %% to dialyzer's callers
 %%
--type filename()     :: string().
--type file_line()    :: {filename(), non_neg_integer()}.
+-type file_line()    :: {file:filename(), non_neg_integer()}.
 -type dial_warning() :: {dial_warn_tag(), file_line(), {atom(), [term()]}}.
 
 %%
@@ -121,75 +116,60 @@
                       | core_clause()  | core_alias()  | core_receive()
                       | core_apply()   | core_call()   | core_primop()
                       | core_try()     | core_catch()  | core_module(). %% XXX: belongs in 'cerl*'
--type erl_type()     :: 'any' | 'none' | 'unit' | {'c',atom(),_,_}. %% XXX: belongs to 'erl_types'
 
 %%--------------------------------------------------------------------
 %% Basic types used either in the record definitions below or in other
 %% parts of the application
 %%--------------------------------------------------------------------
 
--type anal_type()    :: 'succ_typings' | 'plt_build'.
--type anal_type1()   :: anal_type() | 'plt_add' | 'plt_check' | 'plt_remove'.
--type contr_constr() :: {'subtype', erl_type(), erl_type()}.
--type contract()     :: {erl_type(), [contr_constr()]}.
--type dial_define()  :: {atom(), term()}.
--type dial_option()  :: {atom(), any()}.
--type dial_options() :: [dial_option()].
--type label()	     :: non_neg_integer().
--type md5()          :: [{filename(), binary()}].
--type rep_mode()     :: 'quiet' | 'normal' | 'verbose'.
--type start_from()   :: 'byte_code' | 'src_code'.
+-type anal_type()     :: 'succ_typings' | 'plt_build'.
+-type anal_type1()    :: anal_type() | 'plt_add' | 'plt_check' | 'plt_remove'.
+-type contr_constr()  :: {'subtype', erl_types:erl_type(), erl_types:erl_type()}.
+-type contract_pair() :: {erl_types:erl_type(), [contr_constr()]}.
+-type dial_define()   :: {atom(), term()}.
+-type dial_option()   :: {atom(), term()}.
+-type dial_options()  :: [dial_option()].
+-type label()	      :: non_neg_integer().
+-type rep_mode()      :: 'quiet' | 'normal' | 'verbose'.
+-type start_from()    :: 'byte_code' | 'src_code'.
 
 %%--------------------------------------------------------------------
 %% Record declarations used by various files
 %%--------------------------------------------------------------------
 
--record(dialyzer_plt, {info       = dict:new()      :: dict(),
-		       contracts  = dict:new()      :: dict()}).
+-record(analysis, {analysis_pid			   :: pid(),
+		   type		  = succ_typings   :: anal_type(),
+		   defines	  = []		   :: [dial_define()],
+		   doc_plt                         :: dialyzer_plt:plt(),
+		   files          = []		   :: [file:filename()],
+		   include_dirs	  = []		   :: [file:filename()],
+		   start_from     = byte_code	   :: start_from(),
+		   plt                             :: dialyzer_plt:plt(),
+		   use_contracts  = true           :: boolean(),
+		   race_detection = false	   :: boolean(),
+		   callgraph_file = ""             :: file:filename()}).
 
--record(dialyzer_codeserver, {table_pid		     :: pid(),
-                              exports   = sets:new() :: set(), % set(mfa())
-                              next_core_label = 0    :: label(),
-                              records   = dict:new() :: dict(),
-                              contracts = dict:new() :: dict()}).
-
--record(analysis, {analysis_pid			    :: pid(),
-		   type		  = succ_typings    :: anal_type(),
-		   defines	  = []		    :: [dial_define()],
-		   doc_plt                          :: #dialyzer_plt{},
-		   files          = []		    :: [filename()],
-		   include_dirs	  = []		    :: [filename()],
-		   start_from     = byte_code	    :: start_from(),
-		   plt                              :: #dialyzer_plt{},
-		   use_contracts  = true            :: bool(),
-		   race_detection = false	    :: bool(),
-		   callgraph_file = ""              :: filename()}).
-
--record(options, {files           = []		    :: [filename()],
-		  files_rec       = []		    :: [filename()],
-		  analysis_type   = succ_typings    :: anal_type1(),
-		  defines         = []		    :: [dial_define()],
-		  from            = byte_code	    :: start_from(),
-		  get_warnings    = maybe           :: bool() | 'maybe',
-		  init_plt        = none	    :: 'none' | filename(),
-		  include_dirs    = []		    :: [filename()],
-		  output_plt      = none            :: 'none' | filename(),
-		  legal_warnings  = ordsets:new()   :: ordset(dial_warn_tag()),
-		  report_mode     = normal	    :: rep_mode(),
-		  erlang_mode     = false	    :: bool(),
-		  use_contracts   = true            :: bool(),
-		  output_file     = none	    :: 'none' | filename(),
-		  output_format   = formatted       :: 'raw' | 'formatted',
-		  callgraph_file  = ""              :: filename(),
-		  check_plt       = true            :: bool()
+-record(options, {files           = []		   :: [file:filename()],
+		  files_rec       = []		   :: [file:filename()],
+		  analysis_type   = succ_typings   :: anal_type1(),
+		  defines         = []		   :: [dial_define()],
+		  from            = byte_code	   :: start_from(),
+		  get_warnings    = maybe          :: boolean() | 'maybe',
+		  init_plt        = none	   :: 'none' | file:filename(),
+		  include_dirs    = []		   :: [file:filename()],
+		  output_plt      = none           :: 'none' | file:filename(),
+		  legal_warnings  = ordsets:new()  :: ordset(dial_warn_tag()),
+		  report_mode     = normal	   :: rep_mode(),
+		  erlang_mode     = false	   :: boolean(),
+		  use_contracts   = true           :: boolean(),
+		  output_file     = none	   :: 'none' | file:filename(),
+		  output_format   = formatted      :: 'raw' | 'formatted',
+		  callgraph_file  = ""             :: file:filename(),
+		  check_plt       = true           :: boolean()
 		 }).
 
--record(contract, {contracts	  = []		    :: [contract()],
-		   args		  = []		    :: [erl_type()],
-		   forms	  = []		    :: [{_, _}]}).
-
-%%--------------------------------------------------------------------
-
--type plt_contracts() :: [{mfa(), #contract{}}]. % actually, an orddict()
+-record(contract, {contracts	  = []		   :: [contract_pair()],
+		   args		  = []		   :: [erl_types:erl_type()],
+		   forms	  = []		   :: [{_, _}]}).
 
 %%--------------------------------------------------------------------

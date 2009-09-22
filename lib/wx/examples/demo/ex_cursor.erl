@@ -18,7 +18,7 @@
 
 -module(ex_cursor).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -47,9 +47,15 @@ init(Config) ->
 do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxScrolledWindow:new(Parent, []),
-    wxScrolledWindow:setScrollRate(Panel, 5,5),
+
     %% Setup sizers
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
+    MiscSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
+				     [{label, "Misc"}]),
+    StaticBoxSizer = wxStaticBoxSizer:new(?wxHORIZONTAL, Panel,
+					  [{label, "Test the cursor here"}]),
+    CursorSizer = wxBoxSizer:new(?wxHORIZONTAL),
+
     CursorLabels = [Cursor || {Cursor, _} <- cursors()],
     StockCursors = wxRadioBox:new(Panel, ?wxID_ANY, "Stock cursors",
 			      ?wxDefaultPosition,
@@ -73,38 +79,27 @@ do_init(Config) ->
 
 
 
-    MiscSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				     [{label, "Misc"}]),
     Win = wxWindow:new(Panel, ?wxID_ANY, [{size, {300,300}}]),
-    StaticBoxSizer = wxStaticBoxSizer:new(?wxHORIZONTAL, Panel, [{label, "Test the cursor here"}]),
 
     ToggleButton = wxToggleButton:new(Panel, ?wxID_ANY, "Begin busy cursor", []),
 
     %% Add to sizers
-    CursorSizer = wxBoxSizer:new(?wxHORIZONTAL),
     wxSizer:add(CursorSizer, StockCursors),
     wxSizer:add(StaticBoxSizer, Win),
     wxSizer:add(CursorSizer, StaticBoxSizer),
     wxSizer:add(MiscSizer, ToggleButton),
-    wxToggleButton:connect(ToggleButton, command_togglebutton_clicked, []),
 
     wxSizer:add(MainSizer, CursorSizer),
     wxSizer:add(MainSizer, MiscSizer),
+
+    wxToggleButton:connect(ToggleButton, command_togglebutton_clicked, []),
     wxRadioBox:connect(StockCursors, command_radiobox_selected, []),
+    wxScrolledWindow:setScrollRate(Panel, 5,5),
     wxPanel:setSizer(Panel, MainSizer),
     {Panel, #state{parent=Panel, config=Config,
 		   win = Win}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxCommand{type = command_radiobox_selected,
 				    cmdString = String}},
@@ -130,6 +125,15 @@ handle_event(#wx{obj = ToggleButton,
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

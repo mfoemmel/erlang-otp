@@ -15532,6 +15532,29 @@ case wxListCtrl_SetWindowStyleFlag: { // wxListCtrl::SetWindowStyleFlag
  This->SetWindowStyleFlag((long) *style);
  break; 
 }
+
+case wxListCtrl_SortItems: { // wxListCtrl::SortItems taylormade
+  wxListCtrl *This = (wxListCtrl *) getPtr(bp,memenv); bp += 4;
+  int sortCallback=*(int *) bp; bp += 4;
+  if(!This) throw wxe_badarg(0);
+
+  callbackInfo* cb = new callbackInfo();
+  cb->port = Ecmd.port;
+  cb->callbackID = sortCallback;
+  bool Result = This->SortItems(wxEListCtrlCompare, (long)cb);
+  delete cb;
+
+  /* Destroy the callback, see wxEPrintout::clear_cb */
+  wxeReturn cbrt = wxeReturn(WXE_DRV_PORT, memenv->owner, false);
+  // NOTE: Remove this later when changing from funs to gen_server
+  cbrt.addAtom("wx_delete_cb");
+  cbrt.addInt(sortCallback);
+  cbrt.addTupleCount(2);
+  cbrt.send();
+
+  rt.addBool(Result);
+  break;
+}
 case wxListView_ClearColumnImage: { // wxListView::ClearColumnImage 
  wxListView *This = (wxListView *) getPtr(bp,memenv); bp += 4;
  int * col = (int *) bp; bp += 4;
@@ -23388,6 +23411,25 @@ case wxAuiManager_Update: { // wxAuiManager::Update
 }
 #endif // wxUSE_AUI
 #if wxUSE_AUI
+case wxAuiPaneInfo_new_0: { // wxAuiPaneInfo::wxAuiPaneInfo 
+ wxAuiPaneInfo * Result = new wxAuiPaneInfo();
+ newPtr((void *) Result, 145, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxAuiPaneInfo");
+ break; 
+}
+case wxAuiPaneInfo_new_1: { // wxAuiPaneInfo::wxAuiPaneInfo 
+ wxAuiPaneInfo *c = (wxAuiPaneInfo *) getPtr(bp,memenv); bp += 4;
+ wxAuiPaneInfo * Result = new wxAuiPaneInfo(*c);
+ newPtr((void *) Result, 145, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxAuiPaneInfo");
+ break; 
+}
+case wxAuiPaneInfo_destruct: { // wxAuiPaneInfo::~wxAuiPaneInfo 
+ wxAuiPaneInfo *This = (wxAuiPaneInfo *) getPtr(bp,memenv); bp += 4;
+ if(This) {   ((WxeApp *) wxTheApp)->clearPtr((void *) This);
+   delete This;}
+ break; 
+}
 case wxAuiPaneInfo_BestSize_1: { // wxAuiPaneInfo::BestSize 
  wxAuiPaneInfo *This = (wxAuiPaneInfo *) getPtr(bp,memenv); bp += 4;
  int * sizeW = (int *) bp; bp += 4;
@@ -30396,11 +30438,372 @@ case wxSplitterEvent_SetSashPosition: { // wxSplitterEvent::SetSashPosition
  This->SetSashPosition((int) *pos);
  break; 
 }
+case wxHtmlWindow_new_0: { // wxHtmlWindow::wxHtmlWindow 
+ wxHtmlWindow * Result = new EwxHtmlWindow();
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxHtmlWindow");
+ break; 
+}
+case wxHtmlWindow_new_2: { // wxHtmlWindow::wxHtmlWindow 
+ wxWindowID id=wxID_ANY;
+ wxPoint pos= wxDefaultPosition;
+ wxSize size= wxDefaultSize;
+ long style=0x0004;
+ wxWindow *parent = (wxWindow *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ id = (wxWindowID)*(int *) bp; bp += 4;
+  } break;
+  case 2: {bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ pos = wxPoint(*posX,*posY);
+ bp += 4; /* Align */
+  } break;
+  case 3: {bp += 4;
+ int * sizeW = (int *) bp; bp += 4;
+ int * sizeH = (int *) bp; bp += 4;
+ size = wxSize(*sizeW,*sizeH);
+ bp += 4; /* Align */
+  } break;
+  case 4: {bp += 4;
+ style = (long)*(int *) bp; bp += 4;
+  } break;
+ }}; 
+ wxHtmlWindow * Result = new EwxHtmlWindow(parent,id,pos,size,style);
+ newPtr((void *) Result, 0, memenv);
+ rt.addRef(getRef((void *)Result,memenv), "wxHtmlWindow");
+ break; 
+}
+case wxHtmlWindow_AppendToPage: { // wxHtmlWindow::AppendToPage 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * sourceLen = (int *) bp; bp += 4;
+ wxString source = wxString(bp, wxConvUTF8);
+ bp += *sourceLen+((8-((0+ *sourceLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->AppendToPage(source);
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_GetOpenedAnchor: { // wxHtmlWindow::GetOpenedAnchor 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetOpenedAnchor();
+ rt.add(Result);
+ break; 
+}
+case wxHtmlWindow_GetOpenedPage: { // wxHtmlWindow::GetOpenedPage 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetOpenedPage();
+ rt.add(Result);
+ break; 
+}
+case wxHtmlWindow_GetOpenedPageTitle: { // wxHtmlWindow::GetOpenedPageTitle 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->GetOpenedPageTitle();
+ rt.add(Result);
+ break; 
+}
+case wxHtmlWindow_GetRelatedFrame: { // wxHtmlWindow::GetRelatedFrame 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxFrame * Result = (wxFrame*)This->GetRelatedFrame();
+ rt.addRef(getRef((void *)Result,memenv), "wxFrame");
+ break; 
+}
+case wxHtmlWindow_HistoryBack: { // wxHtmlWindow::HistoryBack 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->HistoryBack();
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_HistoryCanBack: { // wxHtmlWindow::HistoryCanBack 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->HistoryCanBack();
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_HistoryCanForward: { // wxHtmlWindow::HistoryCanForward 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->HistoryCanForward();
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_HistoryClear: { // wxHtmlWindow::HistoryClear 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->HistoryClear();
+ break; 
+}
+case wxHtmlWindow_HistoryForward: { // wxHtmlWindow::HistoryForward 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->HistoryForward();
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_LoadFile: { // wxHtmlWindow::LoadFile 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * filenameLen = (int *) bp; bp += 4;
+ wxString filenameStr = wxString(bp, wxConvUTF8);
+ bp += *filenameLen+((8-((0+ *filenameLen) & 7)) & 7);
+ wxFileName filename = wxFileName(filenameStr);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->LoadFile(filename);
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_LoadPage: { // wxHtmlWindow::LoadPage 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * locationLen = (int *) bp; bp += 4;
+ wxString location = wxString(bp, wxConvUTF8);
+ bp += *locationLen+((8-((0+ *locationLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->LoadPage(location);
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_SelectAll: { // wxHtmlWindow::SelectAll 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SelectAll();
+ break; 
+}
+case wxHtmlWindow_SelectionToText: { // wxHtmlWindow::SelectionToText 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->SelectionToText();
+ rt.add(Result);
+ break; 
+}
+case wxHtmlWindow_SelectLine: { // wxHtmlWindow::SelectLine 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ wxPoint pos = wxPoint(*posX,*posY);
+ if(!This) throw wxe_badarg(0);
+ This->SelectLine(pos);
+ break; 
+}
+case wxHtmlWindow_SelectWord: { // wxHtmlWindow::SelectWord 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * posX = (int *) bp; bp += 4;
+ int * posY = (int *) bp; bp += 4;
+ wxPoint pos = wxPoint(*posX,*posY);
+ if(!This) throw wxe_badarg(0);
+ This->SelectWord(pos);
+ break; 
+}
+case wxHtmlWindow_SetBorders: { // wxHtmlWindow::SetBorders 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * b = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetBorders((int) *b);
+ break; 
+}
+case wxHtmlWindow_SetFonts: { // wxHtmlWindow::SetFonts 
+ int *sizes=NULL;
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * normal_faceLen = (int *) bp; bp += 4;
+ wxString normal_face = wxString(bp, wxConvUTF8);
+ bp += *normal_faceLen+((8-((0+ *normal_faceLen) & 7)) & 7);
+ int * fixed_faceLen = (int *) bp; bp += 4;
+ wxString fixed_face = wxString(bp, wxConvUTF8);
+ bp += *fixed_faceLen+((8-((4+ *fixed_faceLen) & 7)) & 7);
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ sizes = (int *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->SetFonts(normal_face,fixed_face,sizes);
+ break; 
+}
+case wxHtmlWindow_SetPage: { // wxHtmlWindow::SetPage 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * sourceLen = (int *) bp; bp += 4;
+ wxString source = wxString(bp, wxConvUTF8);
+ bp += *sourceLen+((8-((0+ *sourceLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->SetPage(source);
+ rt.addBool(Result);
+ break; 
+}
+case wxHtmlWindow_SetRelatedFrame: { // wxHtmlWindow::SetRelatedFrame 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ wxFrame *frame = (wxFrame *) getPtr(bp,memenv); bp += 4;
+ int * formatLen = (int *) bp; bp += 4;
+ wxString format = wxString(bp, wxConvUTF8);
+ bp += *formatLen+((8-((4+ *formatLen) & 7)) & 7);
+ if(!This) throw wxe_badarg(0);
+ This->SetRelatedFrame(frame,format);
+ break; 
+}
+case wxHtmlWindow_SetRelatedStatusBar: { // wxHtmlWindow::SetRelatedStatusBar 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ int * bar = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetRelatedStatusBar((int) *bar);
+ break; 
+}
+case wxHtmlWindow_ToText: { // wxHtmlWindow::ToText 
+ wxHtmlWindow *This = (wxHtmlWindow *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxString Result = This->ToText();
+ rt.add(Result);
+ break; 
+}
+case wxHtmlLinkEvent_GetLinkInfo: { // wxHtmlLinkEvent::GetLinkInfo 
+ wxHtmlLinkEvent *This = (wxHtmlLinkEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ const wxHtmlLinkInfo * Result = &This->GetLinkInfo();
+ rt.add(Result);
+ break; 
+}
+case wxAuiNotebookEvent_SetSelection: { // wxAuiNotebookEvent::SetSelection 
+ wxAuiNotebookEvent *This = (wxAuiNotebookEvent *) getPtr(bp,memenv); bp += 4;
+ int * s = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetSelection((int) *s);
+ break; 
+}
+case wxAuiNotebookEvent_GetSelection: { // wxAuiNotebookEvent::GetSelection 
+ wxAuiNotebookEvent *This = (wxAuiNotebookEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetSelection();
+ rt.addInt(Result);
+ break; 
+}
+case wxAuiNotebookEvent_SetOldSelection: { // wxAuiNotebookEvent::SetOldSelection 
+ wxAuiNotebookEvent *This = (wxAuiNotebookEvent *) getPtr(bp,memenv); bp += 4;
+ int * s = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetOldSelection((int) *s);
+ break; 
+}
+case wxAuiNotebookEvent_GetOldSelection: { // wxAuiNotebookEvent::GetOldSelection 
+ wxAuiNotebookEvent *This = (wxAuiNotebookEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetOldSelection();
+ rt.addInt(Result);
+ break; 
+}
+case wxAuiNotebookEvent_SetDragSource: { // wxAuiNotebookEvent::SetDragSource 
+ wxAuiNotebookEvent *This = (wxAuiNotebookEvent *) getPtr(bp,memenv); bp += 4;
+ wxAuiNotebook *s = (wxAuiNotebook *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetDragSource(s);
+ break; 
+}
+case wxAuiNotebookEvent_GetDragSource: { // wxAuiNotebookEvent::GetDragSource 
+ wxAuiNotebookEvent *This = (wxAuiNotebookEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxAuiNotebook * Result = (wxAuiNotebook*)This->GetDragSource();
+ rt.addRef(getRef((void *)Result,memenv), "wxAuiNotebook");
+ break; 
+}
+case wxAuiManagerEvent_SetManager: { // wxAuiManagerEvent::SetManager 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ wxAuiManager *mgr = (wxAuiManager *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetManager(mgr);
+ break; 
+}
+case wxAuiManagerEvent_GetManager: { // wxAuiManagerEvent::GetManager 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxAuiManager * Result = (wxAuiManager*)This->GetManager();
+ rt.addRef(getRef((void *)Result,memenv), "wxAuiManager");
+ break; 
+}
+case wxAuiManagerEvent_SetPane: { // wxAuiManagerEvent::SetPane 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ wxAuiPaneInfo *p = (wxAuiPaneInfo *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetPane(p);
+ break; 
+}
+case wxAuiManagerEvent_GetPane: { // wxAuiManagerEvent::GetPane 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxAuiPaneInfo * Result = (wxAuiPaneInfo*)This->GetPane();
+ rt.addRef(getRef((void *)Result,memenv), "wxAuiPaneInfo");
+ break; 
+}
+case wxAuiManagerEvent_SetButton: { // wxAuiManagerEvent::SetButton 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ int * b = (int *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetButton((int) *b);
+ break; 
+}
+case wxAuiManagerEvent_GetButton: { // wxAuiManagerEvent::GetButton 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ int Result = This->GetButton();
+ rt.addInt(Result);
+ break; 
+}
+case wxAuiManagerEvent_SetDC: { // wxAuiManagerEvent::SetDC 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ wxDC *pdc = (wxDC *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetDC(pdc);
+ break; 
+}
+case wxAuiManagerEvent_GetDC: { // wxAuiManagerEvent::GetDC 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ wxDC * Result = (wxDC*)This->GetDC();
+ rt.addRef(getRef((void *)Result,memenv), "wxDC");
+ break; 
+}
+case wxAuiManagerEvent_Veto: { // wxAuiManagerEvent::Veto 
+ bool veto=true;
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ bp += 4; /* Align */
+ while( * (int*) bp) { switch (* (int*) bp) { 
+  case 1: {bp += 4;
+ veto = *(bool *) bp; bp += 4;
+  } break;
+ }}; 
+ if(!This) throw wxe_badarg(0);
+ This->Veto(veto);
+ break; 
+}
+case wxAuiManagerEvent_GetVeto: { // wxAuiManagerEvent::GetVeto 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->GetVeto();
+ rt.addBool(Result);
+ break; 
+}
+case wxAuiManagerEvent_SetCanVeto: { // wxAuiManagerEvent::SetCanVeto 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ bool * can_veto = (bool *) bp; bp += 4;
+ if(!This) throw wxe_badarg(0);
+ This->SetCanVeto((bool) *can_veto);
+ break; 
+}
+case wxAuiManagerEvent_CanVeto: { // wxAuiManagerEvent::CanVeto 
+ wxAuiManagerEvent *This = (wxAuiManagerEvent *) getPtr(bp,memenv); bp += 4;
+ if(!This) throw wxe_badarg(0);
+ bool Result = This->CanVeto();
+ rt.addBool(Result);
+ break; 
+}
   default: {
     wxeReturn error = wxeReturn(WXE_DRV_PORT, Ecmd.caller, false);    error.addAtom("_wxe_error_");
     error.addInt((int) Ecmd.op);
-    error.addAtom("undef");
+    error.addAtom("not_supported");
     error.addTupleCount(3);
+    error.send();
     return ;
   }
 }  // switch

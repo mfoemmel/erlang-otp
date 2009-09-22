@@ -383,7 +383,7 @@ get_renaming(C, Map) ->
 %% State abstraction
 
 -record(state, {cfg					:: #cfg{},
-		changed = false				:: bool(),
+		changed = false				:: boolean(),
 		succ					:: #cfg{},
 		pred					:: #cfg{},
 		start_labels				:: [icode_lbl(),...],

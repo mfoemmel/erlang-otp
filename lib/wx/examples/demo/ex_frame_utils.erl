@@ -16,9 +16,9 @@
 %% 
 %% %CopyrightEnd%
 
--module(ex_frameutilities).
+-module(ex_frame_utils).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -51,31 +51,17 @@ do_init(Config) ->
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "Utilities"}]),
 
-    Button1 = wxButton:new(Panel, 1, [{label, "Open window"}]),
-    Button2 = wxButton:new(Panel, 2, [{label, "Open wxMiniFrame"}]),
-    Button3 = wxButton:new(Panel, 3, [{label, "Open erlang.org"}]),
+    Labels = [{"Open window",1}, {"Open wxMiniFrame",2}, {"Open erlang.org",3}],
+    Buttons = [wxButton:new(Panel, Id, [{label, L}])|| {L,Id} <- Labels],
+
     %% Add to sizers
-    Options = [{proportion, 1}, {flag, ?wxEXPAND}],
-    wxSizer:add(Sizer, Button1, Options),
-    wxSizer:add(Sizer, Button2, Options),
-    wxSizer:add(Sizer, Button3, Options),
+    [wxSizer:add(Sizer, Button) || Button <- Buttons],
     wxPanel:connect(Panel, command_button_clicked),
-
     wxSizer:add(MainSizer, Sizer),
-
     wxPanel:setSizer(Panel, MainSizer),
     {Panel, #state{parent=Panel, config=Config}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{id = Id,
 		 event = #wxCommand{type = command_menu_selected}},
@@ -105,10 +91,16 @@ handle_event(#wx{userData = StatusBar,
 	     State) ->
     wxStatusBar:setStatusText(StatusBar, io_lib:format("Mouse position: ~p", [{X,Y}]),
 			      [{number, 1}]),
-    {noreply, State};
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

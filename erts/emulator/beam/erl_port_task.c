@@ -66,7 +66,6 @@ erts_smp_atomic_t erts_port_task_outstanding_io_tasks;
 struct ErtsPortTaskQueue_ {
     ErtsPortTask *first;
     ErtsPortTask *last;
-    ErtsRunQueue *runq;
     Port *port;
 };
 

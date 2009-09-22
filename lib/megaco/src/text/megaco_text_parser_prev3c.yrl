@@ -65,7 +65,7 @@
 %% This is ugly but...
 %%----------------------------------------------------------------------
 
-Expect 92.
+Expect 93.
 
 
 %%----------------------------------------------------------------------
@@ -1126,17 +1126,17 @@ parmValue            -> 'GREATER' value :
 %%                       LSBRKT VALUE *(COMMA VALUE) RSBRKT  /
 %%                       LSBRKT VALUE COLON VALUE RSBRKT ) /
 %%                       LBRKT VALUE *(COMMA VALUE) RBRKT
-alternativeValue     -> 'LBRKT' value valueList 'RBRKT'
-                            : #'PropertyParm'{value     = ['$2' | '$3'],
-					      extraInfo = {sublist, false}}. % OR
+alternativeValue     -> 'LBRKT' value valueList 'RBRKT' : 
+                        #'PropertyParm'{value     = ['$2' | '$3'],
+					extraInfo = {sublist, false}}. % OR
 
-alternativeValue     -> 'LSBRKT' value 'COLON' value 'RSBRKT'
-                            : #'PropertyParm'{value     = ['$2', '$4'],
-                                              extraInfo = {range, true}}.
+alternativeValue     -> 'LSBRKT' value 'COLON' value 'RSBRKT' : 
+                        #'PropertyParm'{value     = ['$2', '$4'],
+					extraInfo = {range, true}}.
 
-alternativeValue     -> 'LSBRKT' value valueList 'RSBRKT'
-                            : #'PropertyParm'{value     = ['$2' | '$3'],
-					      extraInfo = {sublist, true}}. % AND
+alternativeValue     -> 'LSBRKT' value valueList 'RSBRKT' : 
+                         #'PropertyParm'{value     = ['$2' | '$3'],
+					 extraInfo = {sublist, true}}. % AND
 
 alternativeValue     -> value : 
                         #'PropertyParm'{value = ['$1']} .
@@ -1546,7 +1546,7 @@ safeToken2           -> 'AuditToken'            : '$1' .
 safeToken2           -> 'AuditCapToken'         : '$1' .
 safeToken2           -> 'AuditValueToken'       : '$1' .
 safeToken2           -> 'AuthToken'             : '$1' .
-%% v3-safeToken2           -> 'BothToken'             : '$1' . % v3
+safeToken2           -> 'BothToken'             : '$1' . % v3
 %% v3-safeToken2           -> 'BothwayToken'          : '$1' .
 safeToken2           -> 'BriefToken'            : '$1' .
 %% v3-safeToken2           -> 'BufferToken'           : '$1' .

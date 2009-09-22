@@ -21,7 +21,8 @@
 -export([
 	 process_incoming_msg/4, 
 	 generate_outgoing_msg/5,
-	 generate_discovery_msg/5, generate_discovery_msg/6
+	 generate_discovery_msg/4, generate_discovery_msg/5,
+	 current_statsNotInTimeWindows_vb/0
 	]).
 
 -define(SNMP_USE_V3, true).
@@ -58,6 +59,7 @@
 
 process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
     TermDiscoEnabled = is_terminating_discovery_enabled(), 
+    TermTriggerUsername = terminating_trigger_username(), 
     %% 3.2.1
     ?vtrace("process_incoming_msg -> check security parms: 3.2.1",[]),
     UsmSecParams =
@@ -70,22 +72,17 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 	end,
     case UsmSecParams of
 	#usmSecurityParameters{msgAuthoritativeEngineID = MsgAuthEngineID,
-			       msgUserName              = ""} when TermDiscoEnabled =:= true ->
+			       msgUserName              = TermTriggerUsername} when TermDiscoEnabled =:= true ->
 	    %% Step 1 discovery message
-	    ?vtrace("process_incoming_msg -> discovery step 1", []),
-	    process_discovery_msg(MsgAuthEngineID, Data, SecLevel);
-	
-	#usmSecurityParameters{msgAuthoritativeEngineID = MsgAuthEngineID,
-			       msgUserName              = "initial"} when TermDiscoEnabled =:= true ->
-	    %% Step 1 discovery message
-	    ?vtrace("process_incoming_msg -> [initial] discovery step 1", []),
+	    ?vtrace("process_incoming_msg -> [~p] discovery step 1", 
+		    [TermTriggerUsername]),
 	    process_discovery_msg(MsgAuthEngineID, Data, SecLevel);
 	
 	#usmSecurityParameters{msgAuthoritativeEngineID = MsgAuthEngineID,
 			       msgUserName = MsgUserName} ->
 	    ?vlog("process_incoming_msg -> USM security parms: "
-		  "~n   authEngineID: \"~s\""
-		  "~n   userName:     \"~s\"", [MsgAuthEngineID, MsgUserName]),
+		  "~n   msgAuthEngineID: ~w"
+		  "~n   userName:        ~p", [MsgAuthEngineID, MsgUserName]),
 	    %% 3.2.3
 	    ?vtrace("process_incoming_msg -> check engine id: 3.2.3",[]),
 	    case snmp_user_based_sm_mib:is_engine_id_known(MsgAuthEngineID) of
@@ -171,7 +168,7 @@ process_discovery_msg(MsgAuthEngineID, Data, SecLevel) ->
 
 authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
     %% 3.2.6
-    ?vtrace("authenticate_incoming -> 3.2.6",[]),
+    ?vtrace("authenticate_incoming -> 3.2.6", []),
     AuthProtocol = element(?usmUserAuthProtocol, UsmUser),
     #usmSecurityParameters{msgAuthoritativeEngineID    = MsgAuthEngineID,
 			   msgAuthoritativeEngineBoots = MsgAuthEngineBoots,
@@ -179,7 +176,7 @@ authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
 			   msgAuthenticationParameters = MsgAuthParams} = 
 	UsmSecParams,
     ?vtrace("authenticate_incoming -> Sec params: "
-	    "~n   MsgAuthEngineID:    ~p"
+	    "~n   MsgAuthEngineID:    ~w"
 	    "~n   MsgAuthEngineBoots: ~p"
 	    "~n   MsgAuthEngineTime:  ~p",
 	    [MsgAuthEngineID, MsgAuthEngineBoots, MsgAuthEngineTime]),
@@ -256,9 +253,13 @@ non_authoritative(SecName,
 	    [SecName, 
 	     MsgAuthEngineID, MsgAuthEngineBoots, MsgAuthEngineTime]),
     SnmpEngineBoots = get_engine_boots(MsgAuthEngineID),
-    ?vtrace("non_authoritative -> SnmpEngineBoots: ~p", [SnmpEngineBoots]),
-    SnmpEngineTime = get_engine_time(MsgAuthEngineID),
-    LatestRecvTime = get_engine_latest_time(MsgAuthEngineID),
+    SnmpEngineTime  = get_engine_time(MsgAuthEngineID),
+    LatestRecvTime  = get_engine_latest_time(MsgAuthEngineID),
+    ?vtrace("non_authoritative -> "
+	    "~n   SnmpEngineBoots: ~p"
+	    "~n   SnmpEngineTime:  ~p"
+	    "~n   LatestRecvTime:  ~p", 
+	    [SnmpEngineBoots, SnmpEngineTime, LatestRecvTime]),
     UpdateLCD =
 	if
 	    MsgAuthEngineBoots > SnmpEngineBoots -> true;
@@ -279,16 +280,15 @@ non_authoritative(SecName,
     end,
     %% 3.2.7.b2
     ?vtrace("non_authoritative -> "
-	    "check if message is outside time window: 3.2.7b2",
-	    []),
+	    "check if message is outside time window: 3.2.7b2", []),
     InTimeWindow =
 	if
-	    SnmpEngineBoots == 2147483647 ->
+	    SnmpEngineBoots =:= 2147483647 ->
 		false;
 	    MsgAuthEngineBoots < SnmpEngineBoots ->
 		false;
-	    MsgAuthEngineBoots =:= SnmpEngineBoots,
-	    MsgAuthEngineTime < (SnmpEngineTime - 150) ->
+	    ((MsgAuthEngineBoots =:= SnmpEngineBoots) andalso 
+	     (MsgAuthEngineTime < (SnmpEngineTime - 150))) ->
 		false;
 	    true -> true
 	end,
@@ -305,9 +305,19 @@ non_authoritative(SecName,
 		    SnmpEngineTime, MsgAuthEngineTime]),
 	    error(notInTimeWindow, []);
 	true ->
-	    ok
-    end,
-    true.
+	    %% If the previous values where all zero's this is the 
+	    %% second stage discovery message
+	    if
+		((SnmpEngineBoots =:= 0) andalso 
+		 (SnmpEngineTime  =:= 0) andalso 
+		 (LatestRecvTime  =:= 0)) ->
+		    ?vtrace("non_authoritative -> "
+			    "[maybe] originating discovery stage 2", []),
+		    discovery;
+		true ->
+		    true
+	    end
+    end.
 
       
 is_auth(?usmNoAuthProtocol, _, _, _, SecName, _, _, _) -> % 3.2.5
@@ -318,6 +328,7 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
     TermDiscoEnabled = is_terminating_discovery_enabled(), 
     TermDiscoStage2  = terminating_discovery_stage2(), 
     IsAuth = auth_in(AuthProtocol, AuthKey, AuthParams, Packet),
+    ?vtrace("is_auth -> IsAuth: ~p", [IsAuth]),
     case IsAuth of
 	true ->
 	    %% 3.2.7
@@ -330,13 +341,13 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 				   (MsgAuthEngineTime =:= 0) andalso 
 				   (TermDiscoEnabled =:= true) andalso 
 				   (TermDiscoStage2 =:= discovery)) -> %% 3.2.7a
-		    ?vtrace("is_auth -> discovery stage 2 - discovery",[]),
+		    ?vtrace("is_auth -> terminating discovery stage 2 - discovery",[]),
 		    discovery;
 		SnmpEngineID when ((MsgAuthEngineBoots =:= 0) andalso 
 				   (MsgAuthEngineTime =:= 0) andalso 
 				   (TermDiscoEnabled =:= true) andalso 
 				   (TermDiscoStage2 =:= plain)) -> %% 3.2.7a
-		    ?vtrace("is_auth -> discovery stage 2 - plain",[]),
+		    ?vtrace("is_auth -> terminating discovery stage 2 - plain",[]),
 		    %% This will *always* result in the manager *not* 
 		    %% beeing in timewindow
 		    authoritative(SecName, 
@@ -477,23 +488,20 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 			  AuthKey, AuthProtocol, SecLevel).
 
 
-generate_discovery_msg(Message, SecEngineID, ManagerEngineID, 
-		       SecName, SecLevel) ->
-    generate_discovery_msg(Message, SecEngineID, ManagerEngineID, 
-			   SecName, SecLevel, "").
+generate_discovery_msg(Message, SecEngineID, SecName, SecLevel) ->
+    generate_discovery_msg(Message, SecEngineID, SecName, SecLevel, "").
 
-generate_discovery_msg(Message, SecEngineID, ManagerEngineID, 
-		       SecName, SecLevel, InitialUserName) ->
+generate_discovery_msg(Message, 
+		       SecEngineID, SecName, SecLevel, 
+		       InitialUserName) ->
    ?vtrace("generate_discovery_msg -> entry with"
 	    "~n   SecEngineID:     ~p"
-	    "~n   ManagerEngineID: ~p"
 	    "~n   SecName:         ~p"
 	    "~n   SecLevel:        ~p"
 	    "~n   InitialUserName: ~p", 
-	    [SecEngineID, ManagerEngineID, SecName, SecLevel, 
-	     InitialUserName]),
+	    [SecEngineID, SecName, SecLevel, InitialUserName]),
     {UserName, AuthProtocol, AuthKey, PrivProtocol, PrivKey} = 
-	case ManagerEngineID of
+	case SecEngineID of
 	    "" ->
 		%% Discovery step 1
 		%% Nothing except the user name will be used in this
@@ -503,26 +511,6 @@ generate_discovery_msg(Message, SecEngineID, ManagerEngineID,
 		%% {"", usmNoAuthProtocol, "", usmNoPrivProtocol, ""}; 
 		{InitialUserName, 
 		 usmNoAuthProtocol, "", usmNoPrivProtocol, ""}; 
-
-%% 	    _ ->
-%% 		%% Discovery step 2
-%% 		case snmp_user_based_sm_mib:get_user_from_security_name(
-%% 		       SecEngineID, SecName) of
-%% 		    User when element(?usmUserStatus, User) =:=
-%% 			      ?'RowStatus_active' ->
-%% 			{element(?usmUserName, User),
-%% 			 element(?usmUserAuthProtocol, User),
-%% 			 element(?usmUserAuthKey, User),
-%% 			 usmNoPrivProtocol, ""};
-%% 		    {_, Name,_,_,_,_,_,_,_,_,_,_,_, RowStatus,_,_} ->
-%% 			?vdebug("generate_discovery_msg -> "
-%% 				"found user ~p with wrong row status: ~p", 
-%% 				[Name, RowStatus]),
-%% 			error(unknownSecurityName);
-%% 		    _ ->
-%% 			error(unknownSecurityName)
-%% 		end
-
 
 	    _ ->
 		%% Discovery step 2
@@ -548,7 +536,7 @@ generate_discovery_msg(Message, SecEngineID, ManagerEngineID,
     {ScopedPduData, MsgPrivParams} =
 	encrypt(ScopedPduBytes, PrivProtocol, PrivKey, SecLevel),
     UsmSecParams =
-	#usmSecurityParameters{msgAuthoritativeEngineID    = ManagerEngineID, 
+	#usmSecurityParameters{msgAuthoritativeEngineID    = SecEngineID, 
 			       msgAuthoritativeEngineBoots = 0, % Boots, 
 			       msgAuthoritativeEngineTime  = 0, % Time, 
 			       msgUserName                 = UserName,
@@ -675,6 +663,14 @@ is_terminating_discovery_enabled() ->
 
 terminating_discovery_stage2() ->
     snmpa_agent:terminating_discovery_stage2().
+
+terminating_trigger_username() ->
+    snmpa_agent:terminating_trigger_username().
+
+current_statsNotInTimeWindows_vb() ->
+    #varbind{oid          = ?usmStatsNotInTimeWindows_instance,
+	     variabletype = 'Counter32',
+	     value        = get_counter(usmStatsNotInTimeWindows)}.
 
 
 %%-----------------------------------------------------------------

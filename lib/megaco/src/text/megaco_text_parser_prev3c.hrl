@@ -215,7 +215,7 @@ ensure_hex4_or_ip4addr({TokenTag, Line, Addr} = V) ->
 ensure_hex4({_TokenTag, Line, Hex4}) 
   when length(Hex4) =< 4, length(Hex4) > 0 ->
     case (catch do_ensure_hex4(Hex4)) of
-	IL when list(IL), length(IL) == 2 ->
+	IL when is_list(IL) andalso (length(IL) =:= 2) ->
 	    IL;
 	Error ->
 	    return_error(Line, {bad_hex4, Hex4, Error})
@@ -676,7 +676,7 @@ merge_indAudPackagesDescriptor(Pkgs) ->
 
 merge_auditDescriptor([]) ->
     #'AuditDescriptor'{};
-merge_auditDescriptor(Tokens) when list(Tokens) ->
+merge_auditDescriptor(Tokens) when is_list(Tokens) ->
     case lists:keysearch(terminationAudit, 1, Tokens) of
 	{value, {terminationAudit, TA}} ->
 	    case lists:keydelete(terminationAudit, 1, Tokens) of
@@ -1036,6 +1036,10 @@ do_merge_signalRequest(Sig, [], SPL) ->
 -compile({inline,[{select_stream_or_other,2}]}).
 -endif.
 select_stream_or_other(EventParameterName, ParmValue) ->
+%%     io:format("select_stream_or_other -> entry with"
+%% 	      "~n   EventParameterName: ~p"
+%% 	      "~n   ParmValue:          ~p"
+%% 	      "~n", [EventParameterName, ParmValue]),
     if
 	(EventParameterName =:= "st") orelse 
 	(EventParameterName =:= "stream") ->
@@ -1159,6 +1163,8 @@ make_RegulatedEmbeddedDescriptor({embed, SD, SED}) ->
 -compile({inline,[{merge_eventParameters,1}]}).
 -endif.
 merge_eventParameters(Params) ->
+%%     io:format("merge_eventParameters -> entry"
+%% 	      "~n", []),
     SID  = asn1_NOVALUE,
     EPL  = [],
     RA   = #'RequestedActions'{},
@@ -1166,40 +1172,56 @@ merge_eventParameters(Params) ->
     do_merge_eventParameters(Params, SID, EPL, RA, HasA) .
                                    
 do_merge_eventParameters([H | T], SID, EPL, RA, HasA) ->
+%%     io:format("do_merge_eventParameters -> entry with"
+%% 	      "~n   H:    ~p"
+%% 	      "~n   SID:  ~p"
+%% 	      "~n   EPL:  ~p"
+%% 	      "~n   RA:   ~p"
+%% 	      "~n   HasA: ~p"
+%% 	      "~n", [H, SID, EPL, RA, HasA]),
     case H of
-        keepActive when RA#'RequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when RA#'RequestedActions'.keepActive =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{keepActive = true},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        resetEventsDescriptor when RA#'RequestedActions'.resetEventsDescriptor == asn1_NOVALUE ->
+        resetEventsDescriptor when RA#'RequestedActions'.resetEventsDescriptor =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{resetEventsDescriptor = 'NULL'},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+        {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{signalsDescriptor = SD,
 					secondEvent       = SED},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        {eventDM, DM} when RA#'RequestedActions'.eventDM == asn1_NOVALUE ->
+        {eventDM, DM} when RA#'RequestedActions'.eventDM =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{eventDM = DM},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
-        {stream, NewSID} when SID == asn1_NOVALUE ->
+        {stream, NewSID} when SID =:= asn1_NOVALUE ->
             do_merge_eventParameters(T, NewSID, EPL, RA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_eventParameters(T, SID, [EP | EPL], RA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_eventParameters(T, SID, [EP | EPL], RA, HasA);
-        {notifyBehaviour, NB} when RA#'RequestedActions'.notifyBehaviour == asn1_NOVALUE ->
+        {notifyBehaviour, NB} when RA#'RequestedActions'.notifyBehaviour =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{notifyBehaviour = NB},
             do_merge_eventParameters(T, SID, EPL, RA2, yes);
         _ ->
             return_error(0, {bad_eventParameter, H})
     end;
 do_merge_eventParameters([], SID, EPL, RA, yes) ->
+%%     io:format("do_merge_eventParameters(yes) -> entry with"
+%% 	      "~n   SID:  ~p"
+%% 	      "~n   EPL:  ~p"
+%% 	      "~n   RA:   ~p"
+%% 	      "~n", [SID, EPL, RA]),
     #'RequestedEvent'{streamID    = SID,
                       eventAction = RA, 
                       evParList   = lists:reverse(EPL)};
 do_merge_eventParameters([], SID, EPL, _RA, no) ->
+%%     io:format("do_merge_eventParameters(no) -> entry with"
+%% 	      "~n   SID:  ~p"
+%% 	      "~n   EPL:  ~p"
+%% 	      "~n", [SID, EPL]),
     #'RequestedEvent'{streamID    = SID,
                       eventAction = asn1_NOVALUE, 
                       evParList   = lists:reverse(EPL)}.
@@ -1216,30 +1238,38 @@ merge_secondEventParameters(Params) ->
                                    
 do_merge_secondEventParameters([H | T], SID, EPL, SRA, HasA) ->
     case H of
-        keepActive when SRA#'SecondRequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when SRA#'SecondRequestedActions'.keepActive =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{keepActive = true},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        resetEventsDescriptor when SRA#'SecondRequestedActions'.resetEventsDescriptor == asn1_NOVALUE ->
+
+        resetEventsDescriptor when SRA#'SecondRequestedActions'.resetEventsDescriptor =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{resetEventsDescriptor = 'NULL'},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+
+        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{signalsDescriptor = SD},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM == asn1_NOVALUE ->
+
+        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{eventDM = DM},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
-        {stream, NewSID} when SID == asn1_NOVALUE ->
+
+        {stream, NewSID} when SID =:= asn1_NOVALUE ->
             do_merge_secondEventParameters(T, NewSID, EPL, SRA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_secondEventParameters(T, SID, [EP | EPL], SRA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_secondEventParameters(T, SID, [EP | EPL], SRA, HasA);
-        {notifyBehaviour, NB} when SRA#'SecondRequestedActions'.notifyBehaviour == asn1_NOVALUE ->
+
+        {notifyBehaviour, NB} when SRA#'SecondRequestedActions'.notifyBehaviour =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{notifyBehaviour = NB},
             do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
+
         _ ->
             return_error(0, {bad_secondEventParameter, H})
     end;

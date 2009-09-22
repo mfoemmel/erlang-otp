@@ -515,6 +515,7 @@ static int stop_lbuf(void)
 	driver_free(lbuf);
 	lbuf = NULL;
     }
+    llen = 0; /* To avoid access error in win_con:AddToCmdHistory during exit*/
     return TRUE;
 }
 

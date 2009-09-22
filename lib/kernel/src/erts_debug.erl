@@ -79,7 +79,7 @@ remember_term(Term, Seen) ->
 	    end
     end.
 
--spec is_term_seen(term(), [term()]) -> bool().
+-spec is_term_seen(term(), [term()]) -> boolean().
 
 is_term_seen(Term, [H|T]) ->
     case erts_debug:same(Term, H) of

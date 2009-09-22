@@ -137,6 +137,7 @@ atom cons
 atom const
 atom context_switches
 atom copy
+atom cpu
 atom cpu_timestamp
 atom cr
 atom crlf
@@ -202,6 +203,7 @@ atom first
 atom firstline
 atom flags
 atom flush
+atom flush_monitor_message
 atom format_cpu_topology
 atom free
 atom fullsweep_after

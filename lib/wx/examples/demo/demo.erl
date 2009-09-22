@@ -24,10 +24,11 @@
 
 -include_lib("wx/include/wx.hrl").
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 -export([start/0, start/1, start_link/0, start_link/1, format/3, 
 	 init/1, terminate/2,  code_change/3,
 	 handle_info/2, handle_call/3, handle_event/2]).
+
 
 -record(state, {win, demo, example, selector, log, code}).
 
@@ -59,8 +60,9 @@ init(Options) ->
 
     Frame = wxFrame:new(wx:null(), ?wxID_ANY, "wxErlang widgets", [{size,{1000,500}}]),
     MB = wxMenuBar:new(),
-    wxFrame:setMenuBar(Frame,MB),
     File    = wxMenu:new([]),
+    wxMenu:append(File, ?wxID_PRINT, "&Print code"),
+    wxMenu:appendSeparator(File),
     wxMenu:append(File, ?wxID_EXIT, "&Quit"),
     Debug    = wxMenu:new([]),
     wxMenu:appendRadioItem(Debug, ?DEBUG_NONE, "None"), 
@@ -73,6 +75,8 @@ init(Options) ->
     wxMenuBar:append(MB, File, "&File"),
     wxMenuBar:append(MB, Debug, "&Debug"),
     wxMenuBar:append(MB, Help, "&Help"),
+    wxFrame:setMenuBar(Frame,MB),
+
     wxFrame:connect(Frame, command_menu_selected),
 
     _SB = wxFrame:createStatusBar(Frame,[]),
@@ -82,16 +86,13 @@ init(Options) ->
     %%   P  Widgets|Code |    Demo
     %%   S  -------------------------------
     %%   P          Log Window
-    TopSplitter   = wxSplitterWindow:new(Frame, []),    
-    UpperSplitter = wxSplitterWindow:new(TopSplitter, []),    
-    LeftSplitter  = wxSplitterWindow:new(UpperSplitter, []),
+    TopSplitter   = wxSplitterWindow:new(Frame, [{style, ?wxSP_NOBORDER}]),    
+    UpperSplitter = wxSplitterWindow:new(TopSplitter, [{style, ?wxSP_NOBORDER}]),    
+    LeftSplitter  = wxSplitterWindow:new(UpperSplitter, [{style, ?wxSP_NOBORDER}]),
     %% Setup so that sizers and initial sizes, resizes the windows correct
-    wxSplitterWindow:setMinimumPaneSize(TopSplitter, 1),
-    wxSplitterWindow:setMinimumPaneSize(UpperSplitter, 1),
-    wxSplitterWindow:setMinimumPaneSize(LeftSplitter, 1),
     wxSplitterWindow:setSashGravity(TopSplitter,   0.5),
-    wxSplitterWindow:setSashGravity(UpperSplitter, 0.70),
-    wxSplitterWindow:setSashGravity(LeftSplitter,  0.15),
+    wxSplitterWindow:setSashGravity(UpperSplitter, 0.60),
+    wxSplitterWindow:setSashGravity(LeftSplitter,  0.20),
 
     %% LeftSplitter:
     Example = fun(Beam) ->
@@ -108,19 +109,21 @@ init(Options) ->
     {LBPanel, [LB],_} = create_subwindow(LeftSplitter, "Example", [CreateLB]),
     wxListBox:setSelection(LB, 0),
     wxListBox:connect(LB, command_listbox_selected),
-    
+
     CreateCode = fun(Parent) -> 
 			 code_area(Parent)
 		 end,
     {CodePanel, [Code],_} = create_subwindow(LeftSplitter, "Code", [CreateCode]),
-    
-    wxSplitterWindow:splitVertically(LeftSplitter, LBPanel, CodePanel),
+
+    wxSplitterWindow:splitVertically(LeftSplitter, LBPanel, CodePanel,
+				     [{sashPosition,150}]),
 
     %% Demo: 
     {DemoPanel, [], DemoSz} = create_subwindow(UpperSplitter, "Demo", []),
     
     %% UpperSplitter:
-    wxSplitterWindow:splitVertically(UpperSplitter, LeftSplitter, DemoPanel),
+    wxSplitterWindow:splitVertically(UpperSplitter, LeftSplitter, DemoPanel,
+				     [{sashPosition,600}]),
     
     %% TopSplitter: 
     AddEvent = fun(Parent) ->
@@ -152,7 +155,10 @@ init(Options) ->
     wxSplitterWindow:setSashGravity(TopSplitter,   1.0),
     wxSplitterWindow:setSashGravity(UpperSplitter, 0.0),
     wxSplitterWindow:setSashGravity(LeftSplitter,  0.0),
-    
+    wxSplitterWindow:setMinimumPaneSize(TopSplitter, 1),
+    wxSplitterWindow:setMinimumPaneSize(UpperSplitter, 1),
+    wxSplitterWindow:setMinimumPaneSize(LeftSplitter, 1),
+
     wxToolTip:enable(true),
     wxToolTip:setDelay(500),
 
@@ -202,6 +208,16 @@ handle_event(#wx{id = Id,
 		 event = #wxCommand{type = command_menu_selected}},
 	     State = #state{}) ->
     case Id of
+	?wxID_PRINT ->
+	    %% If you are going to printout mainly text it is easier if
+	    %% you generate HTML code and use a wxHtmlEasyPrint
+	    %% instead of using DCs
+	    Module = "ex_" ++ wxListBox:getStringSelection(State#state.selector) ++ ".erl",
+	    HEP = wxHtmlEasyPrinting:new([{name, "Print"},
+					  {parentWindow, State#state.win}]),
+	    Html = demo_html_tagger:erl2htmltext(Module),
+	    wxHtmlEasyPrinting:previewText(HEP, Html),
+	    {noreply, State};
 	?DEBUG_TRACE ->
 	    wx:debug(trace),
 	    {noreply, State};
@@ -229,6 +245,7 @@ handle_event(#wx{id = Id,
 							   {caption, "About"}])),
 	    {noreply, State};		    
 	?wxID_EXIT ->
+	    wx_object:get_pid(State#state.example) ! stop,
 	    {stop, normal, State};
 	_ ->
 	    {noreply, State}
@@ -244,7 +261,9 @@ handle_event(Ev,State) ->
 code_change(_, _, State) ->
     {stop, not_yet_implemented, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    wx_object:get_pid(State#state.example) ! stop,
+    timer:sleep(200), %% Give the example process some time to cleanup.
     wx:destroy().
 
 %%%%%%%%%%%%%%%%% Internals %%%%%%%%%%
@@ -252,6 +271,8 @@ terminate(_Reason, _State) ->
 load_example(Ex, #state{demo={DemoPanel,DemoSz}, log=EvCtrl, code=Code}) ->
     ModStr = "ex_" ++ Ex,
     Mod = list_to_atom(ModStr),
+%%     WxDir = code:lib_dir(wx),
+%%     ModFile = filename:join([WxDir, "examples","demo", ModStr ++ ".erl"]),
     ModFile = ModStr ++ ".erl",
     load_code(Code, file:read_file(ModFile)),
     find(Code),
@@ -324,10 +345,10 @@ unload_code(Ed) ->
 find(Ed) ->
     ?stc:searchAnchor(Ed),
     Res = ?stc:searchNext(Ed, ?wxSTC_FIND_REGEXP, "^init"),
-    case Res >= 0 of	
+    case Res >= 0 of
 	true -> 
 	    %% io:format("Found ~p ~n",[Res]),
-	    ?stc:scrollToLine(Ed,?stc:lineFromPosition(Ed,Res) - 3),
+	    ?stc:scrollToLine(Ed,?stc:lineFromPosition(Ed,Res) - 1),
 	    true;
 	false ->
 	    io:format("Not Found ~s ~n",["^init"]),
@@ -339,5 +360,4 @@ keyWords() ->
 	 "end","fun","if","let","of","query","receive","when","bnot","not",
 	 "div","rem","band","and","bor","bxor","bsl","bsr","or","xor"],
     lists:flatten([K ++ " " || K <- L] ++ [0]).
-
 

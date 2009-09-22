@@ -193,14 +193,20 @@ main(int argc, char** argv)
 
     /*
      * Push standard arguments to Erlang.
+     *
+     * The @cwd argument was once needed, but from on R13B02 is optional.
+     * For maximum compatibility between erlc and erl of different versions,
+     * still provide the @cwd argument, unless it is too long to be
+     * represented as an atom.
      */
-
     if (getcwd(cwd, sizeof(cwd)) == NULL)
 	error("Failed to get current working directory: %s", strerror(errno));
 #ifdef __WIN32__
     (void) GetShortPathName(cwd, cwd, sizeof(cwd));
 #endif    
-    PUSH2("@cwd", cwd);
+    if (strlen(cwd) < 256) {
+	PUSH2("@cwd", cwd);
+    }
 
     /*
      * Parse all command line switches.

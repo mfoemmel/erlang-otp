@@ -1012,15 +1012,15 @@ server_disconnect(#server{handle = Handle} = State)
      megaco_tcp:close(Handle),
     {ok, State#server{handle = undefined}}.
 
-server_block(#server{handle = Handle} = State) 
-  when (Handle =/= undefined) ->
-     megaco_tcp:block(Handle),
-    {ok, State}.
+%% server_block(#server{handle = Handle} = State) 
+%%   when (Handle =/= undefined) ->
+%%      megaco_tcp:block(Handle),
+%%     {ok, State}.
 
-server_unblock(#server{handle = Handle} = State) 
-  when (Handle =/= undefined) ->
-     megaco_tcp:unblock(Handle),
-    {ok, State}.
+%% server_unblock(#server{handle = Handle} = State) 
+%%   when (Handle =/= undefined) ->
+%%      megaco_tcp:unblock(Handle),
+%%     {ok, State}.
 
 server_stop_transport(#server{transport_ref = Ref} = State) 
   when (Ref =/= undefined) ->

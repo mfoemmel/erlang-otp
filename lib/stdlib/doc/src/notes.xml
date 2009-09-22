@@ -29,6 +29,98 @@
   </header>
   <p>This document describes the changes made to the STDLIB application.</p>
 
+<section><title>STDLIB 1.16.3</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+	    <p>The linter used to crash on invalid <c>-opaque</c>
+	    declarations.</p>
+          <p>
+	    Own Id: OTP-8051</p>
+        </item>
+        <item>
+	    <p>Bugs in <c>digraph:add_edge/5</c> and
+	    <c>digraph:del_path/3</c> have been fixed. (Thanks to
+	    Crystal Din.)</p>
+          <p>
+	    Own Id: OTP-8066</p>
+        </item>
+        <item>
+	    <p>When trying to insert objects with
+	    <c>dets:insert_new()</c> into a Dets table of type
+	    <c>duplicate_bag</c>, already existing objects would
+	    sometimes be duplicated. This bug has been fixed. (Thanks
+	    to Crystal Din.)</p>
+          <p>
+	    Own Id: OTP-8070</p>
+        </item>
+        <item>
+          <p>
+	    Running erlc in a very deep directory (with a path length
+	    of more 256 or more characters) would cause the emulator
+	    to crash in a call to <c>list_to_atom/1</c>. (Thanks to
+	    Chris Newcombe.)</p>
+          <p>
+	    Own Id: OTP-8124</p>
+        </item>
+        <item>
+	    <p>A few minor bugs have been fixed in the Erlang Code
+	    Preprocessor (<c>epp</c>).</p>
+          <p>
+	    Own Id: OTP-8130</p>
+        </item>
+        <item>
+	    <p>A bug in The Erlang Meta Interpreter (<c>erl_eval</c>)
+	    has been fixed: exceptions generated in the template of
+	    bit string comprehensions were not handled properly.
+	    (Thanks to Ulf Wiger.)</p>
+          <p>
+	    Own Id: OTP-8133</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Option <c>{capture,none}</c> was missing in documentation
+	    for <c>re:run/3</c>.</p>
+          <p>
+	    Own Id: OTP-8113</p>
+        </item>
+        <item>
+	    <p>When <c>erl_scan:tokens()</c> returns an error tuple
+	    <c>{error, ErrorInfo, EndLocation</c>}, the list
+	    <c>LeftOverChars</c> is the remaining characters of the
+	    input data, starting from <c>EndLocation</c>. It used to
+	    be the empty list.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-8129</p>
+        </item>
+        <item>
+	    <p>The Erlang Meta Interpreter (<c>erl_eval</c>) has been
+	    somewhat optimized when it comes to interpreting
+	    <c>receive</c>-expressions. (Thanks to Richard
+	    Carlsson.)</p>
+          <p>
+	    Own Id: OTP-8139</p>
+        </item>
+        <item>
+	    <p>The Erlang Pretty Printer (<c>erl_pp</c>) has been
+	    modified as to handle types.</p>
+          <p>
+	    Own Id: OTP-8150</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>STDLIB 1.16.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

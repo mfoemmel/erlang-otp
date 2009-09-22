@@ -218,7 +218,7 @@ ensure_hex4_or_ip4addr({TokenTag, Line, Addr} = V) ->
 ensure_hex4({_TokenTag, Line, Hex4}) 
   when length(Hex4) =< 4, length(Hex4) > 0 ->
     case (catch do_ensure_hex4(Hex4)) of
-	IL when list(IL), length(IL) == 2 ->
+	IL when is_list(IL) andalso (length(IL) =:= 2) ->
 	    IL;
 	Error ->
 	    return_error(Line, {bad_hex4, Hex4, Error})
@@ -459,20 +459,20 @@ merge_indAudLocalControlDescriptor(Parms) ->
 					  
 do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
     case Parm of
-	modeToken when Desc#'IndAudLocalControlDescriptor'.streamMode == asn1_NOVALUE ->
+	modeToken when Desc#'IndAudLocalControlDescriptor'.streamMode =:= asn1_NOVALUE ->
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{streamMode = 'NULL'},
 	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	reservedGroupToken when Desc#'IndAudLocalControlDescriptor'.reserveGroup == asn1_NOVALUE ->
+	reservedGroupToken when Desc#'IndAudLocalControlDescriptor'.reserveGroup =:= asn1_NOVALUE ->
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{reserveGroup = 'NULL'},
 	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	reservedValueToken when Desc#'IndAudLocalControlDescriptor'.reserveValue == asn1_NOVALUE ->
+	reservedValueToken when Desc#'IndAudLocalControlDescriptor'.reserveValue =:= asn1_NOVALUE ->
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{reserveValue = 'NULL'},
 	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	{pkgdName, Val} when Desc#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
+	{pkgdName, Val} when Desc#'IndAudLocalControlDescriptor'.propertyParms =:= asn1_NOVALUE ->
 	    PropParms = [#'IndAudPropertyParm'{name = Val}],
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms},
 	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	{pkgdName, Val} when list(Desc#'IndAudLocalControlDescriptor'.propertyParms) ->
+	{pkgdName, Val} when is_list(Desc#'IndAudLocalControlDescriptor'.propertyParms) ->
 	    PropParms = Desc#'IndAudLocalControlDescriptor'.propertyParms,
 	    PropParms2 = [#'IndAudPropertyParm'{name = Val} | PropParms],
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms2},
@@ -573,7 +573,7 @@ ensure_indAudTerminationStateParm(Token) ->
 
 merge_auditDescriptor([]) ->
     #'AuditDescriptor'{};
-merge_auditDescriptor(Tokens) when list(Tokens) ->
+merge_auditDescriptor(Tokens) when is_list(Tokens) ->
     case lists:keysearch(terminationAudit, 1, Tokens) of
 	{value, {terminationAudit, TA}} ->
 	    case lists:keydelete(terminationAudit, 1, Tokens) of
@@ -1007,24 +1007,24 @@ merge_eventParameters(Params) ->
                                    
 do_merge_eventParameters([H | T], StreamId, EPL, RA, HasA) ->
     case H of
-        keepActive when RA#'RequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when RA#'RequestedActions'.keepActive =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{keepActive = true},
             do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
-        {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+        {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{signalsDescriptor = SD,
                                           secondEvent       = SED},
             do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
-        {eventDM, DM} when RA#'RequestedActions'.eventDM == asn1_NOVALUE ->
+        {eventDM, DM} when RA#'RequestedActions'.eventDM =:= asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{eventDM = DM},
             do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
-        {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
+        {stream, NewStreamId} when StreamId =:= asn1_NOVALUE ->
             do_merge_eventParameters(T, NewStreamId, EPL, RA, HasA);
         {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
         _ ->
             return_error(0, {bad_eventParameter, H})
@@ -1050,23 +1050,23 @@ merge_secondEventParameters(Params) ->
                                    
 do_merge_secondEventParameters([H | T], StreamId, EPL, SRA, HasA) ->
     case H of
-        keepActive when SRA#'SecondRequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when SRA#'SecondRequestedActions'.keepActive =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{keepActive = true},
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{signalsDescriptor = SD},
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM == asn1_NOVALUE ->
+        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM =:= asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{eventDM = DM},
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
+        {stream, NewStreamId} when StreamId =:= asn1_NOVALUE ->
             do_merge_secondEventParameters(T, NewStreamId, EPL, SRA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
         _ ->
             return_error(0, {bad_secondEventParameter, H})
@@ -1640,7 +1640,7 @@ ensure_uint(Val, Min, Max, Line) ->
 	    if
 		is_integer(Max) andalso (Val =< Max) ->
 		    Val;
-		Max == infinity ->
+		Max =:= infinity ->
 		    Val;
 		true ->
 		    return_error(Line, {too_large_integer, Val, Max})

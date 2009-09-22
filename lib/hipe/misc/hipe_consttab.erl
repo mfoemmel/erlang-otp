@@ -292,30 +292,30 @@ block_size({ElementType, Block, _SortOrder}) ->
 
 -record(ctdata, {type      :: ct_type(),
 		 alignment :: ct_alignment(),
-		 exported  :: bool(),
-		 data      :: any()}).
+		 exported  :: boolean(),
+		 data      :: term()}).
 -type ctdata() :: #ctdata{}.
 
 -spec mk_ctdata(Type::ct_type(), Alignment::ct_alignment(),
-		Exported::bool(), Data::any()) -> ctdata().
+		Exported::boolean(), Data::term()) -> ctdata().
 mk_ctdata(Type, Alignment, Exported, Data) ->
-  #ctdata{type=Type, alignment=Alignment, exported=Exported, data=Data}.
+  #ctdata{type = Type, alignment = Alignment, exported = Exported, data = Data}.
 
 -spec const_type(ctdata()) -> ct_type().
-const_type(#ctdata{type=Type}) -> Type.
+const_type(#ctdata{type = Type}) -> Type.
 
 -spec const_align(ctdata()) -> ct_alignment().
-const_align(#ctdata{alignment=Alignment}) -> Alignment.
+const_align(#ctdata{alignment = Alignment}) -> Alignment.
 
--spec const_exported(ctdata()) -> bool().
-const_exported(#ctdata{exported=Exported}) -> Exported.
+-spec const_exported(ctdata()) -> boolean().
+const_exported(#ctdata{exported = Exported}) -> Exported.
 
 -spec const_data(ctdata()) -> term().
-const_data(#ctdata{data=Data}) -> Data.
+const_data(#ctdata{data = Data}) -> Data.
 
 -spec update_const_data(ctdata(), {_,[_]} | {_,[_],_}) -> ctdata().
 update_const_data(CTData, Data) -> 
-  CTData#ctdata{data=Data}.
+  CTData#ctdata{data = Data}.
 
 %% @doc Returns the size in bytes.
 -spec const_size(ctdata()) -> non_neg_integer().

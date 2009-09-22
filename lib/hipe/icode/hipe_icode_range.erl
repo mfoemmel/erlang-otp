@@ -57,10 +57,10 @@
 -type inf_integer() :: 'neg_inf' | 'pos_inf' | integer().
 
 -record(range, {range :: range_rep(),
-		other :: bool()}).
+		other :: boolean()}).
 
 -record(ann,   {range :: #range{},
-                type  :: erl_type(),
+                type  :: erl_types:erl_type(),
 		count :: integer()}).
 
 -type range_anno() :: {range_anno, #ann{}, fun((#ann{}) -> string())}.
@@ -214,7 +214,7 @@ analyse_blocks(State, Work) ->
       analyse_blocks(NewState, NewWork2)
   end.
 
--spec analyse_block(label(), info(), #state{}, bool()) -> {#state{}, [label()]}.
+-spec analyse_block(label(), info(), #state{}, boolean()) -> {#state{}, [label()]}.
 
 analyse_block(Label, Info, State, Rewrite) ->
   BB = state__bb(State, Label),
@@ -225,7 +225,7 @@ analyse_block(Label, Info, State, Rewrite) ->
   State2 = state__ret_type_update(State1, RetType),
   state__update_info(State2, InfoList, Rewrite).
 
--spec analyse_BB([icode_instr()], info(), [icode_instr()], bool(), call_fun()) ->
+-spec analyse_BB([icode_instr()], info(), [icode_instr()], boolean(), call_fun()) ->
 	 {[icode_instr()], [{label(),info()}], #range{}}.
 
 analyse_BB([Last], Info, Code, Rewrite, LookupFun) ->
@@ -313,7 +313,7 @@ update_ann(Ann = #ann{range = R1, type = Type, count = C}, R2, _Fun) ->
     NewR -> Ann#ann{range = NewR, count = C+1}
   end.
 
--spec type_to_ann(erl_type()) -> #ann{}.
+-spec type_to_ann(erl_types:erl_type()) -> #ann{}.
 
 type_to_ann(Type) ->
   #ann{range = range_from_simple_type(Type), type = t_limit(Type,1), count=1}.
@@ -435,7 +435,7 @@ analyse_phi(Phi) ->
   NewDst = update_info(Dst, DstRange, fun widen/3),  
   hipe_icode:subst_defines([{Dst, NewDst}], Phi).
 
--spec analyse_last_insn(icode_instr(), info(), bool(), call_fun()) ->
+-spec analyse_last_insn(icode_instr(), info(), boolean(), call_fun()) ->
 	  last_instr_return().
 
 analyse_last_insn(I, Info, Rewrite, LookupFun) ->
@@ -472,7 +472,7 @@ analyse_enter(Insn, _Info, LookupFun) ->
   [RetRange] = analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun),
   {{Insn,[]}, RetRange}.
 
--spec analyse_switch_val(#icode_switch_val{}, info(), bool()) -> instr_split_info().
+-spec analyse_switch_val(#icode_switch_val{}, info(), boolean()) -> instr_split_info().
 
 analyse_switch_val(Switch, Info, Rewrite) -> 
   Var = hipe_icode:switch_val_term(Switch),
@@ -515,7 +515,7 @@ get_range_label_list([], SRange, Acc) ->
   {PointTypes, _} = lists:unzip(Acc),
   {remove_point_types(SRange, PointTypes), Acc}.
 
--spec update_switch(#icode_switch_val{}, [{#range{},label()}], bool()) ->
+-spec update_switch(#icode_switch_val{}, [{#range{},label()}], boolean()) ->
 	 #icode_switch_val{}.
 
 update_switch(Switch, LabelRangeList, KeepFail) ->
@@ -590,7 +590,7 @@ analyse_last_call(Call, Info, LookupFun) ->
       {NewI, [{Continuation,NewInfo}, {Fail,Info}]}
   end.
 
--spec analyse_if(#icode_if{}, info(), bool()) ->
+-spec analyse_if(#icode_if{}, info(), boolean()) ->
 	 {#icode_goto{} | #icode_if{}, [{label(),info()}]}.
 
 analyse_if(If, Info, Rewrite) ->
@@ -604,7 +604,7 @@ analyse_if(If, Info, Rewrite) ->
   end.
 
 -spec analyse_sane_if(#icode_if{}, info(), [argument(),...],
-		      [#range{},...], bool()) ->
+		      [#range{},...], boolean()) ->
 	 {#icode_goto{} | #icode_if{}, [{label(), info()}]}.
 
 analyse_sane_if(If, Info, [Arg1, Arg2], [Range1, Range2], Rewrite) ->
@@ -766,7 +766,7 @@ range_inequality_propagation(Range1, Range2) ->
    range_init(R1_false_range, R1_other),
    range_init(R2_false_range, R2_other)}.
 
--spec analyse_type(#icode_type{}, info(), bool()) ->
+-spec analyse_type(#icode_type{}, info(), boolean()) ->
 	 {#icode_goto{} | #icode_type{}, [{label(),info()}]}.
 
 analyse_type(Type, Info, Rewrite) ->
@@ -842,7 +842,7 @@ compare_with_integer(N, OldVarRange) ->
 
 %%== Ranges ==================================================================
 
--spec pp_ann(#ann{} | erl_type()) -> [string()].
+-spec pp_ann(#ann{} | erl_types:erl_type()) -> [string()].
 
 pp_ann(#ann{range=#range{range=R, other=false}}) ->
   pp_range(R);
@@ -866,12 +866,12 @@ val_to_string(pos_inf) -> "inf";
 val_to_string(neg_inf) -> "-inf";
 val_to_string(X) when is_integer(X) -> integer_to_list(X).
 
--spec range_from_type(erl_type()) -> [#range{}].
+-spec range_from_type(erl_types:erl_type()) -> [#range{}].
 
 range_from_type(Type) ->
   [range_from_simple_type(T) || T <- t_to_tlist(Type)].
   
--spec range_from_simple_type(erl_type()) -> #range{}.
+-spec range_from_simple_type(erl_types:erl_type()) -> #range{}.
 
 range_from_simple_type(Type) ->
   None = t_none(),
@@ -886,7 +886,7 @@ range_from_simple_type(Type) ->
       #range{range = Range, other = true}
   end.
 
--spec range_init(range_rep(), bool()) -> #range{}.
+-spec range_init(range_rep(), boolean()) -> #range{}.
 
 range_init({Min, Max} = Range, Other) ->
   case inf_geq(Max, Min) of
@@ -902,11 +902,11 @@ range_init(empty, Other) ->
 
 range(#range{range = R}) -> R.
 
--spec other(#range{}) -> bool().
+-spec other(#range{}) -> boolean().
 
 other(#range{other = O}) -> O.
 
--spec set_other(#range{}, bool()) -> #range{}.
+-spec set_other(#range{}, boolean()) -> #range{}.
 
 set_other(R, O) -> R#range{other = O}.
 
@@ -920,12 +920,12 @@ range__min(#range{range={Min,_}}) -> Min.
 range__max(#range{range=empty}) -> empty;
 range__max(#range{range={_,Max}}) -> Max.
 
--spec range__is_none(#range{}) -> bool().
+-spec range__is_none(#range{}) -> boolean().
 
 range__is_none(#range{range=empty, other=false}) -> true;
 range__is_none(#range{}) -> false.
 
--spec range__is_empty(#range{}) -> bool().
+-spec range__is_empty(#range{}) -> boolean().
 
 range__is_empty(#range{range=empty}) -> true;
 range__is_empty(#range{range={_,_}}) -> false.
@@ -1030,7 +1030,7 @@ range_inf({Min1,Max1}, {Min2,Max2}) ->
       empty
   end.
 
--spec other_inf(bool(), bool()) -> bool().
+-spec other_inf(boolean(), boolean()) -> boolean().
 
 other_inf(O1, O2) -> O1 and O2.
 
@@ -1055,7 +1055,7 @@ range_sup({Min1,Max1}, {Min2,Max2}) ->
   NewMax = inf_max([Max1,Max2]),
   {NewMin,NewMax}.
 
--spec other_sup(bool(), bool()) -> bool().
+-spec other_sup(boolean(), boolean()) -> boolean().
 
 other_sup(O1, O2) -> O1 or O2.
 
@@ -1191,7 +1191,7 @@ basic_type(#element{}) -> not_analysed;
 basic_type(#unsafe_element{}) -> not_analysed;
 basic_type(#unsafe_update_element{}) -> not_analysed.
 
--spec analyse_bs_get_integer(integer(), integer(), bool()) -> range_rep().
+-spec analyse_bs_get_integer(integer(), integer(), boolean()) -> range_rep().
 
 analyse_bs_get_integer(Size, Flags, true) ->
   Signed = Flags band 4,
@@ -1568,7 +1568,7 @@ inf_inv(pos_inf) -> neg_inf;
 inf_inv(neg_inf) -> pos_inf;
 inf_inv(Number) -> -Number.
 
--spec inf_geq(inf_integer(), inf_integer()) -> bool().
+-spec inf_geq(inf_integer(), inf_integer()) -> boolean().
 
 inf_geq(pos_inf, _) -> true;
 inf_geq(_, pos_inf) -> false;
@@ -1576,7 +1576,7 @@ inf_geq(_, neg_inf) -> true;
 inf_geq(neg_inf, _) -> false;
 inf_geq(A, B) -> A >= B.
 
--spec inf_greater_zero(inf_integer()) -> bool().
+-spec inf_greater_zero(inf_integer()) -> boolean().
 
 inf_greater_zero(pos_inf) -> true;
 inf_greater_zero(neg_inf) -> false;
@@ -1903,7 +1903,7 @@ replace_none(Arg) ->
     false -> Arg
   end.
 
--spec update__info([#range{}], [#range{}]) -> {bool(), [#ann{}]}.
+-spec update__info([#range{}], [#range{}]) -> {boolean(), [#ann{}]}.
 update__info(NewRanges, OldRanges) ->
   SupFun = fun (Ann, Range) -> 
 	       join_info(Ann, Range, fun safe_widen/3)

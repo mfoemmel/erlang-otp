@@ -50,7 +50,7 @@ int wxeEventTypeFromAtom(char *etype_atom) {
 
 void initEventTable() 
 {
-  struct { int ev_type;  int class_id; char * ev_name;} event_types[] = 
+  struct { int ev_type;  int class_id; const char * ev_name;} event_types[] = 
   {
    {wxEVT_NULL, 0, "null"},
    {wxEVT_COMMAND_BUTTON_CLICKED, 154, "command_button_clicked"},
@@ -265,6 +265,28 @@ void initEventTable()
    {wxEVT_COMMAND_SPLITTER_SASH_POS_CHANGING, 208, "command_splitter_sash_pos_changing"},
    {wxEVT_COMMAND_SPLITTER_DOUBLECLICKED, 208, "command_splitter_doubleclicked"},
    {wxEVT_COMMAND_SPLITTER_UNSPLIT, 208, "command_splitter_unsplit"},
+   {wxEVT_COMMAND_HTML_LINK_CLICKED, 210, "command_html_link_clicked"},
+   {wxEVT_COMMAND_AUINOTEBOOK_PAGE_CLOSE, 211, "command_auinotebook_page_close"},
+   {wxEVT_COMMAND_AUINOTEBOOK_PAGE_CHANGED, 211, "command_auinotebook_page_changed"},
+   {wxEVT_COMMAND_AUINOTEBOOK_PAGE_CHANGING, 211, "command_auinotebook_page_changing"},
+   {wxEVT_COMMAND_AUINOTEBOOK_BUTTON, 211, "command_auinotebook_button"},
+   {wxEVT_COMMAND_AUINOTEBOOK_BEGIN_DRAG, 211, "command_auinotebook_begin_drag"},
+   {wxEVT_COMMAND_AUINOTEBOOK_END_DRAG, 211, "command_auinotebook_end_drag"},
+   {wxEVT_COMMAND_AUINOTEBOOK_DRAG_MOTION, 211, "command_auinotebook_drag_motion"},
+   {wxEVT_COMMAND_AUINOTEBOOK_ALLOW_DND, 211, "command_auinotebook_allow_dnd"},
+   {wxEVT_COMMAND_AUINOTEBOOK_TAB_MIDDLE_DOWN, 211, "command_auinotebook_tab_middle_down"},
+   {wxEVT_COMMAND_AUINOTEBOOK_TAB_MIDDLE_UP, 211, "command_auinotebook_tab_middle_up"},
+   {wxEVT_COMMAND_AUINOTEBOOK_TAB_RIGHT_DOWN, 211, "command_auinotebook_tab_right_down"},
+   {wxEVT_COMMAND_AUINOTEBOOK_TAB_RIGHT_UP, 211, "command_auinotebook_tab_right_up"},
+   {wxEVT_COMMAND_AUINOTEBOOK_PAGE_CLOSED, 211, "command_auinotebook_page_closed"},
+   {wxEVT_COMMAND_AUINOTEBOOK_DRAG_DONE, 211, "command_auinotebook_drag_done"},
+   {wxEVT_COMMAND_AUINOTEBOOK_BG_DCLICK, 211, "command_auinotebook_bg_dclick"},
+   {wxEVT_AUI_PANE_BUTTON, 212, "aui_pane_button"},
+   {wxEVT_AUI_PANE_CLOSE, 212, "aui_pane_close"},
+   {wxEVT_AUI_PANE_MAXIMIZE, 212, "aui_pane_maximize"},
+   {wxEVT_AUI_PANE_RESTORE, 212, "aui_pane_restore"},
+   {wxEVT_AUI_RENDER, 212, "aui_render"},
+   {wxEVT_AUI_FIND_MANAGER, 212, "aui_find_manager"},
    {-1, 0, }
   };
   for(int i=0; event_types[i].ev_type != -1; i++) {
@@ -731,6 +753,44 @@ case 208: {// wxSplitterEvent
     rt.addAtom((char*)"wxSplitter");
     rt.addAtom(Etype->eName);
     rt.addTupleCount(2);
+  break;
+}
+case 210: {// wxHtmlLinkEvent
+ wxHtmlLinkEvent * ev = (wxHtmlLinkEvent *) event;
+    evClass = (char*)"wxHtmlLinkEvent";
+    rt.addAtom((char*)"wxHtmlLink");
+    rt.addAtom(Etype->eName);
+ rt.add(ev->GetLinkInfo());
+    rt.addTupleCount(3);
+  break;
+}
+case 211: {// wxAuiNotebookEvent
+ wxAuiNotebookEvent * ev = (wxAuiNotebookEvent *) event;
+ wxAuiNotebook * GetDragSource = ev->GetDragSource();
+    evClass = (char*)"wxAuiNotebookEvent";
+    rt.addAtom((char*)"wxAuiNotebook");
+    rt.addAtom(Etype->eName);
+ rt.addInt(ev->GetOldSelection());
+ rt.addInt(ev->GetSelection());
+ rt.addRef(getRef((void *)GetDragSource,memenv), "wxAuiNotebook");
+    rt.addTupleCount(5);
+  break;
+}
+case 212: {// wxAuiManagerEvent
+ wxAuiManagerEvent * ev = (wxAuiManagerEvent *) event;
+ wxAuiManager * GetManager = ev->GetManager();
+ wxAuiPaneInfo * GetPane = ev->GetPane();
+ wxDC * GetDC = ev->GetDC();
+    evClass = (char*)"wxAuiManagerEvent";
+    rt.addAtom((char*)"wxAuiManager");
+    rt.addAtom(Etype->eName);
+ rt.addRef(getRef((void *)GetManager,memenv), "wxAuiManager");
+ rt.addRef(getRef((void *)GetPane,memenv), "wxAuiPaneInfo");
+ rt.addInt(ev->GetButton());
+ rt.addBool(ev->veto_flag);
+ rt.addBool(ev->canveto_flag);
+ rt.addRef(getRef((void *)GetDC,memenv), "wxDC");
+    rt.addTupleCount(8);
   break;
 }
  }

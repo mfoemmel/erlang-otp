@@ -385,9 +385,9 @@ handle_op(?SSH_FXP_RMDIR, ReqId, <<?UINT32(PLen), BPath:PLen/binary>>,
     send_status(Status, ReqId, State1);
 
 handle_op(?SSH_FXP_RENAME, ReqId,
-	  Bin = <<?UINT32(PLen), _:PLen/binary, ?UINT32(PLen2), 
-		 _:PLen2/binary>>, 
-	  State = #state{xf = #ssh_xfer{vsn = 3}}) ->
+  	  Bin = <<?UINT32(PLen), _:PLen/binary, ?UINT32(PLen2),
+  		 _:PLen2/binary>>,
+  	  State = #state{xf = #ssh_xfer{vsn = Vsn}}) when Vsn==3; Vsn==4  ->
     handle_op(?SSH_FXP_RENAME, ReqId, <<Bin/binary, 0:32>>, State);
 
 handle_op(?SSH_FXP_RENAME, ReqId,

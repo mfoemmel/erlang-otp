@@ -38,7 +38,7 @@ get_all_files(Args, analysis) ->
 get_all_files(Args, trust) -> 
   internal_get_all_files(Args#args.trust, [], fun test_erl_file/1).
 
--spec test_erl_file_exclude_ann(string()) -> bool().
+-spec test_erl_file_exclude_ann(string()) -> boolean().
 
 test_erl_file_exclude_ann(File) ->
   case filename:extension(File) of
@@ -50,13 +50,13 @@ test_erl_file_exclude_ann(File) ->
     _ -> false
   end.
 
--spec test_erl_file(string()) -> bool().
+-spec test_erl_file(string()) -> boolean().
 
 test_erl_file(File) ->
   filename:extension(File) =:= ".erl".
 
 -spec internal_get_all_files([string()], [string()],
-			     fun((string()) -> bool())) -> [string()].
+			     fun((string()) -> boolean())) -> [string()].
 
 internal_get_all_files(File_Dir, Dir_R, Fun) ->
   All_File_1 = process_file_and_dir(File_Dir, Fun),
@@ -64,7 +64,7 @@ internal_get_all_files(File_Dir, Dir_R, Fun) ->
   remove_dup(All_File_1 ++ All_File_2).
 
 -spec process_file_and_dir([string()],
-			   fun((string()) -> bool())) -> [string()].
+			   fun((string()) -> boolean())) -> [string()].
 
 process_file_and_dir(File_Dir, TestFun) ->
   Fun =
@@ -77,7 +77,7 @@ process_file_and_dir(File_Dir, TestFun) ->
   lists:foldl(Fun, [], File_Dir).
 
 -spec process_dir_recursively([string()],
-			      fun((string()) -> bool())) -> [string()].
+			      fun((string()) -> boolean())) -> [string()].
 
 process_dir_recursively(Dirs, TestFun) ->
   Fun = fun (Dir, Acc) ->
@@ -88,7 +88,7 @@ process_dir_recursively(Dirs, TestFun) ->
 -spec check_dir(string(),
 		'non_recursive' | 'recursive',
 		[string()],
-		fun((string()) -> bool())) -> [string()].
+		fun((string()) -> boolean())) -> [string()].
 
 check_dir(Dir, Mode, Acc, Fun) ->
   case file:list_dir(Dir) of
@@ -112,7 +112,7 @@ check_dir(Dir, Mode, Acc, Fun) ->
   end.
 
 %% Same order as the input list
--spec process_file(string(), fun((string()) -> bool()), string()) -> [string()].
+-spec process_file(string(), fun((string()) -> boolean()), string()) -> [string()].
 
 process_file(File, TestFun, Acc) ->
   case TestFun(File) of
@@ -124,7 +124,7 @@ process_file(File, TestFun, Acc) ->
 -spec split_dirs_and_files([string()], string()) -> {[string()], [string()]}.
 
 split_dirs_and_files(Elems, Dir) ->
-  Test_Fun = 
+  Test_Fun =
     fun (Elem, {DirAcc, FileAcc}) ->
 	File = filename:join(Dir, Elem),
 	case filelib:is_regular(File) of
@@ -132,7 +132,7 @@ split_dirs_and_files(Elems, Dir) ->
 	  true  -> {DirAcc, [File|FileAcc]}
 	end
     end,
-  {Dirs,Files} = lists:foldl(Test_Fun, {[],[]}, Elems),
+  {Dirs, Files} = lists:foldl(Test_Fun, {[],[]}, Elems),
   {lists:reverse(Dirs), lists:reverse(Files)}.  
 
 %%-----------------------------------------------------------------------

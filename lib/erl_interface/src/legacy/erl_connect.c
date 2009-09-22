@@ -281,6 +281,8 @@ static int erl_do_receive_msg(int fd, ei_x_buff* x, ErlMessage* emsg)
 	switch (msg.msgtype) {
 	case ERL_SEND:
 	case ERL_REG_SEND:
+	case ERL_EXIT:
+	case ERL_EXIT2:
 	  if (ei_decode_term(x->buff, &index, &emsg->msg) < 0)
 	    r = ERL_ERROR;
 	  break;

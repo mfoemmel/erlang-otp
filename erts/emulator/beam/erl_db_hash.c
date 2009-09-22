@@ -505,6 +505,10 @@ static void restore_fixdel(DbTableHash* tb, FixedDeletion* fixdel)
 void db_unfix_table_hash(DbTableHash *tb)
 {
     FixedDeletion* fixdel;
+
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_rwmtx_is_rwlocked(&tb->common.rwlock)
+		       || (erts_smp_lc_rwmtx_is_rlocked(&tb->common.rwlock)
+			   && !tb->common.is_thread_safe));
 restart:
     fixdel = (FixedDeletion*) erts_smp_atomic_xchg(&tb->fixdel, (long)NULL);
     while (fixdel != NULL) {
@@ -2737,6 +2741,36 @@ void db_foreach_offheap_hash(DbTable *tbl,
     }
 }
 
+void db_calc_stats_hash(DbTableHash* tb, DbHashStats* stats)
+{
+    HashDbTerm* b;
+    erts_smp_rwmtx_t* lck;
+    int sum = 0;
+    int sq_sum = 0;
+    int ix;
+    int len;
+    
+    stats->min_chain_len = INT_MAX;
+    stats->max_chain_len = 0;
+    ix = 0;
+    lck = RLOCK_HASH(tb,ix);
+    do {
+	len = 0;
+	for (b = BUCKET(tb,ix); b!=NULL; b=b->next) {
+	    len++;
+	}
+	sum += len;
+	sq_sum += len*len;
+	if (len < stats->min_chain_len) stats->min_chain_len = len;
+	if (len > stats->max_chain_len) stats->max_chain_len = len;
+	ix = next_slot(tb,ix,&lck);
+    }while (ix);
+    stats->avg_chain_len = (float)sum / NACTIVE(tb);	
+    stats->std_dev_chain_len = sqrt((sq_sum - stats->avg_chain_len*sum) / NACTIVE(tb));
+    /* Expected	standard deviation from a good uniform hash function, 
+       ie binomial distribution (not taking the linear hashing into acount) */
+    stats->std_dev_expected = sqrt(stats->avg_chain_len * (1 - 1.0/NACTIVE(tb)));	
+}
 #ifdef HARDDEBUG
 
 void db_check_table_hash(DbTable *tbl)

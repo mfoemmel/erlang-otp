@@ -206,16 +206,16 @@ check_result(_C,D,ok,{error,Reason}) ->
 	      [D,Reason]),
     error.
 
-check_ok_result(R,R) when record(R,megaco_term_id) ->
+check_ok_result(R,R) when is_record(R,megaco_term_id) ->
     ok; % Same record type and same record content
-check_ok_result(S,E) when record(S,megaco_term_id),
-                          record(E,megaco_term_id) ->
+check_ok_result(S,E) when is_record(S,megaco_term_id) andalso 
+                          is_record(E,megaco_term_id) ->
     Reason = check_megaco_term_id_record(S,E),
     {error,Reason}; % Same record type but different record content
-check_ok_result(R,R) when record(R,'TerminationID') ->
+check_ok_result(R,R) when is_record(R,'TerminationID') ->
     ok;
-check_ok_result(S,E) when record(S,'TerminationID'),
-                          record(E,'TerminationID') ->
+check_ok_result(S,E) when is_record(S,'TerminationID') andalso 
+                          is_record(E,'TerminationID') ->
     Reason = check_TerminationID_record(S,E),
     {error,Reason}; % Same record type but different record content
 check_ok_result(_S,_E) ->
@@ -302,7 +302,7 @@ te01(doc) ->
 te01(suite) ->
     [];
 
-te01(Config) when list(Config) ->
+te01(Config) when is_list(Config) ->
     {Exp,Res} = te01(),
     ok = check(te01(doc),Exp,Res).
 
@@ -325,7 +325,7 @@ te02(doc) ->
 te02(suite) ->
     [];
 
-te02(Config) when list(Config) ->
+te02(Config) when is_list(Config) ->
     {Exp,Res} = te02(),
     ok = check(te02(doc),Exp,Res).
 
@@ -347,7 +347,7 @@ te03(doc) ->
 te03(suite) ->
     [];
 
-te03(Config) when list(Config) ->
+te03(Config) when is_list(Config) ->
     {Exp,Res} = te03(),
     ok = check(te03(doc),Exp,Res).
 
@@ -369,7 +369,7 @@ te04(doc) ->
 te04(suite) ->
     [];
 
-te04(Config) when list(Config) ->
+te04(Config) when is_list(Config) ->
     {Exp,Res} = te04(),
     ok = check(te04(doc),Exp,Res).
 
@@ -391,7 +391,7 @@ te05(doc) ->
 te05(suite) ->
     [];
 
-te05(Config) when list(Config) ->
+te05(Config) when is_list(Config) ->
     {Exp,Res} = te05(),
     ok = check(te05(doc),Exp,Res).
 
@@ -413,7 +413,7 @@ te06(doc) ->
 te06(suite) ->
     [];
 
-te06(Config) when list(Config) ->
+te06(Config) when is_list(Config) ->
     {Exp,Res} = te06(),
     ok = check(te06(doc),Exp,Res).
 
@@ -435,7 +435,7 @@ te07(doc) ->
 te07(suite) ->
     [];
 
-te07(Config) when list(Config) ->
+te07(Config) when is_list(Config) ->
     {Exp,Res} = te07(),
     ok = check(te07(doc),Exp,Res).
 
@@ -457,7 +457,7 @@ te08(doc) ->
 te08(suite) ->
     [];
 
-te08(Config) when list(Config) ->
+te08(Config) when is_list(Config) ->
     {Exp,Res} = te08(),
     ok = check(te08(doc),Exp,Res).
 
@@ -479,7 +479,7 @@ te09(doc) ->
 te09(suite) ->
     [];
 
-te09(Config) when list(Config) ->
+te09(Config) when is_list(Config) ->
     {Exp,Res} = te09(),
     ok = check(te09(doc),Exp,Res).
 
@@ -501,7 +501,7 @@ te10(doc) ->
 te10(suite) ->
     [];
 
-te10(Config) when list(Config) ->
+te10(Config) when is_list(Config) ->
     {Exp,Res} = te10(),
     ok = check(te10(doc),Exp,Res).
 
@@ -523,7 +523,7 @@ te11(doc) ->
 te11(suite) ->
     [];
 
-te11(Config) when list(Config) ->
+te11(Config) when is_list(Config) ->
     {Exp,Res} = te11(),
     ok = check(te11(doc),Exp,Res).
 
@@ -545,7 +545,7 @@ te12(doc) ->
 te12(suite) ->
     [];
 
-te12(Config) when list(Config) ->
+te12(Config) when is_list(Config) ->
     {Exp,Res} = te12(),
     ok = check(te12(doc),Exp,Res).
 
@@ -567,7 +567,7 @@ te13(doc) ->
 te13(suite) ->
     [];
 
-te13(Config) when list(Config) ->
+te13(Config) when is_list(Config) ->
     {Exp,Res} = te13(),
     ok = check(te13(doc),Exp,Res).
 
@@ -589,7 +589,7 @@ te14(doc) ->
 te14(suite) ->
     [];
 
-te14(Config) when list(Config) ->
+te14(Config) when is_list(Config) ->
     {Exp,Res} = te14(),
     ok = check(te14(doc),Exp,Res).
 
@@ -611,7 +611,7 @@ te15(doc) ->
 te15(suite) ->
     [];
 
-te15(Config) when list(Config) ->
+te15(Config) when is_list(Config) ->
     {Exp,Res} = te15(),
     ok = check(te15(doc),Exp,Res).
 
@@ -633,7 +633,7 @@ te16(doc) ->
 te16(suite) ->
     [];
 
-te16(Config) when list(Config) ->
+te16(Config) when is_list(Config) ->
     {Exp,Res} = te16(),
     ok = check(te16(doc),Exp,Res).
 
@@ -655,7 +655,7 @@ te17(doc) ->
 te17(suite) ->
     [];
 
-te17(Config) when list(Config) ->
+te17(Config) when is_list(Config) ->
     {Exp,Res} = te17(),
     ok = check(te17(doc),Exp,Res).
 
@@ -677,7 +677,7 @@ te18(doc) ->
 te18(suite) ->
     [];
 
-te18(Config) when list(Config) ->
+te18(Config) when is_list(Config) ->
     {Exp,Res} = te18(),
     ok = check(te18(doc),Exp,Res).
 
@@ -699,7 +699,7 @@ te19(doc) ->
 te19(suite) ->
     [];
 
-te19(Config) when list(Config) ->
+te19(Config) when is_list(Config) ->
     {Exp,Res} = te19(),
     ok = check(te19(doc),Exp,Res).
 
@@ -721,7 +721,7 @@ td01(doc) ->
 td01(suite) ->
     [];
 
-td01(Config) when list(Config) ->
+td01(Config) when is_list(Config) ->
     {Exp,Res} = td01(),
     ok = check(td01(doc),Exp,Res).
 
@@ -744,7 +744,7 @@ td02(doc) ->
 td02(suite) ->
     [];
 
-td02(Config) when list(Config) ->
+td02(Config) when is_list(Config) ->
     {Exp,Res} = td02(),
     ok = check(td02(doc),Exp,Res).
 
@@ -766,7 +766,7 @@ td03(doc) ->
 td03(suite) ->
     [];
 
-td03(Config) when list(Config) ->
+td03(Config) when is_list(Config) ->
     {Exp,Res} = td03(),
     ok = check(td03(doc),Exp,Res).
 
@@ -788,7 +788,7 @@ td04(doc) ->
 td04(suite) ->
     [];
 
-td04(Config) when list(Config) ->
+td04(Config) when is_list(Config) ->
     {Exp,Res} = td04(),
     ok = check(td04(doc),Exp,Res).
 
@@ -810,7 +810,7 @@ td05(doc) ->
 td05(suite) ->
     [];
 
-td05(Config) when list(Config) ->
+td05(Config) when is_list(Config) ->
     {Exp,Res} = td05(),
     ok = check(td05(doc),Exp,Res).
 
@@ -832,7 +832,7 @@ td06(doc) ->
 td06(suite) ->
     [];
 
-td06(Config) when list(Config) ->
+td06(Config) when is_list(Config) ->
     {Exp,Res} = td06(),
     ok = check(td06(doc),Exp,Res).
 

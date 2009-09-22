@@ -117,11 +117,11 @@ variableIsWritable(_MibEntry, _Varbind) -> throw(notWritable).
 %% Returns: true | <error-atom>
 checkASN1Type(#me{asn1_type = ASN1Type},
 	      #varbind{variabletype = Type, value = Value}) 
-     when ASN1Type#asn1_type.bertype == Type ->
+     when ASN1Type#asn1_type.bertype =:= Type ->
     case make_value_a_correct_value({value, Value}, ASN1Type,
 				    undef) of
 	{value, Type, Value} -> true;
-	{error, Error} when atom(Error) -> throw(Error)
+	{error, Error} when is_atom(Error) -> throw(Error)
     end;
 
 checkASN1Type(_,_) -> throw(wrongType).
@@ -337,11 +337,11 @@ delete_org_index(Indexes) ->
 col_to_orgindex(ColNumber, OrgCols) ->
     snmpa_svbl:col_to_orgindex(ColNumber, OrgCols).
 
-find_org_index(ExternIndex, _SortedVarbinds) when ExternIndex == 0 -> 0;
+find_org_index(ExternIndex, _SortedVarbinds) when ExternIndex =:= 0 -> 0;
 find_org_index(ExternIndex, SortedVarbinds) ->
     VBs = lists:flatten(SortedVarbinds),
     case length(VBs) of
-	Len when ExternIndex =< Len, ExternIndex >= 1 ->
+	Len when (ExternIndex =< Len) andalso (ExternIndex >= 1) ->
 	    IVB = lists:nth(ExternIndex, VBs),
 	    VB = IVB#ivarbind.varbind,
 	    VB#varbind.org_index;

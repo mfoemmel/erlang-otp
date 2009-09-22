@@ -107,14 +107,14 @@
 %% Interface functions that MUST be implemented in the including file:
 %%
 %% linear_to_cfg(LinearCode) -> CFG, constructs the cfg.
-%% is_label(Instr) -> bool(), true if instruction is a label.
+%% is_label(Instr) -> boolean(), true if instruction is a label.
 %% label_name(Instr) -> term(), the name of a label.
 %% branch_successors(Instr) -> [term()], the successors of a branch.
 %% fails_to(Instr) -> [term()], the fail-successors of an instruction.
-%% is_branch(Instr) -> bool(), true if instruction is a branch.
-%% is_comment(Instr) -> bool(),
+%% is_branch(Instr) -> boolean(), true if instruction is a branch.
+%% is_comment(Instr) -> boolean(),
 %%       true if instruction is a comment, used by remove dead code.
-%% is_goto(Instr) -> bool(),
+%% is_goto(Instr) -> boolean(),
 %%       true if instruction is a pure goto, used by remove dead code.
 %% redirect_jmp(Jmp, ToOld, ToNew) -> NewJmp, 
 %% redirect_ops(Labels, CFG, Map) -> CFG.
@@ -125,7 +125,7 @@
 %% pp(CFG) -> ok, do some nifty output.
 %% cfg_to_linear(CFG) -> LinearCode, linearizes the code of CFG
 %% mk_goto(Label) -> instruction
-%% is_phi(Instr) -> bool(), true if the instruction is a phi-instruction.
+%% is_phi(Instr) -> boolean(), true if the instruction is a phi-instruction.
 %% phi_remove_pred(PhiInstr, Pred) -> NewPhi, 
 %%       Removes the predecessor Pred from the phi instruction.
 %% highest_var(Code) -> term(),
@@ -150,10 +150,10 @@ start_label_update(CFG, NewStartLabel) ->
 -spec function(cfg()) -> mfa().
 function(CFG) -> (CFG#cfg.info)#cfg_info.'fun'.
 
--spec is_closure(cfg()) -> bool().
+-spec is_closure(cfg()) -> boolean().
 is_closure(CFG) -> (CFG#cfg.info)#cfg_info.is_closure.
 
--spec is_leaf(cfg()) -> bool().
+-spec is_leaf(cfg()) -> boolean().
 is_leaf(CFG) -> (CFG#cfg.info)#cfg_info.is_leaf.
 
 mk_empty_cfg(Fun, StartLbl, Data, Closure, Leaf, Params) ->

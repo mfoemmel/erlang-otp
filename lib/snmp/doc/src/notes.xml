@@ -33,6 +33,157 @@
   </header>
 
   <section>
+    <title>SNMP Development Toolkit 4.13.5</title>
+
+    <p>Version 4.13.5 supports code replacement in runtime from/to
+      version 4.13.4, 4.13.3, 4.13.2, 4.13.1 and 4.13.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <!-- 
+      <p>-</p> 
+      -->
+
+      <list type="bulleted">
+        <item>
+          <p>[agent] Improved the cache handling of the mib server. </p>
+          <p>A number of new functions and config options for the mib server
+            cache has been added. </p>
+          <p>See 
+            <seealso marker="snmpa#invalidate_mibs_cache">invalidate_mibs_cache/0,1</seealso>, 
+            <seealso marker="snmpa#enable_mibs_cache">enable_mibs_cache/0,1</seealso>, 
+            <seealso marker="snmpa#disable_mibs_cache">disable_mibs_cache/0,1</seealso>, 
+            <seealso marker="snmpa#gc_mibs_cache">gc_mibs_cache/0,1,2,3</seealso>, 
+            <seealso marker="snmpa#enable_mibs_cache_autogc">enable_mibs_cache_autogc/0,1</seealso>, 
+            <seealso marker="snmpa#disable_mibs_cache_autogc">disable_mibs_cache_autogc/0,1</seealso>, 
+            <seealso marker="snmpa#update_mibs_cache_age">update_mibs_cache_age/1,2</seealso> and 
+            <seealso marker="snmpa#update_mibs_cache_gclimit">update_mibs_cache_gclimit/1,2</seealso> for more info. </p>
+          <p>See also the 
+            <seealso marker="snmp_app#configuration">configuration</seealso> 
+            chapter for more info about the mib server cache options.</p>
+          <p>Own Id: OTP-8182</p>
+	  <p>Aux Id: Seq 11383</p>
+        </item>
+
+        <item>
+          <p>[agent] A manager could no longer use the SNMPv3 user "initial" 
+            as this was interpretated as the first step of the discovery. </p>
+          <p>Introduced a new terminating option, <c>trigger_username</c> to
+            make it possible to configure the username the agent reacts to. 
+            Default is <c>""</c>. </p>
+          <p>See the 
+            <seealso marker="snmp_app#configuration">configuration</seealso> 
+            chapter for more info about the discovery options.</p>
+          <p>Own Id: OTP-8120</p>
+	  <p>Aux Id: Seq 11361</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] The main agent type header file contained some miss-information 
+            regarding the type of the entrytype field of the me-record, causing 
+            unneccessary confusion.</p>
+          <p>Own Id: OTP-8116</p>
+	  <p>Aux Id: Seq 11312</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.13.5 -->
+
+
+  <section>
+    <title>SNMP Development Toolkit 4.13.4</title>
+
+    <p>Version 4.13.4 supports code replacement in runtime from/to
+      version 4.13.3, 4.13.2, 4.13.1 and 4.13.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+      <p>-</p> 
+
+      <!-- 
+      <list type="bulleted">
+        <item>
+          <p>[agent] Support for the discovery process. </p>
+          <p>The agent can both initiate discovery itself (see the
+            <seealso marker="snmp_agent_funct_descr#discovery">discovery</seealso> chapter
+            for more info) and respond to discovery initiated by a manager.</p>
+          <p>Own Id: OTP-7571</p>
+	  <p>Aux Id: Seq 11053</p>
+        </item>
+
+      </list>
+      -->
+
+    </section>
+
+    <section>
+      <title>Reported Fixed Bugs and Malfunctions</title>
+      <!-- 
+      <p>-</p>
+      -->
+      <list type="bulleted">
+        <item>
+          <p>[agent] Originating discovery problems. </p>
+          <p>Invalid state variable update during second stage of 
+            discovery causes master agent crash. </p>
+          <p>Also the net_if process failed to activate socket 
+            ({active, once}) after first discovery response was sent. </p>
+          <p>Own Id: OTP-8044</p>
+	  <p>Aux Id: Seq 11295</p>
+        </item>
+
+        <item>
+          <p>[agent] Terminating discovery problem. </p>
+          <p>The reply to the second stage request should include a 
+            varbind with <c>usmStatsNotInTimeWindows</c>.</p>
+          <p>Own Id: OTP-8062</p>
+	  <p>Aux Id: Seq 11318</p>
+        </item>
+
+        <item>
+          <p>[agent] Originating discovery improvement. </p>
+          <p>Added the ExtraInfo argument to the 
+            <seealso marker="snmpm#discovery">discovery</seealso> function. 
+            This argument will be passed on to the stage1_finish callback
+            function. Also, the 
+            <seealso marker="snmpm#discovery">discovery</seealso> function 
+            will now always return <c>{ok, ManagerEngineID}</c> on successful 
+            discovery. </p>
+          <p>The <seealso marker="snmpa_discovery_handler">discovery handler</seealso> 
+            behaviour updated accordingly. </p>
+          <p>Own Id: OTP-8098</p>
+	  <p>Aux Id: Seq 11346</p>
+        </item>
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Incompatibilities</title>
+      <p>-</p>
+    </section>
+  </section> <!-- 4.13.4 -->
+
+
+  <section>
     <title>SNMP Development Toolkit 4.13.3</title>
 
     <p>Version 4.13.3 supports code replacement in runtime from/to

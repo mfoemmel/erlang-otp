@@ -27,6 +27,7 @@
 
 -export([negotiate/3]).
 
+
 %%%=========================================================================
 %%%  Internal application API
 %%%=========================================================================
@@ -104,24 +105,11 @@ listen(SocketType, Port) ->
     listen(SocketType, undefined, Port).
 
 listen(ip_comm, Addr, Port) ->
-    FdName = list_to_atom("httpd_" ++ integer_to_list(Port)),
-    {NewPort, Opt} =
-	case init:get_argument(FdName) of
-	    {ok, [[FdStr]]} ->
-		Fd = list_to_integer(FdStr),
-		{0,
-		 sock_opt(ip_comm, Addr, [{backlog, 128}, 
-					  {reuseaddr,true}, {fd,Fd}])};
-	    error ->
-		{Port,
-		 sock_opt(ip_comm, Addr, 
-			  [{backlog, 128}, {reuseaddr, true}])}
-	end,
-    case gen_tcp:listen(NewPort, Opt) of
-	{error,eafnosupport} ->
-	    gen_tcp:listen(NewPort, lists:delete(inet6, Opt));
-	Other ->
-	    Other
+    case (catch listen_ip_comm(Addr, Port)) of
+	{'EXIT', Reason} ->
+	    {error, {exit, Reason}};
+	Else ->
+	    Else
     end;
 
 listen({ssl, SSLConfig} = Ssl, Addr, Port) ->
@@ -131,6 +119,76 @@ listen({ssl, SSLConfig} = Ssl, Addr, Port) ->
 listen({erl_ssl, SSLConfig} = Ssl, Addr, Port) ->
     Opt = sock_opt(Ssl, Addr, SSLConfig),
     ssl:listen(Port, [{ssl_imp, new} | Opt]).
+
+
+listen_ip_comm(Addr, Port) ->
+    {NewPort, Opts, IpFamily} = get_socket_info(Addr, Port),
+    case IpFamily of
+	inet6fb4 -> 
+	    Opts2 = [inet6 | Opts], 
+	    case (catch gen_tcp:listen(NewPort, Opts2)) of
+		{error, Reason} when ((Reason =:= nxdomain) orelse 
+				      (Reason =:= eafnosupport)) ->
+		    Opts3 = [inet | Opts], 
+		    gen_tcp:listen(NewPort, Opts3);
+
+		%% This is when a given hostname has resolved to a 
+		%% IPv4-address. The inet6-option together with a 
+		%% {ip, IPv4} option results in badarg
+		{'EXIT', _} -> 
+		    Opts3 = [inet | Opts], 
+		    gen_tcp:listen(NewPort, Opts3); 
+
+		Other ->
+		    Other
+	    end;
+	_ ->
+	    Opts2 = [IpFamily | Opts],
+	    gen_tcp:listen(NewPort, Opts2)
+    end.
+
+ipfamily_default(Addr, Port) ->
+    httpd_conf:lookup(Addr, Port, ipfamily, inet6fb4).
+
+get_socket_info(Addr, Port) ->
+    Key  = list_to_atom("httpd_" ++ integer_to_list(Port)),
+    BaseOpts =  [{backlog, 128}, {reuseaddr, true}], 
+    IpFamilyDefault = ipfamily_default(Addr, Port), 
+    case init:get_argument(Key) of
+	{ok, [[Value]]} ->
+	    {Fd, IpFamily} = 
+		case string:tokens(Value, [$|]) of
+		    [FdStr, IpFamilyStr] ->
+			Fd0       = fd_of(FdStr),
+			IpFamily0 = ip_family_of(IpFamilyStr),
+			{Fd0, IpFamily0};
+		    [FdStr] ->
+			{fd_of(FdStr), IpFamilyDefault};
+		    _ ->
+			throw({error, {bad_descriptor, Value}})
+		end,
+	    {0, sock_opt(ip_comm, Addr, [{fd, Fd} | BaseOpts]), IpFamily};
+	error ->
+	    {Port, sock_opt(ip_comm, Addr, BaseOpts), IpFamilyDefault}
+    end.
+	    
+
+fd_of(FdStr) ->
+    case (catch list_to_integer(FdStr)) of
+	Fd when is_integer(Fd) ->
+	    Fd;
+	_ ->
+	    throw({error, {bad_descriptor, FdStr}})
+    end.
+
+ip_family_of(IpFamilyStr) ->
+    IpFamily = list_to_atom(IpFamilyStr),
+    case lists:member(IpFamily, [inet, inet6, inet6fb4]) of
+	true ->
+	    IpFamily;
+	false ->
+	    throw({error, {bad_ipfamily, IpFamilyStr}})
+    end.
 
 
 %%-------------------------------------------------------------------------
@@ -255,26 +313,23 @@ resolve() ->
 %%%========================================================================
 
 %% Address any comes from directive: BindAddress "*"
-sock_opt(ip_comm, any = Addr, Opt) -> 
-    sock_opt1([{ip, Addr} | Opt]);
-sock_opt(ip_comm, undefined, Opt) -> 
-    sock_opt1(Opt);
-sock_opt(_, any = Addr, Opt) ->
-    sock_opt2([{ip, Addr} | Opt]);
-sock_opt(_, undefined, Opt) ->
-    sock_opt2(Opt);
-sock_opt(_, {_,_,_,_} = Addr, Opt) -> 
-    sock_opt2([{ip, Addr} | Opt]);
-sock_opt(ip_comm, Addr, Opt) -> 
-    sock_opt2([inet6, {ip, Addr} | Opt]);
-sock_opt(_, Addr, Opt) ->
-    sock_opt2([{ip, Addr} | Opt]).
+sock_opt(ip_comm, any = Addr, Opts) -> 
+    sock_opt2([{ip, Addr} | Opts]);
+sock_opt(ip_comm, undefined, Opts) -> 
+    sock_opt2(Opts);
+sock_opt(_, any = _Addr, Opts) ->
+    sock_opt2(Opts);
+sock_opt(_, undefined = _Addr, Opts) ->
+    sock_opt2(Opts);
+sock_opt(_, {_,_,_,_} = Addr, Opts) -> 
+    sock_opt2([{ip, Addr} | Opts]);
+sock_opt(ip_comm, Addr, Opts) -> 
+    sock_opt2([{ip, Addr} | Opts]);
+sock_opt(_, Addr, Opts) ->
+    sock_opt2([{ip, Addr} | Opts]).
 
-sock_opt1(Opt) ->
-     sock_opt2([inet6 | Opt]).
-
-sock_opt2(Opt) ->
-    [{packet, 0}, {active, false} | Opt].
+sock_opt2(Opts) ->
+    [{packet, 0}, {active, false} | Opts].
 
 negotiate(ip_comm,_,_) ->
     ok;
@@ -284,7 +339,7 @@ negotiate({erl_ssl, _}, Socket, Timeout) ->
     negotiate(Socket, Timeout).
 
 negotiate(Socket, Timeout) ->
-    case ssl:ssl_accept(Socket,Timeout) of
+    case ssl:ssl_accept(Socket, Timeout) of
 	ok ->
 	    ok;
 	{error, Error} ->

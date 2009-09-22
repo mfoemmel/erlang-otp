@@ -647,9 +647,16 @@ dnl On ofs1 the '-pthread' switch should be used
 	AC_CHECK_FUNC(pthread_spin_lock, \
 			AC_DEFINE(ETHR_HAVE_PTHREAD_SPIN_LOCK, 1, \
 [Define if you have the pthread_spin_lock function.]))
-	AC_CHECK_FUNC(pthread_rwlock_init, \
-			AC_DEFINE(ETHR_HAVE_PTHREAD_RWLOCK_INIT, 1, \
-[Define if you have the pthread_rwlock_init function.]))
+	case $host_os in
+		linux*) # Writers may get starved
+			# TODO: write a test that tests the implementation
+			;;
+		*)
+			AC_CHECK_FUNC(pthread_rwlock_init, \
+				AC_DEFINE(ETHR_HAVE_PTHREAD_RWLOCK_INIT, 1, \
+[Define if you have a pthread_rwlock implementation that can be used.]))
+			;;
+	esac
 	AC_CHECK_FUNC(pthread_attr_setguardsize, \
 			AC_DEFINE(ETHR_HAVE_PTHREAD_ATTR_SETGUARDSIZE, 1, \
 [Define if you have the pthread_attr_setguardsize function.]))

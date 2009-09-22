@@ -190,7 +190,7 @@ make_row_list(N, Row, Acc) when N > 2 ->
     make_row_list(N-1, Row, [element(N, Row) | Acc]);
 make_row_list(2, Row, Acc) ->
     case element(2, Row) of
-	Keys when tuple(Keys) ->
+	Keys when is_tuple(Keys) ->
 	    lists:append(tuple_to_list(Keys), Acc);
 	Key ->
 	    [Key | Acc]
@@ -268,7 +268,7 @@ table_try_make_consistent(RowIndex, NewDbRow) ->
 		status_col = StatusCol, index_types = IT} = 
 	snmp_generic:table_info(Name),
     if
-	integer(StatusCol) ->
+	is_integer(StatusCol) ->
 	    NewRow = make_row(NewDbRow, FirstOwnIndex),
 	    StatusVal = element(StatusCol, NewRow),
 	    AddCol = if

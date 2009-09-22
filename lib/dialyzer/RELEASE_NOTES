@@ -3,20 +3,44 @@
 		(in reversed chronological order)
 ==============================================================================
 
-Version 1.9.2 (in Erlang/OTP R13B-1)
+
+Version 2.0.0 (in Erlang/OTP R13B02)
+------------------------------------
+ - There is a major addition to the capabilities of dialyzer, worthy
+   of bumping the version number. Starting with this version, dialyzer
+   not only accepts but also properly processes remote types (i.e.,
+   types of the form ModuleName:TypeName()). Previous dialyzer
+   versions only accepted this notation in -type and -spec
+   declarations, but effectively ignored its information by mapping
+   remote types to the type any(). In contrast, starting with this
+   version, remote types are used in the analysis and are also stored
+   in the PLTs. (This addition changes the format of PLTs and requires
+   rebuilding any PLTs created by an older dialyzer version.)
+   Note that dialyzer will complain and abort the analysis of a set of
+   modules if it needs to process a remote type without a definition
+   (either because the module does not include a definition of the
+   type or the module is not included in the analysis). We may relax
+   this restriction in a future version.
+ - Fixed minor issue with dialyzer:run/1 crashing (upon its return)
+   when used for adding type information to an existing PLT.
+ - Fixed minor but quite annoying issues in dialyzer's GUI.
+
+Version 1.9.2 (in Erlang/OTP R13B01)
 ------------------------------------
  - Fixed problem with type inference going into an infinite loop when
    analyzing a strongly connected component of functions that do not
    return but also contain an erroneous call which makes them fail and
    be assigned the type none() instead of the type unit().
  - More accurate type information for some BIFs and library files.
- - Introduced boolean() as the `official' name for the type was so far
-   known as bool().  The latter is still accepted as well as boolean().
+ - Introduced boolean() as the `official' name for the type which was so
+   far known as bool(). The latter is still accepted as well as boolean()
+   but results in a warning from the compiler; converting the code to use
+   the new name is strongly encouraged.
 
 Version 1.9.1 (in Erlang/OTP R13B)
 ----------------------------------
  - Contains the changes described below (R13A) but also:
-    - Has better handling of opaque types
+    - Has better handling of opaque types.
     - The handling of UFT segments of bitstreams has been significantly
       strengthened and revised.  In all probability, now it is correct.
 

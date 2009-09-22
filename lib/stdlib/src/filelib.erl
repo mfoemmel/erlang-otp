@@ -40,50 +40,50 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec wildcard(name()) -> [string()].
+-spec wildcard(name()) -> [file:filename()].
 wildcard(Pattern) when is_list(Pattern) ->
     ?HANDLE_ERROR(do_wildcard(Pattern, file)).
 
--spec wildcard(name(), name() | atom()) -> [string()].
+-spec wildcard(name(), name() | atom()) -> [file:filename()].
 wildcard(Pattern, Cwd) when is_list(Pattern), is_list(Cwd) ->
     ?HANDLE_ERROR(do_wildcard(Pattern, Cwd, file));
 wildcard(Pattern, Mod) when is_list(Pattern), is_atom(Mod) ->
     ?HANDLE_ERROR(do_wildcard(Pattern, Mod)).
 
--spec wildcard(name(), name(), atom()) -> [string()].
+-spec wildcard(name(), name(), atom()) -> [file:filename()].
 wildcard(Pattern, Cwd, Mod)
   when is_list(Pattern), is_list(Cwd), is_atom(Mod) ->
     ?HANDLE_ERROR(do_wildcard(Pattern, Cwd, Mod)).
 
--spec is_dir(name()) -> bool().
+-spec is_dir(name()) -> boolean().
 is_dir(Dir) ->
     do_is_dir(Dir, file).
 
--spec is_dir(name(), atom()) -> bool().
+-spec is_dir(name(), atom()) -> boolean().
 is_dir(Dir, Mod) when is_atom(Mod) ->
     do_is_dir(Dir, Mod).
 
--spec is_file(name()) -> bool().
+-spec is_file(name()) -> boolean().
 is_file(File) ->
     do_is_file(File, file).
 
--spec is_file(name(), atom()) -> bool().
+-spec is_file(name(), atom()) -> boolean().
 is_file(File, Mod) when is_atom(Mod) ->
     do_is_file(File, Mod).
 
--spec is_regular(name()) -> bool().
+-spec is_regular(name()) -> boolean().
 is_regular(File) ->
     do_is_regular(File, file).
     
--spec is_regular(name(), atom()) -> bool().
+-spec is_regular(name(), atom()) -> boolean().
 is_regular(File, Mod) when is_atom(Mod) ->
     do_is_regular(File, Mod).
     
--spec fold_files(name(), string(), bool(), fun((_,_) -> _), _) -> _.
+-spec fold_files(name(), string(), boolean(), fun((_,_) -> _), _) -> _.
 fold_files(Dir, RegExp, Recursive, Fun, Acc) ->
     do_fold_files(Dir, RegExp, Recursive, Fun, Acc, file).
 
--spec fold_files(name(), string(), bool(), fun((_,_) -> _), _, atom()) -> _.
+-spec fold_files(name(), string(), boolean(), fun((_,_) -> _), _, atom()) -> _.
 fold_files(Dir, RegExp, Recursive, Fun, Acc, Mod) when is_atom(Mod) ->
     do_fold_files(Dir, RegExp, Recursive, Fun, Acc, Mod).
 

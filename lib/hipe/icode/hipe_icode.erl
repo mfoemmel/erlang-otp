@@ -288,8 +288,8 @@
 %% @type icode(Fun, Params, IsClosure, IsLeaf, Code, Data, VarRange,LabelRange)
 %%    Fun = mfa()
 %%    Params = [var()]
-%%    IsClosure = bool()
-%%    IsLeaf = bool()
+%%    IsClosure = boolean()
+%%    IsLeaf = boolean()
 %%    Code = [icode_instr()]
 %%    Data = data()
 %%    VarRange = {integer(),integer()}
@@ -344,7 +344,7 @@
 %%    Type = call_type()
 %%    Continuation = [] | label_name()
 %%    FailLabel = [] | label_name()
-%%    InGuard = bool()
+%%    InGuard = boolean()
 %%
 %% @type enter(Fun, Arg, Type)
 %%    Fun = mfa() | primop() | closure() 
@@ -614,7 +614,7 @@
 %%
 %%---------------------------------------------------------------------
 
--spec mk_icode(mfa(), [icode_var()], bool(), bool(), [icode_instr()],
+-spec mk_icode(mfa(), [icode_var()], boolean(), boolean(), [icode_instr()],
 	       {non_neg_integer(),non_neg_integer()}, 
 	       {icode_lbl(),icode_lbl()}) -> #icode{}.
 mk_icode(Fun, Params, IsClosure, IsLeaf, Code, VarRange, LabelRange) ->
@@ -625,7 +625,7 @@ mk_icode(Fun, Params, IsClosure, IsLeaf, Code, VarRange, LabelRange) ->
 	 var_range=VarRange,
 	 label_range=LabelRange}.
 
--spec mk_icode(mfa(), [icode_var()], bool(), bool(), [icode_instr()],
+-spec mk_icode(mfa(), [icode_var()], boolean(), boolean(), [icode_instr()],
 	       hipe_consttab(), {non_neg_integer(),non_neg_integer()}, 
 	       {icode_lbl(),icode_lbl()}) -> #icode{}.
 mk_icode(Fun, Params, IsClosure, IsLeaf, Code, Data, VarRange, LabelRange) ->
@@ -634,29 +634,29 @@ mk_icode(Fun, Params, IsClosure, IsLeaf, Code, Data, VarRange, LabelRange) ->
 	 var_range=VarRange, label_range=LabelRange}.
 
 -spec icode_fun(#icode{}) -> mfa().
-icode_fun(#icode{'fun'=MFA}) -> MFA.
+icode_fun(#icode{'fun' = MFA}) -> MFA.
 
 -spec icode_params(#icode{}) -> [icode_var()].
-icode_params(#icode{params=Params}) -> Params.
+icode_params(#icode{params = Params}) -> Params.
 
 -spec icode_params_update(#icode{}, [icode_var()]) -> #icode{}.
 icode_params_update(Icode, Params) -> 
-  Icode#icode{params=Params}.
+  Icode#icode{params = Params}.
 
--spec icode_is_closure(#icode{}) -> bool().
-icode_is_closure(#icode{is_closure=Closure}) -> Closure.
+-spec icode_is_closure(#icode{}) -> boolean().
+icode_is_closure(#icode{is_closure = Closure}) -> Closure.
 
--spec icode_is_leaf(#icode{}) -> bool().
-icode_is_leaf(#icode{is_leaf=Leaf}) -> Leaf.
+-spec icode_is_leaf(#icode{}) -> boolean().
+icode_is_leaf(#icode{is_leaf = Leaf}) -> Leaf.
 
 -spec icode_code(#icode{}) -> icode_instrs().
-icode_code(#icode{code=Code}) -> Code.
+icode_code(#icode{code = Code}) -> Code.
 
 -spec icode_code_update(#icode{}, icode_instrs()) -> #icode{}.
 icode_code_update(Icode, NewCode) -> 
   Vmax = highest_var(NewCode),
   Lmax = highest_label(NewCode),
-  Icode#icode{code=NewCode, var_range={0,Vmax}, label_range={0,Lmax}}.
+  Icode#icode{code = NewCode, var_range = {0,Vmax}, label_range = {0,Lmax}}.
 
 -spec icode_data(#icode{}) -> hipe_consttab().
 icode_data(#icode{data=Data}) -> Data.
@@ -665,22 +665,22 @@ icode_data(#icode{data=Data}) -> Data.
 %% icode_data_update(Icode, NewData) -> Icode#icode{data=NewData}.
 
 -spec icode_var_range(#icode{}) -> {non_neg_integer(), non_neg_integer()}.
-icode_var_range(#icode{var_range=VarRange}) -> VarRange.
+icode_var_range(#icode{var_range = VarRange}) -> VarRange.
 
 -spec icode_label_range(#icode{}) -> {non_neg_integer(), non_neg_integer()}.
-icode_label_range(#icode{label_range=LabelRange}) -> LabelRange.
+icode_label_range(#icode{label_range = LabelRange}) -> LabelRange.
 
--spec icode_info(#icode{}) -> [{arg_types, [erl_type()]}].
-icode_info(#icode{info=Info}) -> Info.
+-spec icode_info(#icode{}) -> icode_info().
+icode_info(#icode{info = Info}) -> Info.
 
--spec icode_info_update(#icode{}, [{arg_types, [erl_type()]}]) -> #icode{}.
-icode_info_update(Icode, Info) -> Icode#icode{info=Info}.
+-spec icode_info_update(#icode{}, icode_info()) -> #icode{}.
+icode_info_update(Icode, Info) -> Icode#icode{info = Info}.
 
 -spec icode_closure_arity(#icode{}) -> arity().
-icode_closure_arity(#icode{closure_arity=Arity}) -> Arity.
+icode_closure_arity(#icode{closure_arity = Arity}) -> Arity.
 
 -spec icode_closure_arity_update(#icode{}, arity()) -> #icode{}.
-icode_closure_arity_update(Icode, Arity) -> Icode#icode{closure_arity=Arity}.
+icode_closure_arity_update(Icode, Arity) -> Icode#icode{closure_arity = Arity}.
   
 
 %%----------------------------------------------------------------------------
@@ -819,7 +819,7 @@ type_false_label(#icode_type{false_label=FalseLbl}) -> FalseLbl.
 -spec type_pred(#icode_type{}) -> float().
 type_pred(#icode_type{p=P}) -> P.
 
--spec is_type(icode_instr()) -> bool().
+-spec is_type(icode_instr()) -> boolean().
 is_type(#icode_type{}) -> true;
 is_type(_) -> false.
 
@@ -833,7 +833,7 @@ mk_goto(Lbl) -> #icode_goto{label=Lbl}.
 -spec goto_label(#icode_goto{}) -> icode_lbl().
 goto_label(#icode_goto{label=Lbl}) -> Lbl.
 
--spec is_goto(icode_instr()) -> bool().
+-spec is_goto(icode_instr()) -> boolean().
 is_goto(#icode_goto{}) -> true;
 is_goto(_) -> false.
 
@@ -847,7 +847,7 @@ mk_return(Vars) -> #icode_return{vars=Vars}.
 -spec return_vars(#icode_return{}) -> [icode_var()].
 return_vars(#icode_return{vars=Vars}) -> Vars.
 
--spec is_return(icode_instr()) -> bool().
+-spec is_return(icode_instr()) -> boolean().
 is_return(#icode_return{}) -> true;
 is_return(_) -> false.
   
@@ -906,7 +906,7 @@ move_src(#icode_move{src=Src}) -> Src.
 	 #icode_move{}.
 move_src_update(M, NewSrc) -> M#icode_move{src=NewSrc}.
 
--spec is_move(icode_instr()) -> bool().
+-spec is_move(icode_instr()) -> boolean().
 is_move(#icode_move{}) -> true;
 is_move(_) -> false.
 
@@ -942,7 +942,7 @@ phi_arg(P, Pred) ->
     false -> exit({'No such predecessor to phi', {Pred, P}})
   end.
 
--spec is_phi(icode_instr()) -> bool().
+-spec is_phi(icode_instr()) -> boolean().
 is_phi(#icode_phi{}) -> true;
 is_phi(_) -> false.
 
@@ -1029,7 +1029,7 @@ mk_call(DstList, M, F, ArgList, Type) ->
 %%   mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, false).
 
 -spec mk_call([#icode_variable{}], atom(), atom(), [icode_argument()],
-	      'local' | 'remote', [] | icode_lbl(), [] | icode_lbl(), bool()) ->
+	      'local' | 'remote', [] | icode_lbl(), [] | icode_lbl(), boolean()) ->
 	 #icode_call{}.
 mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, InGuard)
   when is_atom(M), is_atom(F) ->
@@ -1046,7 +1046,7 @@ mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, InGuard)
 %% we can simply jump to the Fail label (if it exists) without
 %% generating any additional exception information - it isn't needed.
 -spec make_call([#icode_variable{}], icode_funcall(), [icode_argument()],
-	        icode_call_type(), [] | icode_lbl(), [] | icode_lbl(), bool()) ->
+	        icode_call_type(), [] | icode_lbl(), [] | icode_lbl(), boolean()) ->
 	 #icode_call{}.
 make_call(DstList, Fun, ArgList, Type, Continuation, Fail, InGuard) ->
   #icode_call{dstlist=DstList, 'fun'=Fun, args=ArgList, type=Type,
@@ -1102,11 +1102,11 @@ call_set_fail_label(I=#icode_call{}, Fail) ->
       I#icode_call{fail_label=Fail}
   end.
 
--spec is_call(icode_instr()) -> bool().
+-spec is_call(icode_instr()) -> boolean().
 is_call(#icode_call{}) -> true;
 is_call(_) -> false.
 
--spec call_in_guard(#icode_call{}) -> bool().
+-spec call_in_guard(#icode_call{}) -> boolean().
 call_in_guard(#icode_call{in_guard=InGuard}) -> InGuard.
 
 %%-------
@@ -1143,7 +1143,7 @@ enter_args_update(E, Args) -> E#icode_enter{args=Args}.
 -spec enter_type(#icode_enter{}) -> icode_call_type().
 enter_type(#icode_enter{type=Type}) -> Type.
 
--spec is_enter(icode_instr()) -> bool().
+-spec is_enter(icode_instr()) -> boolean().
 is_enter(#icode_enter{}) -> true;
 is_enter(_) -> false.
 
@@ -1188,7 +1188,7 @@ mk_begin_handler(Dstlist) ->
 -spec begin_handler_dstlist(#icode_begin_handler{}) -> [icode_var()].
 begin_handler_dstlist(#icode_begin_handler{dstlist=Dstlist}) -> Dstlist.
 
-%% -spec is_begin_handler(icode_instr()) -> bool().
+%% -spec is_begin_handler(icode_instr()) -> boolean().
 %% is_begin_handler(#icode_begin_handler{}) -> true;
 %% is_begin_handler(_) -> false.
 
@@ -1202,7 +1202,7 @@ mk_label(Name) when is_integer(Name), Name >= 0 -> #icode_label{name=Name}.
 -spec label_name(#icode_label{}) -> icode_lbl().
 label_name(#icode_label{name=Name}) -> Name.
 
--spec is_label(icode_instr()) -> bool().
+-spec is_label(icode_instr()) -> boolean().
 is_label(#icode_label{}) -> true;
 is_label(_) -> false.
 
@@ -1218,7 +1218,7 @@ mk_comment(Txt) -> #icode_comment{text=Txt}.
 -spec comment_text(#icode_comment{}) -> icode_comment_text().
 comment_text(#icode_comment{text=Txt}) -> Txt.
 
--spec is_comment(icode_instr()) -> bool().
+-spec is_comment(icode_instr()) -> boolean().
 is_comment(#icode_comment{}) -> true;
 is_comment(_) -> false.
 
@@ -1237,7 +1237,7 @@ mk_const(C) -> #icode_const{value=#flat{value=C}}.
 -spec const_value(#icode_const{}) -> simple_const() | structured_const() | binary().
 const_value(#icode_const{value=#flat{value=X}}) -> X.
 
--spec is_const(icode_argument()) -> bool().
+-spec is_const(icode_argument()) -> boolean().
 is_const(#icode_const{}) -> true;
 is_const(_) -> false.
 
@@ -1251,7 +1251,7 @@ mk_var(V) -> #icode_variable{name=V, kind=var}.
 -spec var_name(#icode_variable{kind::'var'}) -> non_neg_integer().
 var_name(#icode_variable{name=Name, kind=var}) -> Name.
 
--spec is_var(icode_argument()) -> bool().
+-spec is_var(icode_argument()) -> boolean().
 is_var(#icode_variable{kind=var}) -> true;
 is_var(_) -> false.
 
@@ -1264,7 +1264,7 @@ reg_name(#icode_variable{name=Name, kind=reg}) -> Name.
 -spec reg_is_gcsafe(#icode_variable{kind::'reg'}) -> 'false'.
 reg_is_gcsafe(#icode_variable{kind=reg}) -> false. % for now
 
--spec is_reg(icode_argument()) -> bool().
+-spec is_reg(icode_argument()) -> boolean().
 is_reg(#icode_variable{kind=reg}) -> true;
 is_reg(_) -> false.
 
@@ -1274,11 +1274,11 @@ mk_fvar(V) -> #icode_variable{name=V, kind=fvar}.
 -spec fvar_name(#icode_variable{kind::'fvar'}) -> non_neg_integer().
 fvar_name(#icode_variable{name=Name, kind=fvar}) -> Name.
 
--spec is_fvar(icode_argument()) -> bool().
+-spec is_fvar(icode_argument()) -> boolean().
 is_fvar(#icode_variable{kind=fvar}) -> true;
 is_fvar(_) -> false.
 
--spec is_variable(icode_argument()) -> bool().
+-spec is_variable(icode_argument()) -> boolean().
 is_variable(#icode_variable{}) -> true;
 is_variable(_) -> false.
 
@@ -1287,7 +1287,7 @@ is_variable(_) -> false.
 annotate_variable(X, Anno) ->
   X#icode_variable{annotation = Anno}.
 
--spec is_annotated_variable(icode_argument()) -> bool().
+-spec is_annotated_variable(icode_argument()) -> boolean().
 is_annotated_variable(#icode_variable{annotation=[]}) ->
   false;
 is_annotated_variable(#icode_variable{}) ->
@@ -1624,13 +1624,13 @@ simplify_branch(I) ->
 %%     _ -> false
 %%   end.
 
-%% @spec is_branch(icode_instr()) -> bool()
+%% @spec is_branch(icode_instr()) -> boolean()
 %%
 %% @doc Succeeds if the Icode instruction is a branch. I.e. a
 %%      (possibly conditional) discontinuation of linear control flow.
 %% @end
 
--spec is_branch(icode_instr()) -> bool().
+-spec is_branch(icode_instr()) -> boolean().
 is_branch(Instr) ->
   case Instr of
     #icode_if{} -> true;
@@ -1733,7 +1733,7 @@ no_comments([I|Xs]) ->
 %% result is not used). Note that pure control flow instructions
 %% cannot be regarded as safe, as they are not defining anything.
 
--spec is_safe(icode_instr()) -> bool().
+-spec is_safe(icode_instr()) -> boolean().
 
 is_safe(Instr) ->
   case Instr of
@@ -1794,11 +1794,7 @@ new_max([V|Vs], Max) ->
 	    reg_name(V)
 	end
     end,
-  if VName > Max ->
-      new_max(Vs, VName);
-     true ->
-      new_max(Vs, Max)
-  end;
+  new_max(Vs, erlang:max(VName, Max));
 new_max([], Max) when is_integer(Max) ->
   Max.
 
@@ -1813,7 +1809,7 @@ highest_label([I|Is], Max) ->
   case is_label(I) of 
     true ->
       L = label_name(I),
-      NewMax = if L > Max -> L; true -> Max end,
+      NewMax = erlang:max(L, Max),
       highest_label(Is, NewMax);
     false ->
       highest_label(Is, Max)

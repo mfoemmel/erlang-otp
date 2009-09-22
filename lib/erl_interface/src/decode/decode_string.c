@@ -66,6 +66,8 @@ int ei_decode_string(const char *buf, int *index, char *p)
 	s++;
       }
     }
+    /* Check NIL tail */
+    if ((etype = get8(s)) != ERL_NIL_EXT) return -1;
     break;
 
   case ERL_NIL_EXT:

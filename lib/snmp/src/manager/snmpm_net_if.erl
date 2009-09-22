@@ -94,7 +94,7 @@ send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port) ->
     send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port, undefined).
 
 send_pdu(Pid, Pdu, Vsn, MsgData, Addr, Port, ExtraInfo) 
-  when record(Pdu, pdu) ->
+  when is_record(Pdu, pdu) ->
     ?d("send_pdu -> entry with"
        "~n   Pid:     ~p"
        "~n   Pdu:     ~p"
@@ -214,12 +214,19 @@ do_open_port(Port, SendSz, RecvSz, BindTo, NoReuse) ->
     IpOpts3 = recbuf(RecvSz),
     IpOpts4 = sndbuf(SendSz),
     IpOpts  = [binary | IpOpts1 ++ IpOpts2 ++ IpOpts3 ++ IpOpts4],
-    case init:get_argument(snmpm_fd) of
-	{ok, [[FdStr]]} ->
-	    Fd = list_to_integer(FdStr),
-	    gen_udp:open(0, [{fd, Fd}|IpOpts]);
-	error ->
-	    gen_udp:open(Port, IpOpts)
+    OpenRes = 
+	case init:get_argument(snmpm_fd) of
+	    {ok, [[FdStr]]} ->
+		Fd = list_to_integer(FdStr),
+		gen_udp:open(0, [{fd, Fd}|IpOpts]);
+	    error ->
+		gen_udp:open(Port, IpOpts)
+	end,
+    case OpenRes of
+	{error, _} = Error ->
+	    throw(Error);
+	OK ->
+	    OK
     end.
 
 bind_to(true) ->
@@ -478,11 +485,11 @@ handle_recv_msg(Addr, Port, Bytes,
 	    ?vtrace("received snmpv2-trap", []),
 	    Pid ! {snmp_trap, Pdu, Addr, Port};
 
-	{ok, _Vsn, Trap, _MS, _ACM} when record(Trap, trappdu) ->
+	{ok, _Vsn, Trap, _MS, _ACM} when is_record(Trap, trappdu) ->
 	    ?vtrace("received trappdu", []),
 	    Pid ! {snmp_trap, Trap, Addr, Port};
 
-	{ok, _Vsn, Pdu, _MS, _ACM} when record(Pdu, pdu) ->
+	{ok, _Vsn, Pdu, _MS, _ACM} when is_record(Pdu, pdu) ->
 	    ?vtrace("received pdu", []),
 	    Pid ! {snmp_pdu, Pdu, Addr, Port};
 
@@ -633,9 +640,9 @@ udp_send(Sock, Addr, Port, Msg) ->
 		      "~n   ~p",[Addr, Port, Error])
     end.
 
-sz(B) when binary(B) ->
+sz(B) when is_binary(B) ->
     size(B);
-sz(L) when list(L) ->
+sz(L) when is_list(L) ->
     length(L);
 sz(_) ->
     undefined.

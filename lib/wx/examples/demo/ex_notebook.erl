@@ -20,7 +20,7 @@
 
 -include_lib("wx/include/wx.hrl").
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 -export([start/1, init/1, terminate/2,  code_change/3,
 	 handle_info/2, handle_call/3, handle_event/2]).
@@ -41,6 +41,7 @@ init(Config) ->
 do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxPanel:new(Parent, []),
+
     %% Setup sizers
     MainSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				     [{label, "wxNotebook"}]),
@@ -57,8 +58,9 @@ do_init(Config) ->
     %% Make a wxImageList to be able to display icons in the tab field
     IL = wxImageList:new(16,16),
     wxImageList:add(IL, wxArtProvider:getBitmap("wxART_INFORMATION", [{size, {16,16}}])),
+    wxImageList:add(IL, wxArtProvider:getBitmap("wxART_MISSING_IMAGE", [{size, {16,16}}])),
     wxNotebook:assignImageList(Notebook, IL),
-    
+
 
 
     Win1 = wxPanel:new(Notebook, []),
@@ -83,6 +85,7 @@ do_init(Config) ->
 
     Win3 = wxPanel:new(Notebook, []),
     wxNotebook:addPage(Notebook, Win3, "No color", []),
+    wxNotebook:setPageImage(Notebook, 2, 1),
 
     Win4 = wxPanel:new(Notebook, []),
     wxPanel:setBackgroundColour(Win4, ?wxBLACK),
@@ -97,13 +100,10 @@ do_init(Config) ->
     Win5 = wxPanel:new(Notebook, []),
     wxNotebook:addPage(Notebook, Win5, "Tab with icon", []),
     wxNotebook:setPageImage(Notebook, 4, 0),
-    
-
-
 
     %% Add to sizers
     wxSizer:add(MainSizer, Notebook, [{proportion, 1},
-				  {flag, ?wxEXPAND}]),
+				      {flag, ?wxEXPAND}]),
 
     wxNotebook:connect(Notebook, command_notebook_page_changed,
 		       [{skip, true}]), % {skip, true} has to be set on windows
@@ -112,16 +112,7 @@ do_init(Config) ->
 		   notebook = Notebook}}.
 
 
-%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
-    {noreply,State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config,"Got Call ~p\n",[Msg]),
-    {reply,ok,State}.
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxNotebook{type = command_notebook_page_changed}},
 	     State = #state{notebook = Notebook}) ->
@@ -133,15 +124,24 @@ handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config,"Got Event ~p\n",[Ev]),
     {noreply,State}.
 
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
+    {noreply,State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config,"Got Call ~p\n",[Msg]),
+    {reply,ok,State}.
+
 code_change(_, _, State) ->
     {stop, ignore, State}.
 
 terminate(_Reason, _State) ->
     ok.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%% Local functions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 	    
     

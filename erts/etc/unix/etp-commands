@@ -735,8 +735,8 @@ define etp-extpid-1
       printf "#NotExternalPid<%#x>", $etp_extpid_1_p->header
     else
       ## External pid
-      set $etp_extpid_1_number = $etp_extpid_1_p->data[0]&0x7fff
-      set $etp_extpid_1_serial = ($etp_extpid_1_p->data[0]>>15)&0x1fff
+      set $etp_extpid_1_number = $etp_extpid_1_p->data.ui[0]&0x7fff
+      set $etp_extpid_1_serial = ($etp_extpid_1_p->data.ui[0]>>15)&0x1fff
       set $etp_extpid_1_np = $etp_extpid_1_p->node
       set $etp_extpid_1_creation = $etp_extpid_1_np->creation
       set $etp_extpid_1_dep = $etp_extpid_1_np->dist_entry
@@ -787,7 +787,7 @@ define etp-extport-1
       printf "#NotExternalPort<%#x>", $etp_extport_1->header
     else
       ## External port
-      set $etp_extport_1_number = $etp_extport_1_p->data[0]&0x3ffff
+      set $etp_extport_1_number = $etp_extport_1_p->data.ui[0]&0x3ffff
       set $etp_extport_1_np = $etp_extport_1_p->node
       set $etp_extport_1_creation = $etp_extport_1_np->creation
       set $etp_extport_1_dep = $etp_extport_1_np->dist_entry
@@ -886,15 +886,15 @@ define etp-ref-1
         set $etp_ref_1_error = 1
       else
         if $etp_arch64
-          set $etp_ref_1_i = (int) ((Uint32 *) $etp_ref_1_p->data)[0]
+          set $etp_ref_1_i = (int) $etp_ref_1_p->data.ui32[0]
           if (($etp_ref_1_i + 1) > (2 * ($etp_ref_1_p->header >> 6)))
             set $etp_ref_1_error = 1
           else
-            set $etp_ref_1_nump = &((Uint32 *) $etp_ref_1_p->data)[1]
+            set $etp_ref_1_nump = &$etp_ref_1_p->data.ui32[1]
           end
         else
           set $etp_ref_1_i = (int) ($etp_ref_1_p->header >> 6)
-          set $etp_ref_1_nump = &((Uint32 *) $etp_ref_1_p->data)[0]
+          set $etp_ref_1_nump = &$etp_ref_1_p->data.ui32[0]
         end
       end
       if $etp_ref_1_error
@@ -941,15 +941,15 @@ define etp-extref-1
         ## $etp_extref_1_i now equals data (Uint) words
 	set $etp_extref_1_i -= 2
         if $etp_arch64
-          if ((((int) ((Uint32 *) $etp_extref_1_p->data)[0]) + 1) \
+          if ((((int) $etp_extref_1_p->data.ui32[0]) + 1) \
               > (2 * $etp_extref_1_i))
 	    set $etp_extref_1_error = 1
           else
-            set $etp_extref_1_nump = &((Uint32 *) $etp_extref_1_p->data)[1]
-            set $etp_extref_1_i = (int) ((Uint32 *) $etp_extref_1_p->data)[0]
+            set $etp_extref_1_nump = &$etp_extref_1_p->data.ui32[1]
+            set $etp_extref_1_i = (int) $etp_extref_1_p->data.ui32[0]
           end
         else
-            set $etp_extref_1_nump = &((Uint32 *) $etp_extref_1_p->data)[0]
+            set $etp_extref_1_nump = &$etp_extref_1_p->data.ui32[0]
         end
         ## $etp_extref_1_i now equals no of ref num (Uint32) words
         if !$etp_extref_1_error

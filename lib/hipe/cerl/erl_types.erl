@@ -132,6 +132,7 @@
 	 t_is_port/1,
 	 t_is_maybe_improper_list/1,
 	 t_is_reference/1,
+	 t_is_remote/1,
 	 t_is_string/1,
 	 t_is_subtype/2,
 	 t_is_tuple/1,
@@ -171,8 +172,10 @@
 	 %% t_maybe_improper_list/2,
 	 t_product/1,
 	 t_reference/0,
+	 t_remote/3,
 	 t_string/0,
 	 t_struct_from_opaque/2,
+	 t_solve_remote/2,
 	 t_subst/2,
 	 t_subtract/2,
 	 t_subtract_list/2,
@@ -249,6 +252,7 @@
 -define(number_tag,     number).
 -define(opaque_tag,     opaque).
 -define(product_tag,    product).
+-define(remote_tag,     remote).
 -define(tuple_set_tag,  tuple_set).
 -define(tuple_tag,      tuple).
 -define(union_tag,      union).
@@ -280,7 +284,7 @@
  %% Generic constructor.
 -record(c, {tag :: tag(), elements = [], qualifier = ?unknown_qual :: qual()}).
 
--type erl_type() :: ?any | ?none | ?unit | #c{}.
+-opaque erl_type() :: ?any | ?none | ?unit | #c{}.
 
 %%-----------------------------------------------------------------------------
 %% Auxiliary types and convenient macros
@@ -293,6 +297,7 @@
 -record(int_rng, {from :: rng_elem(), to :: rng_elem()}).
 -record(opaque,  {mod :: module(), name :: atom(),
 		  args = [], struct :: erl_type()}).
+-record(remote,  {mod:: module(), name :: atom(), args = []}).
 
 -define(atom(Set),                 #c{tag=?atom_tag, elements=Set}).
 -define(bitstr(Unit, Base),        #c{tag=?binary_tag, elements=[Unit,Base]}).
@@ -311,6 +316,7 @@
 				      qualifier=Qualifier}.
 -define(opaque(Optypes),           #c{tag=?opaque_tag, elements=Optypes}).
 -define(product(Types),            #c{tag=?product_tag, elements=Types}).
+-define(remote(RemTypes),          #c{tag=?remote_tag, elements=RemTypes}).
 -define(tuple(Types, Arity, Qual), #c{tag=?tuple_tag, elements=Types, 
 				      qualifier={Arity, Qual}}).
 -define(tuple_set(Tuples),         #c{tag=?tuple_set_tag, elements=Tuples}).
@@ -329,17 +335,18 @@
 %% Unions
 %%
 
--define(union(List), #c{tag=?union_tag, elements=[_,_,_,_,_,_,_,_,_]=List}).
+-define(union(List), #c{tag=?union_tag, elements=[_,_,_,_,_,_,_,_,_,_]=List}).
 
--define(atom_union(T),       ?union([T,?none,?none,?none,?none,?none,?none,?none,?none])).
--define(bitstr_union(T),     ?union([?none,T,?none,?none,?none,?none,?none,?none,?none])).
--define(function_union(T),   ?union([?none,?none,T,?none,?none,?none,?none,?none,?none])).
--define(identifier_union(T), ?union([?none,?none,?none,T,?none,?none,?none,?none,?none])).
--define(list_union(T),       ?union([?none,?none,?none,?none,T,?none,?none,?none,?none])).
--define(number_union(T),     ?union([?none,?none,?none,?none,?none,T,?none,?none,?none])).
--define(tuple_union(T),      ?union([?none,?none,?none,?none,?none,?none,T,?none,?none])).
--define(matchstate_union(T), ?union([?none,?none,?none,?none,?none,?none,?none,T,?none])).
--define(opaque_union(T),     ?union([?none,?none,?none,?none,?none,?none,?none,?none,T])).
+-define(atom_union(T),       ?union([T,?none,?none,?none,?none,?none,?none,?none,?none,?none])).
+-define(bitstr_union(T),     ?union([?none,T,?none,?none,?none,?none,?none,?none,?none,?none])).
+-define(function_union(T),   ?union([?none,?none,T,?none,?none,?none,?none,?none,?none,?none])).
+-define(identifier_union(T), ?union([?none,?none,?none,T,?none,?none,?none,?none,?none,?none])).
+-define(list_union(T),       ?union([?none,?none,?none,?none,T,?none,?none,?none,?none,?none])).
+-define(number_union(T),     ?union([?none,?none,?none,?none,?none,T,?none,?none,?none,?none])).
+-define(tuple_union(T),      ?union([?none,?none,?none,?none,?none,?none,T,?none,?none,?none])).
+-define(matchstate_union(T), ?union([?none,?none,?none,?none,?none,?none,?none,T,?none,?none])).
+-define(opaque_union(T),     ?union([?none,?none,?none,?none,?none,?none,?none,?none,T,?none])).
+-define(remote_union(T),     ?union([?none,?none,?none,?none,?none,?none,?none,?none,?none,T])).
 -define(integer_union(T),    ?number_union(T)).
 -define(float_union(T),      ?number_union(T)).
 -define(nil_union(T),        ?list_union(T)).
@@ -360,7 +367,7 @@
 t_any() ->
   ?any.
 
--spec t_is_any(erl_type()) -> bool().
+-spec t_is_any(erl_type()) -> boolean().
 
 t_is_any(?any) -> true;
 t_is_any(_) -> false.
@@ -370,7 +377,7 @@ t_is_any(_) -> false.
 t_none() ->
   ?none.
 
--spec t_is_none(erl_type()) -> bool().
+-spec t_is_none(erl_type()) -> boolean().
 
 t_is_none(?none) -> true;
 t_is_none(_) -> false.
@@ -384,12 +391,12 @@ t_is_none(_) -> false.
 t_opaque(Mod, Name, Args, Struct) ->
   ?opaque(set_singleton(#opaque{mod=Mod, name=Name, args=Args, struct=Struct})).
 
--spec t_is_opaque(erl_type()) -> bool().
+-spec t_is_opaque(erl_type()) -> boolean().
 
 t_is_opaque(?opaque(_)) -> true;
 t_is_opaque(_) -> false.
 
--spec t_has_opaque_subtype(erl_type()) -> bool().
+-spec t_has_opaque_subtype(erl_type()) -> boolean().
 
 t_has_opaque_subtype(?union(Ts)) ->
   lists:any(fun t_is_opaque/1, Ts);
@@ -443,7 +450,7 @@ t_opaque_matching_structure_list(Type, List) ->
     [First|_] -> First
   end.
 
--spec t_contains_opaque(erl_type()) -> bool().
+-spec t_contains_opaque(erl_type()) -> boolean().
 
 t_contains_opaque(?any)                     -> false;
 t_contains_opaque(?none)                    -> false;
@@ -470,7 +477,7 @@ t_contains_opaque(?tuple_set(_Set) = T)     ->
 t_contains_opaque(?union(List))             -> list_contains_opaque(List);
 t_contains_opaque(?var(_Id))                -> false.
 
--spec list_contains_opaque([erl_type()]) -> bool().
+-spec list_contains_opaque([erl_type()]) -> boolean().
 
 list_contains_opaque(List) ->
   lists:any(fun t_contains_opaque/1, List).
@@ -531,10 +538,10 @@ t_opaque_from_records(RecDict) ->
 		    end
 		end, RecDict),
   OpaqueTypeDict =
-    dict:map(fun({opaque, Name}, {Type, ArgNames}) ->
+    dict:map(fun({opaque, Name}, {Module, Type, ArgNames}) ->
 		 case ArgNames of
 		   [] ->
-		     t_opaque('UNKNOWN', Name, [], t_from_form(Type, RecDict));
+		     t_opaque(Module, Name, [], t_from_form(Type, RecDict));
 		   _ ->
 		     throw({error,"Polymorphic opaque types not supported yet"})
 		 end
@@ -556,7 +563,7 @@ t_opaque_match_atom(_, _) -> [].
 t_opaque_atom_vals(OpaqueStruct) ->
   case OpaqueStruct of
     ?atom(_) -> t_atom_vals(OpaqueStruct);
-    ?union([Atom,_,_,_,_,_,_,_,_]) -> t_atom_vals(Atom);
+    ?union([Atom,_,_,_,_,_,_,_,_,_]) -> t_atom_vals(Atom);
     _ -> unknown
   end.
 	  
@@ -575,7 +582,7 @@ t_opaque_tuple_tags(OpaqueStruct) ->
     ?tuple_set(_) = TupleSet ->
       Tuples = t_tuple_subtypes(TupleSet),
       lists:flatten([t_opaque_tuple_tags(T) || T <- Tuples]);
-    ?union([_,_,_,_,_,_,Tuples,_,_]) -> t_opaque_tuple_tags(Tuples);
+    ?union([_,_,_,_,_,_,Tuples,_,_,_]) -> t_opaque_tuple_tags(Tuples);
     _ -> []
   end.
 
@@ -596,10 +603,12 @@ t_struct_from_opaque(?product(Types), Opaque) ->
 t_struct_from_opaque(?tuple(?any, _, _) = T, _Opaque) -> T;
 t_struct_from_opaque(?tuple(Types, Arity, Tag), Opaque)  ->
   ?tuple(list_struct_from_opaque(Types, Opaque), Arity, Tag);
-t_struct_from_opaque(?tuple_set(_Set) = T, Opaque)     ->
-  t_tuple(list_struct_from_opaque(t_tuple_subtypes(T), Opaque));
+t_struct_from_opaque(?tuple_set(Set), Opaque)     ->
+  NewSet = [{Sz, [t_struct_from_opaque(T, Opaque) || T <- Tuples]}
+	    || {Sz, Tuples} <- Set],
+  ?tuple_set(NewSet);
 t_struct_from_opaque(?union(List), Opaque) -> 
-  ?union(list_struct_from_opaque(List, Opaque)).
+  t_sup(list_struct_from_opaque(List, Opaque)).
 
 list_struct_from_opaque(Types, Opaque) ->
   [t_struct_from_opaque(Type, Opaque) || Type <- Types].
@@ -610,6 +619,98 @@ module_builtin_opaques(Module) ->
   [O || O <- all_opaque_builtins(), t_opaque_module(O) =:= Module].
            
 %%-----------------------------------------------------------------------------
+%% Remote types
+%% These types are used for preprocessing they should never reach the analysis stage
+
+-spec t_remote(module(), atom(), [_]) -> erl_type().
+
+t_remote(Mod, Name, Args) ->
+  ?remote(set_singleton(#remote{mod=Mod, name=Name, args=Args})).
+
+-spec t_is_remote(erl_type()) -> boolean().
+
+t_is_remote(?remote(_)) -> true;
+t_is_remote(_) -> false.
+
+-spec t_solve_remote(erl_type(), dict()) -> erl_type().
+
+t_solve_remote(Type , Records) ->
+  t_solve_remote(Type, Records, ordsets:new()).
+
+t_solve_remote(?function(Domain, Range), R, C) ->
+  ?function(t_solve_remote(Domain, R, C), t_solve_remote(Range, R, C));
+t_solve_remote(?list(Types, Term, Size), R, C) ->
+  ?list(t_solve_remote(Types, R, C), Term, Size); 
+t_solve_remote(?product(Types), R, C) ->
+  ?product(list_solve_remote(Types, R, C));
+t_solve_remote(?opaque(Set), R, C) ->
+  List = ordsets:to_list(Set),
+  NewList = [Remote#opaque{struct = t_solve_remote(Struct, R, C)} || 
+	      Remote = #opaque{struct = Struct} <- List],
+  ?opaque(ordsets:from_list(NewList));
+t_solve_remote(?tuple(?any, _, _) = T, _R, _C) -> T;
+t_solve_remote(?tuple(Types, Arity, Tag), R, C)  ->
+  ?tuple(list_solve_remote(Types, R, C), Arity, Tag);
+t_solve_remote(?tuple_set(Set), R, C)     ->
+  NewSet = [{Sz, [t_solve_remote(T, R, C) || T <- Tuples]} || {Sz, Tuples} <- Set],
+  ?tuple_set(NewSet);
+t_solve_remote(?remote(Set), R, C) ->
+  Cycle = ordsets:intersection(Set, C),
+  case ordsets:size(Cycle) of
+    0 -> ok;
+    _ -> 
+      CycleMsg = "Cycle detected while processing remote types: " ++
+	t_to_string(?remote(C), dict:new()),
+      throw({error, CycleMsg})
+  end,
+  NewCycle = ordsets:union(C, Set),
+  TypeFun = fun(#remote{mod = RemoteModule, name = Name, args = Args}) ->
+		case dict:find(RemoteModule, R) of
+		  error ->
+		    Msg = io_lib:format("Cannot locate module ~w to "
+					"resolve the remote type: ~w:~w()~n", 
+					[RemoteModule, RemoteModule, Name]),
+		    throw({error, Msg});
+		  {ok, RemoteDict} ->
+		    case lookup_type(Name, RemoteDict) of
+		      {type, {_TypeMod, Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+			List = lists:zipwith(fun(ArgName, Arg) -> 
+						 {ArgName, Arg}
+					     end, ArgNames, Args),
+			TmpVardict = dict:from_list(List),
+			NewType = t_from_form(Type, RemoteDict, TmpVardict),
+			t_solve_remote(NewType, R, NewCycle);
+		      {opaque, {OpModule, Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+			List = lists:zipwith(fun(ArgName, Arg) -> 
+						 {ArgName, Arg}
+					     end, ArgNames, Args),
+			TmpVardict = dict:from_list(List),
+			Rep = t_from_form(Type, RemoteDict, TmpVardict),
+			NewRep = t_solve_remote(Rep, R, NewCycle),
+			t_from_form({opaque, -1, Name, {OpModule, Args, NewRep}},
+				    RemoteDict, TmpVardict);
+		      {type, _} ->
+		        Msg = io_lib:format("Unknown remote type ~w\n", [Name]),
+			throw({error, Msg});
+		      {opaque, _} ->
+		        Msg = io_lib:format("Unknown remote opaque type ~w\n", [Name]),
+			throw({error, Msg});
+		      error ->
+		        Msg = io_lib:format("Unable to find remote type ~w:~w()\n", [RemoteModule, Name]),
+			throw({error, Msg}) 
+		    end
+		end
+	    end,
+  RemoteList = ordsets:to_list(Set),
+  t_sup([TypeFun(RemoteType) || RemoteType <- RemoteList]);
+t_solve_remote(?union(List), R, C) -> 
+  t_sup(list_solve_remote(List, R, C));
+t_solve_remote(T, _R, _C) -> T.
+
+list_solve_remote(Types, R, C) ->
+  [t_solve_remote(Type, R, C) || Type <- Types].
+
+%%-----------------------------------------------------------------------------
 %% Unit type. Signals non termination.
 %%
 
@@ -618,12 +719,12 @@ module_builtin_opaques(Module) ->
 t_unit() ->
   ?unit.
 
--spec t_is_unit(erl_type()) -> bool().
+-spec t_is_unit(erl_type()) -> boolean().
 
 t_is_unit(?unit) -> true;
 t_is_unit(_) -> false.
 
--spec t_is_none_or_unit(erl_type()) -> bool().
+-spec t_is_none_or_unit(erl_type()) -> boolean().
 
 t_is_none_or_unit(?none) -> true;
 t_is_none_or_unit(?unit) -> true;
@@ -656,12 +757,12 @@ t_atom_vals(Other) ->
   ?atom(_) = Atm = t_inf(t_atom(), Other),
   t_atom_vals(Atm).
 
--spec t_is_atom(erl_type()) -> bool().
+-spec t_is_atom(erl_type()) -> boolean().
 
 t_is_atom(?atom(_)) -> true;
 t_is_atom(_) -> false.
 
--spec t_is_atom(atom(), erl_type()) -> bool().
+-spec t_is_atom(atom(), erl_type()) -> boolean().
 
 t_is_atom(Atom, ?atom(?any)) when is_atom(Atom) -> false;
 t_is_atom(Atom, ?atom(Set)) when is_atom(Atom) -> set_is_singleton(Atom, Set);
@@ -674,7 +775,7 @@ t_is_atom(Atom, _) when is_atom(Atom) -> false.
 t_boolean() ->
   ?atom(set_from_list([false, true])).
 
--spec t_is_boolean(erl_type()) -> bool().
+-spec t_is_boolean(erl_type()) -> boolean().
 
 t_is_boolean(?atom(?any)) -> false;
 t_is_boolean(?atom(Set)) ->
@@ -694,7 +795,7 @@ t_is_boolean(_) -> false.
 t_binary() ->
   ?bitstr(8, 0).
 
--spec t_is_binary(erl_type()) -> bool().
+-spec t_is_binary(erl_type()) -> boolean().
 
 t_is_binary(?bitstr(U, B)) -> 
   ((U rem 8) =:= 0) andalso ((B rem 8) =:= 0);
@@ -754,7 +855,7 @@ t_bitstr_match(T1, T2) ->
   T2p = t_inf(t_bitstr(), T2),
   bitstr_match(T1p, T2p).
 
--spec t_is_bitstr(erl_type()) -> bool().
+-spec t_is_bitstr(erl_type()) -> boolean().
 
 t_is_bitstr(?bitstr(_, _)) -> true;
 t_is_bitstr(_) -> false.
@@ -776,7 +877,7 @@ t_matchstate(Init, Max) when is_integer(Max) ->
   Slots = [Init|[?none || _ <- lists:seq(1, Max)]],
   ?matchstate(Init, t_product(Slots)).
 
--spec t_is_matchstate(erl_type()) -> bool().
+-spec t_is_matchstate(erl_type()) -> boolean().
 
 t_is_matchstate(?matchstate(_, _)) -> true;
 t_is_matchstate(_) -> false.
@@ -885,7 +986,7 @@ t_fun_arity(?function(?product(Domain), _)) ->
 t_fun_range(?function(_, Range)) ->
   Range.
 
--spec t_is_fun(erl_type()) -> bool().
+-spec t_is_fun(erl_type()) -> boolean().
 
 t_is_fun(?function(_, _)) -> true;
 t_is_fun(_) -> false.
@@ -913,7 +1014,7 @@ t_is_identifier(_) -> false.
 t_port() ->
   ?identifier(set_singleton(?port_qual)).
 
--spec t_is_port(erl_type()) -> bool().
+-spec t_is_port(erl_type()) -> boolean().
 
 t_is_port(?identifier(?any)) -> false;
 t_is_port(?identifier(Set)) -> set_is_singleton(?port_qual, Set);
@@ -926,7 +1027,7 @@ t_is_port(_) -> false.
 t_pid() ->
   ?identifier(set_singleton(?pid_qual)).
 
--spec t_is_pid(erl_type()) -> bool().
+-spec t_is_pid(erl_type()) -> boolean().
 
 t_is_pid(?identifier(?any)) -> false;
 t_is_pid(?identifier(Set)) -> set_is_singleton(?pid_qual, Set);
@@ -939,7 +1040,7 @@ t_is_pid(_) -> false.
 t_reference() ->
   ?identifier(set_singleton(?reference_qual)).
 
--spec t_is_reference(erl_type()) -> bool().
+-spec t_is_reference(erl_type()) -> boolean().
 
 t_is_reference(?identifier(?any)) -> false;
 t_is_reference(?identifier(Set)) -> set_is_singleton(?reference_qual, Set);
@@ -959,7 +1060,7 @@ t_number() ->
 t_number(X) when is_integer(X) ->
   t_integer(X).
 
--spec t_is_number(erl_type()) -> bool().
+-spec t_is_number(erl_type()) -> boolean().
 
 t_is_number(?number(_, _)) -> true;
 t_is_number(_) -> false.
@@ -984,7 +1085,7 @@ t_number_vals(Other) ->
 t_float() ->
   ?float.
 
--spec t_is_float(erl_type()) -> bool().
+-spec t_is_float(erl_type()) -> boolean().
 
 t_is_float(?float) -> true;
 t_is_float(_) -> false.
@@ -1006,7 +1107,7 @@ t_integer(I) when is_integer(I) ->
 t_integers(List) when is_list(List) ->
   t_sup([t_integer(I) || I <- List]).
 
--spec t_is_integer(erl_type()) -> bool().
+-spec t_is_integer(erl_type()) -> boolean().
 
 t_is_integer(?integer(_)) -> true;
 t_is_integer(_) -> false.
@@ -1019,7 +1120,7 @@ t_byte() ->
   ?byte.
 
 -ifdef(DO_ERL_TYPES_TEST).
--spec t_is_byte(erl_type()) -> bool().
+-spec t_is_byte(erl_type()) -> boolean().
 
 t_is_byte(?int_range(neg_inf, _)) -> false;
 t_is_byte(?int_range(_, pos_inf)) -> false;
@@ -1037,7 +1138,7 @@ t_is_byte(_) -> false.
 t_char() ->
   ?char.
 
--spec t_is_char(erl_type()) -> bool().
+-spec t_is_char(erl_type()) -> boolean().
 
 t_is_char(?int_range(neg_inf, _)) -> false;
 t_is_char(?int_range(_, pos_inf)) -> false;
@@ -1085,7 +1186,7 @@ t_cons(Hd, Tail) ->
     ?unit -> ?none
   end.
 
--spec t_is_cons(erl_type()) -> bool().
+-spec t_is_cons(erl_type()) -> boolean().
 
 t_is_cons(?nonempty_list(_, _)) -> true;
 t_is_cons(_) -> false.  
@@ -1104,7 +1205,7 @@ t_cons_tl(?nonempty_list(_Contents, Termination) = T) ->
 t_nil() ->
   ?nil.
 
--spec t_is_nil(erl_type()) -> bool().
+-spec t_is_nil(erl_type()) -> boolean().
 
 t_is_nil(?nil) -> true;
 t_is_nil(_) -> false.
@@ -1131,7 +1232,7 @@ t_list_elements(?nil) -> ?none.
 t_list_termination(?nil) -> ?nil;
 t_list_termination(?list(_, Term, _)) -> Term.
 
--spec t_is_list(erl_type()) -> bool().
+-spec t_is_list(erl_type()) -> boolean().
 
 t_is_list(?list(_Contents, ?nil, _)) -> true;
 t_is_list(?nil) -> true;
@@ -1157,7 +1258,7 @@ t_nonempty_string() ->
 t_string() ->
   t_list(t_char()).
 
--spec t_is_string(erl_type()) -> bool().
+-spec t_is_string(erl_type()) -> boolean().
 
 t_is_string(X) ->
   t_is_list(X) andalso t_is_char(t_list_elements(X)).
@@ -1177,7 +1278,7 @@ t_maybe_improper_list(Content, Termination) ->
   true = t_is_subtype(t_nil(), Termination),
   ?list(Content, Termination, ?unknown_qual).
 
--spec t_is_maybe_improper_list(erl_type()) -> bool().
+-spec t_is_maybe_improper_list(erl_type()) -> boolean().
 
 t_is_maybe_improper_list(?list(_, _, _)) -> true;
 t_is_maybe_improper_list(?nil) -> true;
@@ -1259,7 +1360,7 @@ t_tuple_subtypes(?tuple(_, _, _) = T) -> [T];
 t_tuple_subtypes(?tuple_set(List)) ->
   lists:append([Tuples || {_Size, Tuples} <- List]).
 
--spec t_is_tuple(erl_type()) -> bool().
+-spec t_is_tuple(erl_type()) -> boolean().
 
 t_is_tuple(?tuple(_, _, _)) -> true;
 t_is_tuple(?tuple_set(_)) -> true;
@@ -1274,7 +1375,7 @@ t_is_tuple(_) -> false.
 t_constant() ->
   t_sup([t_number(), t_identifier(), t_atom(), t_fun(), t_binary()]).
 
--spec t_is_constant(erl_type()) -> bool().
+-spec t_is_constant(erl_type()) -> boolean().
 
 t_is_constant(X) ->
   t_is_subtype(X, t_constant()).
@@ -1294,7 +1395,7 @@ t_pos_integer() ->
 t_non_neg_integer() ->
   t_from_range(0, pos_inf).
 
--spec t_is_non_neg_integer(erl_type()) -> bool().
+-spec t_is_non_neg_integer(erl_type()) -> boolean().
 
 t_is_non_neg_integer(?integer(_) = T) ->
   t_is_subtype(T, t_non_neg_integer());
@@ -1426,7 +1527,7 @@ all_opaque_builtins() ->
   [t_array(), t_dict(), t_digraph(), t_gb_set(),
    t_gb_tree(), t_queue(), t_set(), t_tid()].
 
--spec is_opaque_builtin(atom(), atom()) -> bool().
+-spec is_opaque_builtin(atom(), atom()) -> boolean().
 
 is_opaque_builtin(array, array) -> true;
 is_opaque_builtin(dict, dict) -> true;
@@ -1463,7 +1564,7 @@ t_to_tlist(T) when T =/= ?any orelse T =/= ?none orelse T =/= ?unit -> [T].
 t_var(Atom) when is_atom(Atom) -> ?var(Atom);
 t_var(Int) when is_integer(Int) -> ?var(Int).
 
--spec t_is_var(erl_type()) -> bool().
+-spec t_is_var(erl_type()) -> boolean().
 
 t_is_var(?var(_)) -> true;
 t_is_var(_) -> false.
@@ -1472,7 +1573,7 @@ t_is_var(_) -> false.
 
 t_var_name(?var(Id)) -> Id.
 
--spec t_has_var(erl_type()) -> bool().
+-spec t_has_var(erl_type()) -> boolean().
 
 t_has_var(?var(_)) -> true;
 t_has_var(?function(Domain, Range)) ->
@@ -1489,7 +1590,7 @@ t_has_var(?tuple_set(_) = T) ->
 %% exit(lists:flatten(io_lib:format("Union happens in t_has_var/1 ~p\n",[U])));
 t_has_var(_) -> false.
 
--spec t_has_var_list([erl_type()]) -> bool().
+-spec t_has_var_list([erl_type()]) -> boolean().
 
 t_has_var_list([T|Ts]) ->
   t_has_var(T) orelse t_has_var_list(Ts);
@@ -1605,7 +1706,7 @@ t_from_range_unsafe(X, Y) when is_integer(X), is_integer(Y), X =< Y ->
 t_from_range_unsafe(X, Y) when is_integer(X), is_integer(Y) -> t_none();
 t_from_range_unsafe(pos_inf, neg_inf) -> t_none().
 
--spec t_is_fixnum(erl_type()) -> bool().
+-spec t_is_fixnum(erl_type()) -> boolean().
 
 t_is_fixnum(?int_range(neg_inf, _)) -> false;
 t_is_fixnum(?int_range(_, pos_inf)) -> false;
@@ -1615,7 +1716,7 @@ t_is_fixnum(?int_set(Set)) ->
   is_fixnum(set_min(Set)) andalso is_fixnum(set_max(Set));
 t_is_fixnum(_) -> false.
 
--spec is_fixnum(integer()) -> bool().
+-spec is_fixnum(integer()) -> boolean().
 
 is_fixnum(N) when is_integer(N) ->
   Bits = ?BITS,
@@ -1627,7 +1728,7 @@ infinity_geq(_, neg_inf) -> true;
 infinity_geq(neg_inf, _) -> false;
 infinity_geq(A, B) -> A >= B.
 
--spec t_is_bitwidth(erl_type()) -> bool().
+-spec t_is_bitwidth(erl_type()) -> boolean().
 
 t_is_bitwidth(?int_range(neg_inf, _)) -> false;
 t_is_bitwidth(?int_range(_, pos_inf)) -> false;
@@ -1735,6 +1836,8 @@ t_sup(?opaque(Set1), ?opaque(Set2)) ->
 %%  io:format("Debug: t_sup executed with args ~w and ~w~n",[T1, T2]), ?none;
 %%t_sup(T1, T2=?opaque(_,_,_)) ->
 %%  io:format("Debug: t_sup executed with args ~w and ~w~n",[T1, T2]), ?none;
+t_sup(?remote(Set1), ?remote(Set2)) ->
+  ?remote(set_union_no_limit(Set1, Set2));
 t_sup(?matchstate(Pres1, Slots1), ?matchstate(Pres2, Slots2)) ->
   ?matchstate(t_sup(Pres1, Pres2), t_sup(Slots1, Slots2));
 t_sup(?nil, ?nil) -> ?nil;
@@ -1907,6 +2010,7 @@ force_union(T = ?list(_, _, _)) ->    ?list_union(T);
 force_union(T = ?nil) ->              ?list_union(T);
 force_union(T = ?number(_,_)) ->      ?number_union(T);
 force_union(T = ?opaque(_)) ->        ?opaque_union(T);
+force_union(T = ?remote(_)) ->        ?remote_union(T);
 force_union(T = ?tuple(_, _, _)) ->   ?tuple_union(T);
 force_union(T = ?tuple_set(_)) ->     ?tuple_union(T);
 force_union(T = ?matchstate(_, _)) -> ?matchstate_union(T);
@@ -2169,8 +2273,27 @@ inf_tuples_in_sets([?tuple(_, _, Tag1)|Left1] = L1,
 inf_tuples_in_sets([], _, Acc, _Mode) -> lists:reverse(Acc);
 inf_tuples_in_sets(_, [], Acc, _Mode) -> lists:reverse(Acc).
 
-inf_union(U1, U2, Mode) ->
-  inf_union(U1, U2, 0, [], Mode).
+inf_union(U1, U2, opaque) ->
+%%---------------------------------------------------------------------
+%%                          Under Testing
+%%----------------------------------------------------------------------
+%%   OpaqueFun = 
+%%     fun(Union1, Union2) ->
+%% 	[_,_,_,_,_,_,_,_,Opaque,_] = Union1,
+%% 	[A,B,F,I,L,N,T,M,_,_R] = Union2,
+%% 	List = [A,B,F,I,L,N,T,M],
+%%         case [T || T <- List, t_inf(T, Opaque, opaque) =/= ?none] of
+%% 	  [] -> ?none;
+%% 	  _  -> Opaque
+%% 	end
+%%     end,
+%%   O1 = OpaqueFun(U1, U2),
+%%   O2 = OpaqueFun(U2, U1),
+%%   Union = inf_union(U1, U2, 0, [], opaque),
+%%   t_sup([O1, O2, Union]);
+  inf_union(U1, U2, 0, [], opaque);
+inf_union(U1, U2, OtherMode) ->
+  inf_union(U1, U2, 0, [], OtherMode).
 
 inf_union([?none|Left1], [?none|Left2], N, Acc, Mode) ->
   inf_union(Left1, Left2, N, [?none|Acc], Mode);
@@ -2397,7 +2520,7 @@ unify_lists([], [], Dict, Acc) ->
 %%assign_vars(?tuple_set(_) = T, ?tuple_set(List2), Dict) ->
 %%  %% All Rhs tuples must already be subtypes of Lhs, so we can take
 %%  %% each one separatly.
-%%  assign_vars_lists(lists:duplicate(length(List2), T), List2, Dict);
+%%  assign_vars_lists([T || _ <- List2], List2, Dict);
 %%assign_vars(?tuple(?any, ?any, ?any), ?tuple_set(_), Dict) ->
 %%  Dict;
 %%assign_vars(?tuple(_, Arity, _) = T1, ?tuple_set(List), Dict) ->
@@ -2688,18 +2811,18 @@ subtract_bin(?bitstr(U1, B1), ?bitstr(U2, B2)) ->
 %% Relations
 %%
 
--spec t_is_equal(erl_type(), erl_type()) -> bool().
+-spec t_is_equal(erl_type(), erl_type()) -> boolean().
 
 t_is_equal(T, T)  -> true;
 t_is_equal(_, _) -> false.
 
--spec t_is_subtype(erl_type(), erl_type()) -> bool().
+-spec t_is_subtype(erl_type(), erl_type()) -> boolean().
 
 t_is_subtype(T1, T2) ->
   Inf = t_inf(T1, T2),
   t_is_equal(T1, Inf).
 
--spec t_is_instance(erl_type(), erl_type()) -> bool().
+-spec t_is_instance(erl_type(), erl_type()) -> boolean().
 
 t_is_instance(ConcreteType, Type) ->
   t_is_subtype(ConcreteType, t_unopaque(Type)).
@@ -2726,14 +2849,14 @@ t_unopaque(?tuple_set(Set), Opaques) ->
   NewSet = [{Sz, [t_unopaque(T, Opaques) || T <- Tuples]}
 	    || {Sz, Tuples} <- Set],
   ?tuple_set(NewSet);
-t_unopaque(?union([A,B,F,I,L,N,T,M,O]), Opaques) ->
+t_unopaque(?union([A,B,F,I,L,N,T,M,O,R]), Opaques) ->
   UL = t_unopaque(L, Opaques),
   UT = t_unopaque(T, Opaques),
   UO = case O of
 	 ?none -> [];
 	 ?opaque(Os) -> [t_unopaque(S, Opaques) || #opaque{struct = S} <- Os]
        end,
-  t_sup([?union([A,B,F,I,UL,N,UT,M,?none])|UO]);
+  t_sup([?union([A,B,F,I,UL,N,UT,M,?none,R])|UO]);
 t_unopaque(T, _) ->
   T.
 
@@ -2871,7 +2994,7 @@ t_to_string(?atom(Set), _RecDict) ->
   case set_size(Set) of
     2 ->
       case set_is_element(true, Set) andalso set_is_element(false, Set) of
-	true -> "bool()";
+	true -> "boolean()";
 	false -> set_to_string(Set)
       end;
     _ ->
@@ -2882,11 +3005,11 @@ t_to_string(?bitstr(8, 0), _RecDict) ->
 t_to_string(?bitstr(0, 0), _RecDict) ->
   "<<>>";
 t_to_string(?bitstr(0, B), _RecDict) ->
-  io_lib:format("<<_:~w>>",[B]);
+  io_lib:format("<<_:~w>>", [B]);
 t_to_string(?bitstr(U, 0), _RecDict) ->
-  io_lib:format("<<_:_*~w>>",[U]);
+  io_lib:format("<<_:_*~w>>", [U]);
 t_to_string(?bitstr(U, B), _RecDict) ->
-  io_lib:format("<<_:~w,_:_*~w>>",[B,U]);
+  io_lib:format("<<_:~w,_:_*~w>>", [B, U]);
 t_to_string(?function(?any, ?any), _RecDict) ->
   "fun()";
 t_to_string(?function(?any, Range), RecDict) ->
@@ -2900,11 +3023,11 @@ t_to_string(?identifier(Set), _RecDict) ->
 		       || T <- set_to_list(Set)], [], " | ")
   end;
 t_to_string(?opaque(Set), _RecDict) ->
-  sequence([case Mod =:= 'UNKNOWN' orelse is_opaque_builtin(Mod, Name) of
+  sequence([case is_opaque_builtin(Mod, Name) of
 	      true  -> io_lib:format("~w()", [Name]);
 	      false -> io_lib:format("~w:~w()", [Mod, Name])
 	    end
-	    || #opaque{mod=Mod, name=Name} <- set_to_list(Set)], [], " | ");
+	    || #opaque{mod = Mod, name = Name} <- set_to_list(Set)], [], " | ");
 t_to_string(?matchstate(Pres, Slots), RecDict) ->
   io_lib:format("ms(~s,~s)", [t_to_string(Pres, RecDict),
 			      t_to_string(Slots,RecDict)]);
@@ -2977,6 +3100,15 @@ t_to_string(?float, _RecDict) -> "float()";
 t_to_string(?number(?any, ?unknown_qual), _RecDict) -> "number()";
 t_to_string(?product(List), RecDict) -> 
   "<" ++ comma_sequence(List, RecDict) ++ ">";
+t_to_string(?remote(Set), RecDict) ->
+  sequence([case Args =:= [] of
+	      true  -> io_lib:format("~w:~w()", [Mod, Name]);
+	      false ->
+		ArgString = comma_sequence(Args, RecDict),
+		io_lib:format("~w:~w(~s)", [Mod, Name, ArgString])
+	    end
+	    || #remote{mod = Mod, name = Name, args = Args} <- set_to_list(Set)],
+	   [], " | ");
 t_to_string(?tuple(?any, ?any, ?any), _RecDict) -> "tuple()";
 t_to_string(?tuple(Elements, _Arity, ?any), RecDict) ->   
   "{" ++ comma_sequence(Elements, RecDict) ++ "}";
@@ -3071,9 +3203,9 @@ t_from_form({ann_type, _L, [_Var, Type]}, RecDict, VarDict) ->
   t_from_form(Type, RecDict, VarDict);
 t_from_form({paren_type, _L, [Type]}, RecDict, VarDict) ->
   t_from_form(Type, RecDict, VarDict);
-t_from_form({remote_type, _L, [_Mod, _Name, _Args]}, _RecDict, _VarDict) ->
-  %% TODO: Just for now
-  t_any();
+t_from_form({remote_type, _L, [{atom, _, Module}, {atom, _, Type}, Args]},
+	    RecDict, VarDict) ->
+  t_remote(Module, Type, [t_from_form(A, RecDict, VarDict) || A <- Args]);
 t_from_form({atom, _L, Atom}, _RecDict, _VarDict) -> t_atom(Atom);
 t_from_form({integer, _L, Int}, _RecDict, _VarDict) -> t_integer(Int);
 t_from_form({type, _L, any, []}, _RecDict, _VarDict) -> t_any();
@@ -3163,27 +3295,27 @@ t_from_form({type, _L, tuple, Args}, RecDict, VarDict) ->
   t_tuple([t_from_form(A, RecDict, VarDict) || A <- Args]);
 t_from_form({type, _L, union, Args}, RecDict, VarDict) -> 
   t_sup([t_from_form(A, RecDict, VarDict) || A <- Args]);
-t_from_form({type, L, Name, Args}, RecDict, VarDict) ->
+t_from_form({type, _L, Name, Args}, RecDict, VarDict) ->
   case lookup_type(Name, RecDict) of
-    {type, {Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+    {type, {_Module, Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
       List = lists:zipwith(fun(ArgName, ArgType) -> 
 			       {ArgName, t_from_form(ArgType, RecDict, VarDict)}
 			   end, ArgNames, Args),
       TmpVardict = dict:from_list(List),
       t_from_form(Type, RecDict, TmpVardict);
-    {opaque, {Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
+    {opaque, {Module, Type, ArgNames}} when length(Args) =:= length(ArgNames) ->
       List = lists:zipwith(fun(ArgName, ArgType) -> 
 			       {ArgName, t_from_form(ArgType, RecDict, VarDict)}
 			   end, ArgNames, Args),
       TmpVardict = dict:from_list(List),
       Rep = t_from_form(Type, RecDict, TmpVardict),
-      t_from_form({opaque, L, Name, {'UNKNOWN', Args, Rep}}, RecDict, VarDict);
+      t_from_form({opaque, -1, Name, {Module, Args, Rep}}, RecDict, VarDict);
     {type, _} ->
       throw({error, io_lib:format("Unknown type ~w\n", [Name])});
     {opaque, _} ->
       throw({error, io_lib:format("Unknown opaque type ~w\n", [Name])});
     error ->
-      throw({error, io_lib:format("Unknown type ~w\n", [Name])}) 
+      throw({error, io_lib:format("Unable to find type ~w\n", [Name])}) 
   end;
 t_from_form({opaque, _L, Name, {Mod, Args, Rep}}, _RecDict, _VarDict) -> 
   case Args of
@@ -3321,13 +3453,13 @@ t_form_to_string_list([], Acc) ->
 %%
 %%=============================================================================
 
--spec any_none([erl_type()]) -> bool().
+-spec any_none([erl_type()]) -> boolean().
 
 any_none([?none|_Left]) -> true;
 any_none([_|Left]) -> any_none(Left);
 any_none([]) -> false.
 
--spec any_none_or_unit([erl_type()]) -> bool().
+-spec any_none_or_unit([erl_type()]) -> boolean().
 
 any_none_or_unit([?none|_]) -> true;
 any_none_or_unit([?unit|_]) -> true;
@@ -3337,7 +3469,7 @@ any_none_or_unit([]) -> false.
 -spec lookup_record(atom(), dict()) -> 'error' | {'ok', [{atom(), erl_type()}]}.
 
 lookup_record(Tag, RecDict) when is_atom(Tag) ->
-  case dict:find(Tag, RecDict) of
+  case dict:find({record, Tag}, RecDict) of
     {ok, [{_Arity, Fields}]} -> {ok, Fields};
     {ok, List} when is_list(List) ->
       %% This will have to do, since we do not know which record we
@@ -3350,7 +3482,7 @@ lookup_record(Tag, RecDict) when is_atom(Tag) ->
 -spec lookup_record(atom(), arity(), dict()) -> 'error' | {'ok', [{atom(), erl_type()}]}.
 
 lookup_record(Tag, Arity, RecDict) when is_atom(Tag) ->
-  case dict:find(Tag, RecDict) of
+  case dict:find({record, Tag}, RecDict) of
     {ok, [{Arity, Fields}]} -> {ok, Fields};
     {ok, OrdDict} -> orddict:find(Arity, OrdDict);
     error -> error
@@ -3366,7 +3498,7 @@ lookup_type(Name, RecDict) ->
     {ok, Found} -> {type, Found}
   end.
 
--spec type_is_defined('type' | 'opaque', atom(), dict()) -> bool().
+-spec type_is_defined('type' | 'opaque', atom(), dict()) -> boolean().
 
 type_is_defined(TypeOrOpaque, Name, RecDict) ->
   dict:is_key({TypeOrOpaque, Name}, RecDict).

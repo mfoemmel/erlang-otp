@@ -83,7 +83,7 @@ property(Property) ->
 %%
 %% @see property/1
 
--spec property(Key::any(), Value::any()) -> atom() | {any(), any()}.
+-spec property(Key::term(), Value::term()) -> atom() | {term(), term()}.
 
 property(Key, true) when is_atom(Key) ->
     Key;
@@ -100,7 +100,7 @@ property(Key, Value) ->
 %%
 %% @see compact/1
 
--spec unfold(List::[any()]) -> [any()].
+-spec unfold(List::[term()]) -> [term()].
 
 unfold([P | Ps]) ->
     if is_atom(P) ->
@@ -138,7 +138,7 @@ compact(List) ->
 %% @see get_value/2
 %% @see get_bool/2
 
--spec lookup(Key::any(), List::[any()]) -> 'none' | tuple().
+-spec lookup(Key::term(), List::[term()]) -> 'none' | tuple().
 
 lookup(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -160,7 +160,7 @@ lookup(_Key, []) ->
 %%
 %% @see lookup/2
 
--spec lookup_all(Key::any(), List::[any()]) -> [tuple()].
+-spec lookup_all(Key::term(), List::[term()]) -> [tuple()].
 
 lookup_all(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -176,13 +176,13 @@ lookup_all(_Key, []) ->
 
 %% ---------------------------------------------------------------------
 
-%% @spec is_defined(Key::term(), List::[term()]) -> bool()
+%% @spec is_defined(Key::term(), List::[term()]) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>List</code> contains at least
 %% one entry associated with <code>Key</code>, otherwise
 %% <code>false</code> is returned.
 
--spec is_defined(Key::any(), List::[any()]) -> bool().
+-spec is_defined(Key::term(), List::[term()]) -> boolean().
 
 is_defined(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -201,7 +201,7 @@ is_defined(_Key, []) ->
 %% @spec get_value(Key::term(), List::[term()]) -> term()
 %% @equiv get_value(Key, List, undefined)
 
--spec get_value(Key::any(), List::[any()]) -> any().
+-spec get_value(Key::term(), List::[term()]) -> term().
 
 get_value(Key, List) ->
     get_value(Key, List, undefined).
@@ -219,7 +219,7 @@ get_value(Key, List) ->
 %% @see get_all_values/2
 %% @see get_bool/2
 
--spec get_value(Key::any(), List::[any()], Default::any()) -> any().
+-spec get_value(Key::term(), List::[term()], Default::term()) -> term().
 
 get_value(Key, [P | Ps], Default) ->
     if is_atom(P), P =:= Key ->
@@ -247,7 +247,7 @@ get_value(_Key, [], Default) ->
 %%
 %% @see get_value/2
 
--spec get_all_values(Key::any(), List::[any()]) -> [any()].
+-spec get_all_values(Key::term(), List::[term()]) -> [term()].
 
 get_all_values(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -276,7 +276,7 @@ get_all_values(_Key, []) ->
 %%
 %% @see get_all_values/2
 
--spec append_values(Key::any(), List::[any()]) -> [any()].
+-spec append_values(Key::term(), List::[term()]) -> [term()].
 
 append_values(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -299,7 +299,7 @@ append_values(_Key, []) ->
 
 %% ---------------------------------------------------------------------
 
-%% @spec get_bool(Key::term(), List::[term()]) -> bool()
+%% @spec get_bool(Key::term(), List::[term()]) -> boolean()
 %%
 %% @doc Returns the value of a boolean key/value option. If
 %% <code>lookup(Key, List)</code> would yield <code>{Key, true}</code>,
@@ -309,7 +309,7 @@ append_values(_Key, []) ->
 %% @see lookup/2
 %% @see get_value/2
 
--spec get_bool(Key::any(), List::[any()]) -> bool().
+-spec get_bool(Key::term(), List::[term()]) -> boolean().
 
 get_bool(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -336,7 +336,7 @@ get_bool(_Key, []) ->
 %% @doc Returns an unordered list of the keys used in <code>List</code>,
 %% not containing duplicates.
 
--spec get_keys(List::[any()]) -> [any()].
+-spec get_keys(List::[term()]) -> [term()].
 
 get_keys(Ps) ->
     sets:to_list(get_keys(Ps, sets:new())).
@@ -360,7 +360,7 @@ get_keys([], Keys) ->
 %% @doc Deletes all entries associated with <code>Key</code> from
 %% <code>List</code>.
 
--spec delete(Key::any(), List::[any()]) -> [any()].
+-spec delete(Key::term(), List::[term()]) -> [term()].
 
 delete(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
@@ -396,7 +396,7 @@ delete(_, []) ->
 %% @see substitute_negations/2
 %% @see normalize/2
 
--spec substitute_aliases(aliases(), List::[any()]) -> [any()].
+-spec substitute_aliases(aliases(), List::[term()]) -> [term()].
 
 substitute_aliases(As, Props) ->
     [substitute_aliases_1(As, P) || P <- Props].
@@ -441,7 +441,7 @@ substitute_aliases_1([], P) ->
 %% @see substitute_aliases/2
 %% @see normalize/2
 
--spec substitute_negations(negations(), List::[any()]) -> [any()].
+-spec substitute_negations(negations(), List::[term()]) -> [term()].
 
 substitute_negations(As, Props) ->
     [substitute_negations_1(As, P) || P <- Props].
@@ -508,7 +508,7 @@ substitute_negations_1([], P) ->
 %%
 %% @see normalize/2
 
--spec expand(Expansions::expansions(), [any()]) -> [any()].
+-spec expand(Expansions::expansions(), [term()]) -> [term()].
 
 expand(Es, Ps) when is_list(Ps) ->
     Es1 = [{property(P), V} || {P, V} <- Es],
@@ -621,7 +621,7 @@ flatten([]) ->
                    | {'negations', negations()}
                    | {'expand', expansions()}.
 
--spec normalize(List::[any()], Stages::[operation()]) -> [any()].
+-spec normalize(List::[term()], Stages::[operation()]) -> [term()].
 
 normalize(L, [{aliases, As} | Xs]) ->
     normalize(substitute_aliases(As, L), Xs);
@@ -652,7 +652,7 @@ normalize(L, []) ->
 %% {[[a], [{b, 5}, b],[{c, 2}, {c, 3, 4}]], [{e, 1}, d]}</pre>
 %% </p>
 
--spec split(List::[any()], Keys::[any()]) -> {[[any()]], [any()]}.
+-spec split(List::[term()], Keys::[term()]) -> {[[term()]], [term()]}.
 
 split(List, Keys) ->
     {Store, Rest} = split(List, dict:from_list([{K, []} || K <- Keys]), []),

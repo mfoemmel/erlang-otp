@@ -71,7 +71,7 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(Case, Config) when list(Config) ->
+init_per_testcase(Case, Config) when is_list(Config) ->
     Dir        = ?config(priv_dir, Config),
     LogTestDir = join(Dir,        ?MODULE),
     CaseDir    = join(LogTestDir, Case),
@@ -87,7 +87,7 @@ init_per_testcase(Case, Config) when list(Config) ->
     Dog = ?WD_START(?MINS(5)),
     [{log_dir, CaseDir}, {watchdog, Dog}|Config].
 
-fin_per_testcase(_Case, Config) when list(Config) ->
+fin_per_testcase(_Case, Config) when is_list(Config) ->
     %% Leave the dirs created above (enable debugging of the test case(s))
     Dog = ?config(watchdog, Config),
     ?WD_STOP(Dog),
@@ -114,7 +114,7 @@ all(suite) ->
 %%======================================================================
 
 open_and_close(suite) -> [];
-open_and_close(Config) when list(Config) ->
+open_and_close(Config) when is_list(Config) ->
     p(open_and_close),
     put(sname,open_and_close),
     put(verbosity,trace),
@@ -133,7 +133,7 @@ open_and_close(Config) when list(Config) ->
 %%======================================================================
 
 open_write_and_close(suite) -> [];
-open_write_and_close(Config) when list(Config) ->
+open_write_and_close(Config) when is_list(Config) ->
     p(open_write_and_close),
     put(sname,open_write_and_close),
     put(verbosity,trace),
@@ -189,7 +189,7 @@ open_write_and_close(Config) when list(Config) ->
 log_to_io1(suite) -> [];
 log_to_io1(doc) -> "Log to io from the same process that opened "
 		       "and wrote the log";
-log_to_io1(Config) when list(Config) ->
+log_to_io1(Config) when is_list(Config) ->
     p(log_to_io1),
     put(sname,l2i1),
     put(verbosity,trace),
@@ -243,7 +243,7 @@ log_to_io1(Config) when list(Config) ->
 log_to_io2(suite) -> [];
 log_to_io2(doc) -> "Log to io from a different process than which "
 		       "opened and wrote the log";
-log_to_io2(Config) when list(Config) ->
+log_to_io2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     p(log_to_io2),
     put(sname, l2i2),
@@ -303,7 +303,7 @@ log_to_io2(Config) when list(Config) ->
 %%======================================================================
 
 log_to_txt1(suite) -> [];
-log_to_txt1(Config) when list(Config) ->
+log_to_txt1(Config) when is_list(Config) ->
     p(log_to_txt1),
     put(sname,l2t1),
     put(verbosity,trace),
@@ -408,7 +408,7 @@ log_to_txt1(Config) when list(Config) ->
 log_to_txt2(suite) -> [];
 log_to_txt2(doc) -> "Log to txt file from a different process than which "
 		       "opened and wrote the log";
-log_to_txt2(Config) when list(Config) ->
+log_to_txt2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     p(log_to_txt2),
     put(sname,l2t2),
@@ -628,7 +628,7 @@ log_reader_stop(Pid) ->
 	    exit({failed_stopping_reader, timeout, Msg})
     end.
 
-log_reader_log_to(Pid, LogToFun) when function(LogToFun) ->
+log_reader_log_to(Pid, LogToFun) when is_function(LogToFun) ->
     Pid ! {log_to, LogToFun, self()},
     receive
 	{log_to_reply, Res, Pid} ->

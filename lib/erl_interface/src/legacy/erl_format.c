@@ -282,6 +282,7 @@ static char *pquotedatom(char **fmt, char *buf)
  * The format letters are:
  *   w  -  Any Erlang term
  *   a  -  An Atom
+ *   b  -  A Binary
  *   s  -  A String
  *   i  -  An Integer
  *   f  -  A Float (double)
@@ -313,6 +314,12 @@ static int pformat(char **fmt, va_list *pap, ETERM *v[], int size)
   case 'f':
     v[size] = erl_mk_float(va_arg(*pap, double));  
     break;
+
+  case 'b': {
+    char *sarg = va_arg(*pap, char *);
+    v[size] = erl_mk_binary(sarg, strlen(sarg));
+    break;
+  }
     
   default:
     rc = ERL_FORMAT_ERROR;

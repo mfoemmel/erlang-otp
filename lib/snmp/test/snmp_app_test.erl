@@ -117,7 +117,7 @@ fields(suite) ->
     [];
 fields(doc) ->
     [];
-fields(Config) when list(Config) ->
+fields(Config) when is_list(Config) ->
     AppFile = key1search(app_file, Config),
     Fields = [vsn, description, modules, registered, applications],
     case check_fields(Fields, AppFile, []) of
@@ -148,7 +148,7 @@ modules(suite) ->
     [];
 modules(doc) ->
     [];
-modules(Config) when list(Config) ->
+modules(Config) when is_list(Config) ->
     AppFile  = key1search(app_file, Config),
     Mods     = key1search(modules, AppFile),
     EbinList = get_ebin_mods(snmp),
@@ -211,7 +211,7 @@ exportall(suite) ->
     [];
 exportall(doc) ->
     [];
-exportall(Config) when list(Config) ->
+exportall(Config) when is_list(Config) ->
     AppFile = key1search(app_file, Config),
     Mods    = key1search(modules, AppFile),
     check_export_all(Mods).
@@ -244,7 +244,7 @@ app_depend(suite) ->
     [];
 app_depend(doc) ->
     [];
-app_depend(Config) when list(Config) ->
+app_depend(Config) when is_list(Config) ->
     AppFile = key1search(app_file, Config),
     Apps    = key1search(applications, AppFile),
     check_apps(Apps).

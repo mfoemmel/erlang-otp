@@ -38,6 +38,28 @@
     thus constitutes one section in this document. The title of each
     section is the version number of Mnesia.</p>
   
+  <section><title>Mnesia 4.4.11</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Fixed duplicate results with mnesia:index_read() on
+            ordered_set tables. Reported by Sam Bobroff. </p>
+	  <p>
+	    Fixed locking in mnesia:index_read() which now grabs a read
+            table lock to ensure correctness, this may slow down the
+            operation or block other processes trying to reach the
+            same table. </p>
+	  <p>
+	    Calling mnesia:dump_log() could crash mnesia,
+            Reported by Igor Ribeiro Sucupira.</p>
+          <p> Own Id: OTP-8074</p>
+        </item>
+      </list>
+    </section>
+
+  </section>
   <section><title>Mnesia 4.4.10</title>
     
     <section><title>Fixed Bugs and Malfunctions</title>

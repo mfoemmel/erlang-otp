@@ -33,7 +33,7 @@
 
 -define(MAXSIZE_HEAPBINARY, 64).
 
-% When used as the fallback restricted shell callback module...
+%% When used as the fallback restricted shell callback module...
 local_allowed(q,[],State) ->
     {true,State};
 local_allowed(_,_,State) ->
@@ -84,8 +84,8 @@ whereis_evaluator() ->
 			[{current_group,Group}] ->
 			    %% get shell pid from group
 			    GrIfs = group:interfaces(Group),
-			    case lists:keysearch(shell, 1, GrIfs) of
-				{value,{shell,Shell}} ->
+			    case lists:keyfind(shell, 1, GrIfs) of
+				{shell, Shell} ->
 				    whereis_evaluator(Shell);
 				false ->
 				    undefined
@@ -97,8 +97,8 @@ whereis_evaluator() ->
 whereis_evaluator(Shell) ->
     case process_info(Shell, dictionary) of
 	{dictionary,Dict} ->
-	    case lists:keysearch(evaluator, 1, Dict) of
-		{value,{_,Eval}} when is_pid(Eval) ->
+	    case lists:keyfind(evaluator, 1, Dict) of
+		{_, Eval} when is_pid(Eval) ->
 		    Eval;
 		_ ->
 		    undefined
@@ -106,7 +106,6 @@ whereis_evaluator(Shell) ->
 	_ ->
 	    undefined
     end.
-	    
 
 %% Call this function to start a user restricted shell 
 %% from a normal shell session.
@@ -115,13 +114,13 @@ start_restricted(RShMod) when is_atom(RShMod) ->
 	{module,RShMod} -> 
 	    application:set_env(stdlib, restricted_shell, RShMod),
             exit(restricted_shell_started);
-	{error,What} ->
+	{error,What} = Error ->
 	    error_logger:error_report(
 	      lists:flatten(
 		io_lib:fwrite(
 		  <<"Restricted shell module ~w not found: ~p\n">>, 
 		  [RShMod,What]))),
-	    {error,What}
+	    Error
     end.
 
 stop_restricted() ->
@@ -292,8 +291,8 @@ get_command1(Pid, Eval, Bs, RT, Ds) ->
 
 prompt(N) ->
     case is_alive() of
-	true -> {format,<<"(~s)~w> ">>,[node(),N]};
-	false -> {format,<<"~w> ">>,[N]}
+	true  -> io_lib:format(<<"(~s)~w> ">>, [node(), N]);
+	false -> io_lib:format(<<"~w> ">>, [N])
     end.
 
 %% expand_hist(Expressions, CommandNumber)
@@ -439,7 +438,7 @@ has_bin(T) when is_tuple(T) ->
 has_bin([E | Es]) ->
     has_bin(E),
     has_bin(Es);
-has_bin(B) when is_binary(B), byte_size(B) > ?MAXSIZE_HEAPBINARY ->
+has_bin(B) when byte_size(B) > ?MAXSIZE_HEAPBINARY ->
     throw(true);
 has_bin(T) ->
     T.
@@ -854,12 +853,12 @@ expand_records(UsedRecords, E0) ->
         erl_expand_records:module(Forms, [strict_record_tests]), 
     prep_rec(NE).
 
-prep_rec({value,CommandN,V}) ->
+prep_rec({value,_CommandN,_V}=Value) ->
     %% erl_expand_records cannot handle the history expansion {value,_,_}.
-    {atom,{value,CommandN,V},ok};
-prep_rec({atom,{value,CommandN,V},ok}) -> 
+    {atom,Value,ok};
+prep_rec({atom,{value,_CommandN,_V}=Value,ok}) -> 
     %% Undo the effect of the previous clause...
-    {value,CommandN,V};
+    Value;
 prep_rec(T) when is_tuple(T) -> list_to_tuple(prep_rec(tuple_to_list(T)));
 prep_rec([E | Es]) -> [prep_rec(E) | prep_rec(Es)];
 prep_rec(E) -> E.
@@ -1142,11 +1141,9 @@ record_bindings(Recs0, Bs0) ->
     {Recs1, _} = lists:mapfoldl(fun ({Name,Def}, I) -> {{Name,I,Def},I+1} 
                                 end, 0, Recs0),
     Recs2 = lists:keysort(2, lists:ukeysort(1, Recs1)),
-    Bs1 = lists:foldl(fun ({Name,I,Def}, Bs) ->
-                              erl_eval:add_binding({record,I,Name}, 
-                                                   Def, Bs)
-                      end, Bs0, Recs2),
-    Bs1.
+    lists:foldl(fun ({Name,I,Def}, Bs) ->
+			erl_eval:add_binding({record,I,Name}, Def, Bs)
+		end, Bs0, Recs2).
 
 %%% Read record information from file(s)
 
@@ -1213,10 +1210,10 @@ read_file_records(File, Opts) ->
 
 %% This is how the debugger searches for source files. See int.erl.
 try_source(Beam, CB) ->
-    Os = case lists:keysearch(options, 1, binary_to_term(CB)) of
+    Os = case lists:keyfind(options, 1, binary_to_term(CB)) of
              false -> [];
-             {value,{_,Os0}} -> Os0
-    end,
+             {_, Os0} -> Os0
+	 end,
     Src0 = filename:rootname(Beam) ++ ".erl",
     case is_file(Src0) of
 	true -> parse_file(Src0, Os);

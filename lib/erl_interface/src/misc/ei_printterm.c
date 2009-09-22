@@ -114,7 +114,7 @@ static char *ei_big_to_str(erlang_big *b)
 static int print_term(FILE* fp, ei_x_buff* x,
 			       const char* buf, int* index)
 {
-    int i, doquote, n, m, ty;
+    int i, doquote, n, m, ty, r;
     char a[MAXATOMLEN+1], *p;
     int ch_written = 0;		/* counter of written chars */
     erlang_pid pid;
@@ -122,7 +122,10 @@ static int print_term(FILE* fp, ei_x_buff* x,
     erlang_ref ref;
     double d;
     long l;
-    //unsigned long u;
+
+    int tindex = *index;
+
+    /* use temporary index for multiple (and failable) decodes */
 
     if (fp == NULL && x == NULL) return -1;
 
@@ -169,22 +172,27 @@ static int print_term(FILE* fp, ei_x_buff* x,
 	ch_written += xprintf(fp, x, "[]");
 	break;
     case ERL_LIST_EXT:
-	if (ei_decode_list_header(buf, index, &n) < 0) goto err;
+	if (ei_decode_list_header(buf, &tindex, &n) < 0) goto err;
 	xputc('[', fp, x); ch_written++;
 	for (i = 0; i < n; ++i) {
-	    ch_written += print_term(fp, x, buf, index);
+	    r = print_term(fp, x, buf, &tindex);
+	    if (r < 0) goto err;
+	    ch_written += r;
 	    if (i < n - 1) {
 		xputs(", ", fp, x); ch_written += 2;
 	    }
 	}
-	if (ei_get_type_internal(buf, index, &ty, &n) < 0) goto err;
+	if (ei_get_type_internal(buf, &tindex, &ty, &n) < 0) goto err;
 	if (ty != ERL_NIL_EXT) {
 	    xputs(" | ", fp, x); ch_written += 3;
-	    ch_written += print_term(fp, x, buf, index);
+	    r = print_term(fp, x, buf, &tindex);
+	    if (r < 0) goto err;
+	    ch_written += r;
 	} else {
-	    if (ei_decode_list_header(buf, index, &n) < 0) goto err;
+	    if (ei_decode_list_header(buf, &tindex, &n) < 0) goto err;
 	}
 	xputc(']', fp, x); ch_written++;
+	*index = tindex;
 	break;
     case ERL_STRING_EXT:
 	p = ei_malloc(n+1);
@@ -198,14 +206,18 @@ static int print_term(FILE* fp, ei_x_buff* x,
 	break;
     case ERL_SMALL_TUPLE_EXT:
     case ERL_LARGE_TUPLE_EXT:
-	if (ei_decode_tuple_header(buf, index, &n) < 0) goto err;	
+	if (ei_decode_tuple_header(buf, &tindex, &n) < 0) goto err;
 	xputc('{', fp, x); ch_written++;
+
 	for (i = 0; i < n; ++i) {
-	    ch_written += print_term(fp, x, buf, index);
+	    r = print_term(fp, x, buf, &tindex);
+	    if (r < 0) goto err;
+	    ch_written += r;
 	    if (i < n-1) {
 		xputs(", ", fp, x); ch_written += 2;
 	    }
 	}
+	*index = tindex;
 	xputc('}', fp, x); ch_written++;
 	break;
     case ERL_BINARY_EXT:

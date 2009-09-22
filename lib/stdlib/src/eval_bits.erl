@@ -55,7 +55,7 @@ convert_list(List) ->
     << <<X:1>> || X <- List >>.
 
 expr_grp(Fields, Bindings, EvalFun) ->
-    catch expr_grp(Fields, Bindings, EvalFun, <<>>).
+    expr_grp(Fields, Bindings, EvalFun, <<>>).
 
 expr_grp([Field | FS], Bs0, Lf, Acc) ->
     {Bin,Bs} = eval_field(Field, Bs0, Lf),

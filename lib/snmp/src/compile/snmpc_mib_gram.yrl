@@ -813,7 +813,7 @@ make_defval_for_string(Line, Str, Atom) ->
     case lists:member(Atom, [h, 'H', b, 'B']) of
 	true ->
 	    case catch make_defval_for_string2(Str, Atom) of
-		Defval when list(Defval) ->
+		Defval when is_list(Defval) ->
 		    Defval;
 		{error, ErrStr} ->
 		    snmpc_lib:print_error("Bad DEFVAL ~w string ~p - ~s",
@@ -931,7 +931,7 @@ kind(DefValPart,IndexPart) ->
 
 display_hint(Val) ->
     case val(Val) of
-        Str when list(Str) ->
+        Str when is_list(Str) ->
             lists:reverse(Str);
         _ ->
             throw({error, {invalid_display_hint, Val}})
@@ -939,7 +939,7 @@ display_hint(Val) ->
 
 units(Val) ->
     case val(Val) of
-        Str when list(Str) ->
+        Str when is_list(Str) ->
             lists:reverse(Str);
         _ ->
             throw({error, {invalid_units, Val}})

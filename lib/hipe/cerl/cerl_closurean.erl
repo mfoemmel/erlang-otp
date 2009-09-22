@@ -797,8 +797,6 @@ is_escape_op(F, A) when is_atom(F), is_integer(A) -> true.
 
 is_escape_op(erlang, error, 1) -> false;
 is_escape_op(erlang, error, 2) -> false;
-is_escape_op(erlang, fault, 1) -> false;
-is_escape_op(erlang, fault, 2) -> false;
 is_escape_op(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> true.
 
 %% "Literal" operators will never return functional values even when
@@ -832,8 +830,6 @@ is_literal_op(erlang, fun_info, 2) -> true;
 is_literal_op(erlang, fun_to_list, 1) -> true;
 is_literal_op(erlang, throw, 1) -> true;
 is_literal_op(erlang, exit, 1) -> true;
-is_literal_op(erlang, fault, 1) -> true;
-is_literal_op(erlang, fault, 2) -> true;
 is_literal_op(erlang, error, 1) -> true;
 is_literal_op(erlang, error, 2) -> true;
 is_literal_op(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> false.

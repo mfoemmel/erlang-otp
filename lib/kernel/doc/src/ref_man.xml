@@ -51,6 +51,7 @@
   <include file="global_group"></include>
   <include file="heart"></include>
   <include file="inet"></include>
+  <include file="inet_res"></include>
   <include file="init_stub"></include>
   <include file="net_adm"></include>
   <include file="net_kernel"></include>

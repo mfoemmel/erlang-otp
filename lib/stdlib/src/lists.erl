@@ -107,7 +107,7 @@ nthtail(0, L) when is_list(L) -> L.
 
 %% prefix(Prefix, List) -> (true | false)
 
--spec prefix([T], [T]) -> bool().
+-spec prefix([T], [T]) -> boolean().
 
 prefix([X|PreTail], [X|Tail]) ->
     prefix(PreTail, Tail);
@@ -116,7 +116,7 @@ prefix([_|_], List) when is_list(List) -> false.
 
 %% suffix(Suffix, List) -> (true | false)
 
--spec suffix([T], [T]) -> bool().
+-spec suffix([T], [T]) -> boolean().
 
 suffix(Suffix, List) ->
     Delta = length(List) - length(Suffix),
@@ -717,7 +717,7 @@ keymap(Fun, Index, []) when is_integer(Index), Index >= 1,
 
 %%% Suggestion from OTP-2948: sort and merge with Fun.
 
--spec sort(fun((T, T) -> bool()), [T]) -> [T].
+-spec sort(fun((T, T) -> boolean()), [T]) -> [T].
 
 sort(Fun, []) when is_function(Fun, 2) ->
     [];
@@ -731,7 +731,7 @@ sort(Fun, [X, Y | T]) ->
 	    fsplit_2(Y, X, Fun, T, [], [])
     end.
 
--spec merge(fun((X, Y) -> bool()), [X], [Y]) -> [_].
+-spec merge(fun((X, Y) -> boolean()), [X], [Y]) -> [_].
 
 merge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(fmerge2_1(T1, H2, Fun, T2, []), []);
@@ -740,14 +740,14 @@ merge(Fun, T1, []) when is_function(Fun, 2) ->
 
 %% reverse(rmerge(F,reverse(A),reverse(B))) is equal to merge(F,A,B).
 
--spec rmerge(fun((X, Y) -> bool()), [X], [Y]) -> [_].
+-spec rmerge(fun((X, Y) -> boolean()), [X], [Y]) -> [_].
 
 rmerge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(rfmerge2_1(T1, H2, Fun, T2, []), []);
 rmerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
 
--spec usort(fun((T, T) -> bool()), [T]) -> [T].
+-spec usort(fun((T, T) -> boolean()), [T]) -> [T].
 
 usort(Fun, [_] = L) when is_function(Fun, 2) ->
     L;
@@ -774,7 +774,7 @@ usort_1(Fun, X, [Y | L]) ->
 	    ufsplit_2(Y, L, Fun, [X])
     end.
                     
--spec umerge(fun((X, Y) -> bool()), [X], [Y]) -> [_].
+-spec umerge(fun((X, Y) -> boolean()), [X], [Y]) -> [_].
 
 umerge(Fun, [], T2) when is_function(Fun, 2) ->
     T2;
@@ -783,7 +783,7 @@ umerge(Fun, [H1 | T1], T2) when is_function(Fun, 2) ->
 
 %% reverse(rumerge(F,reverse(A),reverse(B))) is equal to umerge(F,A,B).
 
--spec rumerge(fun((X, Y) -> bool()), [X], [Y]) -> [_].
+-spec rumerge(fun((X, Y) -> boolean()), [X], [Y]) -> [_].
 
 rumerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1;
@@ -928,7 +928,7 @@ rumerge(T1, [H2 | T2]) ->
 %%  There are also versions with an extra argument, ExtraArgs, which is a
 %%  list of extra arguments to each call.
 
--spec all(fun((T) -> bool()), [T]) -> bool().
+-spec all(fun((T) -> boolean()), [T]) -> boolean().
 
 all(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
@@ -937,7 +937,7 @@ all(Pred, [Hd|Tail]) ->
     end;
 all(Pred, []) when is_function(Pred, 1) -> true. 
 
--spec any(fun((T) -> bool()), [T]) -> bool().
+-spec any(fun((T) -> boolean()), [T]) -> boolean().
 
 any(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
@@ -970,7 +970,7 @@ foldr(F, Accu, [Hd|Tail]) ->
     F(Hd, foldr(F, Accu, Tail));
 foldr(F, Accu, []) when is_function(F, 2) -> Accu.
 
--spec filter(Pred :: fun((T) -> bool()), List :: [T]) -> [T].
+-spec filter(Pred :: fun((T) -> boolean()), List :: [T]) -> [T].
 
 filter(Pred, List) when is_function(Pred, 1) ->
     [ E || E <- List, Pred(E) ].
@@ -978,7 +978,7 @@ filter(Pred, List) when is_function(Pred, 1) ->
 %% Equivalent to {filter(F, L), filter(NotF, L)}, if NotF = 'fun(X) ->
 %% not F(X) end'.
 
--spec partition(Pred :: fun((T) -> bool()), List :: [T]) -> {[T], [T]}.
+-spec partition(Pred :: fun((T) -> boolean()), List :: [T]) -> {[T], [T]}.
 
 partition(Pred, L) ->
     partition(Pred, L, [], []).
@@ -991,7 +991,7 @@ partition(Pred, [H | T], As, Bs) ->
 partition(Pred, [], As, Bs) when is_function(Pred, 1) ->
     {reverse(As), reverse(Bs)}.
 
--spec zf(fun((T) -> bool() | {'true', X}), [T]) -> [(T | X)].
+-spec zf(fun((T) -> boolean() | {'true', X}), [T]) -> [(T | X)].
 
 zf(F, [Hd|Tail]) ->
     case F(Hd) of
@@ -1027,7 +1027,7 @@ mapfoldr(F, Accu0, [Hd|Tail]) ->
     {[R|Rs],Accu2};
 mapfoldr(F, Accu, []) when is_function(F, 2) -> {[],Accu}.
 
--spec takewhile(fun((T) -> bool()), [T]) -> [T].
+-spec takewhile(fun((T) -> boolean()), [T]) -> [T].
 
 takewhile(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
@@ -1036,7 +1036,7 @@ takewhile(Pred, [Hd|Tail]) ->
     end;
 takewhile(Pred, []) when is_function(Pred, 1) -> [].
 
--spec dropwhile(fun((T) -> bool()), [T]) -> [T].
+-spec dropwhile(fun((T) -> boolean()), [T]) -> [T].
 
 dropwhile(Pred, [Hd|Tail]=Rest) ->
     case Pred(Hd) of
@@ -1045,7 +1045,7 @@ dropwhile(Pred, [Hd|Tail]=Rest) ->
     end;
 dropwhile(Pred, []) when is_function(Pred, 1) -> [].
 
--spec splitwith(fun((T) -> bool()), [T]) -> {[T], [T]}.
+-spec splitwith(fun((T) -> boolean()), [T]) -> {[T], [T]}.
 
 splitwith(Pred, List) when is_function(Pred, 1) ->
     splitwith(Pred, List, []).

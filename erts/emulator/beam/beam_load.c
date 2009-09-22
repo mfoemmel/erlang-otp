@@ -35,7 +35,7 @@
 #include "erl_bits.h"
 #include "beam_catches.h"
 #include "erl_binary.h"
-#include "zlib.h"
+#include "erl_zlib.h"
 
 #ifdef HIPE
 #include "hipe_bif0.h"
@@ -1208,7 +1208,7 @@ read_literal_table(LoaderState* stp)
 
     GetInt(stp, 4, uncompressed_sz);
     uncompressed = erts_alloc(ERTS_ALC_T_TMP, uncompressed_sz);
-    if (uncompress(uncompressed, &uncompressed_sz,
+    if (erl_zlib_uncompress(uncompressed, &uncompressed_sz,
 		   stp->file_p, stp->file_left) != Z_OK) {
 	LoadError0(stp, "failed to uncompress literal table (constant pool)");
     }

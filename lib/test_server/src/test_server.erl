@@ -431,7 +431,7 @@ do_cover_compile1([]) ->
 %% Also, if a Dir exists, cover data will be exported to a file called
 %% all.coverdata in that directory.
 cover_analyse(Analyse,Modules) ->
-    io:fwrite("Cover analysing... ",[]),
+    io:fwrite("Cover analysing...\n",[]),
     DetailsFun = 
 	case Analyse of
 	    {details,Dir} ->
@@ -476,13 +476,14 @@ cover_analyse(Analyse,Modules) ->
 		      {ok,{M,{Cov,NotCov}}} ->
 			  {M,{Cov,NotCov,DetailsFun(M)}};
 		      Err ->
+			  io:fwrite("WARNING: Analysis failed for ~w. Reason: ~p\n",
+				    [M,Err]),
 			  {M,Err}
 		  end
 	  end, Modules),
     Sticky = unstick_all_sticky(node()),
     cover:stop(),
     stick_all_sticky(node(),Sticky),
-    io:fwrite("done\n\n",[]),
     R.
 
 
@@ -508,7 +509,7 @@ stick_all_sticky(Node,Sticky) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% run_test_case_apply(Mod,Func,Args,Name,Run_init,MultiplyTimetrap) -> 
+%% run_test_case_apply(Mod,Func,Args,Name,RunInit,MultiplyTimetrap) -> 
 %%               {Time,Value,Loc,Opts,Comment} | {died,Reason,unknown,Comment}
 %% 
 %% Time = float()   (seconds)
@@ -541,7 +542,7 @@ stick_all_sticky(Node,Sticky) ->
 %% Timetraps will be multiplied by this integer. If it is infinity, no
 %% timetraps will be started at all.
 
-run_test_case_apply({CaseNum,Mod,Func,Args,Name,Run_init,MultiplyTimetrap}) ->
+run_test_case_apply({CaseNum,Mod,Func,Args,Name,RunInit,MultiplyTimetrap}) ->
     purify_format("Test case #~w ~w:~w/1", [CaseNum, Mod, Func]),
     case os:getenv("TS_RUN_VALGRIND") of
 	false -> 
@@ -552,17 +553,17 @@ run_test_case_apply({CaseNum,Mod,Func,Args,Name,Run_init,MultiplyTimetrap}) ->
     end,
     test_server_h:testcase({Mod,Func,1}),
     ProcBef = erlang:system_info(process_count),    
-    Result = run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap),
+    Result = run_test_case_apply(Mod, Func, Args, Name, RunInit, MultiplyTimetrap),
     ProcAft = erlang:system_info(process_count),
     purify_new_leaks(),
     DetFail = get(test_server_detected_fail),
     {Result,DetFail,ProcBef,ProcAft}.
     
-run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap) ->
+run_test_case_apply(Mod, Func, Args, Name, RunInit, MultiplyTimetrap) ->
     case get(test_server_job_dir) of
 	undefined ->
 	    %% i'm a local target
-	    do_run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap);
+	    do_run_test_case_apply(Mod, Func, Args, Name, RunInit, MultiplyTimetrap);
 	JobDir ->
 	    %% i'm a remote target
 	    case Args of
@@ -576,14 +577,14 @@ run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap) ->
 		    TargetPrivDir = filename:join(JobDir, ?priv_dir),
 		    Config2 = lists:keyreplace(priv_dir, 1, Config1,
 					       {priv_dir,TargetPrivDir}),
-		    do_run_test_case_apply(Mod, Func, [Config2], Name, Run_init,
+		    do_run_test_case_apply(Mod, Func, [Config2], Name, RunInit,
 					   MultiplyTimetrap);
 		_other ->
-		    do_run_test_case_apply(Mod, Func, Args, Name, Run_init,
+		    do_run_test_case_apply(Mod, Func, Args, Name, RunInit,
 					   MultiplyTimetrap)
 	    end
     end.
-do_run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap) ->
+do_run_test_case_apply(Mod, Func, Args, Name, RunInit, MultiplyTimetrap) ->
     {ok,Cwd} = file:get_cwd(),
     Args2Print = case Args of
 		     [Args1] when is_list(Args1) -> 
@@ -594,6 +595,7 @@ do_run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap) ->
     print(minor, "Test case started with:\n~s:~s(~p)\n", [Mod,Func,Args2Print]),
     print(minor, "Current directory is ~p\n", [Cwd]),
     print_timestamp(minor,"Started at "),
+    TCCallback = get(test_server_testcase_callback),
     Ref = make_ref(),
     OldGLeader = group_leader(),
     %% Set ourself to group leader for the spawned process
@@ -601,7 +603,9 @@ do_run_test_case_apply(Mod, Func, Args, Name, Run_init, MultiplyTimetrap) ->
     Pid = 
 	spawn_link(
 	  fun() -> 
-		  run_test_case_eval(Mod, Func, Args, Name, Ref, Run_init, MultiplyTimetrap)
+		  run_test_case_eval(Mod, Func, Args, Name, Ref, 
+				     RunInit, MultiplyTimetrap,
+				     TCCallback)
 	  end),
     group_leader(OldGLeader, self()),
     put(test_server_detected_fail, []),
@@ -877,13 +881,14 @@ job_proxy_msgloop() ->
 %% A test case is known to have failed if it returns {'EXIT', _} tuple,
 %% or sends a message {failed, File, Line} to it's group_leader
 
-run_test_case_eval(Mod, Func, Args0, Name, Ref, Run_init, MultiplyTimetrap) ->
+run_test_case_eval(Mod, Func, Args0, Name, Ref, RunInit, 
+		   MultiplyTimetrap, TCCallback) ->
     put(test_server_multiply_timetraps,MultiplyTimetrap),
     {{Time,Value},Loc,Opts} =
 	case test_server_sup:framework_call(init_tc,[?pl2a(Mod),Func,Args0],
 					    {ok,Args0}) of
 	    {ok,Args} ->
-		run_test_case_eval1(Mod, Func, Args, Name, Run_init);
+		run_test_case_eval1(Mod, Func, Args, Name, RunInit, TCCallback);
 	    Error = {error,Reason} ->
 		CB = os:getenv("TEST_SERVER_FRAMEWORK"),
 		SkipReason = io_lib:format("{init_tc_failed,~s,~p}",
@@ -899,12 +904,12 @@ run_test_case_eval(Mod, Func, Args0, Name, Ref, Run_init, MultiplyTimetrap) ->
 	end,
     exit({Ref,Time,Value,Loc,Opts}).
 
-run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
-    case Run_init of
+run_test_case_eval1(Mod, Func, Args, Name, RunInit, TCCallback) ->
+    case RunInit of
 	run_init ->
 	    put(test_server_loc, {Mod,{init_per_testcase,Func}}),
 	    ensure_timetrap(Args),
-	    case init_per_testcase(Mod,Func,Args) of
+	    case init_per_testcase(Mod, Func, Args) of
 		Skip = {skip,Reason} ->
 		    Line = get_loc(),
 		    Conf = [{tc_status,{skipped,Reason}}],
@@ -916,60 +921,66 @@ run_test_case_eval1(Mod, Func, Args, Name, Run_init) ->
 		    test_server_sup:framework_call(end_tc,[?pl2a(Mod),Func,
 							   {{skip,Reason},[Conf]}]),
 		    {{0,{skip,Reason}},Line,[]};
-		{ok,New_conf} ->
-		    %% init_per_testcase defined,
-		    %% returns new configuration
+		{ok,NewConf} ->
+		    %% call user callback function if defined
+		    NewConf1 = user_callback(TCCallback, Mod, Func, init, NewConf),
 		    put(test_server_loc, {Mod,Func}),
 		    %% execute the test case
-		    {{T,Return},Loc} = {ts_tc(Mod, Func, [New_conf]),get_loc()},
-		    {End_conf,TSReturn,FWReturn} =
+		    {{T,Return},Loc} = {ts_tc(Mod, Func, [NewConf1]),get_loc()},
+		    {EndConf,TSReturn,FWReturn} =
 			case Return of
 			    {E,TCError} when E=='EXIT' ; E==failed ->
-				fw_error_notify(Mod,Func,New_conf,
-						TCError,mod_loc(Loc)),
-				{[{tc_status,{failed,TCError}}|New_conf],
+				fw_error_notify(Mod, Func, NewConf1,
+						TCError, mod_loc(Loc)),
+				{[{tc_status,{failed,TCError}}|NewConf1],
 				 Return,{error,TCError}};
 			    SaveCfg={save_config,_} ->
-				{[{tc_status,ok},SaveCfg|New_conf],Return,ok};
+				{[{tc_status,ok},SaveCfg|NewConf1],Return,ok};
 			    {skip_and_save,Why,SaveCfg} ->
 				Skip = {skip,Why},
-				{[{tc_status,{skipped,Why}},{save_config,SaveCfg}|New_conf],
+				{[{tc_status,{skipped,Why}},{save_config,SaveCfg}|NewConf1],
 				 Skip,Skip};
 			    {skip,Why} ->
-				{[{tc_status,{skipped,Why}}|New_conf],Return,Return};
+				{[{tc_status,{skipped,Why}}|NewConf1],Return,Return};
 			    _ ->
-				{[{tc_status,ok}|New_conf],Return,ok}
+				{[{tc_status,ok}|NewConf1],Return,ok}
 			end,
-		    End_conf1 =
-			case end_per_testcase(Mod,Func,End_conf) of
+		    %% call user callback function if defined
+		    EndConf1 = user_callback(TCCallback, Mod, Func, 'end', EndConf),
+		    EndConf2 =
+			case end_per_testcase(Mod, Func, EndConf1) of
 			    SaveCfg1={save_config,_} ->
-				[SaveCfg1|lists:keydelete(save_config,1,End_conf)];
+				[SaveCfg1|lists:keydelete(save_config, 1, EndConf1)];
 			    _ -> 
-				End_conf
+				EndConf1
 			end,
-		    case test_server_sup:framework_call(end_tc, [?pl2a(Mod),Func,
-								 {FWReturn,[End_conf1]}]) of
+		    case test_server_sup:framework_call(end_tc, [?pl2a(Mod), Func,
+								 {FWReturn,[EndConf2]}]) of
 			{fail,Reason} ->
 			    FW = list_to_atom(os:getenv("TEST_SERVER_FRAMEWORK")),
-			    fw_error_notify(Mod, Func, End_conf1, Reason),
+			    fw_error_notify(Mod, Func, EndConf2, Reason),
 			    {{T,{'EXIT',Reason}},FW,[]};
 			_ ->
 			    {{T,TSReturn},Loc,[]}
 		    end
 	    end;
 	skip_init ->
-	    ensure_timetrap(Args),
+	    %% call user callback function if defined
+	    Args1 = user_callback(TCCallback, Mod, Func, init, Args),
+	    ensure_timetrap(Args1),
 	    %% ts_tc does a catch
 	    put(test_server_loc, {Mod,Func}),
 	    %% if this is a named conf group, the test case (init or end conf)
 	    %% should be called with the name as the first argument
-	    Args1 = if Name == undefined -> Args;
-		       true -> [Name | Args]
+	    Args2 = if Name == undefined -> Args1;
+		       true -> [Name | Args1]
 		    end,
 	    %% execute the conf test case
-	    {{T,Return},Loc} = {ts_tc(Mod, Func, Args1),get_loc()},
-	    {Return1,Opts} = process_return_val([Return], Mod,Func,Args, Loc, Return),
-	    {{T,Return1},Loc,Opts}
+	    {{T,Return},Loc} = {ts_tc(Mod, Func, Args2),get_loc()},
+	    %% call user callback function if defined
+	    Return1 = user_callback(TCCallback, Mod, Func, 'end', Return),
+	    {Return2,Opts} = process_return_val([Return1], Mod,Func,Args1, Loc, Return1),
+	    {{T,Return2},Loc,Opts}
     end.
 
 %% the return value is a list and we have to check if it contains 
@@ -1017,11 +1028,29 @@ process_return_val1([], M,F,A, _Loc, Final, SaveOpts) ->
     test_server_sup:framework_call(end_tc, [?pl2a(M),F,{Final,A}]),
     {Final,lists:reverse(SaveOpts)}.
 
-init_per_testcase(Mod,Func,Args) ->
+user_callback(undefined, _, _, _, Args) ->
+    Args;
+user_callback({CBMod,CBFunc}, Mod, Func, InitOrEnd, [Args]) when is_list(Args) ->
+    case catch apply(CBMod, CBFunc, [InitOrEnd,Mod,Func,Args]) of
+	Args1 when is_list(Args1) ->
+	    [Args1];
+	_ ->
+	    [Args]
+    end;
+user_callback({CBMod,CBFunc}, Mod, Func, InitOrEnd, Args) ->
+    case catch apply(CBMod, CBFunc, [InitOrEnd,Mod,Func,Args]) of
+	Args1 when is_list(Args1) ->
+	    Args1;
+	_ ->
+	    Args
+    end.
+
+init_per_testcase(Mod, Func, Args) ->
     case code:is_loaded(Mod) of
 	false -> code:load_file(Mod);
 	_ -> ok
     end,
+    %% init_per_testcase defined, returns new configuration
     case erlang:function_exported(Mod,init_per_testcase,2) of
 	true ->
 	    case catch my_apply(Mod, init_per_testcase, [Func|Args]) of
@@ -1072,15 +1101,15 @@ init_per_testcase(Mod,Func,Args) ->
 	    {ok, Config}
     end.
 	    
-end_per_testcase(Mod,Func,Conf) ->		    
+end_per_testcase(Mod, Func, Conf) ->
     case erlang:function_exported(Mod,end_per_testcase,2) of
 	true ->
-	    do_end_per_testcase(Mod, end_per_testcase, Func, Conf);
+	    do_end_per_testcase(Mod,end_per_testcase,Func,Conf);
 	false ->
 	    %% Backwards compatibility!
 	    case erlang:function_exported(Mod,fin_per_testcase,2) of
 		true ->
-		    do_end_per_testcase(Mod, fin_per_testcase, Func, Conf);
+		    do_end_per_testcase(Mod,fin_per_testcase,Func,Conf);
 		false ->
 		    ok
 	    end

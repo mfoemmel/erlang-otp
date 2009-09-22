@@ -46,7 +46,7 @@
     <p><c>ssh_daemon_ref() - opaque to the user
     returned by ssh:daemon/[1,2,3]</c></p>
     <p><c>ssh_connection_ref() - opaque to the user
-    returned by ssh:connect/[1,2,3]</c></p>
+    returned by ssh:connect/3</c></p>
     <p><c>ip_address() - {N1,N2,N3,N4} % IPv4 |
     {K1,K2,K3,K4,K5,K6,K7,K8} % IPv6</c></p>
     <p><c>subsystem_spec() = {subsystem_name(), {channel_callback(), channel_init_args()}} </c></p>  
@@ -70,9 +70,8 @@
     </func>
     
     <func>
-      <name>connect(Host) -></name>
-      <name>connect(Host, Options) -> </name>
-      <name>connect(Host, Port, Options) -> {ok, ssh_connection_ref()}
+      <name>connect(Host, Port, Options) -> </name>
+      <name>connect(Host, Port, Options, Timeout) -> {ok, ssh_connection_ref()}
       | {error, Reason}</name>
       <fsummary>Connect to an ssh server.</fsummary>
       <type>
@@ -80,10 +79,11 @@
 	<v>Port = integer()</v>
 	<d>The default is <c><![CDATA[22]]></c>, the registered port for SSH.</d>
 	<v>Options = [{Option, Value}]</v>
+	<v>Timeout = infinity | integer(milliseconds)</v>
       </type>
       <desc>
 	<p>Connects to an SSH server. No channel is started this is done
-	by calling ssh_connect:session_cahnnel/2.</p>
+	by calling ssh_connect:session_channel/2.</p>
 	<p>Options are:</p>
 	<taglist>
           <tag><c><![CDATA[{user_dir, String}]]></c></tag>
@@ -264,7 +264,7 @@
       <type>
         <v> Host = string()</v>
 	<v> Port = integer()</v>
-	<v> Options - see ssh:connect/[1,2,3]</v>
+	<v> Options - see ssh:connect/3</v>
       </type>
       <desc>
         <p>Starts an interactive shell to an SSH server on the

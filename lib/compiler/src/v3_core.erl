@@ -636,7 +636,7 @@ make_bool_switch(L, E, V, T, F, #core{}) ->
     make_bool_switch_body(L, E, V, T, F).
 
 make_bool_switch_body(L, E, V, T, F) ->
-    NegL = -abs(L),
+    NegL = neg_line(abs_line(L)),
     Error = {tuple,NegL,[{atom,NegL,badarg},V]},
     {'case',NegL,E,
      [{clause,NegL,[{atom,NegL,true}],[],[T]},
@@ -647,7 +647,7 @@ make_bool_switch_body(L, E, V, T, F) ->
 
 make_bool_switch_guard(_, E, _, {atom,_,true}, {atom,_,false}) -> E;
 make_bool_switch_guard(L, E, V, T, F) ->
-    NegL = -abs(L),
+    NegL = neg_line(abs_line(L)),
     {'case',NegL,E,
      [{clause,NegL,[{atom,NegL,true}],[],[T]},
       {clause,NegL,[{atom,NegL,false}],[],[F]},
@@ -718,7 +718,7 @@ constant_bin_1(Es) ->
 		 ({float,_,F}, B) -> {value,F,B};
 		 ({atom,_,undefined}, B) -> {value,undefined,B}
 	      end,
-    case eval_bits:expr_grp(Es, EmptyBindings, EvalFun) of
+    case catch eval_bits:expr_grp(Es, EmptyBindings, EvalFun) of
 	{value,Bin,EmptyBindings} ->
 	    Bin;
 	_ ->
@@ -768,7 +768,7 @@ verify_suitable_fields([]) -> ok.
 %% (We don't need an exact result for this purpose.)
 
 count_bits(Int) -> 
-    count_bits_1(abs(Int), 64).
+    count_bits_1(abs_line(Int), 64).
 
 count_bits_1(0, Bits) -> Bits;
 count_bits_1(Int, Bits) -> count_bits_1(Int bsr 64, Bits+64).
@@ -1110,9 +1110,10 @@ emasculate_segments([], St, Acc) ->
     {lists:reverse(Acc),St}.
 
 lc_guard_tests([], St) -> {[],St};
-lc_guard_tests(Gs0, St) ->
-    Gs = guard_tests(Gs0),
-    gexpr_top(Gs, St).
+lc_guard_tests(Gs0, St0) ->
+    Gs1 = guard_tests(Gs0),
+    {Gs,St} = gexpr_top(Gs1, St0#core{in_guard=true}),
+    {Gs,St#core{in_guard=false}}.
 
 list_gen_pattern(P0, Line, St) ->
     try
@@ -2024,8 +2025,9 @@ bitstr_vars(Segs, Vs) ->
  		  lit_vars(V, lit_vars(S, Vs0))
 	  end, Vs, Segs).
 
-lineno_anno(L, St) when is_integer(L) ->
-    [L] ++ St#core.file.
+lineno_anno(L, St) ->
+    {line, Line} = erl_parse:get_attribute(L, line),
+    [Line] ++ St#core.file.
 
 get_ianno(Ce) ->
     case core_lib:get_anno(Ce) of
@@ -2039,7 +2041,15 @@ get_lineno_anno(Ce) ->
 	A when is_list(A) -> A
     end.
 
+location(L) ->
+    {location,Location} = erl_parse:get_attribute(L, location),
+    Location.
 
+abs_line(L) ->
+    erl_parse:set_line(L, fun(Line) -> abs(Line) end).
+
+neg_line(L) ->
+    erl_parse:set_line(L, fun(Line) -> -abs(Line) end).
 
 %%%
 %%% Handling of warnings.
@@ -2054,8 +2064,8 @@ format_error(no_binaries) ->
 	"version has been requested".
 
 add_warning(Line, Term, #core{ws=Ws,file=[{file,File}]}=St) when Line >= 0 ->
-    St#core{ws=[{File,[{Line,?MODULE,Term}]}|Ws]};
+    St#core{ws=[{File,[{location(Line),?MODULE,Term}]}|Ws]};
 add_warning(_, _, St) -> St.
 
 add_error(Line, Term, #core{es=Es,file=[{file,File}]}=St) ->
-    St#core{es=[{File,[{abs(Line),?MODULE,Term}]}|Es]}.
+    St#core{es=[{File,[{location(abs_line(Line)),?MODULE,Term}]}|Es]}.

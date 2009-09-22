@@ -18,24 +18,14 @@
 
 {"%VSN%",
  [
-  {"5.0.14",
-   [
-    {restart_application, inets}
-   ]
-  },    
-  {"5.0.13",
+  {"5.1.2",
    [
     {restart_application, inets}
    ]
   }     
  ],
  [	
-  {"5.0.14",
-   [
-    {restart_application, inets}
-   ]
-  }     ,
-  {"5.0.13",
+  {"5.1.2",
    [
     {restart_application, inets}
    ]

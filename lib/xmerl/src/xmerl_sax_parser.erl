@@ -60,8 +60,8 @@
 %%           Options = [{OptTag, term()}]
 %%           OptTag = event_state | event_fun | continuation_state |
 %%                    continuation_fun | ....
-%% Output:   Result = {ok, Rest, EventState}
-%%           Rest = list() | binary()
+%% Output:   Result = {ok, EventState, Rest}
+%%           Rest = unicode_binary() | latin1_binary()
 %%           EventState = term()
 %% Description: Parse file containing an XML document.
 %%----------------------------------------------------------------------
@@ -89,8 +89,8 @@ file(Name,Options) ->
 %%           Options = [{OptTag, term()}]
 %%           OptTag = event_state | event_fun | continuation_state |
 %%                    continuation_fun | ....
-%% Output:   Result = {ok, Rest, EventState}
-%%           Rest = list() | binary()
+%% Output:   Result = {ok, EventState, Rest}
+%%           Rest = unicode_binary() | latin1_binary() | [unicode_char()]
 %%           EventState = term()
 %% Description: Parse a stream containing an XML document.
 %%----------------------------------------------------------------------

@@ -172,8 +172,9 @@ attributes() = line() | list() | tuple()</code>
               </item>
               <tag><c>{error, ErrorInfo, EndLocation}</c></tag>
               <item>
-                <p>An error occurred. <c>LeftOverChars</c> is always
-                  an empty list in this case.</p>
+                <p>An error occurred. <c>LeftOverChars</c> is the remaining
+                  characters of the input data, 
+                  starting from <c>EndLocation</c>.</p>
               </item>
             </taglist>
           </item>

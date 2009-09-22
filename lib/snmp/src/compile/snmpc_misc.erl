@@ -71,23 +71,24 @@ ensure_trailing_dir_delimiter(DirSuggestion) ->
     end.
 
 
-strip_extension_from_filename(FileName, Ext) when atom(FileName) ->
+strip_extension_from_filename(FileName, Ext) when is_atom(FileName) ->
     strip_extension_from_filename(atom_to_list(FileName), Ext);
 
-strip_extension_from_filename(FileName, Ext) when list(FileName) ->
+strip_extension_from_filename(FileName, Ext) when is_list(FileName) ->
     case lists:suffix(Ext, FileName) of
 	true -> lists:sublist(FileName, 1, length(FileName) - length(Ext));
 	false -> FileName
     end.
 
 
-to_upper([C|Cs]) when C >= $a, C =< $z -> [C-($a-$A)|to_upper(Cs)];
+to_upper([C|Cs]) when (C >= $a) andalso (C =< $z) -> [C-($a-$A)|to_upper(Cs)];
 to_upper([C|Cs]) -> [C|to_upper(Cs)];
 to_upper([]) -> [].
 
 
 is_string([]) -> true;
-is_string([Tkn | Str]) when integer(Tkn), Tkn >= 0, Tkn =< 255 ->
+is_string([Tkn | Str]) 
+  when is_integer(Tkn) andalso (Tkn >= 0) andalso (Tkn =< 255) ->
     is_string(Str);
 is_string(_) -> false.
 

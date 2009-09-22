@@ -53,6 +53,8 @@
       <item><p>x <c>F</c> y or y <c>F</c> x (<c>F</c> is total).</p>
       </item>
     </list>
+    <p>An example of a typical ordering function is less than or equal
+      to, <c>=&lt;/2</c>.</p>
 
   </description>
   <funcs>
@@ -614,10 +616,11 @@ flatmap(Fun, List1) ->
           sorted according to the <seealso
           marker="#ordering_function">ordering function</seealso>
           <c>Fun</c> prior to evaluating this function. <c>Fun(A,
-          B)</c> should return <c>true</c> if <c>A</c> comes before
-          <c>B</c> in the ordering, <c>false</c> otherwise. When two
-          elements compare equal, the element from <c>List1</c> is
-          picked before the element from <c>List2</c>.</p>
+          B)</c> should return <c>true</c> if <c>A</c> compares less
+          than or equal to <c>B</c> in the ordering, <c>false</c>
+          otherwise. When two elements compare equal, the element from
+          <c>List1</c> is picked before the element from
+          <c>List2</c>.</p>
       </desc>
     </func>
     <func>
@@ -806,8 +809,8 @@ length(lists:seq(From, To, Incr)) == (To-From+Incr) div Incr</code>
           <c>List1</c>, according to the <seealso
           marker="#ordering_function">ordering function</seealso>
           <c>Fun</c>. <c>Fun(A, B)</c> should return <c>true</c> if
-          <c>A</c> comes before <c>B</c> in the ordering, <c>false</c>
-          otherwise.</p>
+          <c>A</c> compares less than or equal to <c>B</c> in the
+          ordering, <c>false</c> otherwise.</p>
       </desc>
     </func>
     <func>
@@ -1020,8 +1023,9 @@ splitwith(Pred, List) ->
           marker="#ordering_function">ordering function</seealso>
           <c>Fun</c> and contain no duplicates prior to evaluating
           this function. <c>Fun(A, B)</c> should return <c>true</c> if
-          <c>A</c> comes before <c>B</c> in the ordering, <c>false</c>
-          otherwise. When two elements compare equal, the element from
+          <c>A</c> compares less than or equal to <c>B</c> in the
+          ordering, <c>false</c> otherwise. When two elements compare
+          equal, the element from
           <c>List1</c> is picked and the one from <c>List2</c>
           deleted.</p>
       </desc>
@@ -1100,8 +1104,8 @@ splitwith(Pred, List) ->
           comparing equal according to the <seealso
           marker="#ordering_function">ordering function</seealso>
           <c>Fun</c> have been deleted. <c>Fun(A, B)</c> should return
-          <c>true</c> if <c>A</c> comes before <c>B</c> in the
-          ordering, <c>false</c> otherwise.</p>
+          <c>true</c> if <c>A</c> compares less than or equal to
+          <c>B</c> in the ordering, <c>false</c> otherwise.</p>
       </desc>
     </func>
     <func>

@@ -51,7 +51,6 @@
 
 %% =====================================================================
 
--type filename() :: string().
 -type options()  :: [atom() | {atom(), any()}].
 
 %% =====================================================================
@@ -74,7 +73,7 @@ dir() ->
 %% @spec dir(Dir) -> ok
 %% @equiv dir(Dir, [])
 
--spec dir(filename()) -> 'ok'.
+-spec dir(file:filename()) -> 'ok'.
 dir(Dir) ->
     dir(Dir, []).
 
@@ -87,13 +86,13 @@ dir(Dir) ->
 %%
 %% Available options:
 %% <dl>
-%%   <dt>{follow_links, bool()}</dt>
+%%   <dt>{follow_links, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', symbolic directory
 %%       links will be followed.  The default value is
 %%       `false'.</dd>
 %%
-%%   <dt>{recursive, bool()}</dt>
+%%   <dt>{recursive, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', subdirectories will be
 %%       visited recursively.  The default value is
@@ -107,12 +106,12 @@ dir(Dir) ->
 %%       value is `".*\\.erl$"', which matches normal
 %%       Erlang source file names.</dd>
 %%
-%%   <dt>{test, bool()}</dt>
+%%   <dt>{test, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', no files will be
 %%       modified. The default value is `false'.</dd>
 %%
-%%   <dt>{verbose, bool()}</dt>
+%%   <dt>{verbose, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', progress messages will
 %%       be output while the program is running, unless the
@@ -126,11 +125,11 @@ dir(Dir) ->
 %% @see //stdlib/regexp
 %% @see file/2
 
--record(dir, {follow_links = false :: bool(),
-	      recursive    = true  :: bool(),
+-record(dir, {follow_links = false :: boolean(),
+	      recursive    = true  :: boolean(),
 	      options              :: options()}).
 
--spec dir(filename(), options()) -> 'ok'.
+-spec dir(file:filename(), options()) -> 'ok'.
 dir(Dir, Opts) ->
     Opts1 = Opts ++ dir__defaults(),
     Env = #dir{follow_links = proplists:get_bool(follow_links, Opts1),
@@ -212,7 +211,7 @@ default_printer() ->
 %% @spec file(Name) -> ok
 %% @equiv file(Name, [])
 
--spec file(filename()) -> 'ok'.
+-spec file(file:filename()) -> 'ok'.
 file(Name) ->
     file(Name, []).
 
@@ -229,7 +228,7 @@ file(Name) ->
 %%       file is created; the default value is `".bak"'
 %%       (cf. the `backups' option).</dd>
 %%
-%%   <dt>{backups, bool()}</dt>
+%%   <dt>{backups, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', existing files will be
 %%       renamed before new files are opened for writing. The new
@@ -262,7 +261,7 @@ file(Name) ->
 %%       The default formatting function calls
 %%       `erl_prettypr:format/2'.</dd>
 %%
-%%   <dt>{test, bool()}</dt>
+%%   <dt>{test, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', no files will be modified; this
 %%       is typically most useful if the `verbose' flag is enabled, to
@@ -275,7 +274,7 @@ file(Name) ->
 %% @see erl_prettypr:format/2
 %% @see module/2
 
--spec file(filename(), options()) -> 'ok'.
+-spec file(file:filename(), options()) -> 'ok'.
 file(Name, Opts) ->
     Parent = self(),
     Child = spawn_link(fun () -> file_1(Parent, Name, Opts) end),
@@ -399,7 +398,7 @@ output(FD, Printer, Tree, Opts) ->
     io:put_chars(FD, Printer(Tree, Opts)),
     io:nl(FD).
 
-%% file_type(filename()) -> {value, Type} | none
+%% file_type(file:filename()) -> {value, Type} | none
 
 file_type(Name) ->
     file_type(Name, false).
@@ -504,7 +503,7 @@ module(Forms) ->
 %%
 %% Available options are:
 %% <dl>
-%%   <dt>{auto_export_vars, bool()}</dt>
+%%   <dt>{auto_export_vars, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', all matches
 %%       "`{V1, ..., Vn} = E'" where `E' is a
@@ -528,7 +527,7 @@ module(Forms) ->
 %%                end
 %%       </pre></dd>
 %%
-%%   <dt>{auto_list_comp, bool()}</dt>
+%%   <dt>{auto_list_comp, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', calls to `lists:map/2' and
 %%       `lists:filter/2' will be rewritten using list comprehensions.
@@ -540,7 +539,7 @@ module(Forms) ->
 %%       was taken. This is only used for generation of error
 %%       reports. The default value is the empty string.</dd>
 %%
-%%   <dt>{idem, bool()}</dt>
+%%   <dt>{idem, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', all options that affect how the
 %%       code is modified are set to "no changes". For example, to
@@ -548,26 +547,26 @@ module(Forms) ->
 %%       `[new_guard_tests, idem]'. (Recall that options closer to the
 %%       beginning of the list have higher precedence.)</dd>
 %%
-%%   <dt>{keep_unused, bool()}</dt>
+%%   <dt>{keep_unused, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', unused functions will
 %%       not be removed from the code. The default value is
 %%       `false'.</dd>
 %%
-%%   <dt>{new_guard_tests, bool()}</dt>
+%%   <dt>{new_guard_tests, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', guard tests will be updated to
 %%       use the new names, e.g. "`is_integer(X)'" instead of
 %%       "`integer(X)'". The default value is `true'. See also
 %%       `old_guard_tests'.</dd>
 %%
-%%   <dt>{no_imports, bool()}</dt>
+%%   <dt>{no_imports, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', all import statements will be
 %%       removed and calls to imported functions will be expanded to
 %%       explicit remote calls. The default value is `false'.</dd>
 %%
-%%   <dt>{old_guard_tests, bool()}</dt>
+%%   <dt>{old_guard_tests, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', guard tests will be changed to
 %%       use the old names instead of the new ones, e.g.
@@ -575,7 +574,7 @@ module(Forms) ->
 %%       value is `false'. This option overrides the `new_guard_tests'
 %%       option.</dd>
 %%
-%%   <dt>{quiet, bool()}</dt>
+%%   <dt>{quiet, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', all information
 %%       messages and warning messages will be suppressed. The default
@@ -602,7 +601,7 @@ module(Forms) ->
 %%       This option can also be used to override the default
 %%       renaming of calls which use obsolete function names.</dd>
 %%
-%%   <dt>{verbose, bool()}</dt>
+%%   <dt>{verbose, boolean()}</dt>
 %%
 %%       <dd>If the value is `true', progress messages will be output
 %%       while the program is running, unless the `quiet' option is
@@ -736,7 +735,7 @@ check_imports(Is, Opts, File) ->
             end
     end.
 
--spec check_imports_1([{atom(), atom()}]) -> bool().
+-spec check_imports_1([{atom(), atom()}]) -> boolean().
 check_imports_1([{F1, M1}, {F2, M2} | _Is]) when F1 =:= F2, M1 =/= M2 ->
     false;
 check_imports_1([_ | Is]) ->
@@ -929,19 +928,19 @@ hidden_uses_2(Tree, Used) ->
 
 -type context() :: 'guard_expr' | 'guard_test' | 'normal'.
 
--record(env, {file		       :: filename(),
+-record(env, {file		       :: file:filename(),
               module,
               current,
               imports,
               context = normal	       :: context(),
               verbosity = 1	       :: 0 | 1 | 2,
-              quiet = false            :: bool(),
-              no_imports = false       :: bool(),
-              spawn_funs = false       :: bool(),
-              auto_list_comp = true    :: bool(),
-              auto_export_vars = false :: bool(),
-              new_guard_tests = true   :: bool(),
-	      old_guard_tests = false  :: bool()}).
+              quiet = false            :: boolean(),
+              no_imports = false       :: boolean(),
+              spawn_funs = false       :: boolean(),
+              auto_list_comp = true    :: boolean(),
+              auto_export_vars = false :: boolean(),
+              new_guard_tests = true   :: boolean(),
+	      old_guard_tests = false  :: boolean()}).
 
 -record(st, {varc, used, imported, vars, functions, new_forms, rename}).
 
@@ -1395,7 +1394,7 @@ visit_remote_application({M, N, A} = Name, F, As, Tree, Env, St) ->
             end
     end.
 
--spec auto_expand_import(mfa(), #st{}) -> bool().
+-spec auto_expand_import(mfa(), #st{}) -> boolean().
 
 auto_expand_import({lists, append, 2}, _St) -> true;
 auto_expand_import({lists, subtract, 2}, _St) -> true;

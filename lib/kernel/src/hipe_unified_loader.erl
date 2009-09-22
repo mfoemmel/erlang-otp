@@ -303,8 +303,8 @@ trampoline_map_lookup(Primop, Map) ->
 
 -record(fundef, {address     :: integer(),
 		 mfa         :: mfa(),
-		 is_closure  :: bool(),
-		 is_exported :: bool()}).
+		 is_closure  :: boolean(),
+		 is_exported :: boolean()}).
 
 exports(ExportMap, BaseAddress) ->
   exports(ExportMap, BaseAddress, [], []).
@@ -760,7 +760,7 @@ patch_to_emu_step2(ReferencesToPatch) ->
   emu_make_stubs(ReferencesToPatch),
   redirect(ReferencesToPatch).
 
--spec is_loaded(Module::atom()) -> bool().
+-spec is_loaded(Module::atom()) -> boolean().
 %% @doc Checks whether a module is loaded or not.
 is_loaded(M) when is_atom(M) ->
   try hipe_bifs:fun_to_address({M,module_info,0}) of

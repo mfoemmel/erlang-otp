@@ -47,10 +47,6 @@
 -include("../flow/cfg.inc").
 
 %%----------------------------------------------------------------------
-
--type io_device() :: atom() | pid().    % XXX: DOES NOT BELONG HERE
-
-%%----------------------------------------------------------------------
 %% Prototypes for exported functions which are Icode specific
 %%----------------------------------------------------------------------
 
@@ -58,7 +54,7 @@
 -spec postorder(cfg()) -> [icode_lbl()].
 -spec reverse_postorder(cfg()) -> [icode_lbl()].
 
--spec is_visited(icode_lbl(), gb_set()) -> bool().
+-spec is_visited(icode_lbl(), gb_set()) -> boolean().
 -spec visit(icode_lbl(), gb_set()) -> gb_set().
 
 -spec bb(cfg(), icode_lbl()) -> 'not_found' | bb().
@@ -103,7 +99,7 @@ linear_to_cfg(LinearIcode) ->
 %% remove_blocks(CFG, [Lbl|Lbls]) ->
 %%   remove_blocks(bb_remove(CFG, Lbl), Lbls).
 
--spec is_label(icode_instr()) -> bool().
+-spec is_label(icode_instr()) -> boolean().
 is_label(Instr) ->
   hipe_icode:is_label(Instr).
 
@@ -123,20 +119,20 @@ fails_to(Instr) ->
   hipe_icode:fails_to(Instr).
 
 %% True if instr has no effect.
--spec is_comment(icode_instr()) -> bool().
+-spec is_comment(icode_instr()) -> boolean().
 is_comment(Instr) ->
   hipe_icode:is_comment(Instr).
 
 %% True if instr is just a jump (no side-effects).
--spec is_goto(icode_instr()) -> bool().
+-spec is_goto(icode_instr()) -> boolean().
 is_goto(Instr) ->
   hipe_icode:is_goto(Instr).
 
--spec is_branch(icode_instr()) -> bool().
+-spec is_branch(icode_instr()) -> boolean().
 is_branch(Instr) ->
   hipe_icode:is_branch(Instr).
 
--spec is_pure_branch(icode_instr()) -> bool().
+-spec is_pure_branch(icode_instr()) -> boolean().
 is_pure_branch(Instr) ->
   case Instr of
     #icode_if{} -> true;
@@ -158,7 +154,7 @@ is_pure_branch(Instr) ->
     #icode_comment{} -> false
   end.
 
--spec is_phi(icode_instr()) -> bool().
+-spec is_phi(icode_instr()) -> boolean().
 is_phi(I) ->
   hipe_icode:is_phi(I).
 
@@ -181,7 +177,7 @@ redirect_ops(_, CFG, _) -> %% We do not refer to labels in Icode ops.
 pp(CFG) ->
   hipe_icode_pp:pp(cfg_to_linear(CFG)).
 
--spec pp(io_device(), cfg()) -> 'ok'.
+-spec pp(io:device(), cfg()) -> 'ok'.
 
 pp(Dev, CFG) ->
   hipe_icode_pp:pp(Dev, cfg_to_linear(CFG)).

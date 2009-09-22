@@ -1243,14 +1243,16 @@ bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
 gc_bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     Ars = cg_reg_args(As, Bef),
 
-    %% If we are inside a catch, we must save everything that will
-    %% be alive after the catch (because the BIF might fail and there
-    %% will be a jump to the code after the catch).
+    %% If we are inside a catch and in a body (not in guard) and the
+    %% BIF may fail, we must save everything that will be alive after
+    %% the catch (because the code after the code assumes that all
+    %% variables that are live are stored on the stack).
+    %%
     %%   Currently, we are somewhat pessimistic in
     %% that we save any variable that will be live after this BIF call.
 
     {Sis,Int0} =
-	case St0#cg.in_catch of
+	case St0#cg.in_catch andalso St0#cg.bfail =:= 0 of
 	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
 	    false -> {[],Bef}
 	end,

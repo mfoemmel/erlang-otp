@@ -230,7 +230,8 @@ record_test_in_guard(Line, Term, Name, St) ->
             expr({atom,Line,false}, St);
         false ->
             Fs = record_fields(Name, St),
-            expr({call,-Line,{remote,-Line,{atom,-Line,erlang},{atom,-Line,is_record}},
+            NLine = neg_line(Line),
+            expr({call,NLine,{remote,NLine,{atom,NLine,erlang},{atom,NLine,is_record}},
                   [Term,{atom,Line,Name},{integer,Line,length(Fs)+1}]},
                  St)
     end.
@@ -255,10 +256,11 @@ record_test_in_body(Line, Expr, Name, St0) ->
     %% evaluate to a tuple properly.
     Fs = record_fields(Name, St0),
     {Var,St} = new_var(Line, St0),
+    NLine = neg_line(Line),
     expr({block,Line,
           [{match,Line,Var,Expr},
-           {call,-Line,{remote,-Line,{atom,-Line,erlang},
-                        {atom,-Line,is_record}},
+           {call,NLine,{remote,NLine,{atom,NLine,erlang},
+                        {atom,NLine,is_record}},
             [Var,{atom,Line,Name},{integer,Line,length(Fs)+1}]}]}, St).
 
 exprs([E0 | Es0], St0) ->
@@ -446,12 +448,13 @@ strict_record_access(E0, St0) ->
 conj([], _E) ->
     empty;
 conj([{{Name,_Rp},L,R,Sz} | AL], E) ->
-    T1 = {op,-L,'orelse',
-          {call,-L,{atom,-L,is_record},[R,{atom,-L,Name},{integer,-L,Sz}]},
-          {atom,-L,fail}},
+    NL = neg_line(L),
+    T1 = {op,NL,'orelse',
+          {call,NL,{atom,NL,is_record},[R,{atom,NL,Name},{integer,NL,Sz}]},
+          {atom,NL,fail}},
     T2 = case conj(AL, none) of
         empty -> T1;
-        C -> {op,-L,'and',C,T1}
+        C -> {op,NL,'and',C,T1}
     end,
     case E of
 	none ->
@@ -464,10 +467,10 @@ conj([{{Name,_Rp},L,R,Sz} | AL], E) ->
 		    %% expression returns 'fail'. ('orelse' used to verify
 		    %% that its right operand was a boolean, but that is no
 		    %% longer the case.)
-		    {op,-L,'and',T2,{atom,-L,true}}
+		    {op,NL,'and',T2,{atom,NL,true}}
 	    end;
 	_ ->
-	    {op,-L,'and',T2,E}
+	    {op,NL,'and',T2,E}
     end.
 
 %% lc_tq(Line, Qualifiers, State) ->
@@ -558,13 +561,14 @@ strict_get_record_field(Line, R, {atom,_,F}=Index, Name, St0) ->
             Fs = record_fields(Name, St),
             I = index_expr(F, Fs, 2),
             P = record_pattern(2, I, Var, length(Fs)+1, Line, [{atom,Line,Name}]),
-	    E = {'case',-Line,R,
-		     [{clause,-Line,[{tuple,-Line,P}],[],[Var]},
-		      {clause,-Line,[{var,-Line,'_'}],[],
-		       [{call,-Line,{remote,-Line,
-				    {atom,-Line,erlang},
-				    {atom,-Line,error}},
-			 [{tuple,-Line,[{atom,-Line,badrecord},{atom,-Line,Name}]}]}]}]},
+            NLine = neg_line(Line),
+	    E = {'case',NLine,R,
+		     [{clause,NLine,[{tuple,NLine,P}],[],[Var]},
+		      {clause,NLine,[{var,NLine,'_'}],[],
+		       [{call,NLine,{remote,NLine,
+				    {atom,NLine,erlang},
+				    {atom,NLine,error}},
+			 [{tuple,NLine,[{atom,NLine,badrecord},{atom,NLine,Name}]}]}]}]},
             expr(E, St);
         true ->                                 %In a guard.
             Fs = record_fields(Name, St0),
@@ -668,11 +672,12 @@ record_update(R, Name, Fs, Us0, St0) ->
 
 record_match(R, Name, Lr, Fs, Us, St0) ->
     {Ps,News,St1} = record_upd_fs(Fs, Us, St0),
+    NLr = neg_line(Lr),
     {{'case',Lr,R,
       [{clause,Lr,[{tuple,Lr,[{atom,Lr,Name} | Ps]}],[],
         [{tuple,Lr,[{atom,Lr,Name} | News]}]},
-       {clause,-Lr,[{var,-Lr,'_'}],[],
-        [call_error(-Lr, {tuple,-Lr,[{atom,-Lr,badrecord},{atom,-Lr,Name}]})]}
+       {clause,NLr,[{var,NLr,'_'}],[],
+        [call_error(NLr, {tuple,NLr,[{atom,NLr,badrecord},{atom,NLr,Name}]})]}
       ]},
      St1}.
 
@@ -698,13 +703,14 @@ record_setel(R, Name, Fs, Us0) ->
     Us = [T || {_,T} <- Us2],
     Lr = element(2, hd(Us)),
     Wildcards = duplicate(length(Fs), {var,Lr,'_'}),
+    NLr = neg_line(Lr),
     {'case',Lr,R,
      [{clause,Lr,[{tuple,Lr,[{atom,Lr,Name} | Wildcards]}],[],
        [foldr(fun ({I,Lf,Val}, Acc) ->
                       {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
               R, Us)]},
-      {clause,-Lr,[{var,-Lr,'_'}],[],
-       [call_error(-Lr, {tuple,-Lr,[{atom,-Lr,badrecord},{atom,-Lr,Name}]})]}]}.
+      {clause,NLr,[{var,NLr,'_'}],[],
+       [call_error(NLr, {tuple,NLr,[{atom,NLr,badrecord},{atom,NLr,Name}]})]}]}.
 
 %% Expand a call to record_info/2. We have checked that it is not
 %% shadowed by an import.
@@ -795,3 +801,6 @@ imported(F, A, St) ->
         {ok,Mod} -> {yes,Mod};
         error -> no
     end.
+
+neg_line(L) ->
+    erl_parse:set_line(L, fun(Line) -> -abs(Line) end).

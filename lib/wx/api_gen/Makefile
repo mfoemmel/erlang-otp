@@ -45,10 +45,10 @@ GL = $(TARGET_CDIR)/$(GL_C_TARGETS)
 
 opt:  $(WX) $(GL)
 
-$(WX): wxxml_generated $(COMPILER_T) wxapi.conf
+$(WX): wxxml_generated $(COMPILER_T) wxapi.conf $(wildcard wx_extra/wx*.c_src) $(wildcard wx_extra/wx*.erl)
 	erl -noshell -run wx_gen code
 
-wxxml_generated:  wx_doxygen.conf 
+wxxml_generated:  wx_doxygen.conf wx_extra/bugs.h wx_extra/wxe_evth.h
 	sed -e 's|@WXGTK_DIR@|$(WXGTK_DIR)|g' wx_doxygen.conf > wx_doxygen
 	doxygen wx_doxygen && touch wxxml_generated
 
@@ -71,5 +71,4 @@ complete_clean:
 clean: 
 	rm -f *~
 	rm -f $(COMPILER_T) $(GL_COMP_T)
-	#rm -f code_generated
 	rm -f wx_extra/*~

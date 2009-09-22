@@ -192,7 +192,7 @@ make_defval_for_string(Line, Str, Atom) ->
     case lists:member(Atom, [h, 'H', b, 'B']) of
 	true ->
 	    case catch make_defval_for_string2(Str, Atom) of
-		Defval when list(Defval) ->
+		Defval when is_list(Defval) ->
 		    Defval;
 		{error, ErrStr} ->
 		    snmpc_lib:print_error("Bad DEFVAL ~w string ~p - ~s",
@@ -310,7 +310,7 @@ kind(DefValPart,IndexPart) ->
 
 display_hint(Val) ->
     case val(Val) of
-        Str when list(Str) ->
+        Str when is_list(Str) ->
             lists:reverse(Str);
         _ ->
             throw({error, {invalid_display_hint, Val}})
@@ -318,7 +318,7 @@ display_hint(Val) ->
 
 units(Val) ->
     case val(Val) of
-        Str when list(Str) ->
+        Str when is_list(Str) ->
             lists:reverse(Str);
         _ ->
             throw({error, {invalid_units, Val}})
@@ -350,7 +350,7 @@ w(F, A) ->
 %    io:format("~w:" ++ F ++ "~n", [?MODULE|A]).
 
 
--file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b01.2009-06-07_20/otp_src_R13B01/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/net/isildur/ldisk/daily_build/otp_prebuild_r13b02.2009-09-21_11/otp_src_R13B02/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %% 

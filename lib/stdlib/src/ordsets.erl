@@ -35,10 +35,10 @@
 
 new() -> [].
 
-%% is_set(Term) -> bool().
+%% is_set(Term) -> boolean().
 %%  Return 'true' if Set is an ordered set of elements, else 'false'.
 
--spec is_set(term()) -> bool().
+-spec is_set(term()) -> boolean().
 
 is_set([E|Es]) -> is_set(Es, E);
 is_set([]) -> true;
@@ -71,10 +71,10 @@ to_list(S) -> S.
 from_list(L) ->
     lists:usort(L).
 
-%% is_element(Element, OrdSet) -> bool().
+%% is_element(Element, OrdSet) -> boolean().
 %%  Return 'true' if Element is an element of OrdSet, else 'false'.
 
--spec is_element(term(), ordset()) -> bool().
+-spec is_element(term(), ordset()) -> boolean().
 
 is_element(E, [H|Es]) when E > H -> is_element(E, Es);
 is_element(E, [H|_]) when E < H -> false;
@@ -157,10 +157,10 @@ intersection1(S1, [S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
 intersection1(S1, []) -> S1.
 
-%% is_disjoint(OrdSet1, OrdSet2) -> true|false.
+%% is_disjoint(OrdSet1, OrdSet2) -> boolean().
 %%  Check whether OrdSet1 and OrdSet2 are disjoint.
 
--spec is_disjoint(ordset(), ordset()) -> bool().
+-spec is_disjoint(ordset(), ordset()) -> boolean().
 
 is_disjoint([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
     is_disjoint(Es1, Set2);
@@ -188,11 +188,11 @@ subtract([_E1|Es1], [_E2|Es2]) ->		%E1 == E2
 subtract([], _) -> [];
 subtract(Es1, []) -> Es1.
 
-%% is_subset(OrdSet1, OrdSet2) -> bool().
+%% is_subset(OrdSet1, OrdSet2) -> boolean().
 %%  Return 'true' when every element of OrdSet1 is also a member of
 %%  OrdSet2, else 'false'.
 
--spec is_subset(ordset(), ordset()) -> bool().
+-spec is_subset(ordset(), ordset()) -> boolean().
 
 is_subset([E1|_], [E2|_]) when E1 < E2 ->	%E1 not in Set2
     false;
@@ -214,7 +214,7 @@ fold(F, Acc, Set) ->
 %% filter(Fun, OrdSet) -> OrdSet.
 %%  Filter OrdSet with Fun.
 
--spec filter(fun((_) -> bool()), ordset()) -> ordset().
+-spec filter(fun((_) -> boolean()), ordset()) -> ordset().
 
 filter(F, Set) ->
     lists:filter(F, Set).

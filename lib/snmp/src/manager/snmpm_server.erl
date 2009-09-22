@@ -480,6 +480,7 @@ do_init_note_store(Prio) ->
 	    {Pid, Ref};
 	{error, Reason} ->
 	    ?vlog("failed starting note-store - Reason: "
+		  "~n   Reason: ~p"
 		  "~n", [Reason]),
 	    throw({error, {failed_starting_note_store, Reason}})
     end.
@@ -494,6 +495,7 @@ do_init_net_if(NoteStore) ->
 	    {Pid, NetIfModule, Ref};
 	{error, Reason} ->
 	    ?vlog("failed starting net-if - Reason: "
+		  "~n   Reason: ~p"
 		  "~n", [Reason]),
 	    throw({error, {failed_starting_net_if, Reason}})
     end.

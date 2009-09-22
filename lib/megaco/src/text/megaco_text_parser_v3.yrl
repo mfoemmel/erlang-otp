@@ -65,7 +65,7 @@
 %% This is ugly but...
 %%----------------------------------------------------------------------
 
-Expect 90.
+Expect 91.
 
 
 %%----------------------------------------------------------------------
@@ -1557,7 +1557,7 @@ safeToken2           -> 'AuditToken'            : '$1' .
 safeToken2           -> 'AuditCapToken'         : '$1' .
 safeToken2           -> 'AuditValueToken'       : '$1' .
 safeToken2           -> 'AuthToken'             : '$1' .
-%% v3-safeToken2           -> 'BothToken'             : '$1' . % v3
+safeToken2           -> 'BothToken'             : '$1' . % v3
 %% v3-safeToken2           -> 'BothwayToken'          : '$1' .
 safeToken2           -> 'BriefToken'            : '$1' .
 %% v3-safeToken2           -> 'BufferToken'           : '$1' .

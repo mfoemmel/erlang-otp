@@ -376,12 +376,7 @@ check_match(E, C) ->
  	true ->
  	  Src2E =:= Src2C;
  	false ->
- 	  case Src1E =:= Src2C of
- 	    true ->
- 	      Src2E =:= Src1C;
- 	    false ->
- 	      false
- 	  end
+ 	  Src1E =:= Src2C andalso Src2E =:= Src1C
       end
   end.
 

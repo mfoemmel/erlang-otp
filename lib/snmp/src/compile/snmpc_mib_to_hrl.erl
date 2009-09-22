@@ -160,9 +160,9 @@ ins_types([#asn1_type{aliasname = Name,
 		      assocList = Alist, 
 		      imported  = false} | T],
 	  Fd, Res) 
-  when list(Alist) ->
+  when is_list(Alist) ->
     case lists:keysearch(enums, 1, Alist) of
-	{value, {enums, Enums}} when Enums /= [] ->
+	{value, {enums, Enums}} when Enums =/= [] ->
 	    case Enums of
 		[] -> ins_types(T, Fd, Res);
 		NewEnums ->
@@ -185,9 +185,9 @@ ins_mes([#me{aliasname = Name,
 				    aliasname = Aname},
 	     imported  = false} | T],
 	Types, Fd)
-  when list(Alist) ->
+  when is_list(Alist) ->
     case lists:keysearch(enums, 1, Alist) of
-	{value, {enums, Enums}} when Enums /= [] ->
+	{value, {enums, Enums}} when Enums =/= [] ->
 	    case Enums of
 		[] -> ins_mes(T, Types, Fd);
 		NewEnums ->

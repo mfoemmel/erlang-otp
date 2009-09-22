@@ -137,7 +137,7 @@ mk_nil()	-> ?NIL.
 %% mk_atom(X)	-> (X bsl ?TAG_IMMED2_SIZE) + ?TAG_IMMED2_ATOM.
 mk_non_value()	-> ?THE_NON_VALUE.
 
--spec is_fixnum(integer()) -> bool().
+-spec is_fixnum(integer()) -> boolean().
 is_fixnum(N) when is_integer(N) ->
   Bits = ?bytes_to_bits(hipe_rtl_arch:word_size()) - ?TAG_IMMED1_SIZE,
   (N =< ((1 bsl (Bits - 1)) - 1)) and (N >= -(1 bsl (Bits - 1))).

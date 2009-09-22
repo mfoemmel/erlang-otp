@@ -74,7 +74,13 @@
 	 get_env/0,set_env/1, debug/1,
 	 batch/1,foreach/2,map/2,foldl/3,foldr/3,
 	 getObjectType/1, typeCast/2, 
-	 null/0, is_null/1, create_memory/1, get_memory_bin/1]).
+	 null/0, is_null/1]).
+
+-export([create_memory/1, get_memory_bin/1,
+	 retain_memory/1, release_memory/1]).
+
+
+-export([demo/0]).
 
 -include("wxe.hrl").
 
@@ -90,7 +96,7 @@ new() ->
 %% @doc Starts a wx server. 
 %% Option may be {debug, Level}, see debug/1.
 new(Options) when is_list(Options) ->
-    wxe_server:start(),
+    #wx_env{} = wxe_server:start(),
     Debug = proplists:get_value(debug, Options, 0),
     debug(Debug),
     null().
@@ -124,7 +130,7 @@ set_env(#wx_env{sv=Pid} = Env) ->
 %% @spec () -> wxObject()
 %% @doc Returns the null object
 null() ->
-    #wx_ref{ref= 0,type=wx}.
+    #wx_ref{ref=0, type=wx}.
 
 %% @spec (wxObject()) -> boolean()
 %% @doc Returns true if object is null, false otherwise
@@ -238,6 +244,30 @@ get_memory_bin(#wx_mem{bin=Bin, size=Size}) ->
     <<WithCorrectSize:Size/binary, _/binary>> = Bin,
     WithCorrectSize.
 
+%% @spec (wx_memory()) -> ok
+%% @doc Saves the memory from deletion until release_memory/1 is called.
+%% If release_memory/1 is not called the memory will not be garbage collected.
+retain_memory(#wx_mem{bin=Bin}) ->
+    wxe_util:send_bin(Bin),
+    ok = wxe_util:cast(?WXE_BIN_INCR, <<>>);
+retain_memory(Bin) when is_binary(Bin) ->
+    case byte_size(Bin) > ?MIN_BIN_SIZE of
+	true  -> ok;
+	false -> erlang:error(small_bin)
+    end,
+    wxe_util:send_bin(Bin),
+    ok = wxe_util:cast(?WXE_BIN_INCR, <<>>).
+
+release_memory(#wx_mem{bin=Bin}) ->
+    wxe_util:send_bin(Bin),
+    ok = wxe_util:cast(?WXE_BIN_DECR, <<>>);
+release_memory(Bin) when is_binary(Bin) ->
+    wxe_util:send_bin(Bin),
+    ok = wxe_util:cast(?WXE_BIN_DECR, <<>>).
+    
+
+
+
 %% @spec (Level::term()) -> ok
 %%   Level = none | verbose | trace | driver | [Level]
 %% @doc Sets debug level. If debug level is verbose or trace
@@ -275,3 +305,16 @@ debug(Level) when is_integer(Level) ->
 	    ok
     end.
 
+%% @spec () -> ok
+%% @doc Starts a wxErlang demo if examples directory exists and is compiled
+demo() ->
+    Priv = code:priv_dir(wx),
+    Demo = filename:join([filename:dirname(Priv),examples,demo]),
+    Mod  = list_to_atom("demo"), %% Fool xref tests
+    case file:set_cwd(Demo) of
+	ok ->	             
+	    apply(Mod, start, []);
+	_  ->
+	    {error, no_demo_dir}
+    end.
+    

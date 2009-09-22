@@ -86,14 +86,16 @@ plain_cl() ->
       cl_error(Msg)
   end.
 
-cl_check_init(Opts) ->
-  case Opts#options.analysis_type of
+cl_check_init(#options{analysis_type = AnalType} = Opts) ->
+  case AnalType of
     plt_build ->  {ok, ?RET_NOTHING_SUSPICIOUS};
     plt_add ->    {ok, ?RET_NOTHING_SUSPICIOUS};
     plt_remove -> {ok, ?RET_NOTHING_SUSPICIOUS};
     Other when Other =:= succ_typings; Other =:= plt_check ->
       F = fun() ->
-	      dialyzer_cl:start(Opts#options{analysis_type = plt_check})
+	      NewOpts = Opts#options{analysis_type = plt_check},
+	      {Ret, _Warnings} = dialyzer_cl:start(NewOpts),
+	      Ret
 	  end,
       doit(F)
   end.
@@ -136,28 +138,28 @@ print_plt_info(#options{init_plt = PLT, output_file = OutputFile}) ->
 
 cl(Opts) ->
   F = fun() ->
-	  dialyzer_cl:start(Opts)
+	  {Ret, _Warnings} = dialyzer_cl:start(Opts),
+	  Ret
       end,
   doit(F).
 
 -spec run(dial_options()) -> [dial_warning()].
 
-run(Opts) when length(Opts) > 0 ->
-  try
-    case dialyzer_options:build([{report_mode, quiet}, 
-				 {erlang_mode, true}|Opts]) of
-      {error, Msg} -> throw({dialyzer_error, Msg});
-      OptsRecord ->
-	case cl_check_init(OptsRecord) of
-	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
-	    case dialyzer_cl:start(OptsRecord) of
-	      {?RET_DISCREPANCIES, Warnings} -> Warnings;
-	      {?RET_NOTHING_SUSPICIOUS, []}  -> []
-	    end;
-	  {error, ErrorMsg1} ->
-	    throw({dialyzer_error, ErrorMsg1})
-	end
-    end
+run(Opts) ->
+  try dialyzer_options:build([{report_mode, quiet}, 
+			      {erlang_mode, true}|Opts]) of
+    {error, Msg} ->
+      throw({dialyzer_error, Msg});
+    OptsRecord ->
+      case cl_check_init(OptsRecord) of
+	{ok, ?RET_NOTHING_SUSPICIOUS} ->
+	  case dialyzer_cl:start(OptsRecord) of
+	    {?RET_DISCREPANCIES, Warnings} -> Warnings;
+	    {?RET_NOTHING_SUSPICIOUS, []}  -> []
+	  end;
+	{error, ErrorMsg1} ->
+	  throw({dialyzer_error, ErrorMsg1})
+      end
   catch
     throw:{dialyzer_error, ErrorMsg} -> 
       erlang:error({dialyzer_error, lists:flatten(ErrorMsg)})
@@ -178,24 +180,23 @@ gui() ->
 -spec gui(dial_options()) -> 'ok'.
 
 gui(Opts) ->
-  try
-    case dialyzer_options:build([{report_mode, quiet}|Opts]) of
-      {error, Msg} -> throw({dialyzer_error, Msg});
-      OptsRecord ->
-	ok = check_gui_options(OptsRecord),
-	case cl_check_init(OptsRecord) of
-	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
-	    F = fun() ->
-		    dialyzer_gui:start(OptsRecord)
-		end,
-	    case doit(F) of
-	      {ok, _} -> ok;
-	      {error, Msg} -> throw({dialyzer_error, Msg})
-	    end;
-	  {error, ErrorMsg1} ->
-	    throw({dialyzer_error, ErrorMsg1})
-	end
-    end
+  try dialyzer_options:build([{report_mode, quiet}|Opts]) of
+    {error, Msg} ->
+      throw({dialyzer_error, Msg});
+    OptsRecord ->
+      ok = check_gui_options(OptsRecord),
+      case cl_check_init(OptsRecord) of
+	{ok, ?RET_NOTHING_SUSPICIOUS} ->
+	  F = fun() ->
+		  dialyzer_gui:start(OptsRecord)
+	      end,
+	  case doit(F) of
+	    {ok, _} -> ok;
+	    {error, Msg} -> throw({dialyzer_error, Msg})
+	  end;
+	{error, ErrorMsg1} ->
+	  throw({dialyzer_error, ErrorMsg1})
+      end
   catch
     throw:{dialyzer_error, ErrorMsg} ->
       erlang:error({dialyzer_error, lists:flatten(ErrorMsg)})
@@ -207,7 +208,8 @@ check_gui_options(#options{analysis_type = Mode}) ->
   Msg = io_lib:format("Analysis mode ~w is illegal in GUI mode", [Mode]),
   throw({dialyzer_error, Msg}).
 
--spec plt_info(filename()) -> {'ok', [{'files', [filename()]}]} | {'error', atom()}.
+-spec plt_info(file:filename()) ->
+     {'ok', [{'files', [file:filename()]}]} | {'error', atom()}.
 
 plt_info(Plt) ->
   case dialyzer_plt:included_files(Plt) of
@@ -253,7 +255,7 @@ cl_halt({error, Msg1}, #options{output_file = Output}) ->
   cl_check_log(Output),
   halt(?RET_INTERNAL_ERROR).
 
--spec cl_check_log('none' | filename()) -> 'ok'.
+-spec cl_check_log('none' | file:filename()) -> 'ok'.
 
 cl_check_log(none) ->
   ok;
@@ -271,7 +273,7 @@ format_warning({_Tag, {File, Line}, Msg}) when is_list(File),
 
 %%-----------------------------------------------------------------------------
 %% Message classification and pretty-printing below. Messages appear in
-%% categories and iin more or less alphabetical ordering within each category.
+%% categories and in more or less alphabetical ordering within each category.
 %%-----------------------------------------------------------------------------
 
 %%----- Warnings for general discrepancies ----------------
@@ -392,7 +394,7 @@ message_to_string({opaque_neq, [Type, _Op, OpaqueType]}) ->
 message_to_string({opaque_type_test, [Fun, Opaque]}) ->
   io_lib:format("The type test ~s(~s) breaks the opaqueness of the term ~s\n", [Fun, Opaque, Opaque]);
 %%----- Warnings for concurrency errors --------------------
-message_to_string({possible_race, [M, F, Args, Reason]}) ->
+message_to_string({race_condition, [M, F, Args, Reason]}) ->
   io_lib:format("The call ~w:~w~s ~s\n", [M, F, Args, Reason]).
 
 

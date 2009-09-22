@@ -119,12 +119,14 @@ scan_pathquery(C0) ->
 
 
 %%% ............................................................................
-%%% FIXME!!! This is just a quick hack that doesn't work!
--define(FTP_DEFAULT_PORT, 80).
+-define(FTP_DEFAULT_PORT, 21).
 
 %%% FTP (Source RFC 2396, RFC 1738, RFC 959)
+%%% Encoded :, @, or / characters appearing within the username or
+%%% password fields (as required by RFC 1738) are not handled. 
+%%%
 %%% Note: This BNF has been modified to better fit with RFC 2396
-%%%  ftp_URL = "ftp:" "//" [ ftp_userinfo ] host [ ":" port ] ftp_abs_path
+%%%  ftp_URL = "ftp:" "//" [ ftp_userinfo "@"] host [ ":" port ] ftp_abs_path
 %%%  ftp_userinfo	= ftp_user [ ":" ftp_password ]
 %%%  ftp_abs_path 	= "/" ftp_path_segments [ ";type=" ftp_type ]
 %%%  ftp_path_segments	= ftp_segment *( "/" ftp_segment)
@@ -155,9 +157,29 @@ parse_ftp("//"++C0,Scheme) ->
     end.
 
 ftp_userinfo(C0) ->
-    User="",
-    Password="",
-    {C0,{User,Password}}.
+    ftp_userinfo(C0, []).
+
+ftp_userinfo([], Acc) ->
+    {lists:reverse(Acc), {"",""}};
+ftp_userinfo(C0=[$/ |_], Acc) ->
+    {lists:reverse(Acc)++C0, {"",""}};
+ftp_userinfo([$@ |C0], Acc) ->
+    {C0, ftp_userinfo_1(lists:reverse(Acc), 0, "", "")};
+ftp_userinfo([C |C0], Acc) ->
+    ftp_userinfo(C0, [C |Acc]).
+
+
+ftp_userinfo_1([], 0, Acc, []) ->
+    { lists:reverse(Acc), ""};
+ftp_userinfo_1([], 1, Acc, User) ->
+    {User, lists:reverse(Acc)};
+ftp_userinfo_1([$:|_], 0, [], []) ->
+    {error,no_user};
+ftp_userinfo_1([$:|C0], 0, Acc,[]) ->
+    ftp_userinfo_1(C0, 1, [], lists:reverse(Acc));
+
+ftp_userinfo_1([C|C0],Stage, Acc, User) ->
+    ftp_userinfo_1(C0,Stage, [C|Acc], User).
 
 
 %%% .........................................................................
@@ -336,7 +358,7 @@ scan_host(C0) ->
 %% 							  Hex3=<?HEX;
 %% 							  Hex4=<?HEX ->
 %% 	    {C1,lists:reverse(lists:append(IPv6address))};
-	{C1,Hostname,[Alpha|_HostF]} when Alpha==?ALPHA ->
+	{C1,Hostname,[A|_HostF]} -> 
 	    {C1,lists:reverse(lists:append(Hostname))};
 	_ ->
 	    {error,no_host}
@@ -344,8 +366,6 @@ scan_host(C0) ->
     
 scan_host2([H|C0],Acc,CurF,Host,HostF) when $0=<H,H=<$9 ->
     scan_host2(C0,[H|Acc],CurF bor ?BIT1,Host,HostF);
-scan_host2([H|C0],Acc,CurF,Host,HostF) when $a=<H,H=<$f; $A=<H,H=<$F ->
-    scan_host2(C0,[H|Acc],CurF bor ?BIT2,Host,HostF);
 scan_host2([H|C0],Acc,CurF,Host,HostF) when $a=<H,H=<$z; $A=<H,H=<$Z ->
     scan_host2(C0,[H|Acc],CurF bor ?ALPHA,Host,HostF);
 scan_host2([$-|C0],Acc,CurF,Host,HostF) when CurF=/=0 ->

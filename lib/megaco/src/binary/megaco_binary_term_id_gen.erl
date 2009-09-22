@@ -57,14 +57,14 @@
 %%----------------------------------------------------------------------
 %% Encode without wildcards
 %%----------------------------------------------------------------------
-encode_without_wildcards(IDs,LevelConfig) when list(LevelConfig) ->
+encode_without_wildcards(IDs,LevelConfig) when is_list(LevelConfig) ->
     EncodedIDs = encode_ids(false,IDs,LevelConfig),
     #'TerminationID'{wildcard = [], id = EncodedIDs}.
 
 %%----------------------------------------------------------------------
 %% Encode with wildcards
 %%----------------------------------------------------------------------
-encode_with_wildcards(IDs,LevelConfig) when list(LevelConfig) ->
+encode_with_wildcards(IDs,LevelConfig) when is_list(LevelConfig) ->
     Wildcards  = encode_wildcards(IDs,LevelConfig),
     EncodedIDs = encode_ids(true,IDs,LevelConfig),
     #'TerminationID'{wildcard = Wildcards, id = EncodedIDs}.
@@ -212,11 +212,11 @@ encode_ids(W,[L|Ls],[C|Cs],R,E,_) ->
     case (catch encode_id_level(W,L,C,R,E)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
-	{true,R1,E1} when length(Ls) == 0 ->
+	{true,R1,E1} when (length(Ls) =:= 0) ->
 	    encode_ids2(Cs,encode_ids1(R1,E1));
 	{WildcardFound1,R1,E1} ->
 	    encode_ids(W,Ls,Cs,R1,E1,WildcardFound1);
-	{true,E2} when length(Ls) == 0 ->
+	{true,E2} when (length(Ls) =:= 0) ->
 	    encode_ids2(Cs,E2);
 	{WildcardFound2,E2} ->
 	    encode_ids(W,Ls,Cs,8,[0|E2],WildcardFound2)
@@ -288,7 +288,7 @@ encode_id_level2(C,R,E,_W) ->
 %%----------------------------------------------------------------------
 
 %% Decode ID with wildcards    
-decode_ids(Ws,IDs,Config) when list(Config) -> 
+decode_ids(Ws,IDs,Config) when is_list(Config) -> 
     IDs1 = decode_ids(IDs,Config),
     Ws1  = decode_wildcards(Ws,(length(IDs)*8) - 1),
     decode_ids1(Ws1,IDs1);
@@ -297,19 +297,19 @@ decode_ids(Ws,IDs,Config) when list(Config) ->
 %% should be implemented.
 %% This is the case when each level is 8 bits = 1 byte and the config
 %% simply indicates the number of (1 byte) levels
-decode_ids(Ws,IDs,Config) when integer(Config) -> 
+decode_ids(Ws,IDs,Config) when is_integer(Config) -> 
     decode_ids(Ws,IDs,lists:duplicate(Config,8)).
 
 
 %% Decode ID without wildcards    
-decode_ids(E,Config) when list(Config) -> 
+decode_ids(E,Config) when is_list(Config) -> 
     decode_ids(0,E,Config,[]);
 
 %% This is only temporary. Eventually a proper encoder for this case
 %% should be implemented.
 %% This is the case when each level is 8 bits = 1 byte and the config
 %% simply indicates the number of (1 byte) levels
-decode_ids(E,Config) when integer(Config) -> 
+decode_ids(E,Config) when is_integer(Config) -> 
     decode_ids(E,lists:duplicate(Config,8)).
     
 

@@ -71,7 +71,7 @@ whereis_proxy() ->
     case get(?MODULE) of
 	undefined ->
 	    exit(no_server, ?MODULE);
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid
     end.
 
@@ -80,7 +80,7 @@ apply_proxy(Fun) ->
     ?APPLY(Pid, Fun),
     ok.
 
-reply(Mod, Line, Fun) when function(Fun) ->
+reply(Mod, Line, Fun) when is_function(Fun) ->
     receive
 	{?MODULE, Pid, UserCallback} ->
 	    UserReply = Fun(UserCallback),
@@ -99,7 +99,7 @@ call(UserCallback) ->
     case global:whereis_name(?SERVER) of
 	undefined ->
 	    exit({no_server, ?SERVER, Request});
-        Pid when pid(Pid) ->
+        Pid when is_pid(Pid) ->
 	    ?LOG("call[~p] -> bang request: "
 		 "~n   ~p"
 		 "~n", [Pid, Request]),

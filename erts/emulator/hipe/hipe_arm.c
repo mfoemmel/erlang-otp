@@ -33,12 +33,22 @@
 /* Flush dcache and invalidate icache for a range of addresses. */
 void hipe_flush_icache_range(void *address, unsigned int nbytes)
 {
+#if defined(__ARM_EABI__)
+    register unsigned long beg __asm__("r0") = (unsigned long)address;
+    register unsigned long end __asm__("r1") = (unsigned long)address + nbytes;
+    register unsigned long flg __asm__("r2") = 0;
+    register unsigned long scno __asm__("r7") = 0xf0002;
+    __asm__ __volatile__("swi 0"	/* sys_cacheflush() */
+			 : "=r"(beg)
+			 : "0"(beg), "r"(end), "r"(flg), "r"(scno));
+#else
     register unsigned long beg __asm__("r0") = (unsigned long)address;
     register unsigned long end __asm__("r1") = (unsigned long)address + nbytes;
     register unsigned long flg __asm__("r2") = 0;
     __asm__ __volatile__("swi 0x9f0002"	/* sys_cacheflush() */
 			 : "=r"(beg)
 			 : "0"(beg), "r"(end), "r"(flg));
+#endif
 }
 
 void hipe_flush_icache_word(void *address)

@@ -237,7 +237,8 @@ impatient is:
 * Get and install OpenSSL 0.9.7c or higher
 * Get and unpack wxWidgets-2.8.9 or higher to /opt/local/pgm inside cygwin
    - open /cygwin/opt/local/pgm/wxWidgets-2.8.9/build/msw/wx.dsw
-   - enable wxUSE_GLCANVAS and wxUSE_POSTSCRIPT in include/wx/msw/setup.h
+   - enable wxUSE_GLCANVAS, wxUSE_POSTSCRIPT and wxUSE_GRAPHICS_CONTEXT
+     in include/wx/msw/setup.h
    - build all unicode release (and unicode debug) packages
    - open /cygwin/opt/local/pgm/wxWidgets-2.8.9/contrib/build/stc/stc.dsw 
    - build the unicode release (and unicode debug) packages

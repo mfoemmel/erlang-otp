@@ -164,6 +164,7 @@
 -export([multiply_timetraps/1]).
 -export([cover/2, cover/3, cover/7,
 	 cross_cover_analyse/1, cross_cover_analyse/2, trc/1, stop_trace/0]).
+-export([testcase_callback/1]).
 -export([set_random_seed/1]).
 
 %%% TEST_SERVER INTERFACE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -210,7 +211,8 @@
 
 -record(state,{jobs=[],levels={1,19,10},multiply_timetraps=1,finish=false,
 	       target_info, trc=false, cover=false, wait_for_node=[],
-	       idle_notify=[], get_totals=false, random_seed=undefined}).
+	       testcase_callback=undefined, idle_notify=[], 
+	       get_totals=false, random_seed=undefined}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% OPERATOR INTERFACE
@@ -305,54 +307,57 @@ add_tests_with_skip(LogDir, Tests, Skip) ->
 %% COMMAND LINE INTERFACE
 
 parse_cmd_line(Cmds) ->
-    parse_cmd_line(Cmds, [], [], local, false, false).
+    parse_cmd_line(Cmds, [], [], local, false, false, undefined).
 
-parse_cmd_line(['SPEC',Spec|Cmds], SpecList, Names, Param, Trc, Cov) ->
+parse_cmd_line(['SPEC',Spec|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
     case file:consult(Spec) of
 	{ok, TermList} ->
 	    Name = filename:rootname(Spec),
-	    parse_cmd_line(Cmds, TermList++SpecList, [Name|Names], Param, Trc, Cov);
+	    parse_cmd_line(Cmds, TermList++SpecList, [Name|Names], Param, 
+			   Trc, Cov, TCCB);
 	{error,Reason} ->
 	    io:format("Can't open ~s: ~p\n",
 		      [cast_to_list(Spec), file:format_error(Reason)]),
-	    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov)
+	    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov, TCCB)
     end;
-parse_cmd_line(['NAME',Name|Cmds], SpecList, Names, Param, Trc, Cov) ->
-    parse_cmd_line(Cmds, SpecList, [{name,Name}|Names], Param, Trc, Cov);
-parse_cmd_line(['SKIPMOD',Mod|Cmds], SpecList, Names, Param, Trc, Cov) ->
+parse_cmd_line(['NAME',Name|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
+    parse_cmd_line(Cmds, SpecList, [{name,Name}|Names], Param, Trc, Cov, TCCB);
+parse_cmd_line(['SKIPMOD',Mod|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
     parse_cmd_line(Cmds, [{skip,{Mod,"by command line"}}|SpecList], Names,
-		   Param, Trc, Cov);
-parse_cmd_line(['SKIPCASE',Mod,Case|Cmds], SpecList, Names, Param, Trc, Cov) ->
+		   Param, Trc, Cov, TCCB);
+parse_cmd_line(['SKIPCASE',Mod,Case|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
     parse_cmd_line(Cmds, [{skip,{Mod,Case,"by command line"}}|SpecList], Names,
-		   Param, Trc, Cov);
-parse_cmd_line(['DIR',Dir|Cmds], SpecList, Names, Param, Trc, Cov) ->
+		   Param, Trc, Cov, TCCB);
+parse_cmd_line(['DIR',Dir|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
     Name = cast_to_list(filename:basename(Dir)),
     parse_cmd_line(Cmds, [{topcase,{dir,Name}}|SpecList], [Name|Names],
-		   Param, Trc, Cov);
-parse_cmd_line(['MODULE',Mod|Cmds], SpecList, Names, Param, Trc, Cov) ->
+		   Param, Trc, Cov, TCCB);
+parse_cmd_line(['MODULE',Mod|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
     parse_cmd_line(Cmds, [{topcase,{Mod,all}}|SpecList], [Mod|Names],
-		   Param, Trc, Cov);
-parse_cmd_line(['CASE',Mod,Case|Cmds], SpecList, Names, Param, Trc, Cov) ->
+		   Param, Trc, Cov, TCCB);
+parse_cmd_line(['CASE',Mod,Case|Cmds], SpecList, Names, Param, Trc, Cov, TCCB) ->
     parse_cmd_line(Cmds, [{topcase,{Mod,Case}}|SpecList], [Mod|Names],
-		   Param, Trc, Cov);
-parse_cmd_line(['PARAMETERS',Param|Cmds], SpecList, Names, _Param, Trc, Cov) ->
-    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov);
-parse_cmd_line(['TRACE',Trc|Cmds], SpecList, Names, Param, _Trc, Cov) ->
-    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov);
-parse_cmd_line(['COVER',App,CF,Analyse|Cmds], SpecList, Names, Param, Trc, _Cov) ->
-    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, {{App,CF}, Analyse});
-parse_cmd_line([Obj|_Cmds], _SpecList, _Names, _Param, _Trc, _Cov) ->
+		   Param, Trc, Cov, TCCB);
+parse_cmd_line(['PARAMETERS',Param|Cmds], SpecList, Names, _Param, Trc, Cov, TCCB) ->
+    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov, TCCB);
+parse_cmd_line(['TRACE',Trc|Cmds], SpecList, Names, Param, _Trc, Cov, TCCB) ->
+    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov, TCCB);
+parse_cmd_line(['COVER',App,CF,Analyse|Cmds], SpecList, Names, Param, Trc, _Cov, TCCB) ->
+    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, {{App,CF}, Analyse}, TCCB);
+parse_cmd_line(['TESTCASE_CALLBACK',Mod,Func|Cmds], SpecList, Names, Param, Trc, Cov, _) ->
+    parse_cmd_line(Cmds, SpecList, Names, Param, Trc, Cov, {Mod,Func});
+parse_cmd_line([Obj|_Cmds], _SpecList, _Names, _Param, _Trc, _Cov, _TCCB) ->
     io:format("~p: Bad argument: ~p\n", [?MODULE,Obj]),
     io:format(" Use the `ts' module to start tests.\n", []),
     io:format(" (If you ARE using `ts', there is a bug in `ts'.)\n", []),
     halt(1);
-parse_cmd_line([], SpecList, Names, Param, Trc, Cov) ->
+parse_cmd_line([], SpecList, Names, Param, Trc, Cov, TCCB) ->
     NameList = lists:reverse(Names, [suite]),
     Name = case lists:keysearch(name, 1, NameList) of
 	       {value,{name,N}} -> N;
 	       false -> hd(NameList)
 	   end,
-    {lists:reverse(SpecList), cast_to_list(Name), Param, Trc, Cov}.
+    {lists:reverse(SpecList), cast_to_list(Name), Param, Trc, Cov, TCCB}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% cast_to_list(X) -> string()
@@ -387,7 +392,7 @@ start_link(Param) ->
 
 run_test(CommandLine) ->
     process_flag(trap_exit,true),
-    {SpecList,Name,Param,Trc,Cov} = parse_cmd_line(CommandLine),
+    {SpecList,Name,Param,Trc,Cov,TCCB} = parse_cmd_line(CommandLine),
     {ok,_TSPid} = start_link(Param),
     case Trc of
 	false -> ok;
@@ -397,6 +402,7 @@ run_test(CommandLine) ->
 	false -> ok;
 	{{App,CoverFile},Analyse} -> cover(App, maybe_file(CoverFile), Analyse)
     end,
+    testcase_callback(TCCB),
     add_job(Name, {command_line,SpecList}),
     
     %% adding of jobs involves file i/o which may take long time
@@ -488,6 +494,9 @@ cover(App, CoverFile, Analyse) ->
     controller_call({cover,{App,CoverFile},Analyse}).
 cover(App, CoverFile, Exclude, Include, Cross, Export, Analyse) ->
     controller_call({cover,{App,{CoverFile,Exclude,Include,Cross,Export}},Analyse}).
+
+testcase_callback(ModFunc) ->
+    controller_call({testcase_callback,ModFunc}).
 
 set_random_seed(Seed) ->
     controller_call({set_random_seed,Seed}).
@@ -766,14 +775,16 @@ handle_call({add_job,Dir,Name,TopCase,Skip}, _From, State) ->
 		    Pid = spawn_tester(
 			    ?MODULE, do_spec,
 			    [SpecName,State#state.multiply_timetraps],
-			    LogDir, Name, State#state.levels, ExtraTools1),
+			    LogDir, Name, State#state.levels, 
+			    State#state.testcase_callback, ExtraTools1),
 		    NewJobs = [{Name,Pid}|State#state.jobs],
 		    {reply, ok, State#state{jobs=NewJobs}};		    
 		{command_line,SpecList} ->
 		    Pid = spawn_tester(
 			    ?MODULE, do_spec_list,
 			    [SpecList,State#state.multiply_timetraps],
-			    LogDir, Name, State#state.levels, ExtraTools1),
+			    LogDir, Name, State#state.levels, 
+			    State#state.testcase_callback, ExtraTools1),
 		    NewJobs = [{Name,Pid}|State#state.jobs],
 		    {reply, ok, State#state{jobs=NewJobs}};		    		
 		TopCase ->
@@ -788,7 +799,8 @@ handle_call({add_job,Dir,Name,TopCase,Skip}, _From, State) ->
 				    ?MODULE, do_test_cases, 
 				    [TopCase,Skip,Cfg,
 				     State#state.multiply_timetraps],
-				    LogDir, Name, State#state.levels, ExtraTools1),
+				    LogDir, Name, State#state.levels, 
+				    State#state.testcase_callback, ExtraTools1),
 			    NewJobs = [{Name,Pid}|State#state.jobs],
 			    {reply, ok, State#state{jobs=NewJobs}}
 		    end
@@ -974,6 +986,38 @@ handle_call(stop_trace, _From, State) ->
 
 handle_call({cover,App,Analyse}, _From, State) ->
     {reply,ok,State#state{cover={App,Analyse}}};
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% handle_call({testcase_callback,{Mod,Func}}, _, State) -> ok | {error,Reason}
+%%
+%% Add a callback function that will be called before and after every
+%% test case (on the test case process): 
+%%
+%% Mod:Func(Suite,TestCase,InitOrEnd,Config)
+%%
+%% InitOrEnd = init | 'end'.
+
+handle_call({testcase_callback,ModFunc}, _From, State) ->
+    case ModFunc of
+	{Mod,Func} ->	    
+	    case code:is_loaded(Mod) of
+		{file,_} -> 
+		    ok;
+		false ->
+		    code:load_file(Mod)
+	    end,
+	    case erlang:function_exported(Mod,Func,4) of
+		true ->
+		    ok;
+		false ->
+		    io:format(user,
+			      "WARNING! Callback function ~w:~w/4 undefined.~n~n",
+			      [Mod,Func])
+	    end;
+	_ ->
+	    ok
+    end,
+    {reply,ok,State#state{testcase_callback=ModFunc}};
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% handle_call({set_random_seed,Seed}, _, State) -> ok | {error,Reason}
@@ -1214,13 +1258,15 @@ kill_all_jobs([]) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% spawn_tester(Mod, Func, Args, Dir, Name, Levels, ExtraTools) -> Pid
+%% spawn_tester(Mod, Func, Args, Dir, Name, Levels, 
+%%              TestCaseCallback, ExtraTools) -> Pid
 %% Mod = atom()
 %% Func = atom()
 %% Args = [term(),...]
 %% Dir = string()
 %% Name = string()
 %% Levels = {integer(),integer(),integer()}
+%% TestCaseCallback = {CBMod,CBFunc} | undefined 
 %% ExtraTools = [ExtraTool,...]
 %% ExtraTool = CoverInfo | TraceInfo | RandomSeed
 %%
@@ -1230,23 +1276,26 @@ kill_all_jobs([]) ->
 %% When the named function is done executing, a summary of the results 
 %% is printed to the log files.
 
-spawn_tester(Mod, Func, Args, Dir, Name, Levels, ExtraTools) ->
+spawn_tester(Mod, Func, Args, Dir, Name, Levels, TCCallback, ExtraTools) ->
     spawn_link(
-      fun() -> init_tester(Mod, Func, Args, Dir, Name, Levels, ExtraTools) 
+      fun() -> init_tester(Mod, Func, Args, Dir, Name, Levels, 
+			   TCCallback, ExtraTools) 
       end).
 
-init_tester(Mod, Func, Args, Dir, Name, {SumLev,MajLev,MinLev}, ExtraTools) ->
+init_tester(Mod, Func, Args, Dir, Name, {SumLev,MajLev,MinLev}, 
+	    TCCallback, ExtraTools) ->
     process_flag(trap_exit, true),
     put(test_server_name, Name),
     put(test_server_dir, Dir),
     put(test_server_total_time, 0),
     put(test_server_ok, 0),
     put(test_server_failed, 0),
-    put(test_server_skipped, 0),
+    put(test_server_skipped, {0,0}),
     put(test_server_summary_level, SumLev),
     put(test_server_major_level, MajLev),
     put(test_server_minor_level, MinLev),
     put(test_server_random_seed, proplists:get_value(random_seed, ExtraTools)),
+    put(test_server_testcase_callback, TCCallback),
     StartedExtraTools = start_extra_tools(ExtraTools),
     {TimeMy,Result} = ts_tc(Mod, Func, Args),
     put(test_server_common_io_handler, undefined),
@@ -1269,8 +1318,8 @@ init_tester(Mod, Func, Args, Dir, Name, {SumLev,MajLev,MinLev}, ExtraTools) ->
 	end,
     {SkippedN,SkipStr} =
 	case get(test_server_skipped) of
-	    0 -> {0,""};
-	    Skipped -> {Skipped,io_lib:format(", ~p Skipped", [Skipped])}
+	    {0,_} -> {0,""};
+	    {Skipped,_} -> {Skipped,io_lib:format(", ~p Skipped", [Skipped])}
 	end,
     OkN = get(test_server_ok),
     FailedN = get(test_server_failed), 
@@ -1965,22 +2014,22 @@ run_test_cases(TestSpec, Config, MultiplyTimetrap) ->
     
     maybe_get_privdir(),
 
-    Skipped = get(test_server_skipped),
-    {SkippedN,SkipStr} =
-	case Skipped of
-	    0 -> {0,""};
-	    Skipped -> {Skipped,io_lib:format(", ~w skipped", [Skipped])}
+    {AllSkippedN,UserSkipN,AutoSkipN,SkipStr} =
+	case get(test_server_skipped) of
+	    {0,0} -> {0,0,0,""};
+	    {US,AS} -> {US+AS,US,AS,io_lib:format(", ~w skipped", [US+AS])}
 	end,
     OkN = get(test_server_ok),
     FailedN = get(test_server_failed),
     print(1, "TEST COMPLETE, ~w ok, ~w failed~s of ~w test cases\n",
-	  [OkN,FailedN,SkipStr,OkN+FailedN+SkippedN]),
+	  [OkN,FailedN,SkipStr,OkN+FailedN+AllSkippedN]),
     test_server_sup:framework_call(report, [tests_done,
-					    {OkN,FailedN,SkippedN}]),
+					    {OkN,FailedN,{UserSkipN,AutoSkipN}}]),
     print(major, "=finished      ~s", [lists:flatten(timestamp_get(""))]),
     print(major, "=failed        ~p", [FailedN]),
     print(major, "=successful    ~p", [OkN]),
-    print(major, "=skipped       ~p", [SkippedN]),
+    print(major, "=user_skipped  ~p", [UserSkipN]),
+    print(major, "=auto_skipped  ~p", [AutoSkipN]),
     exit(test_suites_done).
 
 %% If the test is run at a remote target, this function sets up a socket
@@ -2505,12 +2554,12 @@ run_test_cases_loop([{conf,Ref,Props,{Mod,Func}}|_Cases]=Cs0,
 	    exit(framework_error);
 	{_,Fail,_} when element(1,Fail)=='EXIT'; 
 			element(1,Fail)==timetrap_timeout;
-		      element(1,Fail)==failed ->
+			element(1,Fail)==failed ->
 	    {Cases2,Config1} = 
 		if StartConf ->
 			ReportAbortRepeat(failed),
 			print(minor, "~n*** ~p failed.~n"
-			      "    Skipping all other cases.", [Func]),
+			      "    Skipping all cases.", [Func]),
 			Reason = lists:flatten(io_lib:format("~p:~p/1 failed", 
 							     [Mod,Func])),
 			{skip_cases_upto(Ref, Cases, Reason, conf, CurrMode),Config};
@@ -2531,18 +2580,10 @@ run_test_cases_loop([{conf,Ref,Props,{Mod,Func}}|_Cases]=Cs0,
 	    stop_minor_log_file(),
 	    run_test_cases_loop(Cases2, Config, MultiplyTimetrap, Mode, 
 				delete_status(Ref, Status2));  
-	{_,_Other,_} when Func == init_per_suite ->
-	    print(minor, "~n*** init_per_suite failed to return a Config list.~n", []),
-	    Cases2 = skip_cases_upto(Ref, Cases, "init_per_suite_bad_return",
-				     conf, CurrMode),
-	    set_io_buffering(IOHandler),
-	    stop_minor_log_file(),
-	    run_test_cases_loop(Cases2, Config, MultiplyTimetrap, Mode,
-				delete_status(Ref, Status2));
 	{_,{Skip,Reason},_} when StartConf and ((Skip==skip) or (Skip==skipped)) ->
 	    ReportAbortRepeat(skipped),
 	    print(minor, "~n*** ~p skipped.~n"
-		  "    Skipping all other cases.", [Func]),
+		  "    Skipping all cases.", [Func]),
 	    set_io_buffering(IOHandler),
 	    stop_minor_log_file(),
 	    run_test_cases_loop(skip_cases_upto(Ref, Cases, Reason, conf, CurrMode), 
@@ -2551,11 +2592,19 @@ run_test_cases_loop([{conf,Ref,Props,{Mod,Func}}|_Cases]=Cs0,
 	{_,{skip_and_save,Reason,_SavedConfig},_} when StartConf ->
 	    ReportAbortRepeat(skipped),
 	    print(minor, "~n*** ~p skipped.~n"
-		  "    Skipping all other cases.", [Func]),
+		  "    Skipping all cases.", [Func]),
 	    set_io_buffering(IOHandler),
 	    stop_minor_log_file(),
 	    run_test_cases_loop(skip_cases_upto(Ref, Cases, Reason, conf, CurrMode), 
 				Config, MultiplyTimetrap, Mode,	
+				delete_status(Ref, Status2));
+	{_,_Other,_} when Func == init_per_suite ->
+	    print(minor, "~n*** init_per_suite failed to return a Config list.~n", []),
+	    Cases2 = skip_cases_upto(Ref, Cases, "init_per_suite_bad_return",
+				     conf, CurrMode),
+	    set_io_buffering(IOHandler),
+	    stop_minor_log_file(),
+	    run_test_cases_loop(Cases2, Config, MultiplyTimetrap, Mode,
 				delete_status(Ref, Status2));
 	{_,_Other,_} when StartConf ->
 	    print_conf_time(ConfTime),
@@ -2588,7 +2637,7 @@ run_test_cases_loop([{make,Ref,{Mod,Func,Args}}|Cases0], Config, MultiplyTimetra
     case run_test_case(Ref, 0, Mod, Func, Args, skip_init, host, MultiplyTimetrap) of
 	{_,{'EXIT',_},_} ->
  	    print(minor, "~n*** ~p failed.~n"
- 		  "    Skipping all other cases.", [Func]),
+ 		  "    Skipping all cases.", [Func]),
 	    Reason = lists:flatten(io_lib:format("~p:~p/1 failed", [Mod,Func])),
 	    Cases = skip_cases_upto(Ref, Cases0, Reason, conf, Mode),
 	    stop_minor_log_file(),
@@ -2942,7 +2991,11 @@ skip_case1(Type, CaseNum, Mod, Func, Comment, Mode) ->
 	  "<td>~s</td></tr>\n",
 	  [num2str(CaseNum),Mod,Func,ResultCol,Comment]),
     if CaseNum > 0 ->
-	    put(test_server_skipped, get(test_server_skipped)+1),
+	    {US,AS} = get(test_server_skipped),
+	    case Type of
+		user -> put(test_server_skipped, {US+1,AS});
+		auto -> put(test_server_skipped, {US,AS+1})
+	    end,
 	    put(test_server_case_num, CaseNum);
        true ->					% conf
 	    ok
@@ -2978,18 +3031,15 @@ copy_cases(OrigRef, NewRef, Cases) ->
 %% the modified versions of these elements and the remaining (untouched)
 %% cases.
 
-modify_cases_upto(Ref, AltOp, Cases) ->
-    {Original,Altered,Rest} = modify_cases_upto(Ref, AltOp, Cases, [], []),
+modify_cases_upto(Ref, ModOp, Cases) ->
+    {Original,Altered,Rest} = modify_cases_upto(Ref, ModOp, Cases, [], []),
     {lists:reverse(Original),lists:reverse(Altered),Rest}.
 
 %% first case of a copy operation is the start conf
 modify_cases_upto(Ref, {copy,NewRef}=Op, [{conf,Ref,Props,MF}=C|T], Orig, Alt) ->
     modify_cases_upto(Ref, Op, T, [C|Orig], [{conf,NewRef,update_repeat(Props),MF}|Alt]);
 
-%% next case is a conf with new ref (Origin was an end conf) = we're done already
-modify_cases_upto(Ref, {skip,_,conf,_}, [{conf,Ref1,_,_}|_]=Cs, _, _) when Ref/=Ref1 ->
-    {[],[],Cs};
-modify_cases_upto(Ref, AltOp, Cases, Orig, Alt) ->
+modify_cases_upto(Ref, ModOp, Cases, Orig, Alt) ->
     %% we need to check if there's an end conf case with the
     %% same ref in the list, if not, this *is* an end conf case
     case lists:any(fun({_,R,_,_}) when R == Ref -> true;
@@ -2998,7 +3048,7 @@ modify_cases_upto(Ref, AltOp, Cases, Orig, Alt) ->
 		      (_) -> false
 		   end, Cases) of
 	true ->
-	    modify_cases_upto1(Ref, AltOp, Cases, Orig, Alt);
+	    modify_cases_upto1(Ref, ModOp, Cases, Orig, Alt);
 	false ->
 	    {[],[],Cases}
     end.
@@ -3233,7 +3283,8 @@ handle_io_and_exits(Main, CurrPid, CaseNum, Mod, Func, Cases) ->
 		failed ->
 		    put(test_server_failed, get(test_server_failed)+1);
 		skipped ->
-		    put(test_server_skipped, get(test_server_skipped)+1)
+		    {US,AS} = get(test_server_skipped),
+		    put(test_server_skipped, {US+1,AS})
 	    end,
 	    {Result,{Mod,Func}};
 
@@ -3403,7 +3454,8 @@ run_test_case1(Ref, Num, Mod, Func, Args, RunInit, Where,
 	{_,failed} ->
 	    put(test_server_failed, get(test_server_failed)+1);
 	{_,skip} ->
-	    put(test_server_skipped, get(test_server_skipped)+1)
+	    {US,AS} = get(test_server_skipped),
+	    put(test_server_skipped, {US+1,AS})
     end,
     %% only if test case execution is sequential do we care about the 
     %% remaining processes and slave nodes count
@@ -4849,18 +4901,40 @@ cover_analyse({App,CoverInfo}, Analyse, AnalyseMods, TestDir) ->
 	      "<p><a href=\"~s\">Coverdata collected over all tests</a></p>",
 	      [?cross_coverlog_name]),
 
-    {CoverFile,Excluded} =
+    {CoverFile,_Included,Excluded} =
 	case CoverInfo of
-	    {File,Excl,_Incl,_Cross,Export} ->
+	    {File,Excl,Incl,_Cross,Export} ->
 		cover:export(Export),
-		{File,Excl};
+		{File,Incl,Excl};
 	    File ->
-		{Excl,_} = read_cover_file(File),
-		{File,Excl}
+		{Excl,Incl} = read_cover_file(File),
+		{File,Incl,Excl}
 	end,
-    io:fwrite(CoverLog, "<p>CoverFile: ~p\n", [CoverFile]),
-    io:fwrite(CoverLog, "<p>Excluded modules: <code>~p</code>\n", [Excluded]),
+    io:fwrite(CoverLog, "<p>CoverFile: <code>~p</code>\n", [CoverFile]),
+
+    case length(cover:imported_modules()) of
+	Imps when Imps > 0 ->
+	    io:fwrite(CoverLog, "<p>Analysis includes data from ~w imported module(s).\n",
+		      [Imps]);
+	_ ->
+	    ok
+    end,
+
+    io:fwrite(CoverLog, "<p>Excluded module(s): <code>~p</code>\n", [Excluded]),
+    
     Coverage = cover_analyse(Analyse, AnalyseMods),
+
+    case lists:filter(fun({_M,{_,_,_}}) -> false;
+			 (_) -> true
+		      end, Coverage) of
+	[] ->
+	    ok;
+	Bad ->
+	    io:fwrite(CoverLog, "<p>Analysis failed for ~w module(s): "
+		      "<code>~w</code>\n", 
+		      [length(Bad),[BadM || {BadM,{_,_Why}} <- Bad]])
+    end,
+
     TotPercent = write_cover_result_table(CoverLog, Coverage),
     file:write_file(filename:join(TestDir, ?cover_total),
 		    term_to_binary(TotPercent)).

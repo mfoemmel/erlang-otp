@@ -69,7 +69,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += -I$(DIALYZER_DIR)/src +warn_exported_vars +warn_untyped_record +warn_missing_spec
+ERL_COMPILE_FLAGS += +warn_exported_vars +warn_untyped_record +warn_missing_spec
 
 # ----------------------------------------------------
 # Targets
@@ -100,11 +100,11 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 # dependencies -- I wish they were somehow automatically generated
 # ---------------------------------------------------------------------
 
-$(EBIN)/typer.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
-$(EBIN)/typer_annotator.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
-$(EBIN)/typer_info.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
-$(EBIN)/typer_options.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
-$(EBIN)/typer_preprocess.beam: typer.hrl $(DIALYZER_DIR)/src/dialyzer.hrl
+$(EBIN)/typer.beam: typer.hrl
+$(EBIN)/typer_annotator.beam: typer.hrl
+$(EBIN)/typer_info.beam: typer.hrl
+$(EBIN)/typer_options.beam: typer.hrl
+$(EBIN)/typer_preprocess.beam: typer.hrl
 
 # ----------------------------------------------------
 # Release Target

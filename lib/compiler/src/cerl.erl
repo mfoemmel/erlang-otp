@@ -236,7 +236,7 @@ type(#c_catch{}) -> 'catch';
 type(#c_module{}) -> module.
 
 
-%% @spec is_leaf(Node::cerl()) -> bool()
+%% @spec is_leaf(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is a leaf node,
 %% otherwise <code>false</code>. The current leaf node types are
@@ -339,7 +339,7 @@ ann_abstract(As, T) ->
     #c_literal{val = T, anno = As}.
 
 
-%% @spec is_literal_term(Term::term()) -> bool()
+%% @spec is_literal_term(Term::term()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Term</code> can be
 %% represented as a literal, otherwise <code>false</code>. This
@@ -347,7 +347,7 @@ ann_abstract(As, T) ->
 %%
 %% @see abstract/1
 
--spec is_literal_term(_) -> bool().
+-spec is_literal_term(term()) -> boolean().
 
 is_literal_term(T) when is_integer(T) -> true;
 is_literal_term(T) when is_float(T) -> true;
@@ -366,7 +366,7 @@ is_literal_term(B) when is_bitstring(B) -> true;
 is_literal_term(_) ->
     false.
 
--spec is_literal_term_list([_]) -> bool().
+-spec is_literal_term_list([term()]) -> boolean().
 
 is_literal_term_list([T | Ts]) ->
     case is_literal_term(T) of
@@ -398,7 +398,7 @@ concrete(#c_literal{val = V}) ->
     V.
 
 
-%% @spec is_literal(Node::cerl()) -> bool()
+%% @spec is_literal(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> represents a
 %% literal term, otherwise <code>false</code>. This function returns
@@ -596,7 +596,7 @@ update_c_module(Node, Name, Exports, Attrs, Es) ->
 	      anno = get_ann(Node)}.
 
 
-%% @spec is_c_module(Node::cerl()) -> bool()
+%% @spec is_c_module(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% module definition, otherwise <code>false</code>.
@@ -688,7 +688,7 @@ ann_c_int(As, Value) ->
     #c_literal{val = Value, anno = As}.
 
 
-%% @spec is_c_int(Node::cerl()) -> bool()
+%% @spec is_c_int(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> represents an
 %% integer literal, otherwise <code>false</code>.
@@ -749,7 +749,7 @@ ann_c_float(As, Value) ->
     #c_literal{val = Value, anno = As}.
 
 
-%% @spec is_c_float(Node::cerl()) -> bool()
+%% @spec is_c_float(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> represents a
 %% floating-point literal, otherwise <code>false</code>.
@@ -817,7 +817,7 @@ ann_c_atom(As, Name) ->
     #c_literal{val = list_to_atom(Name), anno = As}.
 
 
-%% @spec is_c_atom(Node::cerl()) -> bool()
+%% @spec is_c_atom(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> represents an
 %% atom literal, otherwise <code>false</code>.
@@ -905,7 +905,7 @@ ann_c_char(As, Value) ->
     #c_literal{val = Value, anno = As}.
 
 
-%% @spec is_c_char(Node::cerl()) -> bool()
+%% @spec is_c_char(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> may represent a
 %% character literal, otherwise <code>false</code>.
@@ -924,7 +924,7 @@ is_c_char(_) ->
     false.
 
 
-%% @spec is_print_char(Node::cerl()) -> bool()
+%% @spec is_print_char(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> may represent a
 %% "printing" character, otherwise <code>false</code>. (Cf.
@@ -997,7 +997,7 @@ ann_c_string(As, Value) ->
     #c_literal{val = Value, anno = As}.
 
 
-%% @spec is_c_string(Node::cerl()) -> bool()
+%% @spec is_c_string(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> may represent a
 %% string literal, otherwise <code>false</code>. Strings are defined
@@ -1013,7 +1013,7 @@ is_c_string(_) ->
     false.
 
 
-%% @spec is_print_string(Node::cerl()) -> bool()
+%% @spec is_print_string(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> may represent a
 %% string literal containing only "printing" characters, otherwise
@@ -1080,7 +1080,7 @@ ann_c_nil(As) ->
     #c_literal{val = [], anno = As}.
 
 
-%% @spec is_c_nil(Node::cerl()) -> bool()
+%% @spec is_c_nil(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% empty list, otherwise <code>false</code>.
@@ -1193,7 +1193,7 @@ update_c_cons_skel(Node, Head, Tail) ->
     #c_cons{hd = Head, tl = Tail, anno = get_ann(Node)}.
 
 
-%% @spec is_c_cons(Node::cerl()) -> bool()
+%% @spec is_c_cons(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% list constructor, otherwise <code>false</code>.
@@ -1233,7 +1233,7 @@ cons_tl(#c_literal{val = [_ | Tail]}) ->
     #c_literal{val = Tail}.
 
 
-%% @spec is_c_list(Node::cerl()) -> bool()
+%% @spec is_c_list(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> represents a
 %% proper list, otherwise <code>false</code>. A proper list is either
@@ -1494,7 +1494,7 @@ update_c_tuple_skel(Old, Es) ->
     #c_tuple{es = Es, anno = get_ann(Old)}.
 
 
-%% @spec is_c_tuple(Node::cerl()) -> bool()
+%% @spec is_c_tuple(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% tuple, otherwise <code>false</code>.
@@ -1601,7 +1601,7 @@ update_c_var(Node, Name) ->
     #c_var{name = Name, anno = get_ann(Node)}.
 
 
-%% @spec is_c_var(Node::cerl()) -> bool()
+%% @spec is_c_var(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% variable, otherwise <code>false</code>.
@@ -1659,7 +1659,7 @@ update_c_fname(Node, Atom, Arity) ->
     update_c_var(Node, {Atom, Arity}).
 
 
-%% @spec is_c_fname(Node::cerl()) -> bool()
+%% @spec is_c_fname(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% function name variable, otherwise <code>false</code>.
@@ -1742,7 +1742,7 @@ update_c_values(Node, Es) ->
     #c_values{es = Es, anno = get_ann(Node)}.
 
 
-%% @spec is_c_values(Node::cerl()) -> bool()
+%% @spec is_c_values(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% value list; otherwise <code>false</code>.
@@ -1820,7 +1820,7 @@ update_c_binary(Node, Segments) ->
     #c_binary{segments = Segments, anno = get_ann(Node)}.
 
 
-%% @spec is_c_binary(Node::cerl()) -> bool()
+%% @spec is_c_binary(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% binary-template; otherwise <code>false</code>.
@@ -1924,7 +1924,7 @@ update_c_bitstr(Node, Val, Size, Unit, Type, Flags) ->
 update_c_bitstr(Node, Value, Size, Type, Flags) ->
     update_c_bitstr(Node, Value, Size, abstract(1), Type, Flags).
 
-%% @spec is_c_bitstr(Node::cerl()) -> bool()
+%% @spec is_c_bitstr(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% bit-string template; otherwise <code>false</code>.
@@ -2054,7 +2054,7 @@ update_c_fun(Node, Variables, Body) ->
     #c_fun{vars = Variables, body = Body, anno = get_ann(Node)}.
 
 
-%% @spec is_c_fun(Node::cerl()) -> bool()
+%% @spec is_c_fun(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% fun-expression, otherwise <code>false</code>.
@@ -2137,7 +2137,7 @@ update_c_seq(Node, Argument, Body) ->
     #c_seq{arg = Argument, body = Body, anno = get_ann(Node)}.
 
 
-%% @spec is_c_seq(Node::cerl()) -> bool()
+%% @spec is_c_seq(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% sequencing expression, otherwise <code>false</code>.
@@ -2209,7 +2209,7 @@ update_c_let(Node, Variables, Argument, Body) ->
 	   anno = get_ann(Node)}.
 
 
-%% @spec is_c_let(Node::cerl()) -> bool()
+%% @spec is_c_let(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% let-expression, otherwise <code>false</code>.
@@ -2310,7 +2310,7 @@ update_c_letrec(Node, Defs, Body) ->
     #c_letrec{defs = Defs, body = Body, anno = get_ann(Node)}.
 
 
-%% @spec is_c_letrec(Node::cerl()) -> bool()
+%% @spec is_c_letrec(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% letrec-expression, otherwise <code>false</code>.
@@ -2398,7 +2398,7 @@ update_c_case(Node, Expr, Clauses) ->
     #c_case{arg = Expr, clauses = Clauses, anno = get_ann(Node)}.
 
 
-%% is_c_case(Node) -> bool()
+%% is_c_case(Node) -> boolean()
 %%
 %%	    Node = cerl()
 %%
@@ -2509,7 +2509,7 @@ update_c_clause(Node, Patterns, Guard, Body) ->
 	      anno = get_ann(Node)}.
 
 
-%% @spec is_c_clause(Node::cerl()) -> bool()
+%% @spec is_c_clause(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% clause, otherwise <code>false</code>.
@@ -2665,7 +2665,7 @@ update_c_alias(Node, Var, Pattern) ->
     #c_alias{var = Var, pat = Pattern, anno = get_ann(Node)}.
 
 
-%% @spec is_c_alias(Node::cerl()) -> bool()
+%% @spec is_c_alias(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% pattern alias, otherwise <code>false</code>.
@@ -2756,7 +2756,7 @@ update_c_receive(Node, Clauses, Timeout, Action) ->
 	       anno = get_ann(Node)}.
 
 
-%% @spec is_c_receive(Node::cerl()) -> bool()
+%% @spec is_c_receive(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% receive-expression, otherwise <code>false</code>.
@@ -2838,7 +2838,7 @@ update_c_apply(Node, Operator, Arguments) ->
     #c_apply{op = Operator, args = Arguments, anno = get_ann(Node)}.
 
 
-%% @spec is_c_apply(Node::cerl()) -> bool()
+%% @spec is_c_apply(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% function application, otherwise <code>false</code>.
@@ -2931,7 +2931,7 @@ update_c_call(Node, Module, Name, Arguments) ->
 	    anno = get_ann(Node)}.
 
 
-%% @spec is_c_call(Node::cerl()) -> bool()
+%% @spec is_c_call(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% inter-module call expression; otherwise <code>false</code>.
@@ -3030,7 +3030,7 @@ update_c_primop(Node, Name, Arguments) ->
     #c_primop{name = Name, args = Arguments, anno = get_ann(Node)}.
 
 
-%% @spec is_c_primop(Node::cerl()) -> bool()
+%% @spec is_c_primop(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% primitive operation call, otherwise <code>false</code>.
@@ -3128,7 +3128,7 @@ update_c_try(Node, Expr, Vs, Body, Evs, Handler) ->
 	   evars = Evs, handler = Handler, anno = get_ann(Node)}.
 
 
-%% @spec is_c_try(Node::cerl()) -> bool()
+%% @spec is_c_try(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% try-expression, otherwise <code>false</code>.
@@ -3228,7 +3228,7 @@ update_c_catch(Node, Body) ->
     #c_catch{body = Body, anno = get_ann(Node)}.
 
 
-%% @spec is_c_catch(Node::cerl()) -> bool()
+%% @spec is_c_catch(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> is an abstract
 %% catch-expression, otherwise <code>false</code>.
@@ -3286,7 +3286,7 @@ from_records(Node) ->
 
 %% ---------------------------------------------------------------------
 
-%% @spec is_data(Node::cerl()) -> bool()
+%% @spec is_data(Node::cerl()) -> boolean()
 %%
 %% @doc Returns <code>true</code> if <code>Node</code> represents a
 %% data constructor, otherwise <code>false</code>. Data constructors

@@ -78,7 +78,7 @@ cols2tuple(N, SourceMapping, Vs, Target) ->
 %%
 %% True if temp Temp is spilled.
 %%
--spec is_spilled(non_neg_integer(), hipe_temp_map()) -> bool().
+-spec is_spilled(non_neg_integer(), hipe_temp_map()) -> boolean().
 
 is_spilled(Temp, Map) ->
   case element(Temp+1, Map) of

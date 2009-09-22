@@ -162,19 +162,8 @@ is_move(Instruction) ->
     true ->
       Src = hipe_x86:fmove_src(Instruction),
       Dst = hipe_x86:fmove_dst(Instruction),
-      case hipe_x86:is_temp(Src) of
- 	true ->
- 	  case hipe_x86:temp_is_allocatable(Src) of
- 	    true ->
- 	      case hipe_x86:is_temp(Dst) of
- 		true ->
- 		  hipe_x86:temp_is_allocatable(Dst);
- 		false -> false
- 	      end;
- 	    false -> false
- 	  end;
- 	false -> false
-      end;
+      hipe_x86:is_temp(Src) andalso hipe_x86:temp_is_allocatable(Src)
+	andalso hipe_x86:is_temp(Dst) andalso hipe_x86:temp_is_allocatable(Dst);
     false -> false
   end.
  
@@ -183,4 +172,4 @@ reg_nr(Reg) ->
 
 -spec new_spill_index(non_neg_integer()) -> pos_integer().
 new_spill_index(SpillIndex) when is_integer(SpillIndex) ->
-  SpillIndex+1.
+  SpillIndex + 1.

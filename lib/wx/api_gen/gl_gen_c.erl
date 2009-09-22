@@ -68,7 +68,9 @@ gen(GLFuncs, GLUFuncs) ->
       "      return ;~n   }~n };~n~n", []),
 
     w(" switch(op) ~n{~n",[]),
-    w("   case 5000: {~n   wxe_tess_impl(bp, caller); ~n};  break;~n", []),
+    w(" case 5000: ~n   wxe_tess_impl(bp, caller); ~n   break;~n", []),
+    w(" case WXE_BIN_INCR:~n   driver_binary_inc_refc(bins[0]->bin);~n   break;~n",[]),
+    w(" case WXE_BIN_DECR:~n   driver_binary_dec_refc(bins[0]->bin);~n   break;~n",[]),
 
     [funcs(F) || F <- GLUFuncs],
     [funcs(F) || F <- GLFuncs],
@@ -117,20 +119,6 @@ declare_vars(T, Ps) ->
 
 declare_var(A=#arg{where=erl}) -> A;
 
-%% declare_var(A=#arg{name=Name,type=#type{name=Type,single=list}}) ->
-%%     w(" ~s *~s;~n", [Type,Name]),
-%%     w(" ~s *~sLen;~n", [Type,Name]),
-%%     A;
-%% declare_var(A=#arg{name=Name,type=#type{name=Type,single={tuple,undefined}}}) ->
-%%     w(" ~s *~s;~n", [Type,Name]),
-%%     w(" ~s *~sLen;~n", [Type,Name]),
-%%     A;
-%% declare_var(A=#arg{name=Name,in=In,type=#type{name=Type,ref=undefined}}) ->
-%%     w(" ~s *~s;~n", [Name,Type]),
-%%     A;
-%% declare_var(A=#arg{name=Name,type=#type{name=Type}}) ->
-%%     w(" ~s *~s;~n", [Type,Name]),
-%%     A.
 declare_var(A=#arg{name=N,in=false,type=#type{name=T,base=B,single={tuple,Sz}}}) -> 
     true = is_number(Sz), %% Assert
     w(" ~s ~s[~p] = {~s};~n", [T,N,Sz,args(fun zero/1,",",lists:duplicate(Sz,B))]),
@@ -147,6 +135,9 @@ declare_var(A=#arg{name=N,in=false,type=#type{name=T,single={list,ASz,_USz},mod=
 declare_var(A=#arg{name=N,in=false,type=#type{name=T,base=binary,size=Sz}}) -> 
     true = is_number(Sz), %% Assert
     w(" ~s ~s[~p];~n", [T,N,Sz]),
+    A;
+declare_var(A=#arg{name=N,in=false,
+		   type=#type{name=T="GLUquadric",base=B,by_val=false,single=true}}) -> 
     A;
 declare_var(A=#arg{name=N,in=false,
 		   type=#type{name=T,base=B,by_val=false,single=true}}) -> 
@@ -237,6 +228,10 @@ decode_arg(P=#arg{name=Name,
     A = align(8,A0),
     w(" ~s ~s = (~s) * (GLuint64EXT *) bp; bp += 8;~n", [Type,Name,Type]),
     {P, A};
+decode_arg(P=#arg{name=Name,type=#type{name=Type="GLUquadric",size=8,base=int}},A0) ->
+    A = align(8,A0),
+    w(" ~s * ~s = (~s *) * (GLuint64EXT *) bp; bp += 8;~n", [Type,Name,Type]),
+    {P, A};
 decode_arg(P=#arg{name=Name,
 		  type=#type{name=Type,size=Sz,by_val=true,ref=undefined}},A0) ->
     A = align(Sz,A0),
@@ -310,12 +305,14 @@ call_arg(#arg{name=Name,type=#type{base=guard_int}}) ->
     Name;
 call_arg(#arg{name=Name,type=#type{base=string,ref={pointer,2},mod=[const]}}) ->
     "(const GLchar **) " ++ Name;
+call_arg(#arg{name=Name,type=#type{size=8,base=int,ref={pointer,1}}}) ->
+    Name;
 call_arg(#arg{name=Name,type=#type{}}) ->
     Name.
 
 build_return_vals(Type,As) ->
     case calc_sizes(Type,As) of
-	{0,none} ->  %% Sync memory access functions
+	{0,none,0} ->  %% Sync memory access functions
 	    Any = fun(#arg{type=#type{base=B}}) -> B =:= memory end,
 	    case lists:any(Any, As) of
 		false -> ok;
@@ -329,13 +326,14 @@ build_return_vals(Type,As) ->
 		    w(" driver_send_term(WXE_DRV_PORT,caller,rt,AP);~n",[]),
 		    ok
 	    end;
-	{Val, Vars} ->
+	{Val,Vars,Cnt} ->
+	    ExtraTuple = if Cnt > 1 -> 2; true -> 0 end,
 	    CSize = if Vars =:= none -> 
-			    Sz = integer_to_list(Val+4),
+			    Sz = integer_to_list(Val+4+ExtraTuple),
 			    w(" int AP = 0; ErlDrvTermData rt[~s];~n",[Sz]),
 			    Sz;
 		       true -> 
-			    Sz = integer_to_list(Val+4) ++ " + " ++ Vars,
+			    Sz = integer_to_list(Val+4+ExtraTuple) ++ " + " ++ Vars,
 			    w(" int AP = 0; ErlDrvTermData *rt;~n",[]),
 			    w(" rt = (ErlDrvTermData *) "
 			      "driver_alloc(sizeof(ErlDrvTermData)*(~s));~n", [Sz]),
@@ -343,6 +341,11 @@ build_return_vals(Type,As) ->
 		    end,
 	    w(" rt[AP++]=ERL_DRV_ATOM; rt[AP++]=driver_mk_atom((char *) \"_wxe_result_\");~n",[]),
 	    FreeList = build_ret_types(Type,As),
+	    case Cnt of
+		1 -> ok;
+		_ -> 
+		    w(" rt[AP++] = ERL_DRV_TUPLE; rt[AP++] = ~p;~n",[Cnt])
+	    end,
 	    w(" rt[AP++] = ERL_DRV_TUPLE; rt[AP++] = 2;~n",[]),
 	    w(" if (AP != ~s )  fprintf(stderr, \"%d: ERROR AP mismatch %d %d\\r\\n\",__LINE__,AP,~s);~n",
 	      [CSize,CSize]),
@@ -357,15 +360,20 @@ build_return_vals(Type,As) ->
     end.
      
 calc_sizes(Type,As) ->
-    TSz  = return_size("result", Type),
-    Calc = fun(#arg{name=N,in=False,where=W,type=T},{Sz,Vars}) 
+    TSz = case return_size("result", Type) of
+	      {0, none} ->
+		  {0, none, 0};
+	      {Sz,Vars} ->
+		  {Sz,Vars, 1}
+	  end,
+    Calc = fun(#arg{name=N,in=False,where=W,type=T},{Sz,Vars, Cnt}) 
 	      when False =/= true, W=/= c ->
 		   case return_size(N, T) of
-		       {Val, none} -> {Sz+Val, Vars};
+		       {Val, none} -> {Sz+Val, Vars, Cnt+1};
 		       {Val, Var} when Vars =:= none -> 			   
-			   {Sz+Val, Var};
+			   {Sz+Val, Var,Cnt+1};
 		       {Val, Var} when Vars =:= none -> 
-			   {Sz+Val, Var ++ " + " ++ Vars}
+			   {Sz+Val, Var ++ " + " ++ Vars,Cnt+1}
 		   end;
 	      (_,Acc) -> Acc
 	   end,
@@ -406,6 +414,8 @@ build_ret_types(Type,Ps) ->
 build_ret(Name,_Q,#type{name=_T,base=int,single=true,by_val=true}) ->    
     w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) ~s;~n", [Name]);
 build_ret(Name,_Q,#type{name=_T,base=bool,single=true,by_val=true}) ->
+    w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) ~s;~n", [Name]);
+build_ret(Name,_Q,#type{name="GLUquadric",base=int}) ->    
     w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) ~s;~n", [Name]);
 build_ret(Name,_Q,#type{name=_T,base=int,single=true,by_val=false}) ->    
     w(" rt[AP++] = ERL_DRV_INT; rt[AP++] = (ErlDrvSInt) *~s;~n", [Name]);

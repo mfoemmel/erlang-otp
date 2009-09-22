@@ -33,10 +33,14 @@
 
 -include("dialyzer.hrl").
 
+%%------------------------------------------------------------------------
+
 -define(DIALYZER_ERROR_TITLE,   "Dialyzer Error").
 -define(DIALYZER_MESSAGE_TITLE, "Dialyzer Message").
 
--type gs_object() :: any().
+%%------------------------------------------------------------------------
+
+-type gs_object() :: any().  %% XXX: should be imported from gs
 
 -record(mode, {start_byte_code   :: gs_object(),
 	       start_src_code    :: gs_object()}).
@@ -60,11 +64,11 @@
 		    chosen_box   :: gs_object(),
 		    analysis_pid :: pid(),
 		    del_file     :: gs_object(),
-		    doc_plt      :: #dialyzer_plt{},
+		    doc_plt      :: dialyzer_plt:plt(),
 		    clear_chosen :: gs_object(),
 		    clear_log    :: gs_object(),
 		    clear_warn   :: gs_object(),
-		    init_plt     :: #dialyzer_plt{},
+		    init_plt     :: dialyzer_plt:plt(),
 		    dir_entry    :: gs_object(),
 		    file_box     :: gs_object(),
 		    file_wd      :: gs_object(),
@@ -91,6 +95,7 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   GS = gs:start(),
   code:add_pathsa(["."]),
   WH = [{width, 1000}, {height, 550}],
+  EmptySpace = {stretch, 1},
 
   {ok, Host} = inet:gethostname(),
   %% --------- Top Window --------------
@@ -121,8 +126,8 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   FilePacker = gs:frame(Packer, [{packer_x, [{fixed, 30}, {stretch, 1, 100}]},
 				 {packer_y, [{fixed, 25}, {stretch, 1, 25}]},
 				 {pack_xy, {1, 6}}]),
-  gs:label(FilePacker, [{label, {text, "Dir:"}}, {pack_xy, {1,1}}]),
-  DirEntry = gs:entry(FilePacker, [{height, 30}, {pack_xy, {2,1}},
+  gs:label(FilePacker, [{label, {text, "Dir:"}}, {pack_xy, {1, 1}}]),
+  DirEntry = gs:entry(FilePacker, [{height, 30}, {pack_xy, {2, 1}},
 				   {keypress, true}]),
   File = gs:listbox(FilePacker, [{pack_x, {1,2}}, {pack_y, 2},
 				 {selectmode, multiple}, {doubleclick, true}, 
@@ -134,11 +139,9 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   ModePacker = gs:frame(Packer, [{packer_x, [{fixed, 75}, {fixed, 120}]},
 				 {packer_y, [{fixed, 20}, {fixed, 20},
 					     {fixed, 20},
-					     %%{stretch, 1}, % empty space
+					     %% EmptySpace,
 					     {fixed, 20}, {fixed, 20}, 
-					     {fixed, 20},
-					     {stretch, 1} % empty space
-					    ]},
+					     {fixed, 20}, EmptySpace]},
 				 {bw, 10}, {relief, flat},
 				 {default, {radiobutton, {align, w}}},
 				 {default, {label, {align, w}}},
@@ -172,35 +175,31 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   gs:label(Packer, [{label, {text, "Warnings"}},{height, 20},{pack_xy, {3,5}}]),
   WarningsBox = gs:editor(Packer, [{pack_x, {2,3}}, {pack_y, 6},
 				   {enable, false},
-				   {font, {courier, 12}},{vscroll, right},
+				   {font, {courier, 12}}, {vscroll, right},
 				   {wrap, word}]),
 
   %% --------- Buttons --------------
   ButtonPackerHighLeft = 
-    gs:frame(Packer, [{packer_x, [{fixed, 50},
-				  {fixed, 65},
-				  {stretch, 1}]}, % empty space
+    gs:frame(Packer, [{packer_x, [{fixed, 50}, {fixed, 65}, EmptySpace]},
 		      {pack_xy, {1,4}}]),
   ButtonPackerHighRight = 
-    gs:frame(Packer, [{packer_x, [{fixed, 70},
-				  {fixed, 70},
-				  {stretch, 1}]}, % empty space
+    gs:frame(Packer, [{packer_x, [{fixed, 70}, {fixed, 70}, EmptySpace]},
 		      {pack_xy, {3,4}}]),
   ButtonPackerLowLeft = 
     gs:frame(Packer, [{packer_x, [{fixed, 50},
 				  {fixed, 60},
 				  {fixed, 110},
-				  {stretch, 1}]}, % empty space
+				  EmptySpace]},
 		      {pack_xy, {1,7}}]),
   ButtonPackerLowRight = 
-    gs:frame(Packer, [{packer_x, [{fixed, 70},
+    gs:frame(Packer, [{packer_x, [{fixed, 100},
 				  {fixed, 70},
-				  {stretch, 1},% empty space
+				  EmptySpace,
 				  {fixed, 70},
 				  {fixed, 70}]}, 
 		      {pack_x, {2,3}}, {pack_y, 7}]),
 
-  WHButton = [{width, 60},{height, 20}],
+  WHButton = [{width, 60}, {height, 20}],
   AddFile = gs:button(ButtonPackerLowLeft, [{pack_xy, {1, 1}}, 
 					    {label, {text,"Add"}}|WHButton]),
   AddAll = gs:button(ButtonPackerLowLeft, [{pack_xy, {2, 1}}, 
@@ -217,7 +216,7 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
 					       {label, {text,"Clear Log"}}
 					       |WHButton]),
   ClearWarn = gs:button(ButtonPackerLowRight, [{pack_xy, {1, 1}}, 
-					       {label, {text,"Clear Warn"}}
+					       {label, {text,"Clear Warnings"}}
 					       |WHButton]),
 
   Run = gs:button(ButtonPackerLowRight, [{pack_xy, {4, 1}},
@@ -229,26 +228,29 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
   MenuBar = gs:menubar(TopWin, []),
 
   %% File Menu
-  MenuBarFile = gs:menubutton(MenuBar, [{label,{text,"File"}}]),
+  MenuBarFile = gs:menubutton(MenuBar, [{label, {text, "File"}}]),
   MenuFile = gs:menu(MenuBarFile, []),
-  MenuFileSaveWarn = gs:menuitem(MenuFile, [{label,{text,"Save Warnings"}}]),
-  MenuFileSaveLog = gs:menuitem(MenuFile, [{label,{text,"Save Log"}}]),
-  MenuFileQuit = gs:menuitem(MenuFile, [{label,{text,"Quit"}}]),
+  MenuFileSaveWarn = gs:menuitem(MenuFile, [{label, {text, "Save Warnings"}}]),
+  MenuFileSaveLog = gs:menuitem(MenuFile, [{label, {text, "Save Log"}}]),
+  MenuFileQuit = gs:menuitem(MenuFile, [{label, {text, "Quit"}}]),
 
   %% Warnings Menu
-  MenuBarWarn = gs:menubutton(MenuBar, [{label,{text,"Warnings"}}]),
+  MenuBarWarn = gs:menubutton(MenuBar, [{label, {text, "Warnings"}}]),
   MenuWarn = gs:menu(MenuBarWarn, []),
-
   MenuWarnMatch = gs:menuitem(MenuWarn, [{label, {text, "Match failures"}}, 
 					 {itemtype, check}, {select, true}]),
   MenuWarnFailingCall = gs:menuitem(MenuWarn, 
-				    [{label, {text, "Failing function calls"}}, 
+				    [{label, {text, "Failing function calls"}},
 				     {itemtype, check}, {select, true}]),
   MenuWarnFunApp = gs:menuitem(MenuWarn, [{label, 
-					   {text, "Bad fun-applications"}}, 
+					   {text, "Bad fun applications"}},
 					  {itemtype, check}, {select, true}]),
-  MenuWarnLists = gs:menuitem(MenuWarn, [{label, {text, "Improper list constructions"}}, 
-					 {itemtype, check}, {select, true}]),
+  MenuWarnOpaque = gs:menuitem(MenuWarn, [{label, 
+					   {text, "Opaqueness violations"}},
+					  {itemtype, check}, {select, true}]),
+  MenuWarnLists = gs:menuitem(MenuWarn,
+			      [{label, {text, "Improper list constructions"}}, 
+			       {itemtype, check}, {select, true}]),
   MenuWarnNotCalled = gs:menuitem(MenuWarn, 
 				  [{label, {text, "Unused functions"}}, 
 				   {itemtype, check}, {select, true}]),
@@ -257,42 +259,47 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
 					 {text, "Error handling functions"}},
 					{itemtype, check}, {select, false}]),
   MenuWarnReturnNoReturn = gs:menuitem(MenuWarn,
-				       [{label, 
+				       [{label,
 					 {text, "Functions of no return"}},
 					{itemtype, check}, {select, true}]),  
   MenuWarnCallNonExported = gs:menuitem(MenuWarn,
 					[{label, 
-					  {text,"Call to unexported function"}},
+					  {text, "Call to unexported function"}},
 					 {itemtype, check}, {select, true}]), 
   MenuWarnContractTypes = gs:menuitem(MenuWarn,
-				      [{label, 
-					{text,"Wrong contracts"}},
+				      [{label, {text, "Wrong contracts"}},
 				       {itemtype, check}, {select, true}]),
   MenuWarnContractSyntax = gs:menuitem(MenuWarn,
-				       [{label, 
-					 {text,"Wrong contract syntax"}},
-					{itemtype, check}, {select, true}]), 
+				       [{label,
+					 {text, "Wrong contract syntax"}},
+					{itemtype, check}, {select, true}]),
+%%   MenuWarnRaceCondition = gs:menuitem(MenuWarn,
+%%                                      [{label,
+%%                                        {text,"Possible race conditions"}},
+%%                                       {itemtype, check}, {select, false}]),
   
   %% PLT Menu
   MenuBarPLT = gs:menubutton(MenuBar, [{label, {text,"PLT"}}]),
   MenuPLT = gs:menu(MenuBarPLT, []),
-  MenuPLTEmpty = gs:menuitem(MenuPLT, [{label, {text,"Init with empty PLT"}},
+  MenuPLTEmpty = gs:menuitem(MenuPLT, [{label, {text, "Init with empty PLT"}},
 				       {itemtype, check}, {select, false}]),
-  MenuPLTShow = gs:menuitem(MenuPLT, [{label, {text,"Show contents"}}]),
-  MenuPLTSearch = gs:menuitem(MenuPLT, [{label, {text,"Search contents"}}]),
+  MenuPLTShow = gs:menuitem(MenuPLT, [{label, {text, "Show contents"}}]),
+  MenuPLTSearch = gs:menuitem(MenuPLT, [{label, {text, "Search contents"}}]),
 
   %% Options Menu
   MenuBarOpts = gs:menubutton(MenuBar, [{label,{text,"Options"}}]),
   MenuOpts = gs:menu(MenuBarOpts, []),
-  MenuOptsMacros = gs:menuitem(MenuOpts,[{label, {text, "Manage Macro Definitions"}}]),
-  MenuOptsIncludes = gs:menuitem(MenuOpts, [{label, {text, "Manage Include Directories"}}]),
+  MenuOptsMacros = gs:menuitem(MenuOpts,
+			       [{label, {text, "Manage Macro Definitions"}}]),
+  MenuOptsIncludes = gs:menuitem(MenuOpts,
+				 [{label, {text, "Manage Include Directories"}}]),
   
   %% Help
-  MenuBarHelp = gs:menubutton(MenuBar, [{label, {text,"Help"}}, {side, right}]),
+  MenuBarHelp = gs:menubutton(MenuBar, [{label, {text, "Help"}}, {side, right}]),
   MenuHelp = gs:menu(MenuBarHelp, []),
-  MenuHelpManual = gs:menuitem(MenuHelp, [{label, {text,"Manual"}}]),
-  MenuHelpWarnings = gs:menuitem(MenuHelp, [{label, {text,"Warnings"}}]),
-  MenuHelpAbout = gs:menuitem(MenuHelp, [{label, {text,"About"}}]),
+  MenuHelpManual = gs:menuitem(MenuHelp, [{label, {text, "Manual"}}]),
+  MenuHelpWarnings = gs:menuitem(MenuHelp, [{label, {text, "Warning Options"}}]),
+  MenuHelpAbout = gs:menuitem(MenuHelp, [{label, {text, "About"}}]),
   
   Warnings = [{?WARN_RETURN_NO_RETURN, MenuWarnReturnNoReturn},
 	      {?WARN_RETURN_ONLY_EXIT, MenuWarnReturnOnlyExit},
@@ -300,11 +307,13 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
 	      {?WARN_NON_PROPER_LIST, MenuWarnLists},
 	      {?WARN_FUN_APP, MenuWarnFunApp},
 	      {?WARN_MATCHING, MenuWarnMatch},
+	      {?WARN_OPAQUE, MenuWarnOpaque},
 	      {?WARN_FAILING_CALL, MenuWarnFailingCall},
 	      {?WARN_CALLGRAPH, MenuWarnCallNonExported},
 	      %% For contracts. 
 	      {?WARN_CONTRACT_TYPES, MenuWarnContractTypes},
 	      {?WARN_CONTRACT_SYNTAX, MenuWarnContractSyntax}
+%%              {?WARN_RACE_CONDITION, MenuWarnRaceCondition}
 	     ],
 
   init_warnings(Warnings, LegalWarnings),
@@ -323,7 +332,7 @@ start(DialyzerOptions = #options{from = From, init_plt = InitPltFile,
 	       warnings = Warnings},
 
   %% --------- Init --------------
-  gs:config(TopWin, {map, true}),
+  gs:config(TopWin, [{map, true}]),
   gs:config(Packer, WH),
   {ok, CWD} = file:get_cwd(),
   
@@ -374,7 +383,7 @@ gui_loop(#gui_state{add_all = AddAll, add_file = AddFile, add_rec = AddRec,
   %% --- Menu ---
   Quit = Menu#menu.file_quit,
   Manual = Menu#menu.help_manual,
-  HelpWarnings = Menu#menu.help_warnings,
+  Warnings = Menu#menu.help_warnings,
   About = Menu#menu.help_about,
   SaveLog = Menu#menu.file_save_log,
   SaveWarn = Menu#menu.file_save_warn,
@@ -393,7 +402,7 @@ gui_loop(#gui_state{add_all = AddAll, add_file = AddFile, add_rec = AddRec,
       NewState = change_dir_or_add_file(State, Text),
       gui_loop(NewState);
     {gs, DirEntry, keypress, _, ['Return'|_]} ->
-      gs:config(TopWin, {setfocus, true}),
+      gs:config(TopWin, [{setfocus, true}]),
       NewState = change_dir_absolute(State, gs:read(DirEntry, text)),
       gui_loop(NewState);
     {gs, DirEntry, keypress, _, _} ->
@@ -412,18 +421,18 @@ gui_loop(#gui_state{add_all = AddAll, add_file = AddFile, add_rec = AddRec,
       handle_file_delete(State),
       gui_loop(State);
     {gs, ClearChosen, click, _, _} ->
-      gs:config(ChosenBox, clear),
+      gs:config(ChosenBox, [clear]),
       gui_loop(State);
     {gs, ClearLog, click, _, _} ->
       Log = State#gui_state.log,
       gs:config(Log, [{enable, true}]),
-      gs:config(Log, clear),
+      gs:config(Log, [clear]),
       gs:config(Log, [{enable, false}]),
       gui_loop(State);
     {gs, ClearWarn, click, _, _} ->
       Warn = State#gui_state.warnings_box,
       gs:config(Warn, [{enable, true}]),
-      gs:config(Warn, clear),
+      gs:config(Warn, [clear]),
       gs:config(Warn, [{enable, false}]),
       gui_loop(State);
     {gs, Run, click, _, _} ->
@@ -443,8 +452,8 @@ gui_loop(#gui_state{add_all = AddAll, add_file = AddFile, add_rec = AddRec,
     {gs, Manual, click, _, _} ->
       spawn_link(fun() -> manual(State) end),
       gui_loop(State);
-    {gs, HelpWarnings, click, _, _} ->
-      spawn_link(fun() -> help_warnings(State) end),
+    {gs, Warnings, click, _, _} ->
+      spawn_link(fun() -> warnings(State) end),
       gui_loop(State);
     {gs, About, click, _, _} ->
       spawn_link(fun() -> about(State) end),
@@ -484,8 +493,8 @@ gui_loop(#gui_state{add_all = AddAll, add_file = AddFile, add_rec = AddRec,
     {BackendPid, log, LogMsg} ->
       update_editor(Log, LogMsg),
       gui_loop(State);
-    {BackendPid, warnings, Warnings} ->
-      WarnString = lists:flatten([dialyzer:format_warning(W) || W <- Warnings]),
+    {BackendPid, warnings, Warns} ->
+      WarnString = lists:flatten([dialyzer:format_warning(W) || W <- Warns]),
       update_editor(Warn, WarnString),
       gui_loop(State);
     {BackendPid, done, _NewPlt, NewDocPlt} ->
@@ -607,7 +616,7 @@ add_files(Add, ChosenBox, Type) ->
 
 handle_file_delete(#gui_state{chosen_box = ChosenBox}) ->
   List = gs:read(ChosenBox, selection),
-  lists:foreach(fun(X) -> gs:config(ChosenBox, {del, X}) end,
+  lists:foreach(fun(X) -> gs:config(ChosenBox, [{del, X}]) end,
 		lists:reverse(lists:sort(List))).
 
 %% ---- Other ----
@@ -672,8 +681,8 @@ init_warnings([], _LegalWarnings) ->
   ok.
 
 config_gui_start(State) ->
-  Enabled = {enable, true},
-  Disabled = {enable, false},
+  Enabled = [{enable, true}],
+  Disabled = [{enable, false}],
   gs:config(State#gui_state.stop, Enabled),
   gs:config(State#gui_state.run, Disabled),
   gs:config(State#gui_state.del_file, Disabled),
@@ -696,8 +705,8 @@ config_gui_start(State) ->
   gs:config(Mode#mode.start_src_code, Disabled).
 
 config_gui_stop(State) ->
-  Enabled = {enable, true},
-  Disabled = {enable, false},
+  Enabled = [{enable, true}],
+  Disabled = [{enable, false}],
   gs:config(State#gui_state.stop, Disabled),
   gs:config(State#gui_state.run, Enabled),
   gs:config(State#gui_state.del_file, Enabled),
@@ -745,11 +754,10 @@ output_sms(#gui_state{gs = GS, top = TopWin}, Title, Message) ->
   MessagePacker = gs:frame(MessageWin, [{packer_y, [{fixed, 75}, {fixed, 25}]},
 					{packer_x, [{fixed, 175},{fixed, 50},
 						    {fixed, 175}]}]),
-  gs:label(MessagePacker, [{pack_x, {1,3}}, {pack_y, 1}, 
+  gs:label(MessagePacker, [{pack_x, {1, 3}}, {pack_y, 1}, 
 			   {label, {text, Message}}]),
-  OK = gs:button(MessagePacker, [{label, {text, "OK"}}, 
-				 {pack_xy, {2,2}}]),
-  gs:config(MessageWin, {map, true}),
+  OK = gs:button(MessagePacker, [{label, {text, "OK"}}, {pack_xy, {2, 2}}]),
+  gs:config(MessageWin, [{map, true}]),
   gs:config(MessagePacker, WH),
   message_loop(OK, MessageWin, TopWin).
 
@@ -780,7 +788,7 @@ dialog(#gui_state{gs = GS, top = TopWin}, Message, OkLabel, CancelLabel) ->
 				{pack_xy, {2,2}}|WHButton]),
   Cancel = gs:button(DialogPacker, [{label, {text, CancelLabel}}, 
 				    {pack_xy, {3,2}}|WHButton]),
-  gs:config(DialogWin, {map, true}),
+  gs:config(DialogWin, [{map, true}]),
   gs:config(DialogPacker, WH),
   dialog_loop(Ok, Cancel, DialogWin, TopWin).
 
@@ -819,78 +827,38 @@ maybe_quit(#gui_state{top = TopWin} = State) ->
 
 %% ---- Help Menu ----
 
-manual(#gui_state{gs = GS, top = TopWin} = State) ->
-  WH = [{width, 600}, {height, 500}],
-  Win = gs:window(GS, [{title, "Dialyzer Manual"}, {configure, true},
-		       {default, editor, {bg, white}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]}, 
-			 {packer_y, [{stretch, 1}, {fixed, 30}]}
-			 | WH]),
-  Editor = gs:editor(Frame, [{pack_x, {1,3}}, {pack_y, 1},
+manual(State) ->
+  help_menu_common(State, "Dialyzer Manual", 500, "manual.txt", white).
+
+warnings(State) ->
+  help_menu_common(State, "Dialyzer Warnings", 500, "warnings.txt", white).
+
+about(State) ->
+  help_menu_common(State, "About Dialyzer", 160, "about.txt", yellow).
+
+help_menu_common(#gui_state{gs = GS, top = TopWin} = State,
+		 Title, Height, TxtFileName, BackGroundColor) ->
+  WH = [{width, 600}, {height, Height}],
+  Win = gs:window(GS, [{title, Title}, {configure, true},
+		       {default, editor, {bg, BackGroundColor}} | WH]),
+  EmptySpace = {stretch, 1},
+  Frame = gs:frame(Win, [{packer_x, [EmptySpace, {fixed, 60}, EmptySpace]}, 
+			 {packer_y, [EmptySpace, {fixed, 30}]} | WH]),
+  Editor = gs:editor(Frame, [{pack_x, {1, 3}}, {pack_y, 1},
 			     {font, {courier, 12}}, {vscroll, right},
 			     {wrap, word}]),
-  Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
-  gs:config(Win, {map, true}),
+  Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2, 2}}]),
+  gs:config(Win, [{map, true}]),
   gs:config(Frame, WH),
-  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "manual.txt"]),
+  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", TxtFileName]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
       error_sms(State, 
-		io_lib:format("Could not find doc/manual.txt file!\n\n ~p", 
-			      [Reason]));
+		io_lib:format("Could not find doc/~s file!\n\n ~p", 
+			      [TxtFileName, Reason]));
     ok ->
-      gs:config(Editor, {enable, false}),
-      show_info_loop(TopWin, Win, Frame, Button)
-  end.
-
-help_warnings(#gui_state{gs = GS, top = TopWin} = State) ->
-  WH = [{width, 600}, {height, 500}],
-  Win = gs:window(GS, [{title, "Dialyzer Warnings"}, {configure, true},
-		       {default, editor, {bg, white}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]}, 
-			 {packer_y, [{stretch, 1}, {fixed, 30}]}
-			 | WH]),
-  Editor = gs:editor(Frame, [{pack_x, {1,3}}, {pack_y, 1},
-			     {font, {courier, 12}}, {vscroll, right},
-			     {wrap, word}]),
-  Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
-  gs:config(Win, {map, true}),
-  gs:config(Frame, WH),
-  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "warnings.txt"]),
-  case gs:config(Editor, {load, AboutFile}) of
-    {error, Reason} ->
-      gs:destroy(Win),
-      error_sms(State, 
-		io_lib:format("Could not find doc/warnings.txt file!\n\n ~p", 
-			      [Reason]));
-    ok ->
-      gs:config(Editor, {enable, false}),
-      show_info_loop(TopWin, Win, Frame, Button)
-  end.
-
-about(#gui_state{gs = GS, top = TopWin} = State) ->
-  WH = [{width, 600}, {height, 160}],
-  Win = gs:window(GS, [{title, "About Dialyzer"}, {configure, true},
-		       {default, editor, {bg, yellow}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]}, 
-			 {packer_y, [{stretch, 1}, {fixed, 30}]}
-			 | WH]),
-  Editor = gs:editor(Frame, [{pack_x, {1,3}}, {pack_y, 1},
-			     {font, {courier, 12}}, {vscroll, right},
-			     {wrap, word}]),
-  Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
-  gs:config(Win, {map, true}),
-  gs:config(Frame, WH),
-  AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "about.txt"]),
-  case gs:config(Editor, {load, AboutFile}) of
-    {error, Reason} ->
-      gs:destroy(Win),
-      error_sms(State,
-		io_lib:format("Could not find doc/about.txt file!\n\n ~p", 
-			      [Reason]));
-    ok ->
-      gs:config(Editor, {enable, false}),
+      gs:config(Editor, [{enable, false}]),
       show_info_loop(TopWin, Win, Frame, Button)
   end.
 
@@ -915,8 +883,8 @@ file_box(#gui_state{gs = GS}, Title, Default) ->
   OkButton = gs:button(WinPacker, [{label, {text, "Ok"}}, {pack_xy, {2,3}}]),
   CancelButton = gs:button(WinPacker, [{label, {text, "Cancel"}}, 
 				       {pack_xy, {3,3}}]),
-  gs:config(Entry, {text, Default}),
-  gs:config(Win, {map, true}),
+  gs:config(Entry, [{text, Default}]),
+  gs:config(Win, [{map, true}]),
   gs:config(WinPacker, WH),
   {Win, Entry, OkButton, CancelButton}.
 
@@ -925,7 +893,7 @@ save_loop(#gui_state{top = TopWin} = State,
   receive
     {gs, OkButton, click, _, _} ->
       File = gs:read(Entry, text),
-      case gs:config(Editor, {save, File}) of
+      case gs:config(Editor, [{save, File}]) of
 	{error, _} ->
 	  error_sms(State, "Could not write to file:\n" ++ File),
 	  save_loop(State, OkButton, CancelButton, Entry, Save, Editor);
@@ -934,7 +902,7 @@ save_loop(#gui_state{top = TopWin} = State,
       end;
     {gs, Entry, keypress, _, ['Return'|_]} ->
       File = gs:read(Entry, text),
-      case gs:config(Editor, {save, File}) of
+      case gs:config(Editor, [{save, File}]) of
 	{error, _} ->
 	  error_sms(State, "Could not write to file:\n" ++ File),
 	  save_loop(State, OkButton, CancelButton, Entry, Save, Editor);
@@ -961,10 +929,10 @@ search_doc_plt(#gui_state{gs = GS, top = TopWin} = State) ->
   Title = io_lib:format("Search the PLT", []),
   Win = gs:window(GS, [{title, Title}, {configure, true},
 		       {default, editor, {bg, white}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {stretch, 1}, {stretch, 1}]},
+  EmptySpace = {stretch, 1},
+  Frame = gs:frame(Win, [{packer_x, [EmptySpace, EmptySpace, EmptySpace]},
 			 {packer_y, [{fixed, 30}, {fixed, 30}, 
-				     {stretch, 1}, {fixed, 30}]}
-			 | WH]),
+				     EmptySpace, {fixed, 30}]} | WH]),
   gs:label(Frame, [{pack_xy, {1,1}}, {label, {text, "Module"}}]),
   ModEntry = gs:entry(Frame, [{pack_xy, {1,2}}]),
   gs:label(Frame, [{pack_xy, {2,1}}, {label, {text, "Function"}}]),
@@ -978,7 +946,7 @@ search_doc_plt(#gui_state{gs = GS, top = TopWin} = State) ->
 					  {pack_xy, {1,1}}]),
   CancelButton = gs:button(ButtonPacker, [{label, {text, "Cancel"}}, 
 					  {pack_xy, {2,1}}]),
-  gs:config(Win, {map, true}),
+  gs:config(Win, [{map, true}]),
   gs:config(Frame, WH),
   gs:config(ButtonPacker, WHB),
   search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
@@ -997,13 +965,13 @@ search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry,
       F = format_search(gs:read(FunEntry, text)),
       A = format_search(gs:read(ArityEntry, text)),
       case dialyzer_plt:get_specs(State#gui_state.doc_plt, M, F, A) of
-	[] -> 
+	"" ->
 	  error_sms(State, "No such function"),
 	  search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
 			      FunEntry, ArityEntry, Win, TopWin);
-	String ->
+	NonEmptyString ->
 	  gs:destroy(Win),
-	  free_editor(State, "Content of PLT", String)
+	  free_editor(State, "Content of PLT", NonEmptyString)
       end
   end.
 
@@ -1015,10 +983,9 @@ format_search(String) ->
   end.
 
 show_doc_plt(#gui_state{doc_plt = DocPLT} = State) ->
-  case DocPLT =:= undefined of
-    true -> error_sms(State, "No analysis has been made yet!\n");
-    false ->
-      free_editor(State, "Content of PLT", dialyzer_plt:get_specs(DocPLT))
+  case dialyzer_plt:get_specs(DocPLT) of
+    "" -> error_sms(State, "No analysis has been made yet!\n");
+    NonEmptyString -> free_editor(State, "Content of PLT", NonEmptyString)
   end.
 
 free_editor(#gui_state{gs = GS, top = TopWin}, Title, Contents0) ->
@@ -1033,16 +1000,17 @@ free_editor(#gui_state{gs = GS, top = TopWin}, Title, Contents0) ->
   WH = [{width, Width}, {height, Height}],
   Win = gs:window(GS, [{title, Title}, {configure, true},
 		       {default, editor, {bg, white}} | WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {fixed, 60}, {stretch, 1}]},
-			 {packer_y, [{stretch, 1}, {fixed, 30}]}
+  EmptySpace = {stretch, 1},
+  Frame = gs:frame(Win, [{packer_x, [EmptySpace, {fixed, 60}, EmptySpace]},
+			 {packer_y, [EmptySpace, {fixed, 30}]}
 			 | WH]),
   Editor = gs:editor(Frame, [{pack_x, {1,3}}, {pack_y, 1},
 			     {font, {courier, 12}}, {vscroll, right},
 			     {wrap, word}, {enable, true}]),
   Button = gs:button(Frame, [{label, {text, "Ok"}}, {pack_xy, {2,2}}]),
-  gs:config(Editor, {insert, {insert, Contents}}),
-  gs:config(Editor, {enable, false}),
-  gs:config(Win, {map, true}),
+  gs:config(Editor, [{insert, {insert, Contents}}]),
+  gs:config(Editor, [{enable, false}]),
+  gs:config(Win, [{map, true}]),
   gs:config(Frame, WH),
   show_info_loop(TopWin, Win, Frame, Button).
 
@@ -1066,41 +1034,40 @@ include_dialog(#gui_state{gs = GS, options = Options}, Parent) ->
   Title = io_lib:format("Include Directories", []),
   Win = gs:window(GS, [{title, Title}, {configure, true},
 		       {default, entry, {bg, white}}| WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}]},
-			 {packer_y, [{fixed, 30}, {fixed, 30}, 
-				     {fixed, 30}, %Empty space
-				     {stretch, 1}, {fixed, 30},{fixed, 30}]}
+  EmptySpace = {stretch, 1},
+  Frame = gs:frame(Win, [{packer_x, [EmptySpace]},
+			 {packer_y, [{fixed, 30}, {fixed, 30}, {fixed, 30},
+				     EmptySpace, {fixed, 30}, {fixed, 30}]}
 			 | WH]),
   gs:label(Frame, [{pack_xy, {1,1}}, {label, {text, "Directory"}}]),
   DirEntry = gs:entry(Frame, [{pack_xy, {1,2}}]),
   ButtonPacker1 = gs:frame(Frame, [{pack_xy, {1,3}},
-				   {packer_x, [{fixed, 70},{fixed, 70},
-					       {stretch,1}]},
+				   {packer_x, [{fixed, 70}, {fixed, 70},
+					       EmptySpace]},
 				   {packer_y, {fixed, 30}}]),
   AddButton = gs:button(ButtonPacker1, [{label, {text, "Add"}}, 
 					{pack_xy, {1,1}}]),
   Dirs = [io_lib:format("~s", [X]) || X <- Options#options.include_dirs],
   DirBox = gs:listbox(Frame, [{pack_xy, {1,4}}, {vscroll, right},
-				{bg, white}, {configure, true},
-				{selectmode, multiple},
-				{items, Dirs}]),
+			      {bg, white}, {configure, true},
+			      {selectmode, multiple}, {items, Dirs}]),
   ButtonPacker2 = gs:frame(Frame, [{pack_xy, {1,5}},
-				   {packer_x, [{fixed, 60},{fixed, 70},
-					       {stretch,1}]},%Empty space
+				   {packer_x, [{fixed, 60}, {fixed, 70},
+					       EmptySpace]},
 				   {packer_y, {fixed, 30}}]),
   DeleteButton = gs:button(ButtonPacker2, [{label, {text, "Delete"}}, 
 					   {pack_xy, {1,1}}]),
   DeleteAllButton = gs:button(ButtonPacker2, [{label, {text, "Delete All"}}, 
 					      {pack_xy, {2,1}}]),
   ButtonPacker3 = gs:frame(Frame, [{pack_xy, {1,6}},
-				   {packer_x, [{stretch,1},%Empty space
-					       {fixed, 60},{fixed, 60}]},
+				   {packer_x, [EmptySpace,
+					       {fixed, 60}, {fixed, 60}]},
 				   {packer_y, {fixed, 30}}]),
   OkButton = gs:button(ButtonPacker3, [{label, {text, "Ok"}},
 				       {pack_xy, {2,1}}]),
   CancelButton = gs:button(ButtonPacker3, [{label, {text, "Cancel"}},
 					   {pack_xy, {3,1}}]),
-  gs:config(Win, {map, true}),
+  gs:config(Win, [{map, true}]),
   gs:config(Frame, WH),
   include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	       DirBox, DirEntry, OkButton, CancelButton, Win).
@@ -1131,7 +1098,7 @@ include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
       include_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		   DeleteButton, DirBox, DirEntry, OkButton, CancelButton, Win);
     {gs, DeleteAllButton, click, _, _} ->
-      gs:config(DirBox, clear),
+      gs:config(DirBox, [clear]),
       NewOptions = Options#options{include_dirs = []},      
       include_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		   DeleteButton, DirBox, DirEntry, OkButton, CancelButton, Win);
@@ -1157,10 +1124,10 @@ macro_dialog(#gui_state{gs = GS, options = Options}, Parent) ->
   Title = io_lib:format("Macro Definitions", []),
   Win = gs:window(GS, [{title, Title}, {configure, true},
 		       {default, entry, {bg, white}}| WH]),
-  Frame = gs:frame(Win, [{packer_x, [{stretch, 1}, {stretch, 1}]},
-			 {packer_y, [{fixed, 30}, {fixed, 30}, 
-				     {fixed, 30}, %Empty space
-				     {stretch, 1}, {fixed, 30},{fixed, 30}]}
+  EmptySpace = {stretch, 1},
+  Frame = gs:frame(Win, [{packer_x, [EmptySpace, EmptySpace]},
+			 {packer_y, [{fixed, 30}, {fixed, 30}, {fixed, 30},
+				     EmptySpace, {fixed, 30}, {fixed, 30}]}
 			 | WH]),
   gs:label(Frame, [{pack_xy, {1,1}}, {label, {text, "Macro"}}]),
   MacroEntry = gs:entry(Frame, [{pack_xy, {1,2}}]),
@@ -1168,7 +1135,7 @@ macro_dialog(#gui_state{gs = GS, options = Options}, Parent) ->
   TermEntry = gs:entry(Frame, [{pack_xy, {2,2}}]),
   ButtonPacker1 = gs:frame(Frame, [{pack_x, {1,2}}, {pack_y, 3}, 
 				   {packer_x, [{fixed, 70},{fixed, 70},
-					       {stretch,1}]},
+					       EmptySpace]},
 				   {packer_y, {fixed, 30}}]),
   AddButton = gs:button(ButtonPacker1, [{label, {text, "Add"}}, 
 					{pack_xy, {1,1}}]),
@@ -1178,22 +1145,22 @@ macro_dialog(#gui_state{gs = GS, options = Options}, Parent) ->
 				{selectmode, multiple},
 				{items, Macros}]),
   ButtonPacker2 = gs:frame(Frame, [{pack_x, {1,2}}, {pack_y, 5}, 
-				   {packer_x, [{fixed, 60},{fixed, 70},
-					       {stretch,1}]},%Empty space
+				   {packer_x, [{fixed, 60}, {fixed, 70},
+					       EmptySpace]},
 				   {packer_y, {fixed, 30}}]),
   DeleteButton = gs:button(ButtonPacker2, [{label, {text, "Delete"}}, 
 					   {pack_xy, {1,1}}]),
   DeleteAllButton = gs:button(ButtonPacker2, [{label, {text, "Delete All"}}, 
 					      {pack_xy, {2,1}}]),
   ButtonPacker3 = gs:frame(Frame, [{pack_x, {1,2}}, {pack_y, 6}, 
-				   {packer_x, [{stretch,1},%Empty space
-					       {fixed, 60},{fixed, 60}]},
+				   {packer_x, [EmptySpace,
+					       {fixed, 60}, {fixed, 60}]},
 				   {packer_y, {fixed, 30}}]),
   OkButton = gs:button(ButtonPacker3, [{label, {text, "Ok"}},
 				       {pack_xy, {2,1}}]),
   CancelButton = gs:button(ButtonPacker3, [{label, {text, "Cancel"}},
 					   {pack_xy, {3,1}}]),
-  gs:config(Win, {map, true}),
+  gs:config(Win, [{map, true}]),
   gs:config(Frame, WH),
   macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton, 
 	     MacroBox, MacroEntry, TermEntry, OkButton, CancelButton, Win).
@@ -1219,15 +1186,16 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	case gs:read(MacroEntry, text) of
 	  "" -> Defines;
 	  Macro ->
+	    Empty = [{text, ""}],
 	    case gs:read(TermEntry, text) of
 	      "" -> 
-		gs:config(MacroEntry, {text, ""}),
+		gs:config(MacroEntry, Empty),
 		orddict:store(list_to_atom(Macro), true, Defines);
 	      String ->
 		case parse(String) of
 		  {ok, Term} ->
-		    gs:config(MacroEntry, [{text, ""}]),
-		    gs:config(TermEntry, [{text, ""}]),
+		    gs:config(MacroEntry, Empty),
+		    gs:config(TermEntry, Empty),
 		    orddict:store(list_to_atom(Macro), Term, Defines);
 		  {error, _Reason} ->
 		    Defines
@@ -1370,11 +1338,11 @@ flush() ->
   end.
 
 update_editor(Editor, Msg) ->
-  gs:config(Editor, {enable, true}),
+  gs:config(Editor, [{enable, true}]),
   NofRows = gs:read(Editor, size),
-  gs:config(Editor, {insertpos, 'end'}),
-  gs:config(Editor, {insert, {insert, Msg}}),
+  gs:config(Editor, [{insertpos, 'end'}]),
+  gs:config(Editor, [{insert, {insert, Msg}}]),
   NewNofRows = gs:read(Editor, size),
   ScrollPos = gs:read(Editor, vscrollpos),
-  gs:config(Editor, {vscrollpos, ScrollPos + NewNofRows - NofRows}),
-  gs:config(Editor, {enable, false}).
+  gs:config(Editor, [{vscrollpos, ScrollPos + NewNofRows - NofRows}]),
+  gs:config(Editor, [{enable, false}]).

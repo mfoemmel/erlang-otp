@@ -18,7 +18,7 @@
 
 -module(ex_splitterWindow).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -50,21 +50,19 @@ do_init(Config) ->
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "wxSplitterWindow"}]),
+
     Splitter = wxSplitterWindow:new(Panel, []),
 
-    Win = wxPanel:new(Splitter, []),
-    wxStaticText:new(Win, 1, "Splitter 1"),
-    wxPanel:setBackgroundColour(Win, ?wxGREEN),
+    Win1 = wxTextCtrl:new(Splitter, 1, [{value, "Splitted Window 1"},
+        			       {style, ?wxDEFAULT bor ?wxTE_MULTILINE}]),
+    Win2 = wxTextCtrl:new(Splitter, 1, [{value, "Splitted Window 1"},
+					{style, ?wxDEFAULT bor ?wxTE_MULTILINE}]),
 
-    Win2 = wxPanel:new(Splitter, []),
-    wxStaticText:new(Win2, 2, "Splitter 2"),
-    wxPanel:setBackgroundColour(Win2, ?wxRED),
-
-    wxSplitterWindow:splitVertically(Splitter, Win, Win2),
+    wxSplitterWindow:splitVertically(Splitter, Win1, Win2),
     wxSplitterWindow:setSashGravity(Splitter,   0.5),
     %% Set pane-size =/= 0 to not unsplit on doubleclick
     %% on the splitter
-    wxSplitterWindow:setMinimumPaneSize(Splitter, 1),
+    wxSplitterWindow:setMinimumPaneSize(Splitter,50),
     
     %% Add to sizers
     wxSizer:add(Sizer, Splitter, [{flag, ?wxEXPAND},
@@ -72,11 +70,17 @@ do_init(Config) ->
 
     wxSizer:add(MainSizer, Sizer, [{proportion, 1},
 				   {flag, ?wxEXPAND}]),
-
+    wxPanel:connect(Panel, command_splitter_sash_pos_changed),
     wxPanel:setSizer(Panel, MainSizer),
     {Panel, #state{parent=Panel, config=Config}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Async Events are handled in handle_event as in handle_info
+handle_event(#wx{event = #wxSplitter{type = command_splitter_sash_pos_changed}},
+	     State = #state{}) ->
+    demo:format(State#state.config, "Splitter pos changed.\n", []),
+    {noreply, State}.
+
 %% Callbacks handled as normal gen_server callbacks
 handle_info(Msg, State) ->
     demo:format(State#state.config, "Got Info ~p\n", [Msg]),
@@ -85,11 +89,6 @@ handle_info(Msg, State) ->
 handle_call(Msg, _From, State) ->
     demo:format(State#state.config, "Got Call ~p\n", [Msg]),
     {reply,{error, nyi}, State}.
-
-%% Async Events are handled in handle_event as in handle_info
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
-    {noreply, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

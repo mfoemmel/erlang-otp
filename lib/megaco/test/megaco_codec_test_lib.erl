@@ -87,7 +87,7 @@ display_text_messages(V, EC, [{Name, Msg, _ED, _Conf}|Msgs]) ->
     display_text_messages(V, EC, Msgs).
 
 
-display_text_message(Name, EC, Msg, V) when tuple(Msg) ->
+display_text_message(Name, EC, Msg, V) when is_tuple(Msg) ->
     io:format("~n(Erlang) message ~p:~n~p~n", [Name, Msg]),
     case (catch megaco_pretty_text_encoder:encode_message(EC,V,Msg)) of
 	{'EXIT', _R} ->
@@ -163,7 +163,7 @@ generate_text_message(Dir, Name, EC, Msg, V) ->
     end.
 
 test_msgs(Codec, DynamicDecode, Ver, EC, Check, Msgs) 
-  when function(Check), list(Msgs) ->
+  when is_function(Check) andalso is_list(Msgs) ->
     io:format("~n", []),
     test_msgs(Codec, DynamicDecode, Ver, EC, Check, Msgs, []).
 
@@ -200,7 +200,7 @@ test_msgs_debug(Conf) ->
     end.
     
 encode_decode(Func, Check, Codec, DynamicDecode, Ver, EC, Msg1) 
-  when function(Func) ->
+  when is_function(Func) ->
     d("encode_decode -> entry with"
       "~n   Func:          ~p"
       "~n   Check:         ~p"
@@ -288,7 +288,7 @@ trans_first_encode_message(Codec, Ver, EC, M1) ->
     M2     = M1#'MegacoMessage'{mess = Mess2},
     encode_message(Codec, Ver, EC, M2).
 
-encode_transactions(Codec, Ver, EC, Trans) when list(Trans) ->
+encode_transactions(Codec, Ver, EC, Trans) when is_list(Trans) ->
     d("encode_transactions -> entry"),
     [encode_transaction(Codec, Ver, EC, T) || T <- Trans].
 
@@ -322,7 +322,7 @@ actions_first_encode_message(Codec, Ver, EC, M1) ->
     M2     = M1#'MegacoMessage'{mess = Mess2},
     encode_message(Codec, Ver, EC, M2).
 
-encode_actions(Codec, Ver, EC, Trans) when list(Trans) ->
+encode_actions(Codec, Ver, EC, Trans) when is_list(Trans) ->
     d("encode_actions -> entry"),
     [encode_actions1(Codec, Ver, EC, T) || T <- Trans].
 
@@ -362,7 +362,7 @@ action_first_encode_message(Codec, Ver, EC, M1) ->
     M2     = M1#'MegacoMessage'{mess = Mess2},
     encode_message(Codec, Ver, EC, M2).
 
-encode_action(Codec, Ver, EC, Trans) when list(Trans) ->
+encode_action(Codec, Ver, EC, Trans) when is_list(Trans) ->
     d("encode_action -> entry"),
     [encode_action1(Codec, Ver, EC, T) || T <- Trans].
 
@@ -437,7 +437,7 @@ decode_message(Codec, _, Ver, EC, M, true) ->
 %% ------------------------------------------------------------------
 
 expect_instruction(Desc, Cmd, Verify) 
-  when is_list(Desc) and is_function(Cmd) and is_function(Verify) ->
+  when is_list(Desc) andalso is_function(Cmd) andalso is_function(Verify) ->
     #expect_instruction{description = Desc,
 			command     = Cmd,
 			verify      = Verify}.
@@ -454,7 +454,7 @@ expect_instruction(Desc, Cmd, Verify)
 %% ------------------------------------------------------------------
 
 expect_encode(InitialData, Encode, Check) 
-  when is_function(Encode) and is_function(Check) ->
+  when is_function(Encode) andalso is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial encode
@@ -494,7 +494,7 @@ expect_encode(InitialData, Encode, Check)
 %% ------------------------------------------------------------------
 
 expect_encode_only(InitialData, Encode, Check) 
-  when is_function(Encode) and is_function(Check) ->
+  when is_function(Encode) andalso is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial encode
@@ -532,7 +532,9 @@ expect_encode_only(InitialData, Encode, Check)
 %% ------------------------------------------------------------------
 
 expect_encode_decode(InitialData, Encode, Decode, Check) 
-  when is_function(Encode) and is_function(Decode) and is_function(Check) ->
+  when is_function(Encode) andalso 
+       is_function(Decode) andalso 
+       is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial encode
@@ -595,7 +597,9 @@ expect_encode_decode(InitialData, Encode, Decode, Check)
 %% ------------------------------------------------------------------
 
 expect_encode_decode_only(InitialData, Encode, Decode, Check) 
-  when is_function(Encode) and is_function(Decode) and is_function(Check) ->
+  when is_function(Encode) andalso 
+       is_function(Decode) andalso 
+       is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial encode
@@ -671,7 +675,7 @@ expect_decode(InitialData, Decode, Check)
   when is_list(InitialData) ->
     expect_decode(list_to_binary(InitialData), Decode, Check);
 expect_decode(InitialData, Decode, Check) 
-  when is_function(Decode) and is_function(Check) ->
+  when is_function(Decode) andalso is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial decode
@@ -715,7 +719,7 @@ expect_decode_only(InitialData, Decode, Check)
   when is_list(InitialData) ->
     expect_decode_only(list_to_binary(InitialData), Decode, Check);
 expect_decode_only(InitialData, Decode, Check) 
-  when is_function(Decode) and is_function(Check) ->
+  when is_function(Decode) andalso is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial decode
@@ -778,7 +782,9 @@ expect_decode_encode(InitialData, Decode, Encode, Check)
   when is_list(InitialData) ->
     expect_decode_encode(list_to_binary(InitialData), Decode, Encode, Check);
 expect_decode_encode(InitialData, Decode, Encode, Check) 
-  when is_function(Decode) and is_function(Encode) and is_function(Check) ->
+  when is_function(Decode) andalso 
+       is_function(Encode) andalso 
+       is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial decode
@@ -889,7 +895,9 @@ expect_decode_encode_only(InitialData, Decode, Encode, Check)
     expect_decode_encode_only(list_to_binary(InitialData), 
 			      Decode, Encode, Check);
 expect_decode_encode_only(InitialData, Decode, Encode, Check) 
-  when is_function(Decode) and is_function(Encode) and is_function(Check) ->
+  when is_function(Decode) andalso 
+       is_function(Encode) andalso 
+       is_function(Check) ->
     Instructions = 
 	[
 	 %% Initial decode

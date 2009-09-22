@@ -69,13 +69,13 @@
 %% Return {ok, TermId} | {error, Reason}
 %%---------------------------------------------------------------------- 
 
-encode(_Config, TermId) when TermId == ?megaco_root_termination_id ->
+encode(_Config, TermId) when TermId =:= ?megaco_root_termination_id ->
     {ok, ?asn_root_termination_id};
-encode(Config, TermId) when TermId == ?megaco_all_wildcard_termination_id,
-			    Config == ?default_config ->
+encode(Config, TermId) when (TermId =:= ?megaco_all_wildcard_termination_id) andalso 
+			    (Config =:= ?default_config) ->
     {ok, asn_all_tid()};
-encode(Config, TermId) when TermId == ?megaco_choose_wildcard_termination_id,
-                            Config == ?default_config  ->
+encode(Config, TermId) when (TermId =:= ?megaco_choose_wildcard_termination_id) andalso 
+                            (Config =:= ?default_config)  ->
     {ok, asn_choose_tid()};
 encode(Config, #megaco_term_id{contains_wildcards = false, id = IDs}) ->
     case (catch encode1(IDs,Config)) of
@@ -108,13 +108,13 @@ asn_choose_tid() ->
 %%----------------------------------------------------------------------
 %% Encode without wildcards
 %%----------------------------------------------------------------------
-encode1(IDs,LevelConfig) when list(LevelConfig) ->
+encode1(IDs,LevelConfig) when is_list(LevelConfig) ->
     megaco_binary_term_id_gen:encode_without_wildcards(IDs, LevelConfig);
 
 
 %% This is only temporary. Eventually a proper encoder for this case
 %% should be implemented
-encode1(IDs,LevelConfig) when integer(LevelConfig) ->
+encode1(IDs,LevelConfig) when is_integer(LevelConfig) ->
     %% megaco_binary_term_id_8lev:encode_without_wildcards(IDs, LevelConfig).
     encode1(IDs,lists:duplicate(LevelConfig,8)). 
 
@@ -122,13 +122,13 @@ encode1(IDs,LevelConfig) when integer(LevelConfig) ->
 %%----------------------------------------------------------------------
 %% Encode with wildcards
 %%----------------------------------------------------------------------
-encode2(IDs,LevelConfig) when list(LevelConfig) ->
+encode2(IDs,LevelConfig) when is_list(LevelConfig) ->
     megaco_binary_term_id_gen:encode_with_wildcards(IDs, LevelConfig);
 
 
 %% This is only temporary. Eventually a proper encoder for this case
 %% should be implemented
-encode2(IDs,LevelConfig) when integer(LevelConfig) ->
+encode2(IDs,LevelConfig) when is_integer(LevelConfig) ->
     %% megaco_binary_term_id_8lev:encode_with_wildcards(IDs, LevelConfig).
     encode2(IDs,lists:duplicate(LevelConfig,8)).
 
@@ -138,7 +138,7 @@ encode2(IDs,LevelConfig) when integer(LevelConfig) ->
 %% Return {ok, TerminationId} | {error, Reason}
 %%----------------------------------------------------------------------
 
-decode(_Config, TermId) when TermId == ?asn_root_termination_id ->
+decode(_Config, TermId) when (TermId =:= ?asn_root_termination_id) ->
     {ok, ?megaco_root_termination_id};
 decode(Config, #'TerminationID'{wildcard = [], id = IDs}) ->
     case (catch decode1(IDs,Config)) of
@@ -161,12 +161,12 @@ decode(_Config, TermId) ->
 %%----------------------------------------------------------------------
 %% Decode without wildcards
 %%----------------------------------------------------------------------
-decode1(IDs, Lc) when list(Lc) ->
+decode1(IDs, Lc) when is_list(Lc) ->
     megaco_binary_term_id_gen:decode_without_wildcards(IDs, Lc);
 
 %% This is only temporary. Eventually a proper encoder for this case
 %% should be implemented
-decode1(IDs, Lc) when integer(Lc) ->
+decode1(IDs, Lc) when is_integer(Lc) ->
     %% megaco_binary_term_id_8lev:decode_without_wildcards(IDs, Lc).
     decode1(IDs,lists:duplicate(Lc,8)). 
 
@@ -174,12 +174,12 @@ decode1(IDs, Lc) when integer(Lc) ->
 %%----------------------------------------------------------------------
 %% Decode with wildcards
 %%----------------------------------------------------------------------
-decode2(Wildcards, IDs, Lc) when list(Lc) ->
+decode2(Wildcards, IDs, Lc) when is_list(Lc) ->
     megaco_binary_term_id_gen:decode_with_wildcards(Wildcards, IDs, Lc);
 
 %% This is only temporary. Eventually a proper encoder for this case
 %% should be implemented
-decode2(Wildcards, IDs, Lc) when integer(Lc) ->
+decode2(Wildcards, IDs, Lc) when is_integer(Lc) ->
     %% megaco_binary_term_id_8lev:decode_with_wildcards(Wildcards, IDs, Lc);
     decode2(Wildcards, IDs, lists:duplicate(Lc,8)).
 

@@ -91,7 +91,7 @@ make_options(#options{includes = Incs,
     [WarningOpt, OutdirOpt, IncludeOpt | Spec].
 
 %% Returns: {ok, File}|{error, Reason}
-compile([AtomFilename]) when atom(AtomFilename) ->
+compile([AtomFilename]) when is_atom(AtomFilename) ->
     compile(atom_to_list(AtomFilename), []), % from cmd line
     halt();
 compile(FileName) -> 
@@ -118,7 +118,7 @@ compile(FileName) ->
 %% (hidden) options 
 %%----------------------------------------------------------------------
 
-compile(FileName, Options) when list(FileName) ->
+compile(FileName, Options) when is_list(FileName) ->
     true = snmpc_misc:is_string(FileName),
     DefOpts = [{deprecated,  true},
 	       {group_check, true},
@@ -221,11 +221,11 @@ update_options([{Key,DefVal}|DefOpts], Options) ->
     case snmpc_misc:assq(Key, Options) of
 	false ->
 	    update_options(DefOpts, [{Key,DefVal}|Options]);
-	{value, Val} when Key == i ->
+	{value, Val} when Key =:= i ->
 	    Options1 = 
 		lists:keyreplace(Key, 1, Options, {Key, Val++DefVal}),
 	    update_options(DefOpts, Options1);
-	{value, Val} when Key == il ->
+	{value, Val} when Key =:= il ->
 	    Options1 = 
 		lists:keyreplace(Key, 1, Options, {Key, Val++DefVal}),
 	    update_options(DefOpts, Options1);
@@ -239,13 +239,13 @@ update_options([{Key,DefVal}|DefOpts], Options) ->
 
 check_options([]) -> ok;
 check_options([no_symbolic_info|T]) -> check_options(T);
-check_options([{outdir, Str} | T]) when list(Str) ->
+check_options([{outdir, Str} | T]) when is_list(Str) ->
     check_options(T);
-check_options([{debug, Atom} | T]) when atom(Atom) ->
+check_options([{debug, Atom} | T]) when is_atom(Atom) ->
     check_options(T);
-check_options([{deprecated, Atom} | T]) when atom(Atom) ->
+check_options([{deprecated, Atom} | T]) when is_atom(Atom) ->
     check_options(T);		     
-check_options([{group_check, Atom} | T]) when atom(Atom) ->
+check_options([{group_check, Atom} | T]) when is_atom(Atom) ->
     check_options(T);
 check_options([{warnings, Bool} | T]) ->
     check_bool(warnings, Bool),
@@ -256,11 +256,11 @@ check_options([{db, persistent} | T]) ->
     check_options(T);
 check_options([{db, mnesia} | T]) ->
     check_options(T);
-check_options([{i, [Str|_]} | T]) when list(Str) ->
+check_options([{i, [Str|_]} | T]) when is_list(Str) ->
     check_options(T);
 check_options([{il, []} | T]) ->
     check_options(T);
-check_options([{il, [Str|_]} | T]) when list(Str) ->
+check_options([{il, [Str|_]} | T]) when is_list(Str) ->
     check_options(T);
 check_options([{description, Bool}| T]) ->
     check_bool(description, Bool),
@@ -272,7 +272,7 @@ check_options([{reference, Bool}| T]) ->
     check_options(T);
 check_options([reference| T]) -> %% same as {reference, true}
     check_options(T);
-check_options([{verbosity, V} | T]) when atom(V) ->
+check_options([{verbosity, V} | T]) when is_atom(V) ->
     snmpc_lib:vvalidate(V),
     check_options(T);
 check_options([version| T]) ->
@@ -283,7 +283,7 @@ check_options([imports| T]) ->
     check_options(T);
 check_options([module_identity| T]) ->
     check_options(T);
-check_options([{module, M} | T]) when atom(M) ->
+check_options([{module, M} | T]) when is_atom(M) ->
     check_options(T);
 check_options([no_defs| T]) ->
     check_options(T);
@@ -1221,9 +1221,10 @@ parse(FileName) ->
                 end,
             put(cdata,snmpc_lib:make_cdata(CDataArg)),
 	    snmpc_tok:stop(TokPid),
-	    Res = if list(Toks) ->
+	    Res = if 
+		      is_list(Toks) ->
 			  snmpc_mib_gram:parse(Toks);
-		     true ->
+		      true ->
 			  Toks
 		  end,
 	    %% t("parse -> parsed: ~n~p", [Res]),
@@ -1241,7 +1242,7 @@ parse(FileName) ->
 	    end
     end.
 
-set_version(Toks) when list(Toks) ->
+set_version(Toks) when is_list(Toks) ->
 %% MODULE-IDENTITY _must_ be invoked in SNMPv2 according to RFC1908
     case lists:keymember('MODULE-IDENTITY',1,Toks) of
 	true ->

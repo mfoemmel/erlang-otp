@@ -29,5 +29,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 RELSYSDIR = $(RELEASE_PATH)/lib/wx-$(VSN)
 
+else
+INSTALLDIR=@ERLANG_ROOT_DIR@/lib
 endif
 

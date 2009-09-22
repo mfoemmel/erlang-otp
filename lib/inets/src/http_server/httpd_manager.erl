@@ -716,10 +716,23 @@ handle_blocker_exit(S) ->
 handle_reload(undefined, #state{config_file = undefined} = State) ->
     {continue, {error, undefined_config_file}, State};
 handle_reload(undefined, #state{config_file = ConfigFile} = State) ->
-    {ok, Config} = httpd_conf:load(ConfigFile),
-    do_reload(Config, State);
+    case load_config(ConfigFile) of
+	{ok, Config} ->
+	    do_reload(Config, State);
+	{error, Reason} ->
+	    error_logger:error_msg("Bad config file: ~p~n", [Reason]),
+	    {continue, {error, Reason}, State}
+    end;
 handle_reload(Config, State) ->
     do_reload(Config, State).
+
+load_config(ConfigFile) ->
+    case httpd_conf:load(ConfigFile) of
+	{ok, Config} ->
+	    httpd_conf:validate_properties(Config);
+	Error ->
+	    Error
+    end.
 
 do_reload(Config, #state{config_db = Db} = State) ->
     case (catch check_constant_values(Db, Config)) of

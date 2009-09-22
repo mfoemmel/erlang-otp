@@ -45,7 +45,7 @@ len(S) -> length(S).
 %% equal(String1, String2)
 %%  Test if 2 strings are equal.
 
--spec equal(string(), string()) -> bool().
+-spec equal(string(), string()) -> boolean().
 
 equal(S, S) -> true;
 equal(_, _) -> false.

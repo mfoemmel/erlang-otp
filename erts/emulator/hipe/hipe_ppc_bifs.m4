@@ -124,12 +124,12 @@ ASYM($1):
 #endif')
 
 /*
- * trap_bif_interface_0(nbif_name, cbif_name)
+ * fail_bif_interface_0(nbif_name, cbif_name)
  *
  * Generate native interface for a BIF with 0 parameters and
- * trap-only failure mode.
+ * standard failure mode.
  */
-define(trap_bif_interface_0,
+define(fail_bif_interface_0,
 `
 #ifndef HAVE_$1
 #`define' HAVE_$1
@@ -149,7 +149,7 @@ ASYM($1):
 	beq-	1f
 	NBIF_RET(0)
 1:	/* workaround for bc:s small offset operand */
-	b	CSYM(nbif_0_trap_exception)
+	b	CSYM(nbif_0_simple_exception)
 	HANDLE_GOT_MBUF(0)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))

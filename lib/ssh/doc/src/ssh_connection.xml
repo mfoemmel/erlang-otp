@@ -50,7 +50,7 @@
     <p><c>string() = list of ASCII characters</c></p>
     <p><c>timeout() =  infinity | integer() - in milliseconds.</c></p>
     <p><c>ssh_connection_ref() - opaque to the user returned by
-    ssh:connect/[1,2,3] or sent to a ssh channel processes</c></p>
+    ssh:connect/3 or sent to a ssh channel processes</c></p>
     <p><c>ssh_channel_id() = integer() </c></p>
     <p><c>ssh_data_type_code() = 1 ("stderr") | 0 ("normal") are
     currently valid values see RFC 4254 section 5.2.</c></p>

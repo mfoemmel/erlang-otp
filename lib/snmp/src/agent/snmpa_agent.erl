@@ -36,17 +36,23 @@
          which_notification_filter/1,
  	 get_net_if/1]).
 -export([
-	 discovery/5, 
+	 discovery/6, 
 	 is_originating_discovery_enabled/0,
 	 is_terminating_discovery_enabled/0,
-	 terminating_discovery_stage2/0
+	 terminating_discovery_stage2/0,
+	 terminating_trigger_username/0
 	]).
 -export([verbosity/2, dump_mibs/1, dump_mibs/2]).
 -export([validate_err/3, make_value_a_correct_value/3, 
 	 do_get/3, do_get/4, 
 	 get/2, get/3, get_next/2, get_next/3]).
 -export([mib_of/1, mib_of/2, me_of/1, me_of/2,
-	 invalidate_mibs_cache/1]).
+	 invalidate_mibs_cache/1,
+	 enable_mibs_cache/1, disable_mibs_cache/1,
+	 gc_mibs_cache/1, gc_mibs_cache/2, gc_mibs_cache/3,
+	 enable_mibs_cache_autogc/1, disable_mibs_cache_autogc/1,
+	 update_mibs_cache_age/2, 
+	 update_mibs_cache_gclimit/2]).
 -export([get_agent_mib_storage/0, db/1, 
 	 backup/2]).
 -export([get_log_type/1,      set_log_type/2]).
@@ -71,6 +77,8 @@
 -define(vt(_F, _A), ok).
 -endif.
 
+-define(DISCO_TERMINATING_TRIGGER_USERNAME, "").
+
 
 -ifdef(snmp_debug).
 -define(GS_START_LINK3(Prio, Parent, Ref, Opts),
@@ -91,7 +99,8 @@
 
 -record(notification_filter, {id, mod, data}).
 -record(disco, 
-	{from, rec, sender, target, sec_level, ctx, ivbs, stage, handler}).
+	{from, rec, sender, target, engine_id, 
+	 sec_level, ctx, ivbs, stage, handler, extra}).
 
 
 %%-----------------------------------------------------------------
@@ -124,7 +133,9 @@
 		net_if,       %% Currently unused
 		net_if_mod,   
 		backup,
-		disco}).
+		disco,
+		mibs_cache_request}).
+
 
 %%%-----------------------------------------------------------------
 %%% This module implements the agent machinery; both for the master
@@ -211,10 +222,41 @@ me_of(Oid) when is_list(Oid) ->
 me_of(Agent, Oid) when is_list(Oid) ->
     call(Agent, {me_of, Oid}).
 
+
 invalidate_mibs_cache(Agent) ->
-    call(Agent, invalidate_mibs_cache).
+    call(Agent, {mibs_cache_request, invalidate_cache}).
 
 
+gc_mibs_cache(Agent) ->
+    call(Agent, {mibs_cache_request, gc_cache}).
+
+gc_mibs_cache(Agent, Age) ->
+    call(Agent, {mibs_cache_request, {gc_cache, Age}}).
+
+gc_mibs_cache(Agent, Age, GcLimit) ->
+    call(Agent, {mibs_cache_request, {gc_cache, Age, GcLimit}}).
+
+
+enable_mibs_cache(Agent) ->
+    call(Agent, {mibs_cache_request, enable_cache}).
+
+disable_mibs_cache(Agent) ->
+    call(Agent, {mibs_cache_request, disable_cache}).
+
+
+enable_mibs_cache_autogc(Agent) ->
+    call(Agent, {mibs_cache_request, enable_autogc}).
+
+disable_mibs_cache_autogc(Agent) ->
+    call(Agent, {mibs_cache_request, disable_autogc}).
+
+
+update_mibs_cache_gclimit(Agent, GcLimit) ->
+    call(Agent, {mibs_cache_request, {update_gclimit, GcLimit}}).
+
+
+update_mibs_cache_age(Agent, Age) ->
+    call(Agent, {mibs_cache_request, {update_age, Age}}).
 
 
 init([Prio, Parent, Ref, Options]) ->
@@ -477,71 +519,80 @@ send_trap(Agent, Trap, NotifyName, CtxName, Recv, Varbinds) ->
 
 %% -- Discovery functions --
 
-is_originating_discovery_enabled() ->
+disco_opts() ->
     case ets:lookup(snmp_agent_table, discovery) of
-	[] -> % upgrade
-	    true;
+	[] -> 
+	    [];
 	[{discovery, DiscoOptions}] ->
-	    case lists:keysearch(originating, 1, DiscoOptions) of
-		{value, {originating, OrigDisco}} ->
-		    case lists:keysearch(enable, 1, OrigDisco) of
-			{value, {enable, false}} ->
-			    false;
-			_ ->
-			    true
-		    end;
-		_ ->
-		    true
-	    end
+	    DiscoOptions
     end.
     
+originating_disco_opts() ->
+    DiscoOpts = disco_opts(),
+    case lists:keysearch(originating, 1, DiscoOpts) of
+	{value, {originating, OrigDisco}} ->
+	    OrigDisco;
+	_ ->
+	    []
+    end.
+	
+is_originating_discovery_enabled() ->
+    OrigDisco = originating_disco_opts(), 
+    case lists:keysearch(enable, 1, OrigDisco) of
+	{value, {enable, false}} ->
+	    false;
+	_ ->
+	    true
+    end.
+    
+terminating_disco_opts() ->
+    DiscoOpts = disco_opts(),
+    case lists:keysearch(terminating, 1, DiscoOpts) of
+	{value, {terminating, TermDisco}} ->
+	    TermDisco;
+	_ ->
+	    []
+    end.
+	
 is_terminating_discovery_enabled() ->
-    Default = true,
-    case ets:lookup(snmp_agent_table, discovery) of
-	[] -> % upgrade
-	    Default;
-	[{discovery, DiscoOptions}] ->
-	    case lists:keysearch(terminating, 1, DiscoOptions) of
-		{value, {terminating, TermDisco}} ->
-		    case lists:keysearch(enable, 1, TermDisco) of
-			{value, {enable, false}} ->
-			    false;
-			_ ->
-			    Default
-		    end;
-		_ ->
-		    Default
-	    end
+    TermDisco = terminating_disco_opts(),
+    case lists:keysearch(enable, 1, TermDisco) of
+	{value, {enable, false}} ->
+	    false;
+	_ ->
+	    true
     end.
-		    
+    
 terminating_discovery_stage2() ->
-    Default = discovery, 
-    case ets:lookup(snmp_agent_table, discovery) of
-	[] -> % upgrade
-	    Default;
-	[{discovery, DiscoOptions}] ->
-	    case lists:keysearch(terminating, 1, DiscoOptions) of
-		{value, {terminating, TermDisco}} ->
-		    case lists:keysearch(stage2, 1, TermDisco) of
-			{value, {stage2, Stage2}} when ((Stage2 =:= discovery) orelse (Stage2 =:= plain)) ->
-			    Stage2;
-			_ ->
-			   Default 
-		    end;
-		_ ->
-		    Default
-	    end
+    Default   = discovery, 
+    TermDisco = terminating_disco_opts(),
+    case lists:keysearch(stage2, 1, TermDisco) of
+	{value, {stage2, Stage2}} when ((Stage2 =:= discovery) orelse (Stage2 =:= plain)) ->
+	    Stage2;
+	_ ->
+	    Default 
     end.
 
+terminating_trigger_username() ->
+    Default   = ?DISCO_TERMINATING_TRIGGER_USERNAME,
+    TermDisco = terminating_disco_opts(),
+    case lists:keysearch(trigger_username, 1, TermDisco) of
+	{value, {trigger_username, Trigger}} when is_list(Trigger) ->
+	    Trigger;
+	_ ->
+	    Default
+    end.
 
+    
 discovery(TargetName, Notification, ContextName, Varbinds, 
-	  DiscoHandler) ->
+	  DiscoHandler, ExtraInfo) ->
     case is_originating_discovery_enabled() of
 	true ->
 	    Agent = snmp_master_agent, 
 	    call(Agent, 
 		 {discovery, 
-		  TargetName, Notification, ContextName, Varbinds, DiscoHandler});
+		  TargetName, Notification, ContextName, Varbinds, 
+		  DiscoHandler, ExtraInfo});
 	false ->
 	    {error, not_enabled}
     end.
@@ -748,6 +799,12 @@ handle_info({'EXIT', Pid, Reason}, S) ->
 	    end,
 	    {noreply, S}
     end;
+handle_info({'DOWN', Ref, process, Pid, {mibs_cache_reply, Reply}}, 
+	    #state{mibs_cache_request = {Pid, Ref, From}} = S) ->
+    ?vlog("reply from the mibs cache request handler (~p): ~n~p", 
+	  [Pid, Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{mibs_cache_request = undefined}};
 
 handle_info(Info, S) ->
     warning_msg("received unexpected info: ~n~p", [Info]),
@@ -796,7 +853,7 @@ handle_call({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds},
 	    {reply, {error, send_failed}, S}
     end;
 handle_call({discovery, 
-	     TargetName, Notification, ContextName, Vbs, DiscoHandler}, 
+	     TargetName, Notification, ContextName, Vbs, DiscoHandler, ExtraInfo}, 
 	    From, 
 	    #state{disco = undefined} = S) ->
     ?vlog("[handle_call] initiate discovery process:"
@@ -804,10 +861,13 @@ handle_call({discovery,
 	  "~n   Notification: ~p"
 	  "~n   ContextName:  ~p"
 	  "~n   Vbs:          ~p"
-	  "~n   DiscoHandler: ~p", 
-	  [TargetName, Notification, ContextName, Vbs, DiscoHandler]),
+	  "~n   DiscoHandler: ~p"
+	  "~n   ExtraInfo:    ~p", 
+	  [TargetName, Notification, ContextName, Vbs, 
+	   DiscoHandler, ExtraInfo]),
     case handle_discovery(S, From, TargetName, 
-			  Notification, ContextName, Vbs, DiscoHandler) of
+			  Notification, ContextName, Vbs, DiscoHandler, 
+			  ExtraInfo) of
 	{ok, NewS} ->
 	    ?vtrace("[handle_call] first stage of discovery process initiated",
 		    []),
@@ -815,7 +875,7 @@ handle_call({discovery,
 	{error, _} = Error ->
 	    {reply, Error, S}
     end;
-handle_call({discovery, _TargetName, _Notification, _ContextName, _Vbs, _DiscoHandler}, _From, 
+handle_call({discovery, _TargetName, _Notification, _ContextName, _Vbs, _DiscoHandler, _ExtraInfo}, _From, 
 	    #state{disco = DiscoData} = S) ->
     Reply = {error, {discovery_in_progress, DiscoData}}, 
     {reply, Reply, S};
@@ -945,10 +1005,12 @@ handle_call({whereis_mib, Mib}, _From, S) ->
     ?vlog("whereis mib ~p", [Mib]),
     {reply, snmpa_mib:whereis_mib(get(mibserver), Mib), S};
 
-handle_call(invalidate_mibs_cache, _From, S) ->
-    ?vlog("invalidate_mibs_cache", []),
-    snmpa_mib:invalidate_cache(get(mibserver)),
-    {reply, ignore, S};
+handle_call({mibs_cache_request, MibsCacheReq}, From, S) ->
+    ?vlog("mibs_cache_request: ~p", [MibsCacheReq]),
+    {MibsCacheWorker, Ref} = 
+	handle_mibs_cache_request(get(mibserver), MibsCacheReq),
+    NewS = S#state{mibs_cache_request = {MibsCacheWorker, Ref, From}},
+    {noreply, NewS};
 
 handle_call(info, _From, S) ->
     ?vlog("info", []),
@@ -1119,6 +1181,41 @@ terminate(_Reason, _S) ->
     ok.
 
 
+handle_mibs_cache_request(MibServer, Req) ->
+    {MibsCacheWorker, MibsCacheRef} = 
+	spawn_monitor(
+	  fun() -> 
+		  Reply = 
+		      case Req of
+			  invalidate_cache ->
+			      snmpa_mib:invalidate_cache(MibServer);
+			  gc_cache ->
+			      snmpa_mib:gc_cache(MibServer);
+			  {gc_cache, Age} ->
+			      snmpa_mib:gc_cache(MibServer, Age);
+			  {gc_cache, Age, GcLimit} ->
+			      snmpa_mib:gc_cache(MibServer, Age, GcLimit);
+			  enable_cache ->
+			      snmpa_mib:enable_cache(MibServer);
+			  disable_cache ->
+			      snmpa_mib:disable_cache(MibServer);
+			  enable_autogc ->
+			      snmpa_mib:enable_cache_autogc(MibServer);
+			  disable_autogc ->
+			      snmpa_mib:disable_cache_autogc(MibServer);
+			  {update_gclimit, GcLimit} ->
+			      snmpa_mib:update_cache_gclimit(MibServer, 
+							      GcLimit);
+			  {update_age, Age} ->
+			      snmpa_mib:update_cache_age(MibServer, Age);
+			  _ ->
+			      {error, {unknown_mibs_cache_request, Req}}
+		      end,
+		  exit({mibs_cache_reply, Reply})
+	  end),
+    {MibsCacheWorker, MibsCacheRef}.
+
+		        
 %%-----------------------------------------------------------------
 %% Code replacement
 %% 
@@ -1730,7 +1827,7 @@ del_notification_filter(IDs, NFs) ->
 
 handle_discovery(#state{type = master_agent} = S, From, 
 		 TargetName, Notification, ContextName, Varbinds, 
-		 DiscoHandler) ->
+		 DiscoHandler, ExtraInfo) ->
     ?vtrace("handle_discovery -> entry with"
 	    "~n   TargetName:   ~p" 
 	    "~n   Notification: ~p" 
@@ -1743,19 +1840,21 @@ handle_discovery(#state{type = master_agent} = S, From,
 		    "~n   Record:   ~p"
 		    "~n   InitVars: ~p", [Record, InitVars]),
 	    send_discovery(S, From, TargetName, 
-			   Record, ContextName, InitVars, DiscoHandler);
+			   Record, ContextName, InitVars, 
+			   DiscoHandler, ExtraInfo);
 	error ->
 	    {error, failed_constructing_notification}
     end;
 handle_discovery(_S, _From, 
 		 _TargetName, _Notification, _ContextName, _Varbinds, 
-		 _DiscoHandler) ->
+		 _DiscoHandler, _ExtraInfo) ->
     {error, only_master_discovery}.
 				
 %% We ignore if the master agent is multi-threaded or not.
 %% 
 send_discovery(S, From, 
-	       TargetName, Record, ContextName, InitVars, DiscoHandler) ->
+	       TargetName, Record, ContextName, InitVars, 
+	       DiscoHandler, ExtraInfo) ->
     case snmpa_trap:send_discovery(TargetName, Record, ContextName,
 				   InitVars, get(net_if)) of
 	{ok, Sender, SecLevel} ->
@@ -1767,7 +1866,8 @@ send_discovery(S, From,
 			   ctx       = ContextName,
 			   ivbs      = InitVars, 
 			   stage     = 1,
-			   handler   = DiscoHandler}, 
+			   handler   = DiscoHandler,
+			   extra     = ExtraInfo}, 
 	    {ok, S#state{disco = Disco}};
 	Error ->
 	    ?vlog("send_discovery -> failed sending discovery: "
@@ -1785,7 +1885,8 @@ handle_discovery_response(#state{disco = #disco{from = From}} = S,
     S#state{disco = undefined};
 
 handle_discovery_response(#state{disco = #disco{target = TargetName, 
-						stage  = 1} = Disco} = S, 
+						stage  = 1,
+						extra  = ExtraInfo} = Disco} = S, 
 			  {ok, _Pdu, ManagerEngineId}) 
   when is_record(Disco, disco) ->
     ?vlog("handle_discovery_response(1) -> entry with"
@@ -1798,43 +1899,61 @@ handle_discovery_response(#state{disco = #disco{target = TargetName,
     case snmp_target_mib:set_target_engine_id(TargetName, ManagerEngineId) of
 	true when Disco#disco.sec_level =:= ?'SnmpSecurityLevel_noAuthNoPriv' ->
 	    %% Ok, we are done
-	    From = Disco#disco.from,
+	    From    = Disco#disco.from,
 	    Handler = Disco#disco.handler, 
-	    Reply = handle_discovery_stage1_finish(Handler, 
-						   TargetName, ManagerEngineId),
+	    Reply   = 
+		case handle_discovery_stage1_finish(Handler, 
+						    TargetName, 
+						    ManagerEngineId, 
+						    ExtraInfo) of
+		    {ok, _} ->
+			{ok, ManagerEngineId};
+		    Error ->
+			Error
+		end,
 	    gen_server:reply(From, Reply),
 	    S#state{disco = undefined};
 
 	true when Disco#disco.sec_level =/= ?'SnmpSecurityLevel_noAuthNoPriv' ->
 	    %% Ok, time for stage 2
-	    %% Send the same inform again, this time we have the proper EngineId
+	    %% Send the same inform again, 
+	    %% this time we have the proper EngineId
 
-	    From = Disco#disco.from,
+	    From    = Disco#disco.from,
 	    Handler = Disco#disco.handler, 
 
 	    case handle_discovery_stage1_finish(Handler, 
-						TargetName, ManagerEngineId) of
-		ok ->
+						TargetName, 
+						ManagerEngineId, 
+						ExtraInfo) of
+		{ok, NewExtraInfo} ->
 		    ?vdebug("handle_discovery_response(1) -> "
 			    "we are done with stage 1 - "
 			    "continue with stage 2", []),
-		    #disco{target = TargetName, 
-			   rec    = Record,
-			   ctx    = ContextName,
-			   ivbs   = InitVars} = Disco, 
-		    case snmpa_trap:send_discovery(TargetName, Record, ContextName,
+		    #disco{rec  = Record,
+			   ctx  = ContextName,
+			   ivbs = InitVars} = Disco, 
+		    case snmpa_trap:send_discovery(TargetName, Record, 
+						   ContextName,
 						   InitVars, get(net_if)) of
 			{ok, Sender, _SecLevel} ->
 			    ?vdebug("handle_discovery_response(1) -> "
 				    "stage 2 trap sent", []),
-			    Disco2 = Disco#disco{sender = Sender, 
-						 stage  = 2}, 
-			    {ok, S#state{disco = Disco2}};
+			    Disco2 = Disco#disco{sender    = Sender, 
+						 engine_id = ManagerEngineId, 
+						 stage     = 2,
+						 extra     = NewExtraInfo}, 
+			    S#state{disco = Disco2};
 			Error ->
 			    ?vlog("handle_discovery_response(1) -> "
 				  "failed sending stage 2 trap: "
 				  "~n   ~p", [Error]),
-			    Error
+			    error_msg("failed sending second "
+				      "discovery message: "
+				      "~n   ~p", [Error]),
+			    Reply = {error, {second_send_failed, Error}}, 
+			    gen_server:reply(From, Reply),
+			    S#state{disco = undefined}
 		    end;
 		{error, Reason} = Error ->
 		    ?vlog("handle_discovery_response(1) -> "
@@ -1854,11 +1973,13 @@ handle_discovery_response(#state{disco = #disco{target = TargetName,
 
     end;
 
-handle_discovery_response(#state{disco = #disco{from = From, stage = 2}} = S, 
+handle_discovery_response(#state{disco = #disco{from = From, 
+						engine_id = EngineID, 
+						stage = 2}} = S, 
 			  {ok, _Pdu}) ->
     ?vlog("handle_discovery_response(2) -> entry with"
 	  "~n   From: ~p", [From]),
-    gen_server:reply(From, ok),
+    gen_server:reply(From, {ok, EngineID}),
     S#state{disco = undefined};
 
 handle_discovery_response(#state{disco = #disco{from = From}} = S, Crap) ->
@@ -1870,37 +1991,83 @@ handle_discovery_response(S, Crap) ->
     warning_msg("Received unexpected discovery response: ~p", [Crap]),
     S.
 
-
-handle_discovery_stage1_finish(Handler, TargetName, ManagerEngineID) ->
-    case (catch Handler:stage1_finish(TargetName, ManagerEngineID)) of
+handle_discovery_stage1_finish(Handler, TargetName, ManagerEngineID, 
+			       ExtraInfo) ->
+    case (catch Handler:stage1_finish(TargetName, ManagerEngineID, 
+				      ExtraInfo)) of
 	ignore ->
 	    ?vtrace("handle_discovery_stage1_finish -> "
-		  "we are done - [ignore] inform the user", []),
-	    {ok, ManagerEngineID};
+		    "we are done - [ignore] inform the user", []),
+	    {ok, ExtraInfo};
+
 	{ok, UsmEntry} when is_tuple(UsmEntry) ->
 	    ?vtrace("handle_discovery_stage1_finish -> "
-		    "received usm entry - attempt to add entry", []),
-	    case snmp_user_based_sm_mib:add_user(UsmEntry) of
-		{ok, _} ->
-		    ok;
-		{error, Reason} ->
-		    ?vlog("handle_discovery_stage1_finish -> "
-			  "failed adding usm entry: "
-			  "~n   ~p", [Reason]),
-		    {error, {failed_adding_entry, Reason, ManagerEngineID}}
+		    "received usm entry - attempt to add it", []),
+	    case add_usm_users([UsmEntry]) of
+		ok ->
+		    {ok,  ExtraInfo};
+		Error ->
+		    Error
 	    end;
+
+	{ok, UsmEntry, NewExtraInfo} when is_tuple(UsmEntry) ->
+	    ?vtrace("handle_discovery_stage1_finish -> "
+		    "received usm entry - attempt to add it", []),
+	    case add_usm_users([UsmEntry]) of
+		ok ->
+		    {ok, NewExtraInfo};
+		Error ->
+		    Error
+	    end;
+
+	{ok, UsmEntries} when is_list(UsmEntries) ->
+	    ?vtrace("handle_discovery_stage1_finish -> "
+		    "received usm entries - attempt to add them", []),
+	    case add_usm_users(UsmEntries) of
+		ok ->
+		    {ok, ExtraInfo};
+		Error ->
+		    Error
+	    end;
+
+	{ok, UsmEntries, NewExtraInfo} when is_list(UsmEntries) ->
+	    ?vtrace("handle_discovery_stage1_finish -> "
+		    "received usm entries - attempt to add them", []),
+	    case add_usm_users(UsmEntries) of
+		ok ->
+		    {ok, NewExtraInfo};
+		Error ->
+		    Error
+	    end;
+
 	{'EXIT', Reason} ->
 	    ?vlog("handle_discovery_stage1_finish -> stage 1 function exited: "
 		  "~n   ~p", [Reason]),
 	    {error, {finish_exit, Reason, ManagerEngineID}};
+
 	{error, Reason} ->
 	    ?vlog("handle_discovery_stage1_finish -> stage 1 function error: "
 		  "~n   ~p", [Reason]),
 	    {error, {finish_error, Reason, ManagerEngineID}};
+
 	Unknown ->
 	    ?vlog("handle_discovery_stage1_finish -> stage 1 function unknown: "
 		  "~n   ~p", [Unknown]),
 	    {error, {finish_failed, Unknown, ManagerEngineID}}
+    end.
+
+add_usm_users([]) ->
+    ok;
+add_usm_users([UsmEntry|UsmEntries]) when is_tuple(UsmEntry) ->
+    ?vtrace("add_usm_users -> attempt to add entry (~w)", 
+	    [element(1, UsmEntry)]),
+    case snmp_user_based_sm_mib:add_user(UsmEntry) of
+	{ok, _} ->
+	    add_usm_users(UsmEntries);
+	{error, Reason} ->
+	    ?vlog("add_usm_users -> failed adding usm entry: "
+		  "~n   ~p", [Reason]),
+	    {error, {failed_adding_entry, Reason, UsmEntry}}
     end.
 
     

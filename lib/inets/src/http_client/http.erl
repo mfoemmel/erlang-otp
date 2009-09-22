@@ -73,8 +73,8 @@ request(Url, Profile) ->
 %%	Request - {Url, Headers} | {Url, Headers, ContentType, Body} 
 %%	Url - string() 
 %%	HTTPOptions - [HttpOption]
-%%	HTTPOption - {timeout, Time} | {ssl, SSLOptions} | 
-%%                   {proxy_auth, {User, Password}}
+%%	HTTPOption - {timeout, Time} | {connect_timeout, Time} | 
+%%                   {ssl, SSLOptions} | {proxy_auth, {User, Password}}
 %%	Ssloptions = [SSLOption]
 %%	SSLOption =  {verify, code()} | {depth, depth()} | {certfile, path()} |
 %%	{keyfile, path()} | {password, string()} | {cacertfile, path()} |
@@ -113,7 +113,7 @@ request(Method, {Url, Headers}, HTTPOptions, Options, Profile)
 	{error, Reason} ->
 	    {error, Reason};
 	ParsedUrl ->
-	    handle_request(Method, Url, {ParsedUrl, Headers, [], []}, 
+	    handle_request(Method, Url, ParsedUrl, Headers, [], [], 
 			   HTTPOptions, Options, Profile)
     end;
      
@@ -124,7 +124,7 @@ request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options, Profile)
 	    {error, Reason};
 	ParsedUrl ->
 	    handle_request(Method, Url, 
-			   {ParsedUrl, Headers, ContentType, Body}, 
+			   ParsedUrl, Headers, ContentType, Body, 
 			   HTTPOptions, Options, Profile)
     end.
 
@@ -279,36 +279,36 @@ service_info(Pid) ->
 %%% Internal functions
 %%%========================================================================
 handle_request(Method, Url, 
-	       {{Scheme, UserInfo, Host, Port, Path, Query}, Headers, ContentType, Body}, 
-	       HTTPOptions, Options, Profile) ->
+	       {Scheme, UserInfo, Host, Port, Path, Query}, 
+	       Headers, ContentType, Body, 
+	       HTTPOptions0, Options, Profile) ->
 
-    HTTPRecordOptions = http_options(HTTPOptions, #http_options{}),
-    Sync = proplists:get_value(sync, Options, true),
-    NewHeaders = lists:map(fun({Key, Val}) -> 
-				   {http_util:to_lower(Key), Val} end,
-			   Headers),
+    HTTPOptions = http_options(HTTPOptions0),
+    Sync        = proplists:get_value(sync, Options, true),
+    NewHeaders  = lists:map(fun({Key, Val}) -> 
+				    {http_util:to_lower(Key), Val} end,
+			    Headers),
     Stream = proplists:get_value(stream, Options, none),
-    Version = http_util:to_upper(proplists:get_value(version, 
-						     HTTPOptions, "HTTP/1.1")),
     case {Sync, Stream} of
 	{true, self} ->
 	    {error, streaming_error};
 	_ ->
-	    RecordHeaders = header_record(NewHeaders, #http_request_h{}, 
-					  Host, Version),
-	    Request = #request{from = self(),
-			       scheme = Scheme, 
-			       address = {Host,Port},
-			       path = Path, 
-			       pquery = Query, 
-			       method = Method,
-			       headers = RecordHeaders, 
-			       content = {ContentType,Body},
-			       settings = 
-			       HTTPRecordOptions#http_options{version = Version},
-			       abs_uri = Url, 
+	    RecordHeaders = header_record(NewHeaders, 
+					  #http_request_h{}, 
+					  Host, 
+					  HTTPOptions#http_options.version),
+	    Request = #request{from     = self(),
+			       scheme   = Scheme, 
+			       address  = {Host,Port},
+			       path     = Path, 
+			       pquery   = Query, 
+			       method   = Method,
+			       headers  = RecordHeaders, 
+			       content  = {ContentType,Body},
+			       settings = HTTPOptions, 
+			       abs_uri  = Url, 
 			       userinfo = UserInfo, 
-			       stream = Stream, 
+			       stream   = Stream, 
 			       headers_as_is = headers_as_is(Headers, Options)},
 	    try httpc_manager:request(Request, profile_name(Profile)) of
 		{ok, RequestId} ->
@@ -370,35 +370,105 @@ headers_as_is(Headers, Options) ->
 	     Headers
      end.
 
-http_options([], Acc) ->
-    Acc;
-http_options([{timeout, Val} | Settings], Acc) 
-  when is_integer(Val) andalso (Val >= 0) ->
-    http_options(Settings, Acc#http_options{timeout = Val});
-http_options([{timeout, infinity} | Settings], Acc) ->
-    http_options(Settings, Acc#http_options{timeout = infinity});
-http_options([{autoredirect, Val} | Settings], Acc)   
-  when (Val =:= true) orelse (Val =:= false) ->
-    http_options(Settings, Acc#http_options{autoredirect = Val});
-http_options([{ssl, Val} | Settings], Acc) ->
-    http_options(Settings, Acc#http_options{ssl = Val});
-http_options([{relaxed, Val} | Settings], Acc)
-  when (Val =:= true) orelse (Val =:= false) ->
-    http_options(Settings, Acc#http_options{relaxed = Val});
-http_options([{proxy_auth, Val = {User, Passwd}} | Settings], Acc) 
-  when is_list(User) andalso is_list(Passwd) ->
-    http_options(Settings, Acc#http_options{proxy_auth = Val});
-http_options([{version, Val} | Settings], Acc) 
-  when is_atom(Val) ->
-    http_options(Settings, Acc#http_options{version = atom_to_list(Val)});
-http_options([{version, Val} | Settings], Acc) 
-  when is_list(Val) ->
-    http_options(Settings, Acc#http_options{version = Val});
-http_options([Option | Settings], Acc) ->
-    Report = io_lib:format("Invalid option ~p ignored ~n", [Option]),
-    error_logger:info_report(Report),
-    http_options(Settings, Acc).
 
+http_options(HttpOptions) ->
+    HttpOptionsDefault = http_options_default(),
+    http_options(HttpOptionsDefault, HttpOptions, #http_options{}).
+
+http_options([], [], Acc) ->
+    Acc;
+http_options([], HttpOptions, Acc) ->
+    Fun = fun(BadOption) ->
+		    Report = io_lib:format("Invalid option ~p ignored ~n", 
+					   [BadOption]),
+		    error_logger:info_report(Report)
+	  end,
+    lists:foreach(Fun, HttpOptions),
+    Acc;
+http_options([{Tag, Default, Idx, Post} | Defaults], HttpOptions, Acc) ->
+    case lists:keysearch(Tag, 1, HttpOptions) of
+	{value, {Tag, Val0}} ->
+	    case Post(Val0) of
+		{ok, Val} ->
+		    Acc2 = setelement(Idx, Acc, Val),
+		    HttpOptions2 = lists:keydelete(Tag, 1, HttpOptions),
+		    http_options(Defaults, HttpOptions2, Acc2);
+		error ->
+		    Report = io_lib:format("Invalid option ~p:~p ignored ~n", 
+					   [Tag, Val0]),
+		    error_logger:info_report(Report),
+		    HttpOptions2 = lists:keydelete(Tag, 1, HttpOptions),
+		    http_options(Defaults, HttpOptions2, Acc)
+	    end;
+	false ->
+	    DefaultVal = 
+		case Default of
+		    {value, Val} ->
+			Val;
+		    {field, DefaultIdx} ->
+			element(DefaultIdx, Acc)
+		end,
+	    Acc2 = setelement(Idx, Acc, DefaultVal),
+	    http_options(Defaults, HttpOptions, Acc2)
+    end.
+		    
+http_options_default() ->
+    VersionPost = 
+	fun(Value) when is_atom(Value) ->
+		{ok, http_util:to_upper(atom_to_list(Value))};
+	   (Value) when is_list(Value) ->
+		{ok, http_util:to_upper(Value)};
+	   (_) ->
+		error
+	end,
+    TimeoutPost = fun(Value) when is_integer(Value) andalso (Value >= 0) ->
+			  {ok, Value};
+		     (infinity = Value) ->
+			  {ok, Value};
+		     (_) ->
+			  error
+		  end,
+    AutoRedirectPost = fun(Value) when (Value =:= true) orelse 
+				       (Value =:= false) ->
+			       {ok, Value};
+			  (_) ->
+			       error
+		       end,
+    SslPost = fun(Value) when is_list(Value) ->
+		      {ok, Value};
+		 (_) ->
+		      error
+	      end,
+    ProxyAuthPost = fun({User, Passwd} = Value) when is_list(User) andalso 
+						     is_list(Passwd) ->
+			    {ok, Value};
+		       (_) ->
+			    error
+		    end,
+    RelaxedPost = fun(Value) when (Value =:= true) orelse 
+				  (Value =:= false) ->
+			  {ok, Value};
+		     (_) ->
+			  error
+		  end,
+    ConnTimeoutPost = 
+	fun(Value) when is_integer(Value) andalso (Value >= 0) ->
+		{ok, Value};
+	   (infinity = Value) ->
+		{ok, Value};
+	   (_) ->
+		error
+	end,
+    [
+     {version,         {value, "HTTP/1.1"},              #http_options.version,         VersionPost}, 
+     {timeout,         {value, ?HTTP_REQUEST_TIMEOUT},   #http_options.timeout,         TimeoutPost},
+     {autoredirect,    {value, true},                    #http_options.autoredirect,    AutoRedirectPost},
+     {ssl,             {value, []},                      #http_options.ssl,             SslPost},
+     {proxy_auth,      {value, undefined},               #http_options.proxy_auth,      ProxyAuthPost},
+     {relaxed,         {value, false},                   #http_options.relaxed,         RelaxedPost},
+     %% this field has to be *after* the timeout field (as that field is used for the default value)
+     {connect_timeout, {field,   #http_options.timeout}, #http_options.connect_timeout, ConnTimeoutPost}
+    ].
 
 validate_options(Options) ->
     (catch validate_options(Options, [])).

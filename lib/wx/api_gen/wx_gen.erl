@@ -753,12 +753,16 @@ parse_type2([N="wxDateTime"|R],Info,Opts,T) ->
 
 parse_type2([N="wxMouseState"|R],Info,Opts,T) -> 
     parse_type2(R,Info,Opts,T#type{name=N, base={comp,N,{record, wxMouseState}}});
+parse_type2([N="wxHtmlLinkInfo"|R],Info,Opts,T) -> 
+    parse_type2(R,Info,Opts,T#type{name=N, base={comp,N,{record, wxHtmlLinkInfo}}});
 parse_type2([N="wxString"|R],Info,Opts,T) -> 
-    parse_type2(R,Info,Opts,T#type{name=N,base=[int]});
+    parse_type2(R,Info,Opts,T#type{name=N,base=string});
 parse_type2([N="wxArtClient"|R],Info,Opts,T) -> 
-    parse_type2(R,Info,Opts,T#type{name=N,base=[int]});
+    parse_type2(R,Info,Opts,T#type{name=N,base=string});
 parse_type2(["wxArtID"|R],Info,Opts,T) -> 
-    parse_type2(R,Info,Opts,T#type{name="wxString",base=[int]});
+    parse_type2(R,Info,Opts,T#type{name="wxString",base=string});
+parse_type2([N="wxFileName"|R],Info,Opts,T) ->
+    parse_type2(R,Info,Opts,T#type{name=N,base=string});
 parse_type2([N="wxArrayString"|R],Info,Opts,T) -> 
     parse_type2(R,Info,Opts,T#type{name=N,base=[int],single=array,by_val=true});
 parse_type2([{by_ref,Ref}|R],Info,Opts,T) -> 
@@ -1072,6 +1076,7 @@ extract_type_footprint2([], Out0, In, Opt) ->
     end.
 
 type_foot_print(#type{single=Single}) when Single =/= true -> list;
+type_foot_print(#type{base=string})  -> list;
 type_foot_print(#type{base=Base}) when is_list(Base) -> list;
 type_foot_print(#type{base=long}) ->      int;
 type_foot_print(#type{base=binary}) ->    binary;
@@ -1216,7 +1221,7 @@ drop_empty(List) ->
 
 %%% Enums
 parse_enums(Files) ->
-    DontSearch = ["wxchar","filefn", "platform", "strconv", 
+    DontSearch = ["wxchar","filefn", "platform", "strconv", "filename", 
 		  "buffer", "string", "debug", "platinfo"],
     %% Arg need to patch some specials, atleast for wx-2.6
     ExtraSearch = ["gtk_2glcanvas", "generic_2splash"],
@@ -1305,19 +1310,32 @@ extract_enum3([#xmlElement{name=name,content=[#xmlText{value=Name}]}|R], Id, Acc
     end;
 
 extract_enum3([#xmlElement{name=initializer,
-			   content=[#xmlText{value=V}]}|_],_Id,[{Name,_}|Acc]) ->
-    Val0 = string:strip(V),
+			   content=Cs=[#xmlText{}|_]}|_],_Id,[{Name,_}|Acc]) ->
+
+    String = lists:append([string:strip(C#xmlText.value) || C <- Cs]),
+    
+    Val0 = gen_util:tokens(String,"<& "),
+            
     try 
 	case Val0 of
-	    "0x" ++ Val1 -> 
+	    ["0x" ++ Val1] -> 
 		Val = http_util:hexlist_to_integer(Val1),
 		{[{Name, Val}|Acc], Val+1};
-	    _ ->
-		Val = list_to_integer(Val0),
-		{[{Name, Val}|Acc], Val+1}
+	    [Single] ->
+		Val = list_to_integer(Single),
+		{[{Name, Val}|Acc], Val+1};
+	    ["1", "<<", Shift] ->
+		Val = 1 bsl list_to_integer(Shift),
+		{[{Name, Val}|Acc], Val+1};
+	    [_Str, "+", _What] ->
+		Val = lists:append(Val0),
+		{[{Name, {Val, 0}}|Acc], {Val,1}};	    
+	    _What ->
+		%% io:format("~p Name ~p ~p~n",[?LINE, Name, Val0]),
+		throw(below)		
 	end
-    catch _:_ -> 
-	    {[{Name,{Val0,0}}|Acc], {Val0,1}}
+    catch _:_ ->
+	    {[{Name,{String,0}}|Acc], {String,1}}
     end;
 extract_enum3([_|R], Id, Acc) ->
     extract_enum3(R, Id, Acc);

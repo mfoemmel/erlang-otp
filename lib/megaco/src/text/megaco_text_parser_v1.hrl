@@ -215,7 +215,7 @@ ensure_hex4_or_ip4addr({TokenTag, Line, Addr} = V) ->
 ensure_hex4({_TokenTag, Line, Hex4}) 
   when length(Hex4) =< 4, length(Hex4) > 0 ->
     case (catch do_ensure_hex4(Hex4)) of
-	IL when list(IL), length(IL) == 2 ->
+	IL when is_list(IL) andalso (length(IL) =:= 2) ->
 	    IL;
 	Error ->
 	    return_error(Line, {bad_hex4, Hex4, Error})
@@ -421,56 +421,57 @@ merge_ServiceChangeParm([], _SCP, Required) ->
     exit({missing_required_serviceChangeParm, Required});
 
 merge_ServiceChangeParm([{address, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE,
-       SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE ->
+  when ((SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE) 
+	andalso
+	(SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE)) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeAddress = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{address, Val}|_Parms], SCP0, _Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE) ->
     MgcId = SCP0#'ServiceChangeParm'.serviceChangeMgcId,
     exit({not_both_address_mgcid_serviceChangeParm, Val, MgcId});
 
 merge_ServiceChangeParm([{mgc_id, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE,
-       SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE ->
+  when ((SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE) andalso 
+	(SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE)) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeMgcId = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{mgc_id, Val}|_Parms], SCP0, _Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE) ->
     Addr = SCP0#'ServiceChangeParm'.serviceChangeAddress,
     exit({not_both_address_mgcid_serviceChangeParm, Val, Addr});
 
 merge_ServiceChangeParm([{profile, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeProfile == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeProfile =:= asn1_NOVALUE) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeProfile = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{version, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeVersion == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeVersion =:= asn1_NOVALUE) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeVersion = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 %% REQUIRED (i.e. no default value)
 merge_ServiceChangeParm([{reason, Val}|Parms], SCP0, Req0) 
-  when SCP0#'ServiceChangeParm'.serviceChangeReason == undefined ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeReason =:= undefined) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeReason = Val},
     Req = lists:delete(serviceChangeReason, Req0),
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{delay, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeDelay == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeDelay =:= asn1_NOVALUE) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeDelay = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 %% REQUIRED (i.e. no default value)
 merge_ServiceChangeParm([{method, Val}|Parms], SCP0, Req0) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMethod == undefined ->
+  when (SCP0#'ServiceChangeParm'.serviceChangeMethod =:= undefined) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeMethod = Val},
     Req = lists:delete(serviceChangeMethod, Req0),
     merge_ServiceChangeParm(Parms, SCP, Req);
 
 merge_ServiceChangeParm([{time_stamp, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.timeStamp == asn1_NOVALUE ->
+  when (SCP0#'ServiceChangeParm'.timeStamp =:= asn1_NOVALUE) ->
     SCP = SCP0#'ServiceChangeParm'{timeStamp = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 
@@ -789,12 +790,12 @@ do_merge_eventParameters([H | T], StreamId, EPL, RA, HasA) ->
             do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
         {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
             do_merge_eventParameters(T, NewStreamId, EPL, RA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
         _ ->
             return_error(0, {bad_eventParameter, H})
@@ -820,23 +821,23 @@ merge_secondEventParameters(Params) ->
                                    
 do_merge_secondEventParameters([H | T], StreamId, EPL, SRA, HasA) ->
     case H of
-        keepActive when SRA#'SecondRequestedActions'.keepActive == asn1_NOVALUE ->
+        keepActive when (SRA#'SecondRequestedActions'.keepActive =:= asn1_NOVALUE) ->
             SRA2 = SRA#'SecondRequestedActions'{keepActive = true},
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor == asn1_NOVALUE ->
+        {second_embed, SD} when (SRA#'SecondRequestedActions'.signalsDescriptor =:= asn1_NOVALUE) ->
             SRA2 = SRA#'SecondRequestedActions'{signalsDescriptor = SD},
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM == asn1_NOVALUE ->
+        {eventDM, DM} when (SRA#'SecondRequestedActions'.eventDM =:= asn1_NOVALUE) ->
             SRA2 = SRA#'SecondRequestedActions'{eventDM = DM},
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
+        {stream, NewStreamId} when (StreamId =:= asn1_NOVALUE) ->
             do_merge_secondEventParameters(T, NewStreamId, EPL, SRA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
         _ ->
             return_error(0, {bad_secondEventParameter, H})
@@ -1341,7 +1342,7 @@ ensure_uint(Val, Min, Max, Line) ->
 	    if
 		is_integer(Max) andalso (Val =< Max) ->
 		    Val;
-		Max == infinity ->
+		Max =:= infinity ->
 		    Val;
 		true ->
 		    return_error(Line, {too_large_integer, Val, Max})

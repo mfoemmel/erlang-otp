@@ -600,7 +600,7 @@ is_head(Bin) when is_binary(Bin) ->
 
 %%-----------------------------------------------------------------
 %% Func: mf_int_open/7, mf_ext_open/7
-%% Args: FName = string()
+%% Args: FName = file:filename()
 %%       MaxB = integer() 
 %%       MaxF = integer()
 %%       Repair = truncate | true | false
@@ -619,7 +619,7 @@ is_head(Bin) when is_binary(Bin) ->
 %%          Reports can be browsed with Report Browser Tool (rb), or
 %%          read with disk_log.
 %%-----------------------------------------------------------------
--spec mf_int_open(FName   :: string(),
+-spec mf_int_open(FName   :: file:filename(),
 		  MaxB    :: integer(),
 		  MaxF    :: integer(),
 		  Repair  :: dlog_repair(),
@@ -1529,7 +1529,7 @@ write_cache(Fd, FileName, C) ->
         Error -> {catch file_error(FileName, Error), #cache{fd = Fd}}
     end.
 
--spec write_cache_close(fd(), string(), iodata()) -> #cache{}. % | throw(Error)
+-spec write_cache_close(fd(), file:filename(), iodata()) -> #cache{}. % | throw(Error)
 
 write_cache_close(Fd, _FileName, []) ->
     #cache{fd = Fd};
@@ -1539,12 +1539,12 @@ write_cache_close(Fd, FileName, C) ->
         Error -> file_error_close(Fd, FileName, Error)
     end.
 
--spec file_error(string(), {'error',atom()}) -> no_return().
+-spec file_error(file:filename(), {'error', atom()}) -> no_return().
 
 file_error(FileName, {error, Error}) ->
     throw({error, {file_error, FileName, Error}}).
 
--spec file_error_close(fd(), string(), {'error',atom()}) -> no_return().
+-spec file_error_close(fd(), file:filename(), {'error', atom()}) -> no_return().
 
 file_error_close(Fd, FileName, {error, Error}) ->
     file:close(Fd),

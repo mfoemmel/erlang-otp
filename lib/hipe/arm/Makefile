@@ -110,4 +110,4 @@ $(EBIN)/hipe_arm_liveness_gpr.beam: ../flow/liveness.inc
 $(EBIN)/hipe_arm_registers.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_rtl_to_arm.beam: ../rtl/hipe_rtl.hrl
 
-$(TARGET_FILES): hipe_arm.hrl
+$(TARGET_FILES): hipe_arm.hrl ../misc/hipe_consttab.hrl

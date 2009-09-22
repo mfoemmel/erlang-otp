@@ -88,8 +88,18 @@ hosts(File) ->
 
 hosts(Fname,File) ->
     Fn = fun([Address, Name | Aliases]) ->
-		 {ok,IP} = address(Address),
-		 {IP, Name, Aliases}
+		 %% XXX Fix for link-local IPv6 addresses that specify
+		 %% interface with a %if suffix. These kind of
+		 %% addresses maybe need to be gracefully handled
+		 %% throughout inet* and inet_drv.
+		 case string:tokens(Address, "%") of
+		     [Addr,_] ->
+			 {ok,_} = address(Addr),
+			 skip;
+		     _ ->
+			 {ok,IP} = address(Address),
+			 {IP, Name, Aliases}
+		 end
 	 end,
     parse_file(Fname, File, Fn).
 

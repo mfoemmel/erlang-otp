@@ -355,30 +355,47 @@ configvars(Config) ->
     case lists:keysearch(vars, 1, Config) of
 	{value, {vars, List}} ->
 	    List0 = special_vars(Config),
-	    {vars, [List0|List]};
+	    Key = fun(T) -> element(1,T) end,
+	    DelDupList = 
+		lists:filter(fun(V) -> 
+				     case lists:keysearch(Key(V),1,List0) of
+					 {value,_} -> false;
+					 _ -> true
+				     end
+			     end, List),
+	    {vars, [List0|DelDupList]};
 	_ ->
 	    {vars, special_vars(Config)}
     end.
 
 %% Allow some shortcuts in the Options...
 special_vars(Config) ->
-    Verbose=
+    SpecVars =
 	case lists:member(verbose, Config) of
 	    true ->
-		{verbose, 1};
+		[{verbose, 1}];
 	    false ->
 		case lists:keysearch(verbose, 1, Config) of
 		    {value, {verbose, Lvl}} ->
-			{verbose, Lvl};
+			[{verbose, Lvl}];
 		    _ ->
-			{verbose, 0}
+			[{verbose, 0}]
 		end
 	end,
-    case lists:keysearch(diskless, 1, Config) of
-	{value,{diskless, true}} ->
-	    [Verbose,{diskless, true}];
+    SpecVars1 =
+	case lists:keysearch(diskless, 1, Config) of
+	    {value,{diskless, true}} ->
+		[{diskless, true} | SpecVars];
+	    _ ->
+		SpecVars
+	end,
+    case lists:keysearch(testcase_callback, 1, Config) of
+	{value,{testcase_callback, CBM, CBF}} ->
+	    [{ts_testcase_callback, {CBM,CBF}} | SpecVars1];
+	{value,{testcase_callback, CB}} ->
+	    [{ts_testcase_callback, CB} | SpecVars1];
 	_ ->
-	    [Verbose]
+	    SpecVars1
     end.
 
 configtrace(Config) ->
@@ -626,9 +643,9 @@ i([{Name, Pid}|Rest]) when is_pid(Pid) ->
     {value, {_, CaseNum}} = lists:keysearch(test_server_case_num, 1, PI),
     {value, {_, Cases}} = lists:keysearch(test_server_cases, 1, PI),
     {value, {_, Failed}} = lists:keysearch(test_server_failed, 1, PI),
-    {value, {_, Skipped}} = lists:keysearch(test_server_skipped, 1, PI),
+    {value, {_, {UserSkipped,AutoSkipped}}} = lists:keysearch(test_server_skipped, 1, PI),
     {value, {_, Ok}} = lists:keysearch(test_server_ok, 1, PI),
-    nformat(Name, CaseNum, Cases, Ok, Failed, Skipped),
+    nformat(Name, CaseNum, Cases, Ok, Failed, UserSkipped+AutoSkipped),
     i(Rest);
 i([]) ->
     ok.

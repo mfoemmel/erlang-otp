@@ -44,16 +44,33 @@ collect(Analysis) ->
       throw:{dialyzer_error,_Reason} ->
 	typer:error("Dialyzer's PLT is missing or is not up-to-date; please (re)create it")
     end,
-  lists:foldl(fun collect_one_file_info/2, 
-	      Analysis#typer_analysis{trust_plt=NewPlt}, 
-	      Analysis#typer_analysis.ana_files).
+  NewAnalysis = lists:foldl(fun collect_one_file_info/2, 
+			    Analysis#typer_analysis{trust_plt = NewPlt}, 
+			    Analysis#typer_analysis.ana_files),
+  %% Process Remote Types
+  TmpCServer = NewAnalysis#typer_analysis.code_server,
+  NewCServer =
+    try
+      NewRecords = dialyzer_codeserver:get_temp_records(TmpCServer),
+      OldRecords = dialyzer_plt:get_types(NewPlt),
+      MergedRecords = dialyzer_utils:merge_records(NewRecords, OldRecords),
+      %% io:format("Merged Records ~p",[MergedRecords]),
+      TmpCServer1 = dialyzer_codeserver:set_temp_records(MergedRecords, TmpCServer),
+      TmpCServer2 = dialyzer_utils:process_record_remote_types(TmpCServer1),
+      dialyzer_contracts:process_contract_remote_types(TmpCServer2)
+    catch
+      throw:{error, ErrorMsg} ->
+	typer:error(ErrorMsg)
+    end,
+  NewAnalysis#typer_analysis{code_server = NewCServer}.
+  
 
 collect_one_file_info(File, Analysis) ->
   Ds = [{d,Name,Val} || {Name,Val} <- Analysis#typer_analysis.macros],
   %% Current directory should also be included in "Includes".
   Includes = [filename:dirname(File)|Analysis#typer_analysis.includes],
   Is = [{i,Dir} || Dir <- Includes],
-  Options = ?SRC_COMPILE_OPTS ++ Is ++ Ds,
+  Options = dialyzer_utils:src_compiler_opts() ++ Is ++ Ds,
   case dialyzer_utils:get_abstract_code_from_src(File, Options) of
     {error, Reason} ->
       %% io:format("File=~p\n,Options=~p\n,Error=~p\n", [File,Options,Reason]),
@@ -78,12 +95,12 @@ analyze_core_tree(Core, Records, SpecInfo, Analysis, File) ->
   Module = list_to_atom(filename:basename(File, ".erl")),
   TmpTree = cerl:from_records(Core),
   CS1 = Analysis#typer_analysis.code_server,
-  NextLabel = dialyzer_codeserver:next_core_label(CS1),
+  NextLabel = dialyzer_codeserver:get_next_core_label(CS1),
   {Tree, NewLabel} = cerl_trees:label(TmpTree, NextLabel),
-  CS2 = dialyzer_codeserver:insert([{Module, Tree}], CS1),
-  CS3 = dialyzer_codeserver:update_next_core_label(NewLabel, CS2),
-  CS4 = dialyzer_codeserver:store_records(Module, Records, CS3),
-  CS5 = dialyzer_codeserver:store_contracts(Module, SpecInfo, CS4),
+  CS2 = dialyzer_codeserver:insert(Module, Tree, CS1),
+  CS3 = dialyzer_codeserver:set_next_core_label(NewLabel, CS2),
+  CS4 = dialyzer_codeserver:store_temp_records(Module, Records, CS3),
+  CS5 = dialyzer_codeserver:store_temp_contracts(Module, SpecInfo, CS4),
   Ex_Funcs = [{0,F,A} || {_,_,{F,A}} <- cerl:module_exports(Tree)],
   TmpCG = Analysis#typer_analysis.callgraph,
   CG = dialyzer_callgraph:scan_core_tree(Tree, TmpCG),

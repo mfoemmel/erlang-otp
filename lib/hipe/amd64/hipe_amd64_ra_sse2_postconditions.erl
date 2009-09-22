@@ -19,7 +19,9 @@
 %%
 
 -module(hipe_amd64_ra_sse2_postconditions).
+
 -export([check_and_rewrite/2]).
+
 -include("../x86/hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true).
 -include("../main/hipe.hrl").
@@ -32,8 +34,7 @@ check_and_rewrite(AMD64Defun, Coloring) ->
   %%io:format("Rewriting\n"),
   #defun{code=Code0} = AMD64Defun,
   {Code1, DidSpill} = do_insns(Code0, TempMap, [], false),
-  {AMD64Defun#defun{code=Code1,
-		  var_range={0, hipe_gensym:get_var(x86)}}, 
+  {AMD64Defun#defun{code=Code1, var_range={0, hipe_gensym:get_var(x86)}}, 
    DidSpill}.
 
 do_insns([I|Insns], TempMap, Accum, DidSpill0) ->
@@ -107,8 +108,7 @@ is_mem_opnd(Opnd, TempMap) ->
 	    case tuple_size(TempMap) > Reg of 
 	      true ->
 		case 
-		  hipe_temp_map:is_spilled(Reg,
-					   TempMap) of
+		  hipe_temp_map:is_spilled(Reg, TempMap) of
 		  true ->
 		    ?count_temp(Reg),
 		    true;
@@ -120,7 +120,7 @@ is_mem_opnd(Opnd, TempMap) ->
 	end;
       _ -> false
     end,
-  %%  io:format("Op ~w mem: ~w\n",[Opnd,R]),
+  %% io:format("Op ~w mem: ~w\n",[Opnd,R]),
   R.
 
 %%% Check if an operand is a spilled Temp.
@@ -179,10 +179,10 @@ clone(Dst) ->
 
 %%% Make a certain reg into a clone of Dst
 
-% clone2(Dst, Reg) ->
-%   Type =
-%     case Dst of
-%       #x86_mem{} -> hipe_x86:mem_type(Dst);
-%       #x86_temp{} -> hipe_x86:temp_type(Dst)
-%     end,
-%   hipe_x86:mk_temp(Reg,Type).
+%% clone2(Dst, Reg) ->
+%%   Type =
+%%     case Dst of
+%%       #x86_mem{} -> hipe_x86:mem_type(Dst);
+%%       #x86_temp{} -> hipe_x86:temp_type(Dst)
+%%     end,
+%%   hipe_x86:mk_temp(Reg,Type).

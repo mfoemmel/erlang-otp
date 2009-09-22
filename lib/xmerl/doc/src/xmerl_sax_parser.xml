@@ -294,13 +294,7 @@
 
        <tag><c>unicode_char()</c></tag>
        <item>
-         integer representing valid unicode codepoint
-       </item>
-
-
-       <tag><c>unicode_char()</c></tag>
-       <item>
-         Integer representing valid unicode codepoint
+         Integer representing valid unicode codepoint.
        </item>
 
        <tag><c>unicode_binary()</c></tag>
@@ -326,8 +320,9 @@
       <type>
         <v>Filename = string()</v>
         <v>Options = [option()]</v>
-        <v>Result = {ok, EventState} |</v>
-        <v>&nbsp;&nbsp;&nbsp;{Tag, Location, Reason, EndTags, EventState} |</v>
+        <v>Result = {ok, EventState, Rest} |</v>
+        <v>&nbsp;&nbsp;&nbsp;{Tag, Location, Reason, EndTags, EventState}</v>
+        <v>Rest = unicode_binary() | latin1_binary()</v>
         <v>Tag = atom() (fatal_error, or user defined tag)</v>
         <v>Location = {CurrentLocation, EntityName, LineNo}</v>
         <v>CurrentLocation = string()</v>
@@ -347,8 +342,9 @@
       <type>
         <v>Xml = unicode_binary() | latin1_binary() | [unicode_char()]</v>
         <v>Options = [option()]</v>
-        <v>Result = {ok, EventState} |</v>
-        <v>&nbsp;&nbsp;&nbsp;{Tag, Location, Reason, EndTags, EventState} |</v>
+        <v>Result = {ok, EventState, Rest} |</v>
+        <v>&nbsp;&nbsp;&nbsp;{Tag, Location, Reason, EndTags, EventState}</v>
+        <v>Rest =  unicode_binary() | latin1_binary() | [unicode_char()]</v>
         <v>Tag = atom() (fatal_error or user defined tag)</v>
         <v>Location = {CurrentLocation, EntityName, LineNo}</v>
         <v>CurrentLocation = string()</v>

@@ -259,5 +259,6 @@
 	  cli_spec,
 	  address, 
 	  port,
-	  options
+	  options,
+	  exec
 	 }).

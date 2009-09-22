@@ -29,8 +29,8 @@
 
 -module(wxListCtrl).
 -include("wxe.hrl").
--export([arrange/1,arrange/2,assignImageList/3,clearAll/1,create/2,create/3,
-  deleteAllItems/1,deleteColumn/2,deleteItem/2,destroy/1,editLabel/2,
+-export([ sortItems/2 ,arrange/1,arrange/2,assignImageList/3,clearAll/1,create/2,
+  create/3,deleteAllItems/1,deleteColumn/2,deleteItem/2,destroy/1,editLabel/2,
   ensureVisible/2,findItem/3,findItem/4,getColumn/3,getColumnCount/1,
   getColumnWidth/2,getCountPerPage/1,getImageList/2,getItem/2,getItemBackgroundColour/2,
   getItemCount/1,getItemData/2,getItemFont/2,getItemPosition/3,getItemRect/3,
@@ -715,6 +715,24 @@ setWindowStyleFlag(#wx_ref{type=ThisT,ref=ThisRef},Style)
   wxe_util:cast(?wxListCtrl_SetWindowStyleFlag,
   <<ThisRef:32/?UI,Style:32/?UI>>).
 
+
+%% @spec (This::wxListCtrl(), SortCallBack::function()) -> boolean()
+%% @doc Sort the items in the list control<br />
+%%   <pre>SortCalBack(Item1,Item2) -> integer()</pre>
+%%  <br /> SortCallBack receives the client data associated with two items
+%%         to compare, and should return 0 if the items are equal, a negative
+%%         value if the first item is less than the second one and a positive
+%%         value if the first item is greater than the second one.
+%%  <br /> NOTE: The callback may not call other processes.
+sortItems(#wx_ref{type=ThisT,ref=ThisRef}, SortCallBack)
+  when is_function(SortCallBack, 2) ->
+	?CLASS(ThisT,wxListCtrl),
+	Sort = fun([Item1,Item2]) ->
+			Result = SortCallBack(Item1,Item2),
+			<<Result:32/?UI>>
+		end,
+	SortId = wxe_util:get_cbId(Sort),
+	wxe_util:call(?wxListCtrl_SortItems, <<ThisRef:32/?UI,SortId:32/?UI>>).
 %% @spec (This::wxListCtrl()) -> ok
 %% @doc Destroys this object, do not use object again
 destroy(Obj=#wx_ref{type=Type}) -> 

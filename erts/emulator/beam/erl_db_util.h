@@ -208,7 +208,7 @@ typedef struct db_table_common {
     erts_smp_rwmtx_t rwlock;  /* rw lock on table */
     erts_smp_mtx_t fixlock;   /* Protects fixations,megasec,sec,microsec */
     int is_thread_safe;       /* No fine locking inside table needed */
-    Uint32 type;              /* hash or tree, private or not; *read only* after creation */
+    Uint32 type;              /* table type, *read only* after creation */
 #endif
     Eterm owner;              /* Pid of the creator */
     Eterm heir;               /* Pid of the heir */
@@ -241,7 +241,7 @@ typedef struct db_table_common {
 #define DB_ORDERED_SET   (1 << 9)
 #define DB_DELETE        (1 << 10) /* table is being deleted */
 
-#define ERTS_ETS_TABLE_TYPES (DB_BAG|DB_SET|DB_DUPLICATE_BAG|DB_ORDERED_SET|DB_PRIVATE|DB_FINE_LOCKED)
+#define ERTS_ETS_TABLE_TYPES (DB_BAG|DB_SET|DB_DUPLICATE_BAG|DB_ORDERED_SET|DB_FINE_LOCKED)
 
 #define IS_HASH_TABLE(Status) (!!((Status) & \
 				  (DB_BAG | DB_SET | DB_DUPLICATE_BAG)))

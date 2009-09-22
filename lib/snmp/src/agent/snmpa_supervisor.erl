@@ -158,7 +158,7 @@ verify_mandatory([Key|Keys], Opts) ->
 %% ----------------------------------------------------------------
 
 start_sub_agent(ParentAgent, Subtree, Mibs) 
-  when pid(ParentAgent), list(Mibs) ->
+  when is_pid(ParentAgent) andalso is_list(Mibs) ->
     ?d("start_sub_agent -> entry with"
       "~n   ParentAgent: ~p"
       "~n   Subtree:     ~p"
@@ -515,8 +515,12 @@ worker_spec(Name, Mod, Args, Type, Time, Modules) ->
     worker_spec(Name, Mod, start_link, Args, Type, Time, Modules).
 
 worker_spec(Name, Mod, Func, Args, Type, Time, Modules) 
-  when is_atom(Name) and is_atom(Mod) and is_atom(Func) and is_list(Args) and 
-       is_atom(Type) and is_list(Modules) ->
+  when is_atom(Name) andalso 
+       is_atom(Mod) andalso 
+       is_atom(Func) andalso 
+       is_list(Args) andalso 
+       is_atom(Type) andalso 
+       is_list(Modules) ->
     ?d("worker_spec -> entry with"
        "~n   Name:    ~p"
        "~n   Mod:     ~p"

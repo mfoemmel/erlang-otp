@@ -30,6 +30,35 @@
   <p>This document describes the changes made to the Compiler
     application.</p>
 
+<section><title>Compiler 4.6.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Corrected liveness optimization to eliminate a
+	    compiler crash that could occur when compiling bit syntax
+	    construction code. (Thanks to Mikage Sawatari.)</p>
+	    <p>Calling BIFs such as <c>length/1</c> in guard context
+	    in a try/catch block could cause a compiler crash.
+	    (Thanks to Paul Fisher.)</p>
+	    <p>Using filter expressions containing <c>andalso</c> or
+	    <c>orelse</c> in a list comprehension could cause a
+	    compiler crash. (Thanks to Martin Engström.)</p>
+          <p>
+	    Own Id: OTP-8054</p>
+        </item>
+        <item>
+          <p>
+	    A guard with nested 'not' operators could cause the
+	    compiler to crash. (Thanks to Tuncer Ayaz.)</p>
+          <p>
+	    Own Id: OTP-8131</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Compiler 4.6.2</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

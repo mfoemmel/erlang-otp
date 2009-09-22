@@ -307,7 +307,7 @@ cre_ErrorCode(C) when is_integer(C) and (0 =< C) and (C =< 65535) ->
 cre_ErrorCode(C) ->
     exit({invalid_ErrorCode, C}).
 
-cre_ErrorText(T) when list(T) ->
+cre_ErrorText(T) when is_list(T) ->
     T.
 
 cre_ContextID(Val) when (0 =< Val) and (Val =< 4294967295) ->
@@ -474,9 +474,9 @@ cre_ActionReply(CtxID, CtxReq, CmdReps)
 		   commandReply = CmdReps}.
 
 cre_ActionReply(CtxID, ED, CtxReq, CmdReps) 
-  when is_integer(CtxID) and
-       (is_record(ED, 'ErrorDescriptor') or (ED == asn1_NOVALUE)) and
-       (is_record(CtxReq, 'ContextRequest') or (CtxReq == asn1_NOVALUE)) and
+  when is_integer(CtxID) andalso
+       (is_record(ED, 'ErrorDescriptor') orelse (ED =:= asn1_NOVALUE)) andalso
+       (is_record(CtxReq, 'ContextRequest') orelse (CtxReq =:= asn1_NOVALUE)) andalso
        is_list(CmdReps) ->
     #'ActionReply'{contextId       = CtxID,
 		   errorDescriptor = ED, 
@@ -487,50 +487,50 @@ cre_ContextRequest() ->
     strip_ContextRequest(#'ContextRequest'{}).
 
 cre_ContextRequest(Prio) 
-  when is_integer(Prio) and (0 =< Prio) and (Prio =< 15) ->
+  when is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15) ->
     strip_ContextRequest(#'ContextRequest'{priority = Prio});
 cre_ContextRequest(Em) 
-  when (Em == true) or (Em == false) or (Em == asn1_NOVALUE) ->
+  when (Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE) ->
     strip_ContextRequest(#'ContextRequest'{emergency = Em});
-cre_ContextRequest(Top) when list(Top) ->
+cre_ContextRequest(Top) when is_list(Top) ->
     strip_ContextRequest(#'ContextRequest'{topologyReq = Top}).
 
 cre_ContextRequest(Prio, Em) 
-  when (is_integer(Prio) and (0 =< Prio) and (Prio =< 15)) and 
-       ((Em == true) or (Em == false) or (Em == asn1_NOVALUE)) ->
+  when (is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15)) andalso 
+       ((Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE)) ->
     CR = #'ContextRequest'{priority  = Prio,
 			   emergency = Em},
     strip_ContextRequest(CR);
 cre_ContextRequest(Prio, Top) 
-  when is_integer(Prio) and (0 =< Prio) and (Prio =< 15) and is_list(Top) ->
+  when is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15) andalso is_list(Top) ->
     CR = #'ContextRequest'{priority    = Prio,
 			   topologyReq = Top},
     strip_ContextRequest(CR).
 
 cre_ContextRequest(Prio, Em, Top) 
-  when (is_integer(Prio) and (0 =< Prio) and (Prio =< 15)) and 
-       ((Em == true) or (Em == false) or (Em == asn1_NOVALUE)) and
-       (is_list(Top) or (Top == asn1_NOVALUE)) ->
+  when (is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15)) andalso 
+       ((Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE)) andalso
+       (is_list(Top) orelse (Top == asn1_NOVALUE)) ->
     CR = #'ContextRequest'{priority    = Prio,
 			   emergency   = Em,
 			   topologyReq = Top},
     strip_ContextRequest(CR).
 
 cre_ContextRequest(Prio, Em, Top, Ieps) 
-  when (is_integer(Prio) and (0 =< Prio) and (Prio =< 15)) and 
-       ((Em == true) or (Em == false) or (Em == asn1_NOVALUE)) and
-       (is_list(Top) or (Top == asn1_NOVALUE)) and
-       ((Ieps == true) or (Ieps == false)) ->
+  when (is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15)) andalso 
+       ((Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE)) andalso
+       (is_list(Top) orelse (Top =:= asn1_NOVALUE)) andalso 
+       ((Ieps =:= true) orelse (Ieps =:= false)) ->
     CR = #'ContextRequest'{priority       = Prio,
 			   emergency      = Em,
 			   topologyReq    = Top,
 			   iepscallind    = Ieps},
     strip_ContextRequest(CR);
 cre_ContextRequest(Prio, Em, Top, Ctx) 
-  when ((is_integer(Prio) and (0 =< Prio) and (Prio =< 15)) or 
-	(Prio == asn1_NOVALUE)) and 
-       ((Em == true) or (Em == false) or (Em == asn1_NOVALUE)) and
-       (is_list(Top) or (Top == asn1_NOVALUE)) and
+  when ((is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15)) or 
+	(Prio =:= asn1_NOVALUE)) andalso  
+       ((Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE)) andalso 
+       (is_list(Top) orelse (Top =:= asn1_NOVALUE)) andalso 
        (is_list(Ctx)) ->
     CR = 
 	case context_list_or_prop(Ctx) of
@@ -548,11 +548,11 @@ cre_ContextRequest(Prio, Em, Top, Ctx)
     strip_ContextRequest(CR).
 
 cre_ContextRequest(Prio, Em, Top, Ieps, Ctx) 
-  when ((is_integer(Prio) and (0 =< Prio) and (Prio =< 15)) or 
-	(Prio == asn1_NOVALUE)) and 
-       ((Em == true) or (Em == false) or (Em == asn1_NOVALUE)) and
-       (is_list(Top) or (Top == asn1_NOVALUE)) and
-       ((Ieps == true) or (Ieps == false) or (Ieps == asn1_NOVALUE)) and
+  when ((is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15)) orelse 
+	(Prio =:= asn1_NOVALUE)) andalso  
+       ((Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE)) andalso 
+       (is_list(Top) orelse (Top =:= asn1_NOVALUE)) andalso 
+       ((Ieps =:= true) orelse (Ieps =:= false) orelse (Ieps =:= asn1_NOVALUE)) andalso 
        (is_list(Ctx)) ->
     CR = 
 	case context_list_or_prop(Ctx) of
@@ -572,13 +572,13 @@ cre_ContextRequest(Prio, Em, Top, Ieps, Ctx)
     strip_ContextRequest(CR).
 
 cre_ContextRequest(Prio, Em, Top, Ieps, CtxProp, CtxList) 
-  when ((is_integer(Prio) and (0 =< Prio) and (Prio =< 15)) or 
-	(Prio == asn1_NOVALUE)) and 
-       ((Em == true) or (Em == false) or (Em == asn1_NOVALUE)) and
-       (is_list(Top) or (Top == asn1_NOVALUE)) and
-       ((Ieps == true) or (Ieps == false) or (Ieps == asn1_NOVALUE)) and
-       (is_list(CtxProp) or (CtxProp == asn1_NOVALUE)) and
-       (is_list(CtxList) or (CtxList == asn1_NOVALUE)) ->
+  when ((is_integer(Prio) andalso (0 =< Prio) andalso (Prio =< 15)) orelse  
+	(Prio =:= asn1_NOVALUE)) andalso 
+       ((Em =:= true) orelse (Em =:= false) orelse (Em =:= asn1_NOVALUE)) andalso 
+       (is_list(Top) orelse (Top =:= asn1_NOVALUE)) andalso 
+       ((Ieps =:= true) orelse (Ieps =:= false) orelse (Ieps =:= asn1_NOVALUE)) andalso 
+       (is_list(CtxProp) orelse (CtxProp =:= asn1_NOVALUE)) andalso 
+       (is_list(CtxList) orelse (CtxList =:= asn1_NOVALUE)) ->
     CR = #'ContextRequest'{priority    = Prio,
 			   emergency   = Em,
 			   topologyReq = Top,
@@ -603,9 +603,9 @@ context_list_or_prop([], What) ->
     What;
 context_list_or_prop([H|T], What) ->
     case is_ContextID(H) of
-	true when (What == contextList) ->
+	true when (What =:= contextList) ->
 	    context_list_or_prop(T, What);
-	false when (What == contextProp) ->
+	false when (What =:= contextProp) ->
 	    context_list_or_prop(T, What);
 	_ ->
 	    error({invalid_contextListOrProp, H, What})
@@ -637,19 +637,19 @@ cre_ContextAttrAuditRequest() ->
     strip_ContextAttrAuditRequest(#'ContextAttrAuditRequest'{}).
 
 cre_ContextAttrAuditRequest(Top, Em, Prio) 
-  when ((Top  == 'NULL') or (Top  == asn1_NOVALUE)) and
-       ((Em   == 'NULL') or (Em   == asn1_NOVALUE)) and
-       ((Prio == 'NULL') or (Prio == asn1_NOVALUE)) ->
+  when ((Top  =:= 'NULL') orelse (Top  =:= asn1_NOVALUE)) andalso 
+       ((Em   =:= 'NULL') orelse (Em   =:= asn1_NOVALUE)) andalso 
+       ((Prio =:= 'NULL') orelse (Prio =:= asn1_NOVALUE)) ->
     CAAR = #'ContextAttrAuditRequest'{topology  = Top,
 				      emergency = Em,
 				      priority  = Prio},
     strip_ContextAttrAuditRequest(CAAR).
 
 cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps) 
-  when ((Top  == 'NULL') or (Top  == asn1_NOVALUE)) and
-       ((Em   == 'NULL') or (Em   == asn1_NOVALUE)) and
-       ((Prio == 'NULL') or (Prio == asn1_NOVALUE)) and
-       ((Ieps == 'NULL') or (Ieps == asn1_NOVALUE)) ->
+  when ((Top  =:= 'NULL') orelse (Top  =:= asn1_NOVALUE)) andalso
+       ((Em   =:= 'NULL') orelse (Em   =:= asn1_NOVALUE)) andalso
+       ((Prio =:= 'NULL') orelse (Prio =:= asn1_NOVALUE)) andalso
+       ((Ieps =:= 'NULL') orelse (Ieps =:= asn1_NOVALUE)) ->
     CAAR = #'ContextAttrAuditRequest'{topology    = Top,
 				      emergency   = Em,
 				      priority    = Prio,
@@ -657,11 +657,11 @@ cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps)
     strip_ContextAttrAuditRequest(CAAR).
 
 cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps, Ctx) 
-  when ((Top  == 'NULL') or (Top  == asn1_NOVALUE)) and
-       ((Em   == 'NULL') or (Em   == asn1_NOVALUE)) and
-       ((Prio == 'NULL') or (Prio == asn1_NOVALUE)) and
-       ((Ieps == 'NULL') or (Ieps == asn1_NOVALUE)) and
-       (is_list(Ctx)     or (Ctx == asn1_NOVALUE)) ->
+  when ((Top  =:= 'NULL') orelse (Top  =:= asn1_NOVALUE)) andalso
+       ((Em   =:= 'NULL') orelse (Em   =:= asn1_NOVALUE)) andalso
+       ((Prio =:= 'NULL') orelse (Prio =:= asn1_NOVALUE)) andalso
+       ((Ieps =:= 'NULL') orelse (Ieps =:= asn1_NOVALUE)) andalso
+       (is_list(Ctx)      orelse (Ctx  =:= asn1_NOVALUE)) ->
     CAAR = #'ContextAttrAuditRequest'{topology       = Top,
 				      emergency      = Em,
 				      priority       = Prio,
@@ -670,13 +670,13 @@ cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps, Ctx)
     strip_ContextAttrAuditRequest(CAAR).
 
 cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps, Ctx, SelPrio) 
-  when ((Top  == 'NULL') or (Top  == asn1_NOVALUE)) and
-       ((Em   == 'NULL') or (Em   == asn1_NOVALUE)) and
-       ((Prio == 'NULL') or (Prio == asn1_NOVALUE)) and
-       ((Ieps == 'NULL') or (Ieps == asn1_NOVALUE)) and
-       (is_list(Ctx)     or (Ctx  == asn1_NOVALUE)) and
-       ((is_integer(SelPrio) and ((0 =< SelPrio) and (SelPrio =< 15))) or
-	(SelPrio == asn1_NOVALUE)) ->
+  when ((Top  =:= 'NULL') orelse (Top  =:= asn1_NOVALUE)) andalso
+       ((Em   =:= 'NULL') orelse (Em   =:= asn1_NOVALUE)) andalso
+       ((Prio =:= 'NULL') orelse (Prio =:= asn1_NOVALUE)) andalso
+       ((Ieps =:= 'NULL') orelse (Ieps =:= asn1_NOVALUE)) andalso
+       (is_list(Ctx)      orelse (Ctx  =:= asn1_NOVALUE)) andalso
+       ((is_integer(SelPrio) andalso ((0 =< SelPrio) and (SelPrio =< 15))) orelse
+	(SelPrio =:= asn1_NOVALUE)) ->
     CAAR = #'ContextAttrAuditRequest'{topology       = Top,
 				      emergency      = Em,
 				      priority       = Prio,
@@ -686,14 +686,14 @@ cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps, Ctx, SelPrio)
     strip_ContextAttrAuditRequest(CAAR).
 
 cre_ContextAttrAuditRequest(Top, Em, Prio, Ieps, Ctx, SelPrio, SelLog) 
-  when ((Top  == 'NULL') or (Top  == asn1_NOVALUE)) and
-       ((Em   == 'NULL') or (Em   == asn1_NOVALUE)) and
-       ((Prio == 'NULL') or (Prio == asn1_NOVALUE)) and
-       ((Ieps == 'NULL') or (Ieps == asn1_NOVALUE)) and
-       (is_list(Ctx)     or (Ctx  == asn1_NOVALUE)) and
-       ((is_integer(SelPrio) and ((0 =< SelPrio) and (SelPrio =< 15))) or
-	(SelPrio == asn1_NOVALUE)) ->
-    case ((SelLog == asn1_NOVALUE) orelse is_SelectLogic(SelLog)) of
+  when ((Top  =:= 'NULL') orelse (Top  =:= asn1_NOVALUE)) andalso
+       ((Em   =:= 'NULL') orelse (Em   =:= asn1_NOVALUE)) andalso
+       ((Prio =:= 'NULL') orelse (Prio =:= asn1_NOVALUE)) andalso
+       ((Ieps =:= 'NULL') orelse (Ieps =:= asn1_NOVALUE)) andalso
+       (is_list(Ctx)      orelse (Ctx  =:= asn1_NOVALUE)) andalso
+       ((is_integer(SelPrio) andalso ((0 =< SelPrio) andalso (SelPrio =< 15))) orelse 
+	(SelPrio =:= asn1_NOVALUE)) ->
+    case ((SelLog =:= asn1_NOVALUE) orelse is_SelectLogic(SelLog)) of
 	true ->
 	    CAAR = #'ContextAttrAuditRequest'{topology       = Top,
 					      emergency      = Em,
@@ -1282,24 +1282,24 @@ cre_NotifyRequest(TermIDs, D)
 		     observedEventsDescriptor = D}.
 
 cre_NotifyRequest(TermIDs, D, ED) 
-  when is_list(TermIDs) and 
-       is_record(D, 'ObservedEventsDescriptor') and 
+  when is_list(TermIDs) andalso 
+       is_record(D, 'ObservedEventsDescriptor') andalso 
        is_record(ED, 'ErrorDescriptor') ->
     #'NotifyRequest'{terminationID            = TermIDs,
 		     observedEventsDescriptor = D,
 		     errorDescriptor          = ED}.
     
-cre_NotifyReply(TermIDs) when list(TermIDs) ->
+cre_NotifyReply(TermIDs) when is_list(TermIDs) ->
     #'NotifyReply'{terminationID = TermIDs}.
 
 cre_NotifyReply(TermIDs, ED) 
-  when is_list(TermIDs) and 
+  when is_list(TermIDs) andalso 
        is_record(ED, 'ErrorDescriptor') ->
     #'NotifyReply'{terminationID   = TermIDs,
 		   errorDescriptor = ED}.
 
 cre_ObservedEventsDescriptor(RID, [H|_] = L) 
-  when is_integer(RID) and is_record(H, 'ObservedEvent') ->
+  when is_integer(RID) andalso is_record(H, 'ObservedEvent') ->
     #'ObservedEventsDescriptor'{requestId        = RID, 
 				observedEventLst = L}.
 
@@ -1370,7 +1370,7 @@ cre_ServiceChangeReply(TermIDs, {Tag, R} = SCR)
     #'ServiceChangeReply'{terminationID       = TermIDs, 
 			  serviceChangeResult = SCR}.
 
-cre_ServiceChangeResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_ServiceChangeResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {errorDescriptor, ED};
 cre_ServiceChangeResult(SCRP) when is_record(SCRP, 'ServiceChangeResParm') ->
     {serviceChangeResParms, SCRP}.
@@ -1378,12 +1378,12 @@ cre_ServiceChangeResult(SCRP) when is_record(SCRP, 'ServiceChangeResParm') ->
 %% cre_WildcardField(L) when list(L), length(L) == 1 -> L.
 
 cre_TerminationID(W, ID) 
-  when is_list(W) and 
-       is_list(ID) and (1 =< length(ID)) and (length(ID) =< 8) ->
+  when is_list(W) andalso 
+       is_list(ID) andalso (1 =< length(ID)) andalso (length(ID) =< 8) ->
     #'TerminationID'{wildcard = W, 
 		     id       = ID}.
 
-cre_TerminationIDList(L) when list(L) ->
+cre_TerminationIDList(L) when is_list(L) ->
     L.
 
 cre_MediaDescriptor() ->

@@ -83,7 +83,7 @@ expand([Case|Cases], Acc) ->
     case (catch apply(?MODULE,Case,[suite])) of
         [] ->
             expand(Cases, [Case|Acc]);
-        C when list(C) ->
+        C when is_list(C) ->
             expand(Cases, [expand(C, [])|Acc]);
         _ ->
             expand(Cases, [Case|Acc])
@@ -137,7 +137,7 @@ tickets(suite) ->
 
 otp7672_msg01(suite) ->
     [];
-otp7672_msg01(Config) when list(Config) ->
+otp7672_msg01(Config) when is_list(Config) ->
     %% ?SET_DBG(trc, true),
     d("otp7672_msg01 -> entry", []),
     ok = otp7672( otp7672_msg01() ),
@@ -146,7 +146,7 @@ otp7672_msg01(Config) when list(Config) ->
 
 otp7672_msg02(suite) ->
     [];
-otp7672_msg02(Config) when list(Config) ->
+otp7672_msg02(Config) when is_list(Config) ->
     %% ?SET_DBG(trc, true),
     d("otp7672_msg02 -> entry", []),
     ok = otp7672( otp7672_msg02() ),

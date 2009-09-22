@@ -92,10 +92,18 @@ MODULES = $(EDOC_MODULES) \
 
 
 
-HRL_FILES = ../include/xmerl.hrl ../include/xmerl_xlink.hrl ../include/xmerl_xpath.hrl ../include/xmerl_xsd.hrl
+HRL_FILES = \
+	../include/xmerl.hrl \
+	../include/xmerl_xlink.hrl \
+	../include/xmerl_xpath.hrl \
+	../include/xmerl_xsd.hrl
+
 INCLUDE_DIR = ../include
 
-INTERNAL_HRL_FILES  = 
+INTERNAL_HRL_FILES  = \
+	xmerl_internal.hrl  \
+	xmerl_sax_old_dom.hrl \
+	xmerl_sax_parser.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -210,7 +218,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
 	$(INSTALL_DATA) xmerl_xpath_parse.yrl $(RELSYSDIR)/src
 	$(INSTALL_DATA) xmerl_b64Bin.yrl $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include

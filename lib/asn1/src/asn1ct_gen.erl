@@ -60,7 +60,17 @@ pgen(OutFile,Erules,Module,TypeOrVal) ->
     pgen_module(OutFile,Erules,Module,TypeOrVal,true).
 
 
-pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
+pgen_module(OutFile,Erules,Module,
+	    TypeOrVal = {Types,_Values,_Ptypes,_Classes,_Objects,_ObjectSets},
+	    Indent) ->
+    N2nConvEnums = [CName|| {n2n,CName} <- get(encoding_options)],
+    case N2nConvEnums -- Types of
+	[] ->
+	    ok;
+	UnmatchedTypes ->
+	    exit({"Non existing ENUMERATION types used in n2n option",
+		   UnmatchedTypes})
+    end,
     put(outfile,OutFile),
     HrlGenerated = pgen_hrl(Erules,Module,TypeOrVal,Indent),
     asn1ct_name:start(),
@@ -71,7 +81,7 @@ pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
     pgen_exports(Erules,Module,TypeOrVal),
     pgen_dispatcher(Erules,Module,TypeOrVal),
     pgen_info(),
-    pgen_typeorval(wrap_ber(Erules),Module,TypeOrVal),
+    pgen_typeorval(wrap_ber(Erules),Module,N2nConvEnums,TypeOrVal),
     pgen_partial_incomplete_decode(Erules),
 % gen_vars(asn1_db:mod_to_vars(Module)),
 % gen_tag_table(AllTypes),
@@ -79,17 +89,19 @@ pgen_module(OutFile,Erules,Module,TypeOrVal,Indent) ->
     io:format("--~p--~n",[{generated,ErlFile}]).
 
 
-pgen_typeorval(Erules,Module,{Types,Values,_Ptypes,_Classes,Objects,ObjectSets}) ->
-    pgen_types(Erules,Module,Types),
+pgen_typeorval(Erules,Module,N2nConvEnums,{Types,Values,_Ptypes,_Classes,Objects,ObjectSets}) ->
+    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
+				       rt2ct_suffix(Erules)])),
+    pgen_types(Rtmod,Erules,N2nConvEnums,Module,Types),
     pgen_values(Erules,Module,Values),
-    pgen_objects(Erules,Module,Objects),
-    pgen_objectsets(Erules,Module,ObjectSets),
+    pgen_objects(Rtmod,Erules,Module,Objects),
+    pgen_objectsets(Rtmod,Erules,Module,ObjectSets),
     case catch lists:member(der,get(encoding_options)) of
 	true ->
 	    pgen_check_defaultval(Erules,Module);
 	_ -> ok
     end,
-    pgen_partial_decode(Erules,Module).
+    pgen_partial_decode(Rtmod,Erules,Module).
 
 pgen_values(_,_,[]) ->
     true;
@@ -98,44 +110,67 @@ pgen_values(Erules,Module,[H|T]) ->
     gen_value(Valuedef),
     pgen_values(Erules,Module,T).
 
-pgen_types(_,Module,[]) ->
+pgen_types(_,_,_,Module,[]) ->
     gen_value_match(Module),
     true;
-pgen_types(Erules,Module,[H|T]) ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-				       rt2ct_suffix(Erules)])),
+pgen_types(Rtmod,Erules,N2nConvEnums,Module,[H|T]) ->
     asn1ct_name:clear(),
     Typedef = asn1_db:dbget(Module,H),
     Rtmod:gen_encode(Erules,Typedef),
     asn1ct_name:clear(),
     Rtmod:gen_decode(Erules,Typedef),
-    pgen_types(Erules,Module,T).
+    case lists:member(H,N2nConvEnums) of
+	true ->
+	    pgen_n2nconversion(Erules,Typedef);
+	_ ->
+	    true
+    end,
+    pgen_types(Rtmod,Erules,N2nConvEnums,Module,T).
 
-pgen_objects(_,_,[]) ->
+pgen_n2nconversion(_Erules,#typedef{name=TypeName,typespec=#type{def={'ENUMERATED',{NN1,NN2}}}}) ->
+    NN = NN1 ++ NN2,
+    pgen_name2numfunc(TypeName,NN),
+    pgen_num2namefunc(TypeName,NN);
+pgen_n2nconversion(_Erules,_) ->
+    true.
+
+pgen_name2numfunc(_TypeName,[]) ->
     true;
-pgen_objects(Erules,Module,[H|T]) ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-				       rt2ct_suffix(Erules)])),
+pgen_name2numfunc(TypeName,[{Atom,Number}]) ->
+    emit(["name2num_",TypeName,"(",{asis,Atom},") ->",Number,".",nl,nl]);
+pgen_name2numfunc(TypeName,[{Atom,Number}|NNRest]) ->
+    emit(["name2num_",TypeName,"(",{asis,Atom},") ->",Number,";",nl]),
+    pgen_name2numfunc(TypeName,NNRest).
+
+pgen_num2namefunc(_TypeName,[]) ->
+    true;
+pgen_num2namefunc(TypeName,[{Atom,Number}]) ->
+    emit(["num2name_",TypeName,"(",Number,") ->",{asis,Atom},".",nl,nl]);
+pgen_num2namefunc(TypeName,[{Atom,Number}|NNRest]) ->
+    emit(["num2name_",TypeName,"(",Number,") ->",{asis,Atom},";",nl]),
+    pgen_num2namefunc(TypeName,NNRest).
+
+pgen_objects(_,_,_,[]) ->
+    true;
+pgen_objects(Rtmod,Erules,Module,[H|T]) ->
     asn1ct_name:clear(),
     Typedef = asn1_db:dbget(Module,H),
     Rtmod:gen_obj_code(Erules,Module,Typedef),
-    pgen_objects(Erules,Module,T).
+    pgen_objects(Rtmod,Erules,Module,T).
 
-pgen_objectsets(_,_,[]) ->
+pgen_objectsets(_,_,_,[]) ->
     true;
-pgen_objectsets(Erules,Module,[H|T]) ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-				       rt2ct_suffix(Erules)])),
+pgen_objectsets(Rtmod,Erules,Module,[H|T]) ->
     asn1ct_name:clear(),
     TypeDef = asn1_db:dbget(Module,H),
     Rtmod:gen_objectset_code(Erules,TypeDef),
-    pgen_objectsets(Erules,Module,T).
+    pgen_objectsets(Rtmod,Erules,Module,T).
 
 pgen_check_defaultval(Erules,Module) ->
     CheckObjects = ets:tab2list(check_functions),
     case get(asndebug) of
 	true ->
-	    FileName = lists:concat([Module,'.table']),
+	    FileName = lists:concat([Module,".table"]),
 	    {ok,IoDevice} = file:open(FileName,[write]),
 	    Fun =
 		fun(X)->
@@ -148,13 +183,13 @@ pgen_check_defaultval(Erules,Module) ->
     end,
     gen_check_defaultval(Erules,Module,CheckObjects).
 
-pgen_partial_decode(Erule,Module) when Erule == ber_bin_v2 ->
-    pgen_partial_inc_dec(Erule,Module),
-    pgen_partial_dec(Erule,Module);
-pgen_partial_decode(_,_) ->
+pgen_partial_decode(Rtmod,Erule,Module) when Erule == ber_bin_v2 ->
+    pgen_partial_inc_dec(Rtmod,Erule,Module),
+    pgen_partial_dec(Rtmod,Erule,Module);
+pgen_partial_decode(_,_,_) ->
     ok.
 
-pgen_partial_inc_dec(Erules,Module) ->
+pgen_partial_inc_dec(Rtmod,Erules,Module) ->
 %    io:format("Start partial incomplete decode gen?~n"),
     case asn1ct:get_gen_state_field(inc_type_pattern) of
 	undefined ->
@@ -164,15 +199,13 @@ pgen_partial_inc_dec(Erules,Module) ->
 %	    ok;
 	ConfList -> 
 	    PatternLists=lists:map(fun({_,P}) -> P end,ConfList),
-	    pgen_partial_inc_dec1(Erules,Module,PatternLists),
-	    gen_partial_inc_dec_refed_funcs(Erules)
+	    pgen_partial_inc_dec1(Rtmod,Erules,Module,PatternLists),
+	    gen_partial_inc_dec_refed_funcs(Rtmod,Erules)
     end.
     
 %% pgen_partial_inc_dec1 generates a function of the toptype in each
 %% of the partial incomplete decoded types.
-pgen_partial_inc_dec1(Erules,Module,[P|Ps]) ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-				       rt2ct_suffix(Erules)])),
+pgen_partial_inc_dec1(Rtmod,Erules,Module,[P|Ps]) ->
     TopTypeName = asn1ct:partial_inc_dec_toptype(P),
     TypeDef=asn1_db:dbget(Module,TopTypeName),
     asn1ct_name:clear(),
@@ -189,14 +222,12 @@ pgen_partial_inc_dec1(Erules,Module,[P|Ps]) ->
 	    ok
     end,
     Rtmod:gen_decode(Erules,TypeDef),
-    gen_dec_part_inner_constr(Erules,TypeDef,[TopTypeName]),
-    pgen_partial_inc_dec1(Erules,Module,Ps);
-pgen_partial_inc_dec1(_,_,[]) ->
+    gen_dec_part_inner_constr(Rtmod,Erules,TypeDef,[TopTypeName]),
+    pgen_partial_inc_dec1(Rtmod,Erules,Module,Ps);
+pgen_partial_inc_dec1(_,_,_,[]) ->
     ok.
 
-gen_partial_inc_dec_refed_funcs(Erule) when Erule == ber_bin_v2 ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erule),
-				       rt2ct_suffix(Erule)])),
+gen_partial_inc_dec_refed_funcs(Rtmod,Erule) when Erule == ber_bin_v2 ->
     case asn1ct:next_refed_func() of
 	[] ->
 	    ok;
@@ -205,20 +236,20 @@ gen_partial_inc_dec_refed_funcs(Erule) when Erule == ber_bin_v2 ->
 	    asn1ct:update_gen_state(namelist,Pattern),
 	    asn1ct:set_current_sindex(Sindex),
 	    Rtmod:gen_inc_decode(Erule,TypeDef),
-	    gen_dec_part_inner_constr(Erule,TypeDef,[Name]),
-	    gen_partial_inc_dec_refed_funcs(Erule);
+	    gen_dec_part_inner_constr(Rtmod,Erule,TypeDef,[Name]),
+	    gen_partial_inc_dec_refed_funcs(Rtmod,Erule);
 	{Name,Sindex,Pattern,Type} ->
 	    TypeDef=#typedef{name=asn1ct_gen:list2name(Name),typespec=Type},
 	    asn1ct:update_gen_state(namelist,Pattern),
 	    asn1ct:set_current_sindex(Sindex),
 	    Rtmod:gen_inc_decode(Erule,TypeDef),
-	    gen_dec_part_inner_constr(Erule,TypeDef,Name),
-	    gen_partial_inc_dec_refed_funcs(Erule)
+	    gen_dec_part_inner_constr(Rtmod,Erule,TypeDef,Name),
+	    gen_partial_inc_dec_refed_funcs(Rtmod,Erule)
     end;
-gen_partial_inc_dec_refed_funcs(_) ->
+gen_partial_inc_dec_refed_funcs(_,_) ->
     ok.
 
-pgen_partial_dec(Erules,_Module) ->
+pgen_partial_dec(_Rtmod,Erules,_Module) ->
     Type_pattern = asn1ct:get_gen_state_field(type_pattern),
 %    io:format("Type_pattern: ~w~n",[Type_pattern]),
     %% Get the typedef of the top type and follow into the choosen components until the last type/component.
@@ -363,51 +394,45 @@ get_component(Name,_) ->
 %% of the partial incomplete decode and are defined within the top
 %% type.Constructed subtypes deeper in the structure will be generated
 %% in turn after all top types have been generated.
-gen_dec_part_inner_constr(Erules,TypeDef,TypeName) ->
+gen_dec_part_inner_constr(Rtmod,Erules,TypeDef,TypeName) ->
     Def = TypeDef#typedef.typespec,
     InnerType = asn1ct_gen:get_inner(Def#type.def),
     case InnerType of
 	'SET' ->
 	    #'SET'{components=Components} = Def#type.def,
-	    gen_dec_part_inner_types(Erules,Components,TypeName);
+	    gen_dec_part_inner_types(Rtmod,Erules,Components,TypeName);
 	%%  Continue generate the inner of each component
 	'SEQUENCE' ->
 	    #'SEQUENCE'{components=Components} = Def#type.def,
-	    gen_dec_part_inner_types(Erules,Components,TypeName);
+	    gen_dec_part_inner_types(Rtmod,Erules,Components,TypeName);
 	'CHOICE' ->
 	    {_,Components} = Def#type.def,
-	    gen_dec_part_inner_types(Erules,Components,TypeName);
+	    gen_dec_part_inner_types(Rtmod,Erules,Components,TypeName);
 	'SEQUENCE OF' ->
 	    %% this and next case must be the last component in the
 	    %% partial decode chain here. Not likely that this occur.
 	    {_,Type} = Def#type.def,
 	    NameSuffix = constructed_suffix(InnerType,Type#type.def),
-	    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-					       rt2ct_suffix(Erules)])),
 	    asn1ct_name:clear(),
 	    Rtmod:gen_decode(Erules,[NameSuffix|TypeName],Type);
 %%	    gen_types(Erules,[NameSuffix|Typename],Type);
 	'SET OF' ->
 	    {_,Type} = Def#type.def,
 	    NameSuffix = constructed_suffix(InnerType,Type#type.def),
-	    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-					       rt2ct_suffix(Erules)])),
 	    asn1ct_name:clear(),
 	    Rtmod:gen_decode(Erules,[NameSuffix|TypeName],Type);
 	_ ->
 	    ok
     end.
 
-gen_dec_part_inner_types(Erules,[ComponentType|Rest],TypeName) ->
-    Rtmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
-				       rt2ct_suffix(Erules)])),
+gen_dec_part_inner_types(Rtmod,Erules,[ComponentType|Rest],TypeName) ->
     asn1ct_name:clear(),
     Rtmod:gen_decode(Erules,TypeName,ComponentType),
-    gen_dec_part_inner_types(Erules,Rest,TypeName);
-gen_dec_part_inner_types(Erules,{Comps1,Comps2},TypeName)
+    gen_dec_part_inner_types(Rtmod,Erules,Rest,TypeName);
+gen_dec_part_inner_types(Rtmod,Erules,{Comps1,Comps2},TypeName)
   when is_list(Comps1),is_list(Comps2) ->
-    gen_dec_part_inner_types(Erules,Comps1 ++ Comps2,TypeName);
-gen_dec_part_inner_types(_,[],_) ->
+    gen_dec_part_inner_types(Rtmod,Erules,Comps1 ++ Comps2,TypeName);
+gen_dec_part_inner_types(_,_,[],_) ->
     ok.
 
 
@@ -796,6 +821,14 @@ pgen_exports(Erules,_Module,{Types,Values,_,_,Objects,ObjectSets}) ->
 % 		    gen_exports1(Types,"dec_",2);
 		_ -> ok
 	    end
+    end,
+    case [X || {n2n,X} <- get(encoding_options)] of
+	[] -> ok;
+	A2nNames ->
+	    emit({"-export([",nl}),
+	    gen_exports1(A2nNames,"name2num_",1),
+	    emit({"-export([",nl}),
+	    gen_exports1(A2nNames,"num2name_",1)	    
     end,
     case Values of
 	[] -> ok;

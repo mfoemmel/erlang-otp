@@ -72,10 +72,7 @@ pack_labels([{_Label,ref}|Labels],MFA,ConstTab,Size,Align,ConstNo,Acc, Refs) ->
 pack_labels([Label|Labels],MFA,ConstTab,AccSize,OldAlign,ConstNo, Acc, Refs) ->
   Const = hipe_consttab:lookup(Label, ConstTab),
   Align = hipe_consttab:const_align(Const),
-  NewAlign =
-    if Align > OldAlign -> Align;
-       true -> OldAlign
-    end,
+  NewAlign = erlang:max(Align, OldAlign),
   Start = 
     case AccSize rem Align of
       0 -> AccSize;

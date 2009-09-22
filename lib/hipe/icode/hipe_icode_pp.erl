@@ -49,10 +49,6 @@
 
 %%---------------------------------------------------------------------
 
--type io_device() :: atom() | pid().	%% XXX: DOES NOT BELONG HERE
-
-%%---------------------------------------------------------------------
-
 -spec pp(#icode{}) -> 'ok'.
 %% @doc Prettyprints linear Icode on stdout.
 %%  <p> Badly formed or unknown instructions are printed surrounded
@@ -60,7 +56,7 @@
 pp(Icode) ->
   pp(standard_io, Icode).
 
--spec pp(io_device(), #icode{}) -> 'ok'.
+-spec pp(io:device(), #icode{}) -> 'ok'.
 %% @doc Prettyprints linear Icode on IoDevice.
 %%  <p> Badly formed or unknown instructions are printed surrounded by
 %%      three stars "***".</p>
@@ -88,7 +84,7 @@ pp(Dev, Icode) ->
 pp_block(Code) ->
   pp_instrs(standard_io, Code).
 
--spec pp_instrs(io_device(), icode_instrs()) -> 'ok'.
+-spec pp_instrs(io:device(), icode_instrs()) -> 'ok'.
 %% @doc Prettyprints a list of Icode instructions.
 pp_instrs(Dev, Is) ->
   lists:foreach(fun (I) -> pp_instr(Dev, I) end, Is).

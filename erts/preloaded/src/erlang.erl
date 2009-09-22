@@ -42,11 +42,9 @@
 
 -export([concat_binary/1]).
 
--export([memory/0, memory/1]).
-
 -export([list_to_integer/2,integer_to_list/2]).
 
--export([demonitor/2]).
+-export([flush_monitor_message/2]).
 
 -export([set_cpu_topology/1, format_cpu_topology/1]).
 
@@ -273,11 +271,11 @@ fun_info_1([], _, A) -> A.
 
 -type dst() :: pid() | port() | atom() | {atom(), node()}.
 
--spec send_nosuspend(dst(), term()) -> bool().
+-spec send_nosuspend(dst(), term()) -> boolean().
 send_nosuspend(Pid, Msg) ->
     send_nosuspend(Pid, Msg, []).
 
--spec send_nosuspend(dst(), term(), ['noconnect' | 'nosuspend']) -> bool().
+-spec send_nosuspend(dst(), term(), ['noconnect' | 'nosuspend']) -> boolean().
 send_nosuspend(Pid, Msg, Opts) ->
     case erlang:send(Pid, Msg, [nosuspend|Opts]) of
 	ok -> true;
@@ -429,33 +427,6 @@ get_cookie() ->
 concat_binary(List) ->
     list_to_binary(List).
 
-%%
-%% erlang:memory/0 may fail with a notsup exception
-%%
-
-memory() ->
-    case erlang:system_info(memory) of
-	Result when is_list(Result) -> Result;
-	Error -> erlang:error(Error, [])
-    end.
-
-%%
-%% erlang:memory/1 may fail with a badarg or a notsup exception
-%%
-
-memory(Type) when is_atom(Type) ->
-    case erlang:system_info({memory, [Type]}) of
-	[{Type, Bytes}] -> Bytes;
-	Error -> erlang:error(Error, [Type])
-    end;
-memory(TypeSpec) ->
-    case erlang:system_info({memory, TypeSpec}) of
-	Result when is_list(Result) -> Result;
-	Error -> erlang:error(Error, [TypeSpec])
-    end.
-
-
-
 integer_to_list(I, 10) ->
     erlang:integer_to_list(I);
 integer_to_list(I, Base) 
@@ -525,26 +496,21 @@ list_to_integer([], _, I) ->
 list_to_integer(_, _, _) ->
     badarg.
 
-demonitor(MRef, Opts) ->
-    Flush = case catch get_demonitor_opts(Opts, false) of
-		Bool when Bool; not Bool -> Bool;
-		_ -> erlang:error(badarg, [MRef, Opts])
-	    end,
-    Res = case catch erlang:demonitor(MRef) of
-	      {'EXIT', {Error, _}} -> erlang:error(Error, [MRef, Opts]);
-	      R -> R
-	  end,
-    case Flush of
-	true -> receive {_, MRef, _, _, _} -> ok after 0 -> ok end;
-	_ -> ok
-    end,
+%% erlang:flush_monitor_message/2 is for internal use only!
+%%
+%% erlang:demonitor(Ref, [flush]) traps to
+%% erlang:flush_monitor_message(Ref, Res) when
+%% it needs to flush a monitor message.
+flush_monitor_message(Ref, Res) when is_reference(Ref), is_atom(Res) ->
+    receive {_, Ref, _, _, _} -> ok after 0 -> ok end,
     Res.
 
-%% Currently 'flush' is the only valid option...
-get_demonitor_opts([], Flush) ->
-    Flush;
-get_demonitor_opts([flush|Opts], _Flush) ->
-    get_demonitor_opts(Opts, true).
+-record(cpu, {node = -1,
+	      processor = -1,
+	      processor_node = -1,
+	      core = -1,
+	      thread = -1,
+	      logical = -1}).
 
 %% erlang:set_cpu_topology/1 is for internal use only!
 %%
@@ -552,29 +518,89 @@ get_demonitor_opts([flush|Opts], _Flush) ->
 %% erlang:set_cpu_topology(CpuTopology).
 set_cpu_topology(CpuTopology) ->
     try format_cpu_topology(erlang:system_flag(internal_cpu_topology,
-					       cput_parse(CpuTopology)))
-    catch _ : _ -> erlang:error(badarg, [CpuTopology])
+					       cput_e2i(CpuTopology)))
+    catch
+	Class:Exception when Class =/= error; Exception =/= internal_error -> 
+	    erlang:error(badarg, [CpuTopology])
     end.
 
-cput_parse(undefined) ->
+cput_e2i_clvl({logical, _}, _PLvl) ->
+    #cpu.logical;
+cput_e2i_clvl([E | _], PLvl) ->
+    case element(1, E) of
+	node -> case PLvl of
+		    0 -> #cpu.node;
+		    #cpu.processor -> #cpu.processor_node
+		end;
+	processor -> case PLvl of
+			 0 -> #cpu.node;
+			 #cpu.node -> #cpu.processor
+		     end;
+	core -> #cpu.core;
+	thread -> #cpu.thread
+    end.
+
+cput_e2i(undefined) ->
     undefined;
-cput_parse([]) ->
-    [];
-cput_parse({logical, CpuId}) ->
-    true = is_integer(CpuId),
-    CpuId;
-cput_parse([LvlEntry | _] = LvlList) ->
-    Lvl = element(1, LvlEntry),
-    list_to_tuple([Lvl | cput_parse_lvl(Lvl, LvlList)]).
+cput_e2i(E) ->
+    rvrs(cput_e2i(E, -1, -1, #cpu{}, 0, cput_e2i_clvl(E, 0), [])).
 
-cput_parse_lvl(_Lvl, []) ->
-    [];
-cput_parse_lvl(Lvl, [{Lvl, SubLvlList} | Rest]) ->
-    cput_parse_lvl(Lvl, [{Lvl, [], SubLvlList} | Rest]);
-cput_parse_lvl(Lvl, [{Lvl, Info, SubLvlList} | Rest]) ->
-    [] = Info, %% Currently only [] is a valid info list
-    [cput_parse(SubLvlList) | cput_parse_lvl(Lvl, Rest)].
-
+cput_e2i([], _NId, _PId, _IS, _PLvl, _Lvl, Res) -> 
+    Res;
+cput_e2i([E|Es], NId0, PId, IS, PLvl, Lvl, Res0) -> 
+    case cput_e2i(E, NId0, PId, IS, PLvl, Lvl, Res0) of
+	[] ->
+	    cput_e2i(Es, NId0, PId, IS, PLvl, Lvl, Res0);
+	[#cpu{node = N,
+	      processor = P,
+	      processor_node = PN} = CPU|_] = Res1 ->
+	    NId1 = case N > PN of
+			 true -> N;
+			 false -> PN
+		     end,
+	    cput_e2i(Es, NId1, P, CPU, PLvl, Lvl, Res1)
+    end;
+cput_e2i({Tag, [], TagList}, Nid, PId, CPU, PLvl, Lvl, Res) ->
+    %% Currently [] is the only valid InfoList
+    cput_e2i({Tag, TagList}, Nid, PId, CPU, PLvl, Lvl, Res);
+cput_e2i({node, NL}, Nid0, PId, _CPU, 0, #cpu.node, Res) ->
+    Nid1 = Nid0+1,
+    Lvl = cput_e2i_clvl(NL, #cpu.node),
+    cput_e2i(NL, Nid1, PId, #cpu{node = Nid1}, #cpu.node, Lvl, Res);
+cput_e2i({processor, PL}, Nid, PId0, _CPU, 0, #cpu.node, Res) ->
+    PId1 = PId0+1,
+    Lvl = cput_e2i_clvl(PL, #cpu.processor),
+    cput_e2i(PL, Nid, PId1, #cpu{processor = PId1}, #cpu.processor, Lvl, Res);
+cput_e2i({processor, PL}, Nid, PId0, CPU, PLvl, CLvl, Res)
+  when PLvl < #cpu.processor, CLvl =< #cpu.processor ->
+    PId1 = PId0+1,
+    Lvl = cput_e2i_clvl(PL, #cpu.processor),
+    cput_e2i(PL, Nid, PId1, CPU#cpu{processor = PId1,
+				    processor_node = -1,
+				    core = -1,
+				    thread = -1}, #cpu.processor, Lvl, Res);
+cput_e2i({node, NL}, Nid0, PId, CPU, #cpu.processor, #cpu.processor_node,
+	 Res) ->
+    Nid1 = Nid0+1,
+    Lvl = cput_e2i_clvl(NL, #cpu.processor_node),
+    cput_e2i(NL, Nid1, PId, CPU#cpu{processor_node = Nid1},
+	     #cpu.processor_node, Lvl, Res);
+cput_e2i({core, CL}, Nid, PId, #cpu{core = C0} = CPU, PLvl, #cpu.core, Res)
+  when PLvl < #cpu.core ->
+    Lvl = cput_e2i_clvl(CL, #cpu.core),
+    cput_e2i(CL, Nid, PId, CPU#cpu{core = C0+1, thread = -1}, #cpu.core, Lvl,
+	     Res);
+cput_e2i({thread, TL}, Nid, PId, #cpu{thread = T0} = CPU, PLvl, #cpu.thread,
+	 Res) when PLvl < #cpu.thread ->
+    Lvl = cput_e2i_clvl(TL, #cpu.thread),
+    cput_e2i(TL, Nid, PId, CPU#cpu{thread = T0+1}, #cpu.thread, Lvl, Res);
+cput_e2i({logical, ID}, _Nid, PId, #cpu{processor=P, core=C, thread=T} = CPU,
+	 PLvl, #cpu.logical, Res)
+  when PLvl < #cpu.logical, is_integer(ID), 0 =< ID, ID < 65536 ->
+    [CPU#cpu{processor = case P of -1 -> PId+1; _ -> P end,
+	     core = case C of -1 -> 0; _ -> C end,
+	     thread = case T of -1 -> 0; _ -> T end,
+	     logical = ID} | Res].
 
 %% erlang:format_cpu_topology/1 is for internal use only!
 %%
@@ -582,22 +608,46 @@ cput_parse_lvl(Lvl, [{Lvl, Info, SubLvlList} | Rest]) ->
 %% and erlang:system_info({cpu_topology, Which}) traps to
 %% erlang:format_cpu_topology(InternalCpuTopology).
 format_cpu_topology(InternalCpuTopology) ->
-    try cput_format(InternalCpuTopology)
-    catch _ : _ -> erlang:error(badarg, [InternalCpuTopology])
+    try cput_i2e(InternalCpuTopology)
+    catch _ : _ -> erlang:error(internal_error, [InternalCpuTopology])
     end.
 
-cput_format(undefined) ->
-    undefined;
-cput_format(CpuId) when is_integer(CpuId) ->
-    {logical, CpuId};
-cput_format(LvlTuple) when is_tuple(LvlTuple) ->
-    cput_format(element(1, LvlTuple), LvlTuple, 2, size(LvlTuple)).
 
-cput_format(_Lvl, _LvlTuple, Ix, MaxIx) when Ix > MaxIx ->
+cput_i2e(undefined) -> undefined;
+cput_i2e(Is) -> cput_i2e(Is, true, #cpu.node, cput_i2e_tag_map()).
+
+cput_i2e([], _Frst, _Lvl, _TM) ->
     [];
-cput_format(Lvl, LvlTuple, Ix, MaxIx) ->
-    [{Lvl, cput_format(element(Ix, LvlTuple))}
-     | cput_format(Lvl, LvlTuple, Ix+1, MaxIx)].
+cput_i2e([#cpu{logical = LID}| _], _Frst, Lvl, _TM) when Lvl == #cpu.logical ->
+    {logical, LID};
+cput_i2e([#cpu{} = I | Is], Frst, Lvl, TM) ->
+    cput_i2e(element(Lvl, I), Frst, Is, [I], Lvl, TM).
+
+cput_i2e(V, Frst, [I | Is], SameV, Lvl, TM) when V =:= element(Lvl, I) ->
+    cput_i2e(V, Frst, Is, [I | SameV], Lvl, TM);
+cput_i2e(-1, true, [], SameV, Lvl, TM) ->
+    cput_i2e(rvrs(SameV), true, Lvl+1, TM);
+cput_i2e(_V, true, [], SameV, Lvl, TM) when Lvl =/= #cpu.processor,
+                                            Lvl =/= #cpu.processor_node ->
+    cput_i2e(rvrs(SameV), true, Lvl+1, TM);
+cput_i2e(-1, _Frst, Is, SameV, #cpu.node, TM) ->
+    cput_i2e(rvrs(SameV), true, #cpu.processor, TM)
+	++ cput_i2e(Is, false, #cpu.node, TM);
+cput_i2e(_V, _Frst, Is, SameV, Lvl, TM) ->
+    [{cput_i2e_tag(Lvl, TM), cput_i2e(rvrs(SameV), true, Lvl+1, TM)}
+     | cput_i2e(Is, false, Lvl, TM)].
+
+cput_i2e_tag_map() -> list_to_tuple([cpu | record_info(fields, cpu)]).
+
+cput_i2e_tag(Lvl, TM) ->
+    case element(Lvl, TM) of processor_node -> node; Other -> Other end.
+
+rvrs([_] = L) -> L;
+rvrs(Xs) -> rvrs(Xs, []).
+
+rvrs([],Ys) -> Ys;
+rvrs([X|Xs],Ys) -> rvrs(Xs, [X|Ys]).
+
 
 min(A, B) when A > B -> B;
 min(A, _) -> A.

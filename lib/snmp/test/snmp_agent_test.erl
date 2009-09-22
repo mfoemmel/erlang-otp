@@ -212,7 +212,7 @@ start_v3_agent(Config, Opts) ->
 start_bilingual_agent(Config) ->
     snmp_agent_test_lib:start_bilingual_agent(Config).
 
-start_multi_threaded_agent(Config) when list(Config) ->
+start_multi_threaded_agent(Config) when is_list(Config) ->
     snmp_agent_test_lib:start_mt_agent(Config).
 
 stop_agent(Config) ->
@@ -397,23 +397,23 @@ varm_mib_storage_dets_cases() ->
 varm_mib_storage_mnesia_cases() ->
     [msm_varm_mib_start].
 
-init_mib_storage_ets(Config) when list(Config) ->
+init_mib_storage_ets(Config) when is_list(Config) ->
     ?LOG("init_mib_storage_ets -> entry", []),
     MibStorage = {snmp_mib_storage,ets},
     init_ms(Config, [MibStorage]).
 
-init_mib_storage_dets(Config) when list(Config) ->
+init_mib_storage_dets(Config) when is_list(Config) ->
     ?LOG("init_mib_storage_ets -> entry", []),
     ?line AgentDir = ?GCONF(agent_dir, Config),
     MibStorage = {snmp_mib_storage,{dets,AgentDir}},
     init_ms(Config, [MibStorage]).
 
-init_mib_storage_mnesia(Config) when list(Config) ->
+init_mib_storage_mnesia(Config) when is_list(Config) ->
     ?LOG("init_mib_storage_ets -> entry", []),
     MibStorage = {snmp_mib_storage,{mnesia,[]}},
     init_ms(Config, [MibStorage]).
 
-init_ms(Config, Opts) when list(Config) ->
+init_ms(Config, Opts) when is_list(Config) ->
     ?LOG("init_mib_storage_ets -> entry", []),
     ?line SaNode   = ?GCONF(snmp_sa, Config),
     ?line create_tables(SaNode),
@@ -427,20 +427,20 @@ init_ms(Config, Opts) when list(Config) ->
     Opts1 = [MasterAgentVerbosity,MibsVerbosity,SymStoreVerbosity|Opts],
     [{vsn, v1} | start_v1_agent(Config,Opts1)].
 
-init_size_check_mse(Config) when list(Config) ->
+init_size_check_mse(Config) when is_list(Config) ->
     MibStorage = {snmp_mib_storage, ets},
     init_size_check_ms(Config, [MibStorage]).
 
-init_size_check_msd(Config) when list(Config) ->
+init_size_check_msd(Config) when is_list(Config) ->
     AgentDir   = ?GCONF(agent_dir, Config),
     MibStorage = {snmp_mib_storage, {dets, AgentDir}},
     init_size_check_ms(Config, [MibStorage]).
 
-init_size_check_msm(Config) when list(Config) ->
+init_size_check_msm(Config) when is_list(Config) ->
     MibStorage = {snmp_mib_storage, {mnesia,[]}},
     init_size_check_ms(Config, [MibStorage]).
 
-init_size_check_ms(Config, Opts) when list(Config) ->
+init_size_check_ms(Config, Opts) when is_list(Config) ->
     SaNode = ?GCONF(snmp_sa, Config),
     %% We are using v3 here, so crypto must be supported or else...
     case ?CRYPTO_START() of
@@ -462,7 +462,7 @@ init_size_check_ms(Config, Opts) when list(Config) ->
 	config([v3], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, v3} | start_v3_agent(Config, Opts)].
 
-init_varm_mib_storage_dets(Config) when list(Config) ->
+init_varm_mib_storage_dets(Config) when is_list(Config) ->
     ?LOG("init_varm_mib_storage_dets -> entry", []),
     ?line SaNode   = ?GCONF(snmp_sa, Config),
     ?line create_tables(SaNode),
@@ -477,7 +477,7 @@ init_varm_mib_storage_dets(Config) when list(Config) ->
     Opts = [MibStorage,MasterAgentVerbosity,MibsVerbosity,SymStoreVerbosity],
     [{vsn, v1}, {agent_opts,Opts} | Config].
 
-init_varm_mib_storage_mnesia(Config) when list(Config) ->
+init_varm_mib_storage_mnesia(Config) when is_list(Config) ->
     ?LOG("init_varm_mib_storage_mnesia -> entry", []),
     ?line SaNode   = ?GCONF(snmp_sa, Config),
     ?line create_tables(SaNode),
@@ -492,7 +492,7 @@ init_varm_mib_storage_mnesia(Config) when list(Config) ->
     Opts = [MibStorage,MasterAgentVerbosity,MibsVerbosity,SymStoreVerbosity],
     [{vsn, v1}, {agent_opts,Opts} | Config].
 
-finish_mib_storage_ets(Config) when list(Config) ->
+finish_mib_storage_ets(Config) when is_list(Config) ->
     ?LOG("finish_mib_storage_ets -> entry", []),
     delete_tables(),
     C1 = stop_agent(Config),
@@ -500,7 +500,7 @@ finish_mib_storage_ets(Config) when list(Config) ->
     C2 = lists:keydelete(vsn, 1, C1),
     lists:keydelete(agent_opts, 1, C2).
 
-finish_mib_storage_dets(Config) when list(Config) ->
+finish_mib_storage_dets(Config) when is_list(Config) ->
     ?LOG("finish_mib_storage_dets -> entry", []),
     delete_tables(),
     C1 = stop_agent(Config),
@@ -508,7 +508,7 @@ finish_mib_storage_dets(Config) when list(Config) ->
     C2 = lists:keydelete(vsn, 1, C1),
     lists:keydelete(agent_opts, 1, C2).
 
-finish_mib_storage_mnesia(Config) when list(Config) ->
+finish_mib_storage_mnesia(Config) when is_list(Config) ->
     ?LOG("finish_mib_storage_mnesia -> entry", []),
     delete_tables(),
     delete_mib_storage_mnesia_tables(),
@@ -517,7 +517,7 @@ finish_mib_storage_mnesia(Config) when list(Config) ->
     C2 = lists:keydelete(vsn, 1, C1),
     lists:keydelete(agent_opts, 1, C2).
 
-finish_varm_mib_storage_dets(Config) when list(Config) ->
+finish_varm_mib_storage_dets(Config) when is_list(Config) ->
     ?LOG("finish_varm_mib_storage_dets -> entry", []),
     delete_tables(),
     %% C1 = stop_agent(Config), % In case something went wrong...
@@ -525,7 +525,7 @@ finish_varm_mib_storage_dets(Config) when list(Config) ->
     C2 = lists:keydelete(vsn, 1, Config),
     lists:keydelete(agent_opts, 1, C2).
 
-finish_varm_mib_storage_mnesia(Config) when list(Config) ->
+finish_varm_mib_storage_mnesia(Config) when is_list(Config) ->
     ?LOG("finish_varm_mib_storage_mnesia -> entry", []),
     delete_tables(),
     delete_mib_storage_mnesia_tables(),
@@ -534,16 +534,16 @@ finish_varm_mib_storage_mnesia(Config) when list(Config) ->
     C2 = lists:keydelete(vsn, 1, Config),
     lists:keydelete(agent_opts, 1, C2).
 
-finish_size_check_mse(Config) when list(Config) ->
+finish_size_check_mse(Config) when is_list(Config) ->
     finish_size_check_ms(Config).
 
-finish_size_check_msd(Config) when list(Config) ->
+finish_size_check_msd(Config) when is_list(Config) ->
     finish_size_check_ms(Config).
 
-finish_size_check_msm(Config) when list(Config) ->
+finish_size_check_msm(Config) when is_list(Config) ->
     finish_size_check_ms(Config).
 
-finish_size_check_ms(Config) when list(Config) ->
+finish_size_check_ms(Config) when is_list(Config) ->
     delete_tables(),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -634,7 +634,7 @@ msm_varm_mib_start(X) ->
     varm_mib_start(X).
 
 ms_size_check(suite) -> [];
-ms_size_check(Config) when list(Config) ->
+ms_size_check(Config) when is_list(Config) ->
     ?P(ms_size_check),
     init_case(Config),
     ?LOG("mib server size check...", []),
@@ -676,7 +676,7 @@ ms_size_check(Config) when list(Config) ->
 
 
 varm_mib_start(suite) -> [];
-varm_mib_start(Config) when list(Config) ->
+varm_mib_start(Config) when is_list(Config) ->
     ?P(varm_mib_start),
     ?LOG("varm_mib_start -> entry", []),
     init_case(Config),
@@ -739,7 +739,7 @@ varm_mib_start(Config) when list(Config) ->
 -define(usmStatsNotInTimeWindows_instance, [1,3,6,1,6,3,15,1,1,2,0]).
 
 ms_me_of(suite) -> [];
-ms_me_of(Config) when list(Config) ->
+ms_me_of(Config) when is_list(Config) ->
     ?P(ms_me_of),
     init_case(Config),
 
@@ -810,7 +810,7 @@ me_of(Oid) ->
 
 
 ms_mib_of(suite) -> [];
-ms_mib_of(Config) when list(Config) ->
+ms_mib_of(Config) when is_list(Config) ->
     ?P(ms_mib_of),
     init_case(Config),
 
@@ -894,7 +894,7 @@ misc_cases() ->
     ].
 
 app_info(suite) -> [];
-app_info(Config) when list(Config) ->
+app_info(Config) when is_list(Config) ->
     ?P(app_info),
     SnmpDir   = app_dir(snmp),
     SslDir    = app_dir(ssl),
@@ -917,7 +917,7 @@ app_info(Config) when list(Config) ->
 
 app_dir(App) ->
     case code:lib_dir(App) of
-	D when list(D) ->
+	D when is_list(D) ->
 	    filename:basename(D);
 	{error, _Reason} ->
 	    "undefined"
@@ -953,7 +953,7 @@ v1_cases() ->
      change_target_addr_config
     ].  
 
-init_v1(Config) when list(Config) ->
+init_v1(Config) when is_list(Config) ->
     ?line SaNode = ?config(snmp_sa, Config),
     ?line create_tables(SaNode),
     ?line AgentDir = ?config(agent_dir, Config),
@@ -962,7 +962,7 @@ init_v1(Config) when list(Config) ->
     ?line config([v1], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, v1} | start_v1_agent(Config)].
 
-finish_v1(Config) when list(Config) ->
+finish_v1(Config) when is_list(Config) ->
     delete_tables(),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -997,7 +997,7 @@ v2_cases() ->
      v2_caps
     ].
 
-init_v2(Config) when list(Config) ->
+init_v2(Config) when is_list(Config) ->
     SaNode = ?config(snmp_sa, Config),
     create_tables(SaNode),
     AgentDir = ?config(agent_dir, Config),
@@ -1006,7 +1006,7 @@ init_v2(Config) when list(Config) ->
     config([v2], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, v2} | start_v2_agent(Config)].
 
-finish_v2(Config) when list(Config) ->
+finish_v2(Config) when is_list(Config) ->
     delete_tables(),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -1018,7 +1018,7 @@ test_v1_v2(suite) ->
 v1_v2_cases() ->
     [simple_bi].
 
-init_v1_v2(Config) when list(Config) ->
+init_v1_v2(Config) when is_list(Config) ->
     SaNode = ?config(snmp_sa, Config),
     create_tables(SaNode),
     AgentDir = ?config(agent_dir, Config),
@@ -1027,7 +1027,7 @@ init_v1_v2(Config) when list(Config) ->
     config([v1,v2], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, bilingual} | start_bilingual_agent(Config)].
 
-finish_v1_v2(Config) when list(Config) ->
+finish_v1_v2(Config) when is_list(Config) ->
     delete_tables(),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -1063,7 +1063,7 @@ v3_cases() ->
      v2_caps_3
     ].
 
-init_v3(Config) when list(Config) ->
+init_v3(Config) when is_list(Config) ->
     %% Make sure crypto works, otherwise start_agent will fail
     %% and we will be stuck with a bunch of mnesia tables for
     %% the rest of this suite...
@@ -1093,7 +1093,7 @@ init_v3(Config) when list(Config) ->
 		      tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, v3} | start_v3_agent(Config)].
 
-finish_v3(Config) when list(Config) ->
+finish_v3(Config) when is_list(Config) ->
     delete_tables(),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -1105,7 +1105,7 @@ test_multi_threaded(suite) ->
 mt_cases() ->
     [multi_threaded, mt_trap].
 
-init_mt(Config) when list(Config) ->
+init_mt(Config) when is_list(Config) ->
     SaNode = ?config(snmp_sa, Config),
     create_tables(SaNode),
     AgentDir = ?config(agent_dir, Config),
@@ -1115,7 +1115,7 @@ init_mt(Config) when list(Config) ->
 	config([v2], MgrDir, AgentDir, tuple_to_list(Ip), tuple_to_list(Ip)),
     [{vsn, v2} | start_multi_threaded_agent(Config)].
 
-finish_mt(Config) when list(Config) ->
+finish_mt(Config) when is_list(Config) ->
     delete_tables(),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -1187,7 +1187,7 @@ init_old() ->
 				    
 
 simple(suite) -> [];
-simple(Config) when list(Config) ->
+simple(Config) when is_list(Config) ->
     ?P(simple),
     init_case(Config),
     
@@ -1196,7 +1196,7 @@ simple(Config) when list(Config) ->
 simple_2(X) -> ?P(simple_2), simple(X).
 
 simple_bi(suite) -> [];
-simple_bi(Config) when list(Config) ->
+simple_bi(Config) when is_list(Config) ->
     ?P(simple_bi),
     init_case(Config),
 
@@ -1210,7 +1210,7 @@ simple_3(X) ->
     ?P(simple_3), simple(X).
 
 big(suite) -> [];
-big(Config) when list(Config) ->
+big(Config) when is_list(Config) ->
     ?P(big),
     %% put(sname, {?MODULE, big}),
     %% put(verbosity, trace),
@@ -1240,7 +1240,7 @@ big_3(X) -> ?P(big_3), big(X).
 
      
 big2(suite) -> [];
-big2(Config) when list(Config) ->
+big2(Config) when is_list(Config) ->
     ?P(big2), 
     %% This is exactly the same tests as 'big', but with the
     %% v2 equivalent of the mibs.
@@ -1262,7 +1262,7 @@ big2_3(X) -> ?P(big2_3), big2(X).
     
 
 multi_threaded(suite) -> [];
-multi_threaded(Config) when list(Config) ->
+multi_threaded(Config) when is_list(Config) ->
     ?P(multi_threaded), 
     init_case(Config),
     
@@ -1271,7 +1271,7 @@ multi_threaded(Config) when list(Config) ->
     ?line unload_master("Test1").
 
 mt_trap(suite) -> [];
-mt_trap(Config) when list(Config) ->
+mt_trap(Config) when is_list(Config) ->
     ?P(mt_trap), 
     init_case(Config),
     MA = whereis(snmp_master_agent),
@@ -1283,7 +1283,7 @@ mt_trap(Config) when list(Config) ->
     ?line unload_master("Test1").
 
 v2_types(suite) -> [];
-v2_types(Config) when list(Config) ->
+v2_types(Config) when is_list(Config) ->
     ?P(v2_types), 
     init_case(Config),
 
@@ -1295,7 +1295,7 @@ v2_types_3(X) -> ?P(v2_types_3), v2_types(X).
     
 
 implied(suite) -> [];
-implied(Config) when list(Config) ->
+implied(Config) when is_list(Config) ->
     ?P(implied), 
     init_case(Config),
     MA = whereis(snmp_master_agent),
@@ -1308,7 +1308,7 @@ implied_3(X) -> ?P(implied_3), implied(X).
     
 
 sparse_table(suite) -> [];
-sparse_table(Config) when list(Config) ->
+sparse_table(Config) when is_list(Config) ->
     ?P(sparse_table), 
     init_case(Config),
 
@@ -1321,7 +1321,7 @@ sparse_table_2(X) -> ?P(sparse_table_2), sparse_table(X).
 sparse_table_3(X) -> ?P(sparse_table_3), sparse_table(X).
 
 cnt_64(suite) -> [];
-cnt_64(Config) when list(Config) ->
+cnt_64(Config) when is_list(Config) ->
     ?P(cnt_64), 
     init_case(Config),
     MA = whereis(snmp_master_agent),
@@ -1335,7 +1335,7 @@ cnt_64_2(X) -> ?P(cnt_64_2), cnt_64(X).
 cnt_64_3(X) -> ?P(cnt_64_3), cnt_64(X).
 
 opaque(suite) -> [];
-opaque(Config) when list(Config) ->
+opaque(Config) when is_list(Config) ->
     ?P(opaque), 
     init_case(Config),
 
@@ -1349,7 +1349,7 @@ opaque_3(X) -> ?P(opaque_2), opaque(X).
 
 
 change_target_addr_config(suite) -> [];
-change_target_addr_config(Config) when list(Config) ->
+change_target_addr_config(Config) when is_list(Config) ->
     ?P(change_target_addr_config), 
     ?LOG("change_target_addr_config -> entry",[]),
     init_case(Config),
@@ -1493,9 +1493,9 @@ dummy_manager_loop(P,S,MA) ->
 	    dummy_manager_loop(P,S,MA)
     end.
 
-dummy_manager_message_sz(B) when binary(B) ->
+dummy_manager_message_sz(B) when is_binary(B) ->
     size(B);
-dummy_manager_message_sz(L) when list(L) ->
+dummy_manager_message_sz(L) when is_list(L) ->
     length(L);
 dummy_manager_message_sz(_) ->
     undefined.
@@ -1514,7 +1514,7 @@ dummy_manager_handle_message(Bytes) ->
 
 
 api(suite) -> [];
-api(Config) when list(Config) ->
+api(Config) when is_list(Config) ->
     ?P(api),
     init_case(Config),
 
@@ -1529,7 +1529,7 @@ api_3(X) -> ?P(api_3), api(X).
 
 
 subagent(suite) -> [];
-subagent(Config) when list(Config) ->
+subagent(Config) when is_list(Config) ->
     ?P(subagent), 
     {SaNode, _MgrNode, MibDir} = init_case(Config),
 
@@ -1570,7 +1570,7 @@ subagent_3(X) ->
 
 
 mnesia(suite) -> [];
-mnesia(Config) when list(Config) ->
+mnesia(Config) when is_list(Config) ->
     ?P(mnesia), 
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
 
@@ -1614,7 +1614,7 @@ mul_cases_3() ->
     [mul_get_3, mul_get_err_3, mul_next_3, mul_next_err_3, mul_set_err_3].
     
 
-init_mul(Config) when list(Config) ->
+init_mul(Config) when is_list(Config) ->
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
 
     ?line {ok, SA} = start_subagent(SaNode, ?klas1, "Klas1"),
@@ -1622,7 +1622,7 @@ init_mul(Config) when list(Config) ->
     ?line init_old(),
     [{mul_sub, SA} | Config].
 
-finish_mul(Config) when list(Config) ->
+finish_mul(Config) when is_list(Config) ->
     init_case(Config),
     
     SA = ?config(mul_sub, Config),
@@ -1632,7 +1632,7 @@ finish_mul(Config) when list(Config) ->
     lists:keydelete(mul_sub, 1, Config).
     
 mul_get(suite) -> [];
-mul_get(Config) when list(Config) ->
+mul_get(Config) when is_list(Config) ->
     ?P(mul_get), 
     init_case(Config),
     
@@ -1645,7 +1645,7 @@ mul_get_3(X) -> ?P(mul_get_3), mul_get(X).
 
 	     
 mul_get_err(suite) -> [];
-mul_get_err(Config) when list(Config) ->
+mul_get_err(Config) when is_list(Config) ->
     ?P(mul_get_err), 
     init_case(Config),
     
@@ -1658,7 +1658,7 @@ mul_get_err_3(X) -> ?P(mul_get_err_3), mul_get_err(X).
 
 	     
 mul_next(suite) -> [];
-mul_next(Config) when list(Config) ->
+mul_next(Config) when is_list(Config) ->
     ?P(mul_next), 
     init_case(Config),
     
@@ -1671,7 +1671,7 @@ mul_next_3(X) -> ?P(mul_next_3), mul_next(X).
 
 	     
 mul_next_err(suite) -> [];
-mul_next_err(Config) when list(Config) ->
+mul_next_err(Config) when is_list(Config) ->
     ?P(mul_next_err), 
     init_case(Config),
     
@@ -1684,7 +1684,7 @@ mul_next_err_3(X) -> ?P(mul_next_err_3), mul_next_err(X).
 
 	     
 mul_set(suite) -> [];
-mul_set(Config) when list(Config) ->
+mul_set(Config) when is_list(Config) ->
     ?P(mul_set), 
     init_case(Config),
     
@@ -1697,7 +1697,7 @@ mul_set_3(X) -> ?P(mul_set_3), mul_set(X).
 
 	     
 mul_set_err(suite) -> [];
-mul_set_err(Config) when list(Config) ->
+mul_set_err(Config) when is_list(Config) ->
     ?P(mul_set_err), 
     init_case(Config),
     
@@ -1710,7 +1710,7 @@ mul_set_err_3(X) -> ?P(mul_set_err_3), mul_set_err(X).
 
 
 sa_register(suite) -> [];
-sa_register(Config) when list(Config) ->
+sa_register(Config) when is_list(Config) ->
     ?P(sa_register), 
     {SaNode, _MgrNode, MibDir} = init_case(Config),
 
@@ -1748,7 +1748,7 @@ sa_register_3(X) -> ?P(sa_register_3), sa_register(X).
 
 
 v1_trap(suite) -> [];
-v1_trap(Config) when list(Config) ->
+v1_trap(Config) when is_list(Config) ->
     ?P(v1_trap), 
     trap1(Config).
 
@@ -1784,7 +1784,7 @@ trap1(Config) ->
     ?line stop_subagent(SA).
 
 v2_trap(suite) -> [];
-v2_trap(Config) when list(Config) ->
+v2_trap(Config) when is_list(Config) ->
     ?P(v2_trap), 
     trap2(Config).
 
@@ -1839,7 +1839,7 @@ v3_inform(_X) ->
     %% v2_inform(X).
     {req, [], {conf, init_v3_inform, [v3_inform_i], finish_v3_inform}}. 
 
-init_v2_inform(Config) when list(Config) ->
+init_v2_inform(Config) when is_list(Config) ->
     _Dir = ?config(agent_dir, Config),
     %% snmp_internal_mib:configure(Dir),
     Config.
@@ -1847,7 +1847,7 @@ init_v2_inform(Config) when list(Config) ->
 init_v3_inform(X) ->
     init_v2_inform(X).
 
-finish_v2_inform(Config) when list(Config) ->
+finish_v2_inform(Config) when is_list(Config) ->
     _Dir = ?config(agent_dir, Config),
     %% snmp_internal_mib:configure(Dir),
     Config.
@@ -1858,7 +1858,7 @@ finish_v3_inform(X) ->
 
 
 v2_inform_i(suite) -> [];
-v2_inform_i(Config) when list(Config) ->
+v2_inform_i(Config) when is_list(Config) ->
     ?P(v2_inform_i), 
     inform_i(Config).
 
@@ -1894,7 +1894,7 @@ v3_inform_i(X) ->
 
 
 sa_error(suite) -> [];
-sa_error(Config) when list(Config) ->
+sa_error(Config) when is_list(Config) ->
     ?P(sa_error), 
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
 
@@ -1988,7 +1988,7 @@ next_across_sa_3(X) ->
 
 
 undo(suite) -> [];
-undo(Config) when list(Config) ->
+undo(Config) when is_list(Config) ->
     ?P(undo), 
     {SaNode, _MgrNode, MibDir} = init_case(Config),
 
@@ -2045,7 +2045,7 @@ undo_3(X) ->
 
 %% Req. Test2
 v1_processing(suite) -> [];
-v1_processing(Config) when list(Config) ->
+v1_processing(Config) when is_list(Config) ->
     ?P(v1_processing), 
     ?DBG("v1_processing -> entry", []),
     init_case(Config),
@@ -2060,7 +2060,7 @@ v1_processing(Config) when list(Config) ->
 
 %% Req. Test2
 v2_processing(suite) -> [];
-v2_processing(Config) when list(Config) ->
+v2_processing(Config) when is_list(Config) ->
     ?P(v2_processing), 
     init_case(Config),
 
@@ -2074,7 +2074,7 @@ v2_processing(Config) when list(Config) ->
 
 %% Req. Test2
 v3_processing(suite) -> [];
-v3_processing(Config) when list(Config) ->
+v3_processing(Config) when is_list(Config) ->
     ?P(v3_processing), 
     init_case(Config),
 
@@ -2150,7 +2150,7 @@ v3_crypto_basic(_Config) ->
 
 
 v3_md5_auth(suite) -> [];
-v3_md5_auth(Config) when list(Config) ->
+v3_md5_auth(Config) when is_list(Config) ->
     ?P(v3_md5_auth), 
     init_case(Config),
 
@@ -2177,7 +2177,7 @@ v3_md5_auth(Config) when list(Config) ->
     ?line reset_target_params_conf(AgentDir).
 
 v3_sha_auth(suite) -> [];
-v3_sha_auth(Config) when list(Config) ->
+v3_sha_auth(Config) when is_list(Config) ->
     ?P(v3_sha_auth), 
     init_case(Config),
 
@@ -2204,7 +2204,7 @@ v3_sha_auth(Config) when list(Config) ->
     ?line reset_target_params_conf(AgentDir).
 
 v3_des_priv(suite) -> [];
-v3_des_priv(Config) when list(Config) ->
+v3_des_priv(Config) when is_list(Config) ->
     ?P(v3_des_priv), 
     init_case(Config),
 
@@ -2215,6 +2215,8 @@ v3_des_priv(Config) when list(Config) ->
     ?line snmp_target_mib:reconfigure(AgentDir),
 
     MA = whereis(snmp_master_agent),
+
+    snmp_user_based_sm_mib:usmUserTable(print),
 
     ?line load_master("Test2"),
     ?line load_master("TestTrap"),
@@ -2255,7 +2257,7 @@ v3_inform_sync(MA) ->
 
 
 v2_caps(suite) -> [];
-v2_caps(Config) when list(Config) ->
+v2_caps(Config) when is_list(Config) ->
     ?P(v2_caps), 
     init_case(Config),
 
@@ -2690,7 +2692,7 @@ simple_standard_test() ->
 
 %% This is run in the agent node
 db_notify_client(suite) -> [];
-db_notify_client(Config) when list(Config) ->
+db_notify_client(Config) when is_list(Config) ->
     ?P(db_notify_client), 
     {SaNode, MgrNode, MibDir} = init_case(Config),
     ?DBG("db_notify_client -> case initiated: "
@@ -2966,7 +2968,7 @@ get_multi_pid(0) ->
 get_multi_pid(N) ->
     ?SLEEP(1000),
     case global:whereis_name(snmp_multi_tester) of
-	Pid when pid(Pid) -> Pid;
+	Pid when is_pid(Pid) -> Pid;
 	_ -> get_multi_pid(N-1)
     end.
 
@@ -3194,8 +3196,8 @@ api_test(MaNode) ->
     ?line false = rpc:call(MaNode, snmp, int_to_enum, ['RowStatus', 25]),
     ?line false = rpc:call(MaNode, snmp, int_to_enum, ['xxRowStatus', 1]),
     ?line case snmp:date_and_time() of
-	      List when list(List), length(List) == 8 -> ok;
-	      List when list(List), length(List) == 11 -> ok
+	      List when is_list(List), length(List) == 8 -> ok;
+	      List when is_list(List), length(List) == 11 -> ok
     end.
 
 %% Req. Klas3
@@ -3979,7 +3981,7 @@ standard_mibs_3(suite) ->
 %% o  Test the counters and control objects in SNMP-STANDARD-MIB
 %%-----------------------------------------------------------------
 snmp_standard_mib(suite) -> [];
-snmp_standard_mib(Config) when list(Config) ->
+snmp_standard_mib(Config) when is_list(Config) ->
     ?P(snmp_standard_mib), 
     init_case(Config),
     ?DBG("snmp_standard_mib -> std_mib_init", []),
@@ -4061,7 +4063,7 @@ std_mib_asn_err() ->
 %% o  Test the counters and control objects in SNMPv2-MIB
 %%-----------------------------------------------------------------
 snmpv2_mib_2(suite) -> [];
-snmpv2_mib_2(Config) when list(Config) ->
+snmpv2_mib_2(Config) when is_list(Config) ->
     ?P(snmpv2_mib_2), 
     ?LOG("snmpv2_mib_2 -> start",[]),
     init_case(Config),
@@ -4106,7 +4108,7 @@ snmpv2_mib_2(Config) when list(Config) ->
     
 %% Req. SNMPv2-MIB
 snmpv2_mib_3(suite) -> [];
-snmpv2_mib_3(Config) when list(Config) ->
+snmpv2_mib_3(Config) when is_list(Config) ->
     %% <CONDITIONAL-SKIP>
     Skippable = [{unix, [darwin]}],
     Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
@@ -4194,7 +4196,7 @@ snmpv2_mib_a() ->
 %% o  Test add/deletion of rows.
 %%-----------------------------------------------------------------
 snmp_community_mib(suite) -> [];
-snmp_community_mib(Config) when list(Config) ->
+snmp_community_mib(Config) when is_list(Config) ->
     ?P(snmp_community_mib), 
     init_case(Config),
     ?line load_master_std("SNMP-COMMUNITY-MIB"),
@@ -4212,7 +4214,7 @@ snmp_community_mib() ->
 %% o  Test engine boots / time
 %%-----------------------------------------------------------------
 snmp_framework_mib(suite) -> [];
-snmp_framework_mib(Config) when list(Config) ->
+snmp_framework_mib(Config) when is_list(Config) ->
     ?P(snmp_framework_mib), 
     init_case(Config),
     ?line load_master_std("SNMP-FRAMEWORK-MIB"),
@@ -4222,7 +4224,7 @@ snmp_framework_mib(Config) when list(Config) ->
 snmp_framework_mib_2(X) -> ?P(snmp_framework_mib_2), snmp_framework_mib(X).
 
 snmp_framework_mib_3(suite) -> [];
-snmp_framework_mib_3(Config) when list(Config) ->
+snmp_framework_mib_3(Config) when is_list(Config) ->
     ?P(snmp_framework_mib_3), 
     init_case(Config),
     try_test(snmp_framework_mib).
@@ -4257,7 +4259,7 @@ snmp_framework_mib() ->
 %% o  Test the counters
 %%-----------------------------------------------------------------
 snmp_mpd_mib_3(suite) -> [];
-snmp_mpd_mib_3(Config) when list(Config) ->
+snmp_mpd_mib_3(Config) when is_list(Config) ->
     %% <CONDITIONAL-SKIP>
     Skippable = [{unix, [darwin]}],
     Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
@@ -4324,7 +4326,7 @@ snmp_mpd_mib_c(UnknownPDUHs) ->
 
 
 snmp_target_mib(suite) -> [];
-snmp_target_mib(Config) when list(Config) ->
+snmp_target_mib(Config) when is_list(Config) ->
     ?P(snmp_target_mib), 
     init_case(Config),
     ?line load_master_std("SNMP-TARGET-MIB"),
@@ -4340,7 +4342,7 @@ snmp_target_mib() ->
     nyi.
 
 snmp_notification_mib(suite) -> [];
-snmp_notification_mib(Config) when list(Config) ->
+snmp_notification_mib(Config) when is_list(Config) ->
     ?P(snmp_notification_mib), 
     init_case(Config),
     ?line load_master_std("SNMP-NOTIFICATION-MIB"),
@@ -4362,7 +4364,7 @@ snmp_notification_mib() ->
 %% o  try boundaries
 %%-----------------------------------------------------------------
 snmp_view_based_acm_mib(suite) -> [];
-snmp_view_based_acm_mib(Config) when list(Config) ->
+snmp_view_based_acm_mib(Config) when is_list(Config) ->
     ?P(snmp_view_based_acm_mib), 
     init_case(Config),
 
@@ -4556,7 +4558,7 @@ mk_ln(X) ->
 %% o  try bad ops; check counters
 %%-----------------------------------------------------------------
 snmp_user_based_sm_mib_3(suite) -> [];
-snmp_user_based_sm_mib_3(Config) when list(Config) ->
+snmp_user_based_sm_mib_3(Config) when is_list(Config) ->
     %% <CONDITIONAL-SKIP>
     Skippable = [{unix, [darwin]}],
     Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
@@ -4784,7 +4786,7 @@ usm_bad() ->
 %% Load all std mibs that are not loaded by default.
 %%-----------------------------------------------------------------
 loop_mib(suite) -> [];
-loop_mib(Config) when list(Config) ->
+loop_mib(Config) when is_list(Config) ->
     ?P(loop_mib), 
     ?LOG("loop_mib -> initiate case",[]),
     %% snmpa:verbosity(master_agent,debug),
@@ -4826,7 +4828,7 @@ loop_mib(Config) when list(Config) ->
     
 
 loop_mib_2(suite) -> [];
-loop_mib_2(Config) when list(Config) ->
+loop_mib_2(Config) when is_list(Config) ->
     ?P(loop_mib_2), 
     ?LOG("loop_mib_2 -> initiate case",[]),
     {SaNode, MgrNode, MibDir} = init_case(Config),
@@ -4853,7 +4855,7 @@ loop_mib_2(Config) when list(Config) ->
 
 
 loop_mib_3(suite) -> [];
-loop_mib_3(Config) when list(Config) ->
+loop_mib_3(Config) when is_list(Config) ->
     ?P(loop_mib_3), 
     ?LOG("loop_mib_3 -> initiate case",[]),
     {SaNode, MgrNode, MibDir} = init_case(Config),
@@ -5080,7 +5082,7 @@ tickets(suite) ->
 %% Slogan: Bug in handling of createAndWait set-requests.
 %%-----------------------------------------------------------------
 otp_1128(suite) -> [];
-otp_1128(Config) when list(Config) ->
+otp_1128(Config) when is_list(Config) ->
     ?P(otp_1128), 
     init_case(Config),
 
@@ -5116,7 +5118,7 @@ otp_1128() ->
 %% Slogan: snmpa:int_to_enum crashes on bad oids
 %%-----------------------------------------------------------------
 otp_1129(suite) -> [];
-otp_1129(Config) when list(Config) ->
+otp_1129(Config) when is_list(Config) ->
     ?P(otp_1129), 
     init_case(Config),
     ?line load_master("Klas3"),
@@ -5139,7 +5141,7 @@ otp_1129_i(MaNode) ->
 %%         and RowIdenx [3,2].
 %%-----------------------------------------------------------------
 otp_1131(suite) -> [];
-otp_1131(Config) when list(Config) ->
+otp_1131(Config) when is_list(Config) ->
     ?P(otp_1131), 
     init_case(Config),
 
@@ -5171,7 +5173,7 @@ otp_1131() ->
 %% Slogan: snmp_agent can't handle wrongValue from instrum.func
 %%-----------------------------------------------------------------
 otp_1162(suite) -> [];
-otp_1162(Config) when list(Config) ->
+otp_1162(Config) when is_list(Config) ->
     ?P(otp_1162), 
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
     ?line {ok, SA} = start_subagent(SaNode, ?sa, "SA-MIB"),
@@ -5192,7 +5194,7 @@ otp_1162() ->
 %% Slogan: snmp agent crash if faulty index is returned from instrum
 %%-----------------------------------------------------------------
 otp_1222(suite) -> [];
-otp_1222(Config) when list(Config) ->
+otp_1222(Config) when is_list(Config) ->
     ?P(otp_1222), 
     init_case(Config),
     ?line load_master("Klas3"),
@@ -5217,7 +5219,7 @@ otp_1222() ->
 %% Slogan: Negative INTEGER values are treated as positive.
 %%-----------------------------------------------------------------
 otp_1298(suite) -> [];
-otp_1298(Config) when list(Config) ->
+otp_1298(Config) when is_list(Config) ->
     ?P(otp_1298), 
     init_case(Config),
 
@@ -5240,7 +5242,7 @@ otp_1298() ->
 %% Slogan: snmp_generic should return noError when deleting non-ex row
 %%-----------------------------------------------------------------
 otp_1331(suite) -> [];
-otp_1331(Config) when list(Config) ->
+otp_1331(Config) when is_list(Config) ->
     ?P(otp_1331), 
     init_case(Config),
     ?line load_master("OLD-SNMPEA-MIB"),
@@ -5263,7 +5265,7 @@ otp_1331() ->
 %% Slogan: snmp bug in initialisation of default values for mnesia tabs
 %%-----------------------------------------------------------------
 otp_1338(suite) -> [];
-otp_1338(Config) when list(Config) ->
+otp_1338(Config) when is_list(Config) ->
     ?P(otp_1338), 
     init_case(Config),
 
@@ -5287,7 +5289,7 @@ otp_1338() ->
 %%         Set when INDEX is read-write gets into an infinite loop!
 %%-----------------------------------------------------------------
 otp_1342(suite) -> [];
-otp_1342(Config) when list(Config) ->
+otp_1342(Config) when is_list(Config) ->
     ?P(otp_1342), 
     init_case(Config),
     ?line load_master("Klas4"),
@@ -5312,7 +5314,7 @@ otp_1342() ->
 %%       mgrs on two different machines.
 %%-----------------------------------------------------------------
 otp_1366(suite) -> [];
-otp_1366(Config) when list(Config) ->
+otp_1366(Config) when is_list(Config) ->
     ?P(otp_1366), 
     init_case(Config),
     ?line load_master("OLD-SNMPEA-MIB"),
@@ -5333,7 +5335,7 @@ otp_1366() ->
 %% Slogan: snmp:validate_date_and_time() fails when time is 00:00
 %%-----------------------------------------------------------------
 otp_2776(suite) -> [];
-otp_2776(Config) when list(Config) ->
+otp_2776(Config) when is_list(Config) ->
     ?P(otp_2776), 
     init_case(Config),
     try_test(otp_2776).
@@ -5400,7 +5402,7 @@ validate_dat2(Id, E, Dat) ->
 %%         returns bad response.
 %%-----------------------------------------------------------------
 otp_2979(suite) -> [];
-otp_2979(Config) when list(Config) ->
+otp_2979(Config) when is_list(Config) ->
     ?P(otp_2979), 
     init_case(Config),
     ?line load_master("Test1"),
@@ -5423,7 +5425,7 @@ otp_2979() ->
 %%         endOfTable - should return value.
 %%-----------------------------------------------------------------
 otp_3187(suite) -> [];
-otp_3187(Config) when list(Config) ->
+otp_3187(Config) when is_list(Config) ->
     ?P(otp_3187), 
     init_case(Config),
     ?line load_master_std("SNMP-VIEW-BASED-ACM-MIB"),
@@ -5449,7 +5451,7 @@ otp_3187() ->
 %% Slogan: 
 %%-----------------------------------------------------------------
 otp_3542(suite) -> [];
-otp_3542(Config) when list(Config) ->
+otp_3542(Config) when is_list(Config) ->
     ?P(otp_3542), 
     init_case(Config),
     try_test(otp_3542).
@@ -5465,7 +5467,7 @@ otp_3542() ->
 %% Slogan: Slow response time on snmpa:int_to_enum
 %%-----------------------------------------------------------------
 otp_3725(suite) -> [];
-otp_3725(Config) when list(Config) ->
+otp_3725(Config) when is_list(Config) ->
     ?P(otp_3725), 
     init_case(Config),
 
@@ -5529,7 +5531,7 @@ otp_4394(suite) -> {req, [], {conf,
 			      [otp_4394_test], 
 			      finish_otp_4394}}.
 
-init_otp_4394(Config) when list(Config) ->
+init_otp_4394(Config) when is_list(Config) ->
     ?DBG("init_otp_4394 -> entry with"
 	   "~n   Config: ~p", [Config]),
     ?line AgentDir = ?config(agent_dir, Config),
@@ -5583,7 +5585,7 @@ otp_4394_config(AgentDir, MgrDir, Ip0) ->
     
 
 
-finish_otp_4394(Config) when list(Config) ->
+finish_otp_4394(Config) when is_list(Config) ->
     ?DBG("finish_otp_4394 -> entry", []),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -5646,7 +5648,7 @@ init_otp_7157(Config) when is_list(Config) ->
     [{vsn, v2} | start_v2_agent(Config, Opts)].
 
 
-finish_otp_7157(Config) when list(Config) ->
+finish_otp_7157(Config) when is_list(Config) ->
     ?DBG("finish_otp_7157 -> entry", []),
     C1 = stop_agent(Config),
     delete_files(C1),
@@ -5693,7 +5695,7 @@ otp_7157_test1(MA) ->
 %%-----------------------------------------------------------------
 
 info_test(suite) -> [];
-info_test(Config) when list(Config) ->
+info_test(Config) when is_list(Config) ->
     ?P(info_test), 
     init_case(Config),
 
@@ -5731,14 +5733,14 @@ verify_info(Info0, [Key|Keys]) ->
     Info = verify_info1(Info0, Key),
     verify_info(Info, Keys).
 
-verify_info1(Info0, Key) when atom(Key) ->
+verify_info1(Info0, Key) when is_atom(Key) ->
     case lists:keydelete(Key, 1, Info0) of
 	Info0 ->
 	    ?FAIL({missing_info, Key});
 	Info ->
 	    Info
     end;
-verify_info1(Info0, {Key, SubKeys}) when atom(Key), list(SubKeys) ->
+verify_info1(Info0, {Key, SubKeys}) when is_atom(Key) andalso is_list(SubKeys) ->
     case lists:keysearch(Key, 1, Info0) of
 	false ->
 	    ?FAIL({missing_info, Key});	    
@@ -5986,14 +5988,14 @@ display_mib_server_memory_usage(Info) ->
     
 lists_key1search([], Res) ->
     Res;
-lists_key1search([Key|Keys], List) when atom(Key), list(List) ->
+lists_key1search([Key|Keys], List) when is_atom(Key) andalso is_list(List) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {Key, Val}} ->
 	    lists_key1search(Keys, Val);
 	false ->
 	    undefined
     end;
-lists_key1search(Key, List) when atom(Key) ->
+lists_key1search(Key, List) when is_atom(Key) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {Key, Val}} ->
 	    Val;

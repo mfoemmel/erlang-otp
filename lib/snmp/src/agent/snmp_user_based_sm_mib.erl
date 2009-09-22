@@ -35,7 +35,7 @@
 -include("snmpa_internal.hrl").
 -include("snmp_types.hrl").
 
--define(VMODULE,"USB_MIB").
+-define(VMODULE,"USM_MIB").
 -include("snmp_verbosity.hrl").
 
 -ifndef(default_verbosity).
@@ -47,6 +47,10 @@
 -define(usmUserAuthKey, 14).
 -define(usmUserPrivKey, 15).
 
+
+%%%-----------------------------------------------------------------
+%%% Utility functions
+%%%-----------------------------------------------------------------
 
 %%%-----------------------------------------------------------------
 %%% Implements the instrumentation functions and additional 
@@ -226,12 +230,6 @@ check_user(User) ->
     end.
     
 
-% maybe_create_table(Name) ->
-%     case snmpa_local_db:table_exists(db(Name)) of
-% 	true -> ok;
-% 	_ -> snmpa_local_db:table_create(db(Name))
-%     end.
-
 init_tabs(Users) ->
     ?vdebug("create usm user table",[]),
     snmpa_local_db:table_delete(db(usmUserTable)),
@@ -314,21 +312,26 @@ maybe_create_var(Var) ->
 init_var(Var) -> ets:insert(snmp_agent_table, {Var, 0}).
 
 vars() ->
-    [usmStatsUnsupportedSecLevels,
+    [
+     usmStatsUnsupportedSecLevels,
      usmStatsNotInTimeWindows,
      usmStatsUnknownUserNames,
      usmStatsUnknownEngineIDs,
      usmStatsWrongDigests,
-     usmStatsDecryptionErrors].
+     usmStatsDecryptionErrors
+    ].
 
 %%-----------------------------------------------------------------
 %% API functions
 %%-----------------------------------------------------------------
 is_engine_id_known(EngineID) ->
     EngineKey = [length(EngineID) | EngineID],
+    ?vtrace("is_engine_id_known -> EngineKey: ~w", [EngineKey]),
     case table_next(usmUserTable, EngineKey) of
 	endOfTable -> false;
-	Key -> lists:prefix(EngineKey, Key)
+	Key -> 
+	    ?vtrace("is_engine_id_known -> Key: ~w", [Key]),
+	    lists:prefix(EngineKey, Key)
     end.
 
 get_user(EngineID, UserName) ->
@@ -392,6 +395,76 @@ usmUserSpinLock(set, NewVal) ->
 			       {usmUserSpinLock, volatile}).
 
 
+%% Op = print - Used for debugging purposes
+usmUserTable(print) ->
+    Table = usmUserTable, 
+    DB    = db(Table),
+    FOI   = foi(Table),
+    %% TableInfo = snmpa_mib_lib:get_table(db(Table), foi(Table)),
+    PrintRow = 
+	fun(Prefix, Row) ->
+		lists:flatten(
+		  io_lib:format("~sEngineID:         ~p"
+				"~n~sName:             ~p"
+				"~n~sSecurityName:     ~p"
+				"~n~sCloneFrom:        ~p"
+				"~n~sAuthProtocol:     ~p (~w)"
+				"~n~sAuthKeyChange:    ~p"
+				"~n~sOwnAuthKeyChange: ~p"
+				"~n~sPrivProtocol:     ~p (~w)"
+				"~n~sPrivKeyChange:    ~p"
+				"~n~sOwnPrivKeyChange: ~p"
+				"~n~sPublic:           ~p"
+				"~n~sStorageType:      ~p (~w)"
+				"~n~sStatus:           ~p (~w)", 
+				[Prefix, element(?usmUserEngineID, Row),
+				 Prefix, element(?usmUserName, Row),
+				 Prefix, element(?usmUserSecurityName, Row),
+				 Prefix, element(?usmUserCloneFrom, Row),
+				 Prefix, element(?usmUserAuthProtocol, Row),
+				 case element(?usmUserAuthProtocol, Row) of
+				     ?usmNoAuthProtocol      -> none;
+				     ?usmHMACMD5AuthProtocol -> md5;
+				     ?usmHMACSHAAuthProtocol -> sha;
+				     md5 -> md5;
+				     sha -> sha;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?usmUserAuthKeyChange, Row),
+				 Prefix, element(?usmUserOwnAuthKeyChange, Row),
+				 Prefix, element(?usmUserPrivProtocol, Row),
+				 case element(?usmUserPrivProtocol, Row) of
+				     ?usmNoPrivProtocol    -> none;
+				     ?usmDESPrivProtocol   -> des;
+				     ?usmAesCfb128Protocol -> aes;
+				     des -> des;
+				     aes -> aes;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?usmUserPrivKeyChange, Row),
+				 Prefix, element(?usmUserOwnPrivKeyChange, Row),
+				 Prefix, element(?usmUserPublic, Row),
+				 Prefix, element(?usmUserStorageType, Row),
+				 case element(?usmUserStorageType, Row) of
+				     ?'usmUserStorageType_readOnly' -> readOnly;
+				     ?'usmUserStorageType_permanent' -> permanent;
+				     ?'usmUserStorageType_nonVolatile' -> nonVolatile;
+				     ?'usmUserStorageType_volatile' -> volatile;
+				     ?'usmUserStorageType_other' -> other;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?usmUserStatus, Row),
+				 case element(?usmUserStatus, Row) of
+				     ?'usmUserStatus_destroy' -> destroy;
+				     ?'usmUserStatus_createAndWait' -> createAndWait;
+				     ?'usmUserStatus_createAndGo' -> createAndGo;
+				     ?'usmUserStatus_notReady' -> notReady;
+				     ?'usmUserStatus_notInService' -> notInService;
+				     ?'usmUserStatus_active' -> active;
+				     _ -> undefined
+				 end]))
+	end,
+    snmpa_mib_lib:print_table(Table, DB, FOI, PrintRow);
 %% Op == new | delete
 usmUserTable(Op) ->
     snmp_generic:table_func(Op, db(usmUserTable)).
@@ -787,8 +860,8 @@ validate_key_change(RowIndex, Cols, KeyChangeCol, Type) ->
 		auth ->
 		    case get_auth_proto(RowIndex, Cols) of
 			?usmNoAuthProtocol -> ok;
-			?usmHMACMD5AuthProtocol when Len == 32 -> ok;
-			?usmHMACSHAAuthProtocol when Len == 40 -> ok;
+			?usmHMACMD5AuthProtocol when Len =:= 32 -> ok;
+			?usmHMACSHAAuthProtocol when Len =:= 40 -> ok;
 			_ -> wrongValue(KeyChangeCol)
 		    end;
 		priv ->

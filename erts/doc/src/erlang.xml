@@ -704,14 +704,18 @@ false</pre>
       </desc>
     </func>
     <func>
-      <name>erlang:demonitor(MonitorRef, OptionList) -> true</name>
+      <name>erlang:demonitor(MonitorRef, OptionList) -> true|false</name>
       <fsummary>Stop monitoring</fsummary>
       <type>
         <v>MonitorRef = ref()</v>
         <v>OptionList = [Option]</v>
         <v>Option = flush</v>
+        <v>Option = info</v>
       </type>
       <desc>
+        <p>The returned value is <c>true</c> unless <c>info</c> is part
+	   of <c>OptionList</c>.
+	</p>
         <p><c>erlang:demonitor(MonitorRef, [])</c> is equivalent to
           <seealso marker="#erlang:demonitor/1">erlang:demonitor(MonitorRef)</seealso>.</p>
         <p>Currently the following <c>Option</c>s are valid:</p>
@@ -722,7 +726,7 @@ false</pre>
               if there is one, from the callers message queue after
               monitoring has been stopped.</p>
             <p>Calling <c>erlang:demonitor(MonitorRef, [flush])</c>
-              is equivalent to:</p>
+              is equivalent to the following, but more efficient:</p>
             <code type="none">
 
     erlang:demonitor(MonitorRef),
@@ -732,6 +736,30 @@ false</pre>
     after 0 ->
 \011    true
     end</code>
+          </item>
+          <tag><c>info</c></tag>
+          <item>
+	    <p>The returned value is one of the following:</p>
+	    <taglist>
+	      <tag><c>true</c></tag>
+	      <item><p>The monitor was found and removed. In this case
+		       no <c>'DOWN'</c> message due to this monitor have
+		       been nor will be placed in the message queue
+		       of the caller.
+		    </p>
+	      </item>
+	      <tag><c>false</c></tag>
+	      <item><p>The monitor was not found and could not be removed.
+	      	       This probably because someone already has placed a
+		       <c>'DOWN'</c> message corresponding to this monitor
+		       in the callers message queue.
+		    </p>
+	      </item>
+	    </taglist>
+	    <p>If the <c>info</c> option is combined with the <c>flush</c>
+	       option, <c>false</c> will be returned if a flush was needed;
+	       otherwise, <c>true</c>.
+	    </p>
           </item>
         </taglist>
         <note>
@@ -4877,6 +4905,10 @@ true</pre>
                 <p>Schedulers will be spread like <c>thread_spread</c>, but
 		   also over physical processor chips.</p>
               </item>
+              <tag><c>spread</c></tag>
+              <item>
+                <p>Schedulers will be spread as much as possible.</p>
+              </item>
               <tag><c>no_node_thread_spread</c></tag>
               <item>
                 <p>Like <c>thread_spread</c>, but if multiple NUMA
@@ -5148,7 +5180,9 @@ true</pre>
               <item><c>CpuTopology = LevelEntryList | undefined</c></item>
               <item><c>LevelEntryList = [LevelEntry]</c> (all
 	            <c>LevelEntry</c>s of a <c>LevelEntryList</c>
-	            must contain th same <c>LevelTag</c>)</item>
+	            must contain the same <c>LevelTag</c>, except
+		    on the top level where both <c>node</c> and
+		    <c>processor</c> <c>LevelTag</c>s may co-exist)</item>
 	      <item><c>LevelEntry = {LevelTag, SubLevel}
 	            | {LevelTag, InfoList, SubLevel}</c>
 		    (<c>{LevelTag, SubLevel}
@@ -5161,17 +5195,26 @@ true</pre>
               <item><c>InfoList = []</c> (the <c>InfoList</c>
 	            may be extended in the future)</item>
 	    </list>
+	    <p><c>node</c> refers to NUMA (non-uniform memory access)
+	       nodes, and <c>thread</c> refers to hardware threads
+	       (e.g. Intels hyper-threads).</p>
             <p>A level in the <c>CpuTopology</c> term can be omitted if
 	       only one entry exists and the <c>InfoList</c> is empty.
 	    </p>
-	    <p>Currently <c>thread</c> must be a sub level to <c>core</c>
-	       which must be a sub level to <c>processor</c> which must be
-	       a sublevel to <c>node</c>. This will change in the future
-	       since <c>node</c> actually can be a sublevel to
-	       <c>processor</c> in hardware. Cache hierarchy is not part
-	       of the <c>CpuTopology</c> type yet, but will be in the
-	       future. In other words, expect the <c>CpuTopology</c>
-	       type to change.
+	    <p><c>thread</c> can only be a sub level to <c>core</c>.
+	       <c>core</c> can be a sub level to either <c>processor</c>
+	       or <c>node</c>.  <c>processor</c> can either be on the
+	       top level or a sub level to <c>node</c>. <c>node</c>
+	       can either be on the top level or a sub level to
+	       <c>processor</c>. That is, NUMA nodes can be processor
+	       internal or processor external. A CPU topology can
+	       consist of a mix of processor internal and external
+	       NUMA nodes, as long as each logical CPU belongs to one
+	       and only one NUMA node. Cache hierarchy is not part of
+	       the <c>CpuTopology</c> type yet, but will be in the
+	       future. Other things may also make it into the CPU
+	       topology in the future. In other words, expect the
+	       <c>CpuTopology</c> type to change.
 	    </p>
           </item>
           <tag><c>{cpu_topology, defined}</c></tag>

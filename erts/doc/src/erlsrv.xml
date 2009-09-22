@@ -34,12 +34,13 @@
   <com>erlsrv</com>
   <comsummary>Run the Erlang emulator as a service on Windows NT&reg;</comsummary>
   <description>
-    <p>This utility is specific to Windows NT/2000/XP&reg; It allows Erlang
+    <p>This utility is specific to Windows NT/2000/XP&reg; (and subsequent versions of Windows) It allows Erlang
       emulators to run as services on the Windows system, allowing embedded
       systems to start without any user needing to log in. The
       emulator started in this way can be manipulated through the
       Windows&reg; services applet in a manner similar to other
       services.</p>
+    <p>Note that erlsrv is not a general service utility for Windows, but designed for embedded Erlang systems.</p> 
     <p>As well as being the actual service, erlsrv also provides a
       command line interface for registering, changing, starting and
       stopping services.</p>
@@ -170,6 +171,14 @@
           way. The most common use is for specifying cookies and flags
           to be passed to init:boot() (<c><![CDATA[-s]]></c>).</p>
       </item>
+      <item>
+        <p><c><![CDATA[InternalServiceName]]></c>: Specifies the Windows&reg; internal service name (not the display name, which is the one <c>erlsrv</c> uses to identify the service).</p>
+	<p>This internal name can not be changed, it is fixed even if the service is renamed. <c>Erlsrv</c> generates a unique internal name when a service is created, it is recommended to keep to the defaut if release-handling is to be used for the application.</p>
+	<p>The internal service name can be seen in the Windows&reg; service manager if viewing <c>Properties</c> for an erlang service.</p>
+      </item>
+      <item>
+        <p><c><![CDATA[Comment]]></c>: A textual comment describing the service. Not mandatory, but shows up as the service description in the Windows&reg; service manager.</p>
+      </item>
     </list>
     <p>      <marker id="001"></marker>
  The naming of the service in a system that
@@ -245,6 +254,21 @@
            argument string containing spaces and use quoted quotes (\\")
            to give an quote within the argument string if
            necessary.</item>
+	   <tag>-i[nternalservicename] [&lt;internal name&gt;]</tag>
+           <item><em>Only</em> allowed for <c>add</c>. Specifies a
+           Windows&reg; internal service name for the service, which by
+           default is set to something unique (prefixed with the
+           original service name) by erlsrv when adding a new
+           service. Specifying this is a purely cosmethic action and is
+           <em>not</em> recommended if release handling is to be
+           performed. The internal service name cannot be changed once
+           the service is created. The internal name is <em>not</em> to 
+	   be confused with the ordinary service name, which is the name 
+	   used to identify a service to erlsrv.</item>
+	   <tag>-c[omment] [&lt;short description&gt;]</tag>
+           <item>Specifies a textual comment describing the
+           service. This comment will show upp as the service description
+           in the Windows&reg; service manager.</item>
         </taglist>
       </desc>
     </func>

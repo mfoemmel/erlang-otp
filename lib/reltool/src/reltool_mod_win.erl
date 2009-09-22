@@ -19,7 +19,7 @@
 -module(reltool_mod_win).
 
 %% Public
--export([start/5, raise/1, refresh/1]).
+-export([start_link/5, raise/1, refresh/1]).
 
 %% Internal
 -export([init/6, loop/1]).
@@ -86,37 +86,17 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Client
 
-start(WxEnv, Xref, RelPid, Common, ModName) ->
+start_link(WxEnv, Xref, RelPid, Common, ModName) ->
     proc_lib:start_link(?MODULE, init, [self(), WxEnv, Xref, RelPid, Common, ModName], infinity, []).
 
 raise(Pid) ->
-    cast(Pid, raise).
+    reltool_utils:cast(Pid, raise).
 
 refresh(Pid) ->
-    cast(Pid, refresh).
-
-%% call(Name, Msg) when is_atom(Name) ->
-%%     call(whereis(Name), Msg);
-%% call(Pid, Msg) when is_pid(Pid) ->
-%%     Ref = erlang:monitor(process, Pid),
-%%     Pid ! {call, self(), Ref, Msg},
-%%     receive
-%%         {Ref, Reply} ->
-%%             erlang:demonitor(Ref, [flush]),
-%%             Reply;
-%%         {'DOWN', Ref, _, _, Reason} ->
-%%             {error, Reason}
-%%     end.
-
-cast(Pid, Msg) ->
-    Pid ! {cast, self(), Msg},
-    ok.
+    reltool_utils:cast(Pid, refresh).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Server
-
-%% reply(Pid, Ref, Msg) ->
-%%     Pid ! {Ref, Msg}.
 
 init(Parent, WxEnv, Xref, RelPid, C, ModName) ->
     try
@@ -360,7 +340,7 @@ find_escript_bin(#app{active_dir = ActiveDir}, Mod) ->
 			     [_] ->
 				 Bin = GetBin(),
 				 case beam_lib:version(Bin) of
-				     {ok,{M, _}} when M =:= ModName ->
+				     {ok,{M, _}} when M =:= ModName; FullName =:= "." ->
 					 case beam_lib:chunks(Bin, [abstract_code]) of
 					     {ok,{_,[{abstract_code,{_,AC}}]}} ->
 						 {obj, list_to_binary(erl_prettypr:format(erl_syntax:form_list(AC)))};
@@ -765,7 +745,7 @@ create_search_area(Parent) ->
 
 load_code(Ed, Code) when is_binary(Code) ->
     wxStyledTextCtrl:setReadOnly(Ed, false),
-    wxStyledTextCtrl:setTextRaw(Ed, Code),
+    wxStyledTextCtrl:setTextRaw(Ed, <<Code/binary, 0:8>>),
     Lines = wxStyledTextCtrl:getLineCount(Ed),
     Sz = trunc(math:log10(Lines))+1,
     LW = wxStyledTextCtrl:textWidth(Ed, ?wxSTC_STYLE_LINENUMBER, lists:duplicate(Sz, $9)),

@@ -154,6 +154,10 @@ await_started(Pid) ->
 	{started, Pid} ->
 	    d("await_started ~p: ok", [Pid]),
 	    {ok, Pid};
+	{'EXIT', Pid, 
+	 {failed_starting_tcp_listen, {could_not_start_listener, {gen_tcp_listen, eaddrinuse}}}} ->
+	    i("await_started ~p: address already in use", [Pid]),
+	    ?SKIP(eaddrinuse);
 	{'EXIT', Pid, Reason} ->
 	    i("await_started ~p: received exit signal: ~p", [Pid, Reason]),
 	    exit({failed_starting, Pid, Reason})
@@ -280,16 +284,20 @@ mgc(Parent, Verbosity, Config) ->
     put(verbosity, Verbosity),
     put(sname,   "MGC"),
     i("mgc -> starting"),
-    {Mid, TcpSup, UdpSup, DSITimer} = init(Config),
-    notify_started(Parent),
-    S = #mgc{parent    = Parent, 
-	     tcp_sup   = TcpSup, 
-	     udp_sup   = UdpSup, 
-	     mid       = Mid,
-	     dsi_timer = DSITimer},
-    i("mgc -> started"),
-    display_system_info("at start "),
-    loop(S).
+    case (catch init(Config)) of
+	{error, Reason} ->
+	    exit(Reason);
+	{Mid, TcpSup, UdpSup, DSITimer} ->
+	    notify_started(Parent),
+	    S = #mgc{parent    = Parent, 
+		     tcp_sup   = TcpSup, 
+		     udp_sup   = UdpSup, 
+		     mid       = Mid,
+		     dsi_timer = DSITimer},
+	    i("mgc -> started"),
+	    display_system_info("at start "),
+	    loop(S)
+    end.
 
 init(Config) ->
     d("init -> entry"),
@@ -317,7 +325,7 @@ init(Config) ->
 	    megaco:enable_trace(max, io);
 	{value, {megaco_trace, io}} ->
 	    megaco:enable_trace(max, io);
-	{value, {megaco_trace, File}} when list(File) ->
+	{value, {megaco_trace, File}} when is_list(File) ->
 	    megaco:enable_trace(max, File);
 	_ ->
 	    ok
@@ -578,7 +586,7 @@ do_close_conn(CH, Reason) ->
 	SendMod    -> exit(Pid, Reason)
     end.
     
-get_trans_stats(P, SendMod) when pid(P) ->
+get_trans_stats(P, SendMod) when is_pid(P) ->
     case (catch SendMod:get_stats()) of
 	{ok, Stats} ->
 	    {SendMod, Stats};
@@ -710,7 +718,12 @@ try_start_tcp(Sup, Opts, Timeout, Error0) when (Timeout < 5000) ->
     end;
 try_start_tcp(Sup, _Opts, _Timeout, Error) ->
     megaco_tcp:stop_transport(Sup),
-    throw({error, {failed_starting_tcp_listen, Error}}).
+    case Error of
+	{error, Reason} ->
+	    throw({error, {failed_starting_tcp_listen, Reason}});
+	_ ->
+	    throw({error, {failed_starting_tcp_listen, Error}})
+    end.
 
 
 start_udp(TO, RH, Port, Sup) ->
@@ -772,7 +785,7 @@ handle_megaco_request({handle_message_error, _CH, _PV, _ED}, S) ->
     {no_reply, S};
 
 handle_megaco_request({handle_trans_request, CH, PV, ARs}, 
-		      #mgc{req_info = P} = S) when pid(P) ->
+		      #mgc{req_info = P} = S) when is_pid(P) ->
     d("handle_megaco_request(handle_trans_request,~p) -> entry", [P]),
     P ! {req_received, self(), ARs},
     do_handle_trans_request(CH, PV, ARs, S);
@@ -800,7 +813,7 @@ handle_megaco_request({handle_trans_reply, _CH, _PV, _AR, _RD}, S) ->
     {ok, S};
 
 handle_megaco_request({handle_trans_ack, CH, PV, AS, AD}, 
-		      #mgc{ack_info = P} = S) when pid(P) ->
+		      #mgc{ack_info = P} = S) when is_pid(P) ->
     d("handle_megaco_request(handle_trans_ack,~p) -> entry when"
       "~n   CH: ~p"
       "~n   PV: ~p"
@@ -832,7 +845,7 @@ handle_megaco_request({handle_trans_request_abort, CH, PV, TI, Handler}, S) ->
       "~n   Handler: ~p", [CH, PV, TI, Handler]),
     Reply = 
 	case S#mgc.abort_info of
-	    P when pid(P) ->
+	    P when is_pid(P) ->
 		P ! {abort_received, self(), TI},
 		ok;
 	    _ ->
@@ -1091,7 +1104,7 @@ get_encoding_config(RI, EM) ->
     case text_codec(EM) of
 	true ->
 	    case megaco:system_info(text_config) of
-		[Conf] when list(Conf) ->
+		[Conf] when is_list(Conf) ->
 		    Conf;
 		_ ->
 		    []

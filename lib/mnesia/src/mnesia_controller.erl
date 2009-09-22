@@ -1843,15 +1843,15 @@ add_worker(Worker = #dump_log{}, State) ->
     InitBy = Worker#dump_log.initiated_by,
     Queue = State#state.dumper_queue,
     case lists:keymember(InitBy, #dump_log.initiated_by, Queue) of
-	false ->
-	    ignore;
 	true when Worker#dump_log.opt_reply_to == undefined ->
 	    %% The same threshold has been exceeded again,
 	    %% before we have had the possibility to
 	    %% process the older one.
 	    DetectedBy = {dump_log, InitBy},
 	    Event = {mnesia_overload, DetectedBy},
-	    mnesia_lib:report_system_event(Event)
+	    mnesia_lib:report_system_event(Event);
+	_ ->
+	    ignore
     end,
     Queue2 = Queue ++ [Worker],
     State2 = State#state{dumper_queue = Queue2},

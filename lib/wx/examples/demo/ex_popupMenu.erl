@@ -18,7 +18,7 @@
 
 -module(ex_popupMenu).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -44,30 +44,43 @@ init(Config) ->
     wx:batch(fun() -> do_init(Config) end).
 
 do_init(Config) ->
-    Parent = proplists:get_value(parent, Config),  
-    Panel = wxPanel:new(Parent, []),
-
-    %% Setup sizers
+    Root = proplists:get_value(parent, Config),
+    Parent = wxPanel:new(Root,[]),    
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
-    Sizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				 [{label, "Popup Menu"}]),
-
-    Text = wxStaticText:new(Panel, ?wxID_ANY, "Right click to open popup menu", []),
-
-
-    %% Add to sizers
-    wxSizer:add(Sizer, Text, [{border, 20},
-			      {flag, ?wxALL}]),
-
-    wxSizer:add(MainSizer, Sizer, [{flag, ?wxEXPAND},
-				   {proportion, 1}]),
-
+    Box = wxStaticBox:new(Parent, ?wxID_ANY, "Popup Menu"),
+    Sz = wxStaticBoxSizer:new(Box, ?wxVERTICAL),
+    Text = wxStaticText:new(Parent, ?wxID_ANY, "Right click to open popup menu", []),
+    Panel = wxPanel:new(Parent),
     wxPanel:connect(Panel, right_up),
-    wxPanel:setSizer(Panel, MainSizer),
-    {Panel, #state{parent=Panel, config=Config,
-		   menu = create_menu()}}.
+    Sizer = wxBoxSizer:new(?wxVERTICAL),    
+    wxSizer:add(Sizer, Text, [{border, 20}, {flag, ?wxALL}]),
+    wxPanel:setSizer(Panel, Sizer),
+    wxSizer:add(Sz, Panel, [{proportion,1}, {flag, ?wxEXPAND}]),
+    wxSizer:layout(Sz),
+    PopupMenu = create_menu(),
+    wxSizer:add(MainSizer, Sz, [{proportion,1}, {flag, ?wxEXPAND}]),
+    wxWindow:setSizer(Parent, MainSizer),
+    {Parent, #state{parent=Parent, config=Config, menu=PopupMenu}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Async Events are handled in handle_event as in handle_info
+handle_event(#wx{obj = Panel,
+		 event = #wxMouse{type = right_up}},
+	     State = #state{menu = Menu}) ->
+    %% Open the popup menu
+    wxWindow:popupMenu(Panel, Menu),
+    {noreply, State};
+handle_event(#wx{obj = Menu, id = Id,
+		 event = #wxCommand{type = command_menu_selected}},
+	     State = #state{}) ->
+    %% Get the selected item label
+    Label = wxMenu:getLabel(Menu, Id),
+    demo:format(State#state.config, "wxMenu clicked ~p\n", [Label]),
+    {noreply, State};
+handle_event(Ev, State) ->
+    demo:format(State#state.config, "Unexpected Event ~p\n", [Ev]),
+    {noreply, State}.
+
 %% Callbacks handled as normal gen_server callbacks
 handle_info(Msg, State) ->
     demo:format(State#state.config, "Got Info ~p\n", [Msg]),
@@ -77,27 +90,11 @@ handle_call(Msg, _From, State) ->
     demo:format(State#state.config, "Got Call ~p\n", [Msg]),
     {reply,{error, nyi}, State}.
 
-%% Async Events are handled in handle_event as in handle_info
-handle_event(#wx{obj = Panel,
-		 event = #wxMouse{type = right_up}},
-	     State = #state{menu = Menu}) ->
-    wxWindow:popupMenu(Panel, Menu),
-    {noreply, State};
-handle_event(#wx{obj = Menu,
-		 id = Id,
-		 event = #wxCommand{type = command_menu_selected}},
-	     State = #state{}) ->
-    Label = wxMenu:getLabel(Menu, Id),
-    demo:format(State#state.config, "wxMenu clicked ~p\n", [Label]),
-    {noreply, State};
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config, "Got Event ~p\n", [Ev]),
-    {noreply, State}.
-
 code_change(_, _, State) ->
     {stop, ignore, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{menu=Popup}) ->
+    wxMenu:destroy(Popup),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

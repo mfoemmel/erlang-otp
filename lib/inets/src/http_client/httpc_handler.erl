@@ -25,6 +25,7 @@
 -include("httpc_internal.hrl").
 -include("http_internal.hrl").
 
+
 %%--------------------------------------------------------------------
 %% Internal Application API
 -export([start_link/3, send/2, cancel/2, stream/3, stream_next/1]).
@@ -289,6 +290,7 @@ handle_call(Request, _, State = #state{session = Session =
 handle_call(Request, _, #state{session = Session =
 			       #tcp_session{type = keep_alive,
 					    socket = Socket},
+			       timers = Timers,
 			       options = Options,
 			       profile_name = ProfileName} = State) ->
        
@@ -301,18 +303,39 @@ handle_call(Request, _, #state{session = Session =
 	    NewState = 
 		activate_request_timeout(State#state{request =
 						     Request}),
-	    NewSession = 
-		Session#tcp_session{queue_length = 1,
-				    client_close = ClientClose},
-	    httpc_manager:insert_session(NewSession, ProfileName),
-	    Relaxed = 
-		(Request#request.settings)#http_options.relaxed,
-	    {reply, ok, 
-	     NewState#state{request = Request,
-			    session = NewSession, 
-			    mfa = {httpc_response, parse,
-				   [State#state.max_header_size,
-				    Relaxed]}}};
+
+	    case State#state.request of
+		#request{} -> %% Old request not yet finished
+		    %% Make sure to use the new value of timers in state
+		    NewTimers = NewState#state.timers,
+                    NewKeepAlive = queue:in(Request, State#state.keep_alive),
+		    NewSession = 
+			Session#tcp_session{queue_length = 
+					    %% Queue + current
+					    queue:len(NewKeepAlive) + 1,
+					    client_close = ClientClose},
+		    httpc_manager:insert_session(NewSession, ProfileName),
+                    {reply, ok, State#state{keep_alive = NewKeepAlive,
+					    session = NewSession,
+					    timers = NewTimers}};
+		undefined ->
+		    %% Note: tcp-message reciving has already been
+		    %% activated by handle_pipeline/2. 
+		    cancel_timer(Timers#timers.queue_timer, 
+				 timeout_queue),
+		    NewSession = 
+			Session#tcp_session{queue_length = 1,
+					    client_close = ClientClose},
+		    httpc_manager:insert_session(NewSession, ProfileName),
+		    Relaxed = 
+			(Request#request.settings)#http_options.relaxed,
+		    {reply, ok, 
+		     NewState#state{request = Request,
+				    session = NewSession, 
+				    mfa = {httpc_response, parse,
+					   [State#state.max_header_size,
+					    Relaxed]}}}
+	    end;
 	{error, Reason}    ->
 	    {reply, {request_failed, Reason}, State}
     end.
@@ -351,63 +374,96 @@ handle_cast(stream_next, #state{session = Session} = State) ->
 			   Session#tcp_session.socket, [{active, once}]), 
     {noreply, State#state{once = once}}.
 
+
 %%--------------------------------------------------------------------
 %% Function: handle_info(Info, State) -> {noreply, State} |
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({Proto, _Socket, Data}, State = 
-	    #state{mfa = {Module, Function, Args}, 
+handle_info({Proto, _Socket, Data}, 
+	    #state{mfa = {Module, Function, Args} = MFA, 
 		   request = #request{method = Method, 
 				      stream = Stream} = Request, 
-		   session = Session, status_line = StatusLine}) 
+		   session = Session, 
+		   status_line = StatusLine} = State) 
   when (Proto =:= tcp) orelse 
        (Proto =:= ssl) orelse 
        (Proto =:= httpc_handler) ->
 
-    try Module:Function([Data | Args]) of
-        {ok, Result} ->
-            handle_http_msg(Result, State); 
-        {_, whole_body, _} when Method =:= head ->
-	    handle_response(State#state{body = <<>>}); 
-	{Module, whole_body, [Body, Length]} ->
-	    {_, Code, _} = StatusLine,
-	    {NewBody, NewRequest} = stream(Body, Request, Code),
-	    %% When we stream we will not keep the already
-	    %% streamed data, that would be a waste of memory.
-	    NewLength = case Stream of
-			    none ->   
-				Length;
-			    _ ->
-				Length - size(Body)			    
-			end,
-	    
-	    NewState = next_body_chunk(State),
-	    
-            {noreply, NewState#state{mfa = {Module, whole_body, 
-					    [NewBody, NewLength]},
-				     request = NewRequest}};
-	NewMFA ->
-	    http_transport:setopts(socket_type(Session#tcp_session.scheme), 
-                                   Session#tcp_session.socket, 
-				   [{active, once}]),
-            {noreply, State#state{mfa = NewMFA}}
-    catch
-	exit:_ ->
-	    ClientErrMsg = httpc_response:error(Request, 
-						{could_not_parse_as_http, 
-						 Data}),
-	    NewState = answer_request(Request, ClientErrMsg, State),
-	    {stop, normal, NewState};
-	error:_ ->    
-	    ClientErrMsg = httpc_response:error(Request, 
-						{could_not_parse_as_http, 
-						 Data}),
-	    NewState = answer_request(Request, ClientErrMsg, State),   
-	    {stop, normal, NewState}
-    
-    end;
+    ?hcri("received data", [{proto, Proto}, {data, Data}, {mfa, MFA}, {method, Method}, {stream, Stream}, {session, Session}, {status_line, StatusLine}]),
+
+    FinalResult = 
+	try Module:Function([Data | Args]) of
+	    {ok, Result} ->
+		handle_http_msg(Result, State); 
+	    {_, whole_body, _} when Method =:= head ->
+		handle_response(State#state{body = <<>>}); 
+	    {Module, whole_body, [Body, Length]} ->
+		{_, Code, _} = StatusLine,
+		{NewBody, NewRequest} = stream(Body, Request, Code),
+		%% When we stream we will not keep the already
+		%% streamed data, that would be a waste of memory.
+		NewLength = case Stream of
+				none ->   
+				    Length;
+				_ ->
+				    Length - size(Body)			    
+			    end,
+		
+		NewState = next_body_chunk(State),
+		
+		{noreply, NewState#state{mfa = {Module, whole_body, 
+						[NewBody, NewLength]},
+					 request = NewRequest}};
+	    NewMFA ->
+		http_transport:setopts(socket_type(Session#tcp_session.scheme), 
+				       Session#tcp_session.socket, 
+				       [{active, once}]),
+		{noreply, State#state{mfa = NewMFA}}
+	catch
+	    exit:_ ->
+		ClientErrMsg = httpc_response:error(Request, 
+						    {could_not_parse_as_http, 
+						     Data}),
+		NewState = answer_request(Request, ClientErrMsg, State),
+		{stop, normal, NewState};
+	      error:_ ->    
+		ClientErrMsg = httpc_response:error(Request, 
+						    {could_not_parse_as_http, 
+						     Data}),
+		NewState = answer_request(Request, ClientErrMsg, State),   
+		{stop, normal, NewState}
+	
+	end,
+    ?hcri("data processed", [{result, FinalResult}]),
+    FinalResult;
+
+
+handle_info({Proto, Socket, Data}, 
+	    #state{mfa     = MFA, 
+		   request = Request, 
+		   session = Session, 
+		   status  = Status,
+		   status_line  = StatusLine, 
+		   profile_name = Profile} = State) 
+  when (Proto =:= tcp) orelse 
+       (Proto =:= ssl) orelse 
+       (Proto =:= httpc_handler) ->
+
+    error_logger:warning_msg("Received unexpected ~p data on ~p"
+			     "~n   Data:       ~p"
+			     "~n   MFA:        ~p"
+			     "~n   Request:    ~p"
+			     "~n   Session:    ~p"
+			     "~n   Status:     ~p"
+			     "~n   StatusLine: ~p"
+			     "~n   Profile:    ~p"
+			     "~n", 
+			     [Proto, Socket, Data, MFA, 
+			      Request, Session, Status, StatusLine, Profile]),
+    {noreply, State};
+
 
 %% The Server may close the connection to indicate that the
 %% whole body is now sent instead of sending an length
@@ -467,6 +523,7 @@ handle_info({init_error, _, ClientErrMsg},
 	    State = #state{request = Request}) ->
     NewState = answer_request(Request, ClientErrMsg, State),
     {stop, normal, NewState};
+
 
 %%% httpc_manager process dies. 
 handle_info({'EXIT', _, _}, State = #state{request = undefined}) ->
@@ -636,13 +693,16 @@ connect(SocketType, ToAddress, #options{ipfamily = IpFamily,
 		
     
 send_first_request(Address, Request, #state{options = Options} = State) ->
-
-    SocketType = socket_type(Request),
-    Timeout = (Request#request.settings)#http_options.timeout,
-    case connect(SocketType, Address, Options, Timeout) of
+    SocketType  = socket_type(Request),
+    ConnTimeout = (Request#request.settings)#http_options.connect_timeout,
+    ?hcri("connect", 
+	  [{address, Address}, {request, Request}, {options, Options}]),
+    case connect(SocketType, Address, Options, ConnTimeout) of
 	{ok, Socket} ->
+	    ?hcri("connected - now send first request", [{socket, Socket}]),
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
+		    ?hcri("first request sent", []),
 		    ClientClose = 
 			httpc_request:is_client_closing(
 			  Request#request.headers),
@@ -1003,13 +1063,29 @@ handle_keep_alive_queue(State = #state{status = keep_alive,
 		    handle_keep_alive_queue(State#state{keep_alive = 
 							KeepAlive}, Data);
 		false ->
-		    {reply, ok, NewState} =
-			handle_call(NextRequest, 
-				    dummy, State#state{request = undefined}),
-		    http_transport:setopts(
-		      socket_type(Session#tcp_session.scheme), 
-		      Session#tcp_session.socket, [{active, once}]),
-		    {noreply, NewState}
+		    Relaxed = 
+			(NextRequest#request.settings)#http_options.relaxed,
+		    NewState =
+			State#state{request = NextRequest,
+				    keep_alive = KeepAlive,
+				    mfa = {httpc_response, parse,
+					   [State#state.max_header_size,
+					    Relaxed]},
+				    status_line = undefined,
+				    headers = undefined,
+				    body = undefined},
+		    case Data of
+			<<>> ->
+			    http_transport:setopts(
+			      socket_type(Session#tcp_session.scheme), 
+			      Session#tcp_session.socket, [{active, once}]),
+			    {noreply, NewState};
+			_ ->
+			    %% If we already received some bytes of
+			    %% the next response
+			    handle_info({httpc_handler, dummy, Data}, 
+					NewState) 
+		    end
 	    end
     end.
 

@@ -415,7 +415,7 @@ certify(#certificate{asn1_certificates = []},
 	       ssl_options = #ssl_options{verify = verify_peer,
 					  fail_if_no_peer_cert = false}} = 
 	State) ->
-    {next_state, certify, next_record(State)};
+    {next_state, certify, next_record(State#state{client_certificate_requested = false})};
 
 certify(#certificate{} = Cert, 
         #state{session = Session, 
@@ -427,8 +427,10 @@ certify(#certificate{} = Cert,
 			       Opts#ssl_options.verify_fun) of
         {PeerCert, PublicKeyInfo} ->
             State = State0#state{session = 
-                                 Session#session{peer_certificate = PeerCert},
-                                 public_key_info = PublicKeyInfo},
+                                 Session#session{peer_certificate = PeerCert},				 
+                                 public_key_info = PublicKeyInfo,
+				 client_certificate_requested = false
+				},
             {next_state, certify, next_record(State)};
 	#alert{} = Alert ->
             handle_own_alert(Alert, Version, certify_certificate, State0),
@@ -477,6 +479,16 @@ certify(#server_hello_done{},
 			     certify_server_hello_done, State0),
 	    {stop, normal, State0} 
     end;
+
+certify(#client_key_exchange{},
+	State = #state{role = server,
+		       client_certificate_requested = true,
+		       negotiated_version = Version}) ->
+    %% We expect a certificate here
+    Alert = ?ALERT_REC(?FATAL, ?UNEXPECTED_MESSAGE),
+    handle_own_alert(Alert, Version, certify_server_waiting_certificate, State),
+    {stop, normal, State};
+
 
 certify(#client_key_exchange{exchange_keys 
 			     = #encrypted_premaster_secret{premaster_secret 
@@ -1304,7 +1316,8 @@ request_client_cert(#state{ssl_options = #ssl_options{verify = verify_peer},
     {BinMsg, ConnectionStates1, Hashes1} =
         encode_handshake(Msg, Version, ConnectionStates0, Hashes0),
     Transport:send(Socket, BinMsg),
-    State#state{connection_states = ConnectionStates1,
+    State#state{client_certificate_requested = true,
+		connection_states = ConnectionStates1,      
 		tls_handshake_hashes = Hashes1};
 request_client_cert(#state{ssl_options = #ssl_options{verify = verify_none}} =
 		    State) ->

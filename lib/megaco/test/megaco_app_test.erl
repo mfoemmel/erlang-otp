@@ -55,7 +55,7 @@ all(suite) ->
 
 app_init(suite) -> [];
 app_init(doc) -> [];
-app_init(Config) when list(Config) ->
+app_init(Config) when is_list(Config) ->
     case is_app(megaco) of
 	{ok, AppFile} ->
 	    io:format("AppFile: ~n~p~n", [AppFile]),
@@ -89,7 +89,7 @@ is_app(App) ->
 
 app_fin(suite) -> [];
 app_fin(doc) -> [];
-app_fin(Config) when list(Config) ->
+app_fin(Config) when is_list(Config) ->
     Config.
 
 
@@ -99,7 +99,7 @@ fields(suite) ->
     [];
 fields(doc) ->
     [];
-fields(Config) when list(Config) ->
+fields(Config) when is_list(Config) ->
     AppFile = key1search(app_file, Config),
     Fields = [vsn, description, modules, registered, applications],
     case check_fields(Fields, AppFile, []) of
@@ -130,7 +130,7 @@ modules(suite) ->
     [];
 modules(doc) ->
     [];
-modules(Config) when list(Config) ->
+modules(Config) when is_list(Config) ->
     AppFile  = key1search(app_file, Config),
     Mods     = key1search(modules, AppFile),
     EbinList = get_ebin_mods(megaco),
@@ -187,7 +187,7 @@ exportall(suite) ->
     [];
 exportall(doc) ->
     [];
-exportall(Config) when list(Config) ->
+exportall(Config) when is_list(Config) ->
     AppFile = key1search(app_file, Config),
     Mods    = key1search(modules, AppFile),
     check_export_all(Mods).
@@ -220,7 +220,7 @@ app_depend(suite) ->
     [];
 app_depend(doc) ->
     [];
-app_depend(Config) when list(Config) ->
+app_depend(Config) when is_list(Config) ->
     AppFile = key1search(app_file, Config),
     Apps    = key1search(applications, AppFile),
     check_apps(Apps).

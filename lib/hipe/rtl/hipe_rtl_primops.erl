@@ -708,7 +708,7 @@ gen_cons(Dst, [Arg1, Arg2]) ->
 %%  Tag the thing
 %%    return make_fun(funp);
 %%
-gen_mkfun([Dst], {Mod,FunId,Arity}, MagicNr, Index, FreeVars) ->
+gen_mkfun([Dst], {_Mod, _FunId, _Arity} = MFidA, MagicNr, Index, FreeVars) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   NumFree = length(FreeVars),
 
@@ -727,9 +727,7 @@ gen_mkfun([Dst], {Mod,FunId,Arity}, MagicNr, Index, FreeVars) ->
   %%    funp->native_code = fe->native_code;
   %%  Increase refcount
   %%    fe->refc++;
-
-  SkeletonCode = gen_fun_thing_skeleton(HP, {Mod,FunId,Arity},
-					NumFree, MagicNr, Index),
+  SkeletonCode = gen_fun_thing_skeleton(HP, MFidA, NumFree, MagicNr, Index),
 
   %%  Link to the process off_heap.funs list
   %%    funp->next = p->off_heap.funs;

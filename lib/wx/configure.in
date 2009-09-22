@@ -1,7 +1,7 @@
 
 AC_INIT()
 
-AC_CONFIG_AUX_DIRS(autoconf)
+AC_CONFIG_AUX_DIRS($srcdir/autoconf)
 
 AC_PREREQ(2.59)
 
@@ -92,6 +92,27 @@ fi
 
 AC_SUBST(MIXED_CYGWIN)
 
+
+## Check that we are in 32 bits mode on darwin 
+## (wxWidgets require that it currently uses 32-bits Carbon)
+## Otherwise skip building wxErlang
+AC_CHECK_SIZEOF(void *, 4)
+
+case $ac_cv_sizeof_void_p-$host_os in
+    8-darwin*)
+	if test X"$WX_BUILDING_INSIDE_ERLSRC" != X"true" ; then
+		AC_MSG_ERROR([Can not use 64bits wxWidgets on Darwin])
+	else
+		echo "Can not combine 64bits erlang with wxWidgets on MacOSX, wx will not be useable" > ./CONF_INFO
+		WXERL_CAN_BUILD_DRIVER=false
+		AC_MSG_WARN([Can not combine 64bits erlang with wxWidgets on MacOSX, wx will not be useable])
+	fi
+	WXERL_CAN_BUILD_DRIVER=false
+	;;
+    *)
+	;;
+esac
+
 PTHR_CFLAGS="-D_THREAD_SAFE -D_REENTRANT"
 
 dnl NOTE: CPPFLAGS will be included in CFLAGS at the end
@@ -117,18 +138,17 @@ esac
 
 case $host_os in
     darwin*)
-	CFLAGS="-no-cpp-precomp"
-	LDFLAGS="-bundle -flat_namespace -undefined suppress -fPIC -framework OpenGL"
+	CFLAGS="-no-cpp-precomp $CFLAGS"
+	LDFLAGS="-bundle -flat_namespace -undefined warning -fPIC -framework OpenGL $LDFLAGS"
 	;;
     win32)
-        LDFLAGS="-dll"
+        LDFLAGS="-dll $LDFLAGS"
 	;;
     mingw32)
-	LDFLAGS="-shared -fPIC"
+	LDFLAGS="-shared -fPIC $LDFLAGS"
 	;;
     *)
-	CFLAGS=
-	LDFLAGS="-shared -fPIC"
+	LDFLAGS="-shared -fPIC $LDFLAGS"
 	;;
 esac
 
@@ -185,8 +205,9 @@ if test X"$WX_BUILDING_INSIDE_ERLSRC" != X"true" ; then
 	  AC_MSG_ERROR([Cannot find erlc in path])
        fi
     fi
-    ERLANG_ROOT_DIR=`echo 'io:format("~n~s~n", [[code:root_dir()]]), halt().' | erl | tail +3`
+    ERLANG_ROOT_DIR=`erl -noshell -eval 'io:format("~s~n",[[code:root_dir()]])' -s erlang halt`
     AC_MSG_NOTICE(ERL ROOT DIR: [$ERLANG_ROOT_DIR])
+    ERLWX_VSN=`grep WX_VSN $srcdir/vsn.mk | sed 's/^.*=[ ]*//'`
 else
     ERLC=erlc
     ERL=erl
@@ -210,7 +231,7 @@ if test X"$MIXED_CYGWIN_VC" != X"yes" ; then
 
     AC_MSG_CHECKING(for debug build of WxWidgets)
 
-    AM_PATH_WXCONFIG($reqwx, wxWinWithGL=1, wxWinWithGL=0, [stc,xrc,html,adv,xml,core,base,gl,aui], [--unicode --debug=yes])
+    AM_PATH_WXCONFIG($reqwx, wxWinWithGLDBG=1, wxWinWithGLDBG=0, [stc,xrc,html,adv,xml,core,base,gl,aui], [--unicode --debug=yes])
     DEBUG_WX_CFLAGS=$WX_CFLAGS
     DEBUG_WX_CXXFLAGS=$WX_CXXFLAGS
     DEBUG_WX_LIBS=$WX_LIBS
@@ -229,11 +250,25 @@ if test X"$MIXED_CYGWIN_VC" != X"yes" ; then
        WX_HAVE_STATIC_LIBS=true
     fi
 
-    if test "$wxWinWithGL" != 1; then
-	AM_PATH_WXCONFIG($reqwx, wxWin=1, wxWin=0, [stc,xrc,html,adv,xml,core,base,aui], [--unicode])
-    else 
-	wxWin=1
-    fi
+    wxWin=0
+
+    if test "$wxWinWithGLDBG" = 1; then
+        if test "$wxWinWithGL" = 1; then
+    	   wxWin=1
+	   FORCED_DEBUG_BUILD=false
+    	else 
+    	   wxWin=1
+	   FORCED_DEBUG_BUILD=debug
+	   WX_CFLAGS=$DEBUG_WX_CFLAGS
+	   WX_CXXFLAGS=$DEBUG_WX_CXXFLAGS
+	   WX_LIBS=$DEBUG_WX_LIBS
+	   WX_LIBS_STATIC=$DEBUG_WX_LIBS_STATIC
+	fi
+    elif test "$wxWinWithGL" = 1; then
+    	wxWin=1
+	FORCED_DEBUG_BUILD=false
+    fi    
+    AC_SUBST(FORCED_DEBUG_BUILD)
     RC_FILE_TYPE=o
 define(wx_warn_text,[
                 wxWidgets must be installed on your system.
@@ -279,7 +314,7 @@ else
 		WX_LIBS1="wxmsw${WXLIBNO}u_adv wxbase${WXLIBNO}u_xml wxmsw${WXLIBNO}u_core"
 		WX_LIBS2="wxbase${WXLIBNO}u wxmsw${WXLIBNO}u_gl wxmsw${WXLIBNO}u_aui"
 		WX_LIBS3="wxregexu wxexpat wxtiff wxjpeg wxpng wxzlib"
-		WX_SYSLIBS="winspool winmm oleaut32 ole32"
+		WX_SYSLIBS="winspool winmm oleaut32 ole32 gdiplus"
 		WX_LIBS_STATIC="-L$WX_LIBDIR"
 		for lib in $WX_LIBS0 $WX_LIBS1 $WX_LIBS2 $WX_LIBS3 $WX_SYSLIBS; do
 		   WX_LIBS_STATIC="$WX_LIBS_STATIC -l$lib"
@@ -490,7 +525,7 @@ AC_SUBST(RUN_ERL)
 
 if test X"$WX_BUILDING_INSIDE_ERLSRC" != X"true" ; then
     dnl  Find driver directory name according to erlang
-    WXERL_SYS_TYPE=`echo 'io:format("~n~s~n", [[erlang:system_info(system_architecture)]]), halt().' | erl | tail +3`
+    WXERL_SYS_TYPE=`erl -noshell -eval 'io:format("~s~n",[[erlang:system_info(system_architecture)]])' -s erlang halt`
 else
     WXERL_SYS_TYPE=$TARGET
 fi
@@ -530,5 +565,6 @@ if test X"$WX_BUILDING_INSIDE_ERLSRC" = X"true" ; then
       echo "Configure dumped core files" > ignore_core_files
    fi
 fi
+
 
 

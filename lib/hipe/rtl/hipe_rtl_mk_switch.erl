@@ -278,7 +278,6 @@ minclusters(Cases) when is_tuple(Cases) ->
 n_list(0,_) -> [];
 n_list(N,Init) -> [Init | n_list(N-1,Init)].
 
-
 %% Do the dirty work of minclusters
 i_loop(I,N,MinClusters,_Cases) when I > N -> 
   MinClusters;
@@ -334,27 +333,24 @@ density(A,I,J) ->
 %% The various calls to lists:reverse are just to ensure that the
 %% cases remain in the correct, sorted order.
 
-cluster_split(Cases,Clust) ->
+cluster_split(Cases, Clust) ->
   A = tl(tuple_to_list(Clust)),
-  Max = element(tuple_size(Clust),Clust),
+  Max = element(tuple_size(Clust), Clust),
   L1 = lists:reverse(Cases),
   L2 = lists:reverse(A),
-  cluster_split(Max,[],[],L1,L2).
+  cluster_split(Max, [], [], L1, L2).
 
-cluster_split(0,[],Res,Cases,_Clust) -> 
+cluster_split(0, [], Res, Cases, _Clust) -> 
   L = lists:reverse(Cases),
   {H,_} = hd(L),
   {T,_} = hd(Cases),
   [{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),L}|Res];
-
-cluster_split(N,[],Res,Cases,[N|Clust]) -> 
-  cluster_split(N-1,[],Res,Cases,[N|Clust]);
-
+cluster_split(N, [], Res, Cases, [N|_] = Clust) -> 
+  cluster_split(N-1, [], Res, Cases, Clust);
 cluster_split(N,Sofar,Res,Cases,[N|Clust]) -> 
   {H,_} = hd(Sofar),
   {T,_} = lists:last(Sofar),
   cluster_split(N-1,[],[{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),Sofar}|Res],Cases,[N|Clust]);
-
 cluster_split(N,Sofar,Res,[C|Cases],[_|Clust]) ->
   cluster_split(N,[C|Sofar],Res,Cases,Clust).
 
@@ -362,27 +358,21 @@ cluster_split(N,Sofar,Res,[C|Cases],[_|Clust]) ->
 %% Merge adjacent small clusters into larger sparse clusters
 %%
 cluster_merge([C]) -> [C];
-
 cluster_merge([{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
   C2 = cluster_merge(T),
   [{dense,Min,Max,C}|C2];
-
 cluster_merge([{sparse,Min,_,C},{sparse,_,Max,D}|T]) ->
   R = {sparse,Min,Max,C ++ D},
   cluster_merge([R|T]);
-
 cluster_merge([{sparse,Min,_,C},{dense,_,Max,D}|T]) when length(D) < ?MINFORJUMPTABLE ->
   R = {sparse,Min,Max,C ++ D},
   cluster_merge([R|T]);
-
 cluster_merge([{dense,Min,_,C},{dense,_,Max,D}|T]) when length(C) < ?MINFORJUMPTABLE, length(D) < ?MINFORJUMPTABLE ->
   R = {sparse,Min,Max,C ++ D},
   cluster_merge([R|T]);
-
 cluster_merge([{dense,Min,_,D},{sparse,_,Max,C}|T]) when length(D) < ?MINFORJUMPTABLE ->
   R = {sparse,Min,Max,C ++ D},
   cluster_merge([R|T]);
-
 cluster_merge([A,{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
   R = cluster_merge([{dense,Min,Max,C}|T]),
   [A|R].
@@ -477,13 +467,10 @@ gen_atom_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) ->
   {Values, _Labels} = split_cases(Cases),
   {LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
   LMap = [{label,L} || L <- LabMap],
-  
   {NewConstTab,Id} = hipe_consttab:insert_sorted_block(ConstTab, Values),
   {NewConstTab2,LabId} =
     hipe_consttab:insert_sorted_block(NewConstTab, word, LMap, Values),
-  
   Code = inline_atom_search(0, length(Cases)-1, Id, LabId, Arg, Fail, LabMap),
-  
   {Code, VarMap1, NewConstTab2}.
 
 
@@ -592,7 +579,7 @@ inline_search(KeyList, LabelList, KeyReg, Default) ->
 inline_atom_search(Start, End, Block, LBlock, KeyReg, Default, Labels) ->
   Reg = hipe_rtl:mk_new_reg_gcsafe(),
   
-  Length = (End - Start) +1,
+  Length = (End - Start) + 1,
   
   if
     Length >= 3 ->
@@ -880,7 +867,7 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
   [
    hipe_rtl:mk_move(IndexReg,hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_load(Temp,TablePntrReg,hipe_rtl:mk_imm(Init)),
-   hipe_rtl:mk_branch(Temp, ge, KeyReg,
+   hipe_rtl:mk_branch(Temp, geu, KeyReg,
 		      hipe_rtl:label_name(Lab2), 
 		      hipe_rtl:label_name(Lab1), 0.5),
    Lab1,
@@ -911,7 +898,7 @@ step(I,TablePntrReg,IndexReg,KeyReg) ->
   Lab2 = hipe_rtl:mk_new_label(),
   [hipe_rtl:mk_alu(TempIndex, IndexReg, add, hipe_rtl:mk_imm(I)),
    hipe_rtl:mk_load(Temp,TablePntrReg,TempIndex),
-   hipe_rtl:mk_branch(Temp, gt, KeyReg,
+   hipe_rtl:mk_branch(Temp, gtu, KeyReg,
                       hipe_rtl:label_name(Lab2), 
                       hipe_rtl:label_name(Lab1) , 0.5),
    Lab1] ++

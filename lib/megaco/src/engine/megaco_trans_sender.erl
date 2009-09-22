@@ -73,51 +73,54 @@ start_link(CH, To, MaxSzReqs, MaxNoReqs, MaxNoAcks) ->
     Args = [self(), CH, To, MaxSzReqs, MaxNoReqs, MaxNoAcks],
     proc_lib:start_link(?MODULE, init, Args).
 
-stop(Pid) when pid(Pid) ->
+stop(Pid) when is_pid(Pid) ->
     Pid ! stop,
     ok.
 
-upgrade(Pid, CH) when pid(Pid) ->
+upgrade(Pid, CH) when is_pid(Pid) ->
     Pid ! {upgrade, CH},
     ok.
 
-send_req(Pid, Tid, Req) when pid(Pid), binary(Req) ->
+send_req(Pid, Tid, Req) when is_pid(Pid) andalso is_binary(Req) ->
     Pid ! {send_req, Tid, Req},
     ok.
 
 send_reqs(Pid, Tids, Reqs) 
-  when pid(Pid), list(Tids), list(Reqs), length(Tids) == length(Reqs) ->
+  when is_pid(Pid) andalso 
+       is_list(Tids) andalso 
+       is_list(Reqs) andalso 
+       (length(Tids) =:= length(Reqs)) ->
     Pid ! {send_reqs, Tids, Reqs},
     ok.
 
-send_ack(Pid, Serial) when pid(Pid), integer(Serial) ->
+send_ack(Pid, Serial) when is_pid(Pid) andalso is_integer(Serial) ->
     Pid ! {send_ack, Serial},
     ok.
 
-send_ack_now(Pid, Serial) when pid(Pid), integer(Serial) ->
+send_ack_now(Pid, Serial) when is_pid(Pid) andalso is_integer(Serial) ->
     Pid ! {send_ack_now, Serial},
     ok.
 
-send_pending(Pid, Serial) when pid(Pid), integer(Serial) ->
+send_pending(Pid, Serial) when is_pid(Pid) andalso is_integer(Serial) ->
     Pid ! {send_pending, Serial},
     ok.
 
-send_reply(Pid, Reply) when pid(Pid), binary(Reply) ->
+send_reply(Pid, Reply) when is_pid(Pid) andalso is_binary(Reply) ->
     Pid ! {send_reply, Reply}.
 
-ack_maxcount(Pid, Max) when pid(Pid), integer(Max) ->
+ack_maxcount(Pid, Max) when is_pid(Pid) andalso is_integer(Max) ->
     Pid ! {ack_maxcount, Max},
     ok.
 
-req_maxcount(Pid, Max) when pid(Pid), integer(Max) ->
+req_maxcount(Pid, Max) when is_pid(Pid) andalso is_integer(Max) ->
     Pid ! {req_maxcount, Max},
     ok.
 
-req_maxsize(Pid, Max) when pid(Pid), integer(Max) ->
+req_maxsize(Pid, Max) when is_pid(Pid) andalso is_integer(Max) ->
     Pid ! {req_maxsize, Max},
     ok.
 
-timeout(Pid, Timeout) when pid(Pid) ->
+timeout(Pid, Timeout) when is_pid(Pid) ->
     Pid ! {timeout, Timeout},
     ok.
 

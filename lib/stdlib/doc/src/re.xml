@@ -192,7 +192,7 @@ This option makes it possible to include comments inside complicated patterns. N
 	<v>Options = [ Option ]</v>
 	<v>Option = anchored | global | notbol | noteol | notempty | {offset, int()} | {newline, NLSpec} | bsr_anycrlf | bsr_unicode | {capture, ValueSpec} | {capture, ValueSpec, Type} | CompileOpt</v>
 	<v>Type = index | list | binary</v>
-	<v>ValueSpec = all | all_but_first | first | ValueList</v>
+	<v>ValueSpec = all | all_but_first | first | none | ValueList</v>
 	<v>ValueList = [ ValueID ]</v>
 	<v>ValueID = int() | string() | atom()</v>
 	<v>CompileOpt = see compile/2 above</v>

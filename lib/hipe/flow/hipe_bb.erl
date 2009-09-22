@@ -45,12 +45,12 @@
 %% Returns a basic block: {bb, Code}
 %%   * Code is a list of instructions
 
--spec mk_bb/1 :: ([_]) -> bb().
+-spec mk_bb([_]) -> bb().
 
 mk_bb(Code) ->
     #bb{code=Code}.
 
--spec is_bb/1 :: (_) -> bool().
+-spec is_bb(_) -> boolean().
 
 is_bb(#bb{}) -> true;
 is_bb(_) -> false.

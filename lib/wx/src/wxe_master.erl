@@ -119,7 +119,9 @@ init([]) ->
 	    erlang:error({load_driver,Str})
     end,
     process_flag(trap_exit, true),
-    case catch open_port({spawn,DriverName},[binary]) of
+    DriverWithArgs = DriverName ++ " " ++ code:priv_dir(wx) ++ [0],
+    
+    case catch open_port({spawn, DriverWithArgs},[binary]) of
 	{'EXIT', Err} -> 
 	    erlang:error({open_port,Err});
 	Port ->
@@ -209,7 +211,13 @@ code_change(_OldVsn, State, _Extra) ->
 priv_dir() ->
     Type = erlang:system_info(system_architecture),
     {file, Path} = code:is_loaded(?MODULE),
-    Priv = filename:join(strip(Path, filename:join(["ebin/",atom_to_list(?MODULE) ++ ".beam"])), "priv"),
+    Priv = case filelib:is_regular(Path) of
+	       true ->
+		   Beam = filename:join(["ebin/",atom_to_list(?MODULE) ++ ".beam"]),
+		   filename:join(strip(Path, Beam), "priv");
+	       false ->
+		   code:priv_dir(wx)
+	   end,
     try 
 	{ok, Dirs0} = file:list_dir(Priv),
 	Dirs1 = split_dirs(Dirs0),
@@ -280,7 +288,7 @@ strip([H|R], Src) ->
 
 
 debug_ping(Port) ->
-    timer:sleep(1*500),    
+    timer:sleep(1*333),    
     _R = (catch erlang:port_call(Port, 0, [])),
 %%    io:format("Erlang ping ~p ~n", [_R]),
     debug_ping(Port).

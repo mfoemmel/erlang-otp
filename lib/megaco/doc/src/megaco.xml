@@ -311,6 +311,25 @@ megaco_incr_timer() = #megaco_incr_timer{}
               (this is valid until the ack is received or 
               the timer expires). </p>
             <p>A Megaco Timer (see explanation above), defaults to 30000.</p>
+            <marker id="ui_call_proxy_gc_timeout"></marker>
+          </item>
+
+          <tag><c><![CDATA[call_proxy_gc_timeout]]></c></tag>
+          <item>
+            <p>Timeout time for the call proxy. </p>
+            <p>When a request is sent using the 
+              <seealso marker="megaco#call">call/3</seealso> function, 
+              a proxy process is started to handle
+              all replies. When the reply has been received and delivered 
+              to the user, the proxy process continue to exist for as long
+              as this option specifies. Any received messages, is passed on 
+              to the user via the 
+              <seealso marker="megaco_user#handle_unexpected_trans">handle_unexpected_trans</seealso> 
+              callback function. </p>
+            <p>The timeout time is in milliseconds. A value of 0 (zero) means
+              that the proxy process will exit directly after the reply has 
+              been delivered. </p>
+            <p>An integer >= 0, defaults to 5000 (= 5 seconds).</p>
             <marker id="ui_auto_ack"></marker>
           </item>
 
@@ -785,6 +804,25 @@ megaco_incr_timer() = #megaco_incr_timer{}
               the timer expires). </p>
             <p>A Megaco Timer (see explanation above), defaults to 30000.</p>
 
+            <marker id="ci_call_proxy_gc_timeout"></marker>
+          </item>
+
+          <tag><c><![CDATA[call_proxy_gc_timeout]]></c></tag>
+          <item>
+            <p>Timeout time for the call proxy. </p>
+            <p>When a request is sent using the 
+              <seealso marker="megaco#call">call/3</seealso> function, 
+              a proxy process is started to handle
+              all replies. When the reply has been received and delivered 
+              to the user, the proxy process continue to exist for as long
+              as this option specifies. Any received messages, is passed on 
+              to the user via the 
+              <seealso marker="megaco_user#handle_unexpected_trans">handle_unexpected_trans</seealso> 
+              callback function. </p>
+            <p>The timeout time is in milliseconds. A value of 0 (zero) means
+              that the proxy process will exit directly after the reply has 
+              been delivered. </p>
+            <p>An integer >= 0, defaults to 5000 (= 5 seconds).</p>
             <marker id="ci_auto_ack"></marker>
           </item>
 
@@ -1332,7 +1370,7 @@ megaco_incr_timer() = #megaco_incr_timer{}
         <v>Actions        = action_reqs() | [action_reqs()]</v>
         <v>action_reqs()  = binary() | [action_request()]</v>
         <v>Options        = [send_option()]</v>
-        <v>send_option()  = {request_timer, megaco_timer()} | {long_request_timer, megaco_timer()} | {send_handle, term()} | {protocol_version, integer()}</v>
+        <v>send_option()  = {request_timer, megaco_timer()} | {long_request_timer, megaco_timer()} | {send_handle, term()} | {protocol_version, integer()} | {call_proxy_gc_timeout, call_proxy_gc_timeout()}</v>
         <v>ProtocolVersion = integer()</v>
         <v>UserReply       = user_reply() | [user_reply()]</v>
         <v>user_reply()    = success() | failure()</v>
@@ -1358,6 +1396,7 @@ megaco_incr_timer() = #megaco_incr_timer{}
         <v>reason_for_send_failure() = term()</v>
         <v>other_reason()   = term()</v>
         <v>action_reps()    = [action_reply()]</v>
+        <v>call_proxy_gc_timeout() = integer() >= 0</v>
         <v>extra()          = term()</v>
       </type>
       <desc>

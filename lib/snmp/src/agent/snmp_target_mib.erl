@@ -33,6 +33,7 @@
 -include("SNMP-TARGET-MIB.hrl").
 -include("SNMPv2-TC.hrl").
 -include("SNMPv2-TM.hrl").
+-include("SNMP-FRAMEWORK-MIB.hrl").
 
 -define(VMODULE,"TARGET-MIB").
 -include("snmp_verbosity.hrl").
@@ -531,6 +532,71 @@ snmpTargetSpinLock(set, NewVal) ->
 			       {snmpTargetSpinLock, volatile}).
 
 
+%% Op = print - Used for debugging purposes
+snmpTargetAddrTable(print) ->
+    Table = snmpTargetAddrTable, 
+    DB    = db(Table),
+    FOI   = foi(Table),
+    PrintRow = 
+	fun(Prefix, Row) ->
+		lists:flatten(
+		  io_lib:format("~sName:              ~p"
+				"~n~sTDomain:           ~p (~w)"
+				"~n~sTAddress:          ~p (~s)"
+				"~n~sTimeout:           ~p"
+				"~n~sRetryCount:        ~p"
+				"~n~sTagList:           ~p"
+				"~n~sParams:            ~p"
+				"~n~sStorageType:       ~p (~w)"
+				"~n~sStatus:            ~p (~w)"
+				"~n~s[NonAcc] EngineID: ~p"
+				"~n~s[Ext] TMask:       ~p"
+				"~n~s[Ext] MMS:         ~p", 
+				[Prefix, element(?snmpTargetAddrName, Row),
+				 Prefix, element(?snmpTargetAddrTDomain, Row),
+				 case element(?snmpTargetAddrTDomain, Row) of
+				     ?snmpUDPDomain -> udp;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?snmpTargetAddrTAddress, Row),
+				 case element(?snmpTargetAddrTAddress, Row) of
+				     [A,B,C,D,U1,U2] ->
+					 lists:flatten(
+					   io_lib:format("~w.~w.~w.~w:~w", 
+							 [A, B, C, D, U1 bsl 8 + U2]));
+				     _ -> "-"
+				 end,
+				 Prefix, element(?snmpTargetAddrTimeout, Row),
+				 Prefix, element(?snmpTargetAddrRetryCount, Row),
+				 Prefix, element(?snmpTargetAddrTagList, Row),
+				 Prefix, element(?snmpTargetAddrParams, Row),
+				 Prefix, element(?snmpTargetAddrStorageType, Row),
+				 case element(?snmpTargetAddrStorageType, Row) of
+				     ?'snmpTargetAddrStorageType_readOnly' -> readOnly;
+				     ?'snmpTargetAddrStorageType_permanent' -> permanent;
+				     ?'snmpTargetAddrStorageType_nonVolatile' -> nonVolatile;
+				     ?'snmpTargetAddrStorageType_volatile' -> volatile;
+				     ?'snmpTargetAddrStorageType_other' -> other;
+				     _ -> undefined
+				 end,
+				 Prefix, element(?snmpTargetAddrRowStatus, Row),
+				 case element(?snmpTargetAddrRowStatus, Row) of
+				     ?'snmpTargetAddrRowStatus_destroy' -> destroy;
+				     ?'snmpTargetAddrRowStatus_createAndWait' -> createAndWait;
+				     ?'snmpTargetAddrRowStatus_createAndGo' -> createAndGo;
+				     ?'snmpTargetAddrRowStatus_notReady' -> notReady;
+				     ?'snmpTargetAddrRowStatus_notInService' -> notInService;
+				     ?'snmpTargetAddrRowStatus_active' -> active;
+				     _ -> undefined
+				 end,
+				 Prefix,
+				 element(?snmpTargetAddrEngineId, Row),
+				 Prefix,
+				 element(?snmpTargetAddrTMask, Row),
+				 Prefix,
+				 element(?snmpTargetAddrMMS, Row)]))
+	end,
+    snmpa_mib_lib:print_table(Table, DB, FOI, PrintRow);
 %% Op == new | delete
 snmpTargetAddrTable(Op) ->
     snmp_generic:table_func(Op, db(snmpTargetAddrTable)).
@@ -630,6 +696,73 @@ verify_targetAddrTable_col(_, Val) ->
     Val.
     
 
+%% Op = print - Used for debugging purposes
+snmpTargetParamsTable(print) ->
+    Table = snmpTargetParamsTable, 
+    DB    = db(Table),
+    FOI   = foi(Table),
+    PrintRow = 
+	fun(Prefix, Row) ->
+		lists:flatten(
+		  io_lib:format("~sName:          ~p"
+				"~n~sMPModel:       ~p (~w)"
+				"~n~sSecurityModel: ~p (~w)"
+				"~n~sSecurityName:  ~p"
+				"~n~sSecurityLevel: ~p (~w)"
+				"~n~sStorageType:   ~p (~w)"
+				"~n~sStatus:        ~p (~w)", 
+				[Prefix, 
+				 element(?snmpTargetParamsName, Row),
+				 Prefix, 
+				 element(?snmpTargetParamsMPModel, Row),
+				 case element(?snmpTargetParamsMPModel, Row) of
+				     ?MP_V1 -> v1;
+				     ?MP_V2C -> v2c;
+				     ?MP_V3 -> v3;
+				     _ -> undefined
+				 end,
+				 Prefix, 
+				 element(?snmpTargetParamsSecurityModel, Row),
+				 case element(?snmpTargetParamsSecurityModel, Row) of
+				     ?SEC_ANY -> any;
+				     ?SEC_V1 -> v1;
+				     ?SEC_V2C -> v2c;
+				     ?SEC_USM -> usm;
+				     _ -> undefined
+				 end,
+				 Prefix, 
+				 element(?snmpTargetParamsSecurityName, Row),
+				 Prefix, 
+				 element(?snmpTargetParamsSecurityLevel, Row),
+				 case element(?snmpTargetParamsSecurityLevel, Row) of
+				     ?'SnmpSecurityLevel_noAuthNoPriv' -> noAuthNoPriv;
+				     ?'SnmpSecurityLevel_authNoPriv' -> authNoPriv;
+				     ?'SnmpSecurityLevel_authPriv' -> authPriv;
+				     _ -> undefined
+				 end,
+				 Prefix, 
+				 element(?snmpTargetParamsStorageType, Row),
+				 case element(?snmpTargetParamsStorageType, Row) of
+				     ?'snmpTargetParamsStorageType_readOnly' -> readOnly;
+				     ?'snmpTargetParamsStorageType_permanent' -> permanent;
+				     ?'snmpTargetParamsStorageType_nonVolatile' -> nonVolatile;
+				     ?'snmpTargetParamsStorageType_volatile' -> volatile;
+				     ?'snmpTargetParamsStorageType_other' -> other;
+				     _ -> undefined
+				 end,
+				 Prefix, 
+				 element(?snmpTargetParamsRowStatus, Row),
+				 case element(?snmpTargetParamsRowStatus, Row) of
+				     ?'snmpTargetParamsRowStatus_destroy' -> destroy;
+				     ?'snmpTargetParamsRowStatus_createAndWait' -> createAndWait;
+				     ?'snmpTargetParamsRowStatus_createAndGo' -> createAndGo;
+				     ?'snmpTargetParamsRowStatus_notReady' -> notReady;
+				     ?'snmpTargetParamsRowStatus_notInService' -> notInService;
+				     ?'snmpTargetParamsRowStatus_active' -> active;
+				     _ -> undefined
+				 end]))
+	end,
+    snmpa_mib_lib:print_table(Table, DB, FOI, PrintRow);
 %% Op == new | delete
 snmpTargetParamsTable(Op) ->
     snmp_generic:table_func(Op, db(snmpTargetParamsTable)).

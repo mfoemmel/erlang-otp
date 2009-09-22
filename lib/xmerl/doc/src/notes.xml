@@ -30,6 +30,63 @@
   <p>This document describes the changes made to the Xmerl application.</p>
 
 
+<section><title>Xmerl 1.2.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            <c>xmerl/include/xmerl.hrl</c> contained internal debug
+            macros (<c>dbg/2</c> and <c>DBG/0</c>) which now is moved
+            to <c>xmerl_internal.hrl</c>.
+          </p>
+          <p>
+            Own Id: OTP-8084
+          </p>
+        </item>
+        <item>
+          <p>
+            The function <c>xmerl_uri:parse/1</c> couldn't handle FTP
+            URIs containing username and password. The default FTP
+            port constant was also wrong. (Thanks to Steve Vinoski)
+          </p>
+          <p>
+            Own Id: OTP-8156
+          </p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            The SAX parser couldn't handle consecutive documents on
+            the same stream. The return values are now changed so
+            they return a rest value instead of giving an error about
+            "erranous information after the end tag". 
+          </p>
+          <p>
+            This means that
+            the functions <c>file/2</c> and <c>stream/2</c> now
+            returns <c>{ok, EventState, Rest}</c> when the parsing is
+            correct. The rest can then be used as input to a new call
+            to <c>xmerl_sax_parse:stream/2</c>. If one know that it's
+            just one document the rest value in the result tuple can
+            be matched against <c>&lt;&lt;&gt;&gt;</c> or <c>[]</c>
+            depending on if the input is in binary form or not.
+          </p>
+          <p>
+            Own Id: OTP-8153 Aux Id: seq11388 
+          </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
 <section><title>Xmerl 1.2</title>
     <section><title>Improvements and New Features</title>
 	<p>

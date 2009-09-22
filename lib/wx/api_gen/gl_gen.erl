@@ -287,7 +287,7 @@ patch_param(Method,P = #arg{name=ArgName},AllOpts) ->
     case lookup(Method,AllOpts,undefined) of
 	undefined -> P;
 	What -> 
-	    %%io:format("~p ~p => ~p", [Method, ArgName, What]),
+	    %%	    io:format("~p ~p => ~p~n", [Method, ArgName, What]),
 	    case What of
 		{ArgName,Fopt} when is_list(Fopt) ->
 		    foldl(fun handle_arg_opt/2,P,Fopt);
@@ -391,10 +391,12 @@ parse_type2([N="GLclampf"|R],T,Opts) ->
     parse_type2(R,T#type{name=N, size=4,base=float},Opts);
 parse_type2([N="GLclampd"|R],T,Opts) -> 
     parse_type2(R,T#type{name=N, size=8,base=float},Opts);
-parse_type2([N="GLhandleARB"|R],T,Opts) -> %% unsigned int normally (in glext.h) but 
-    parse_type2(R,T#type{name=N, size=8,base=int},Opts); %% is void * on Mac!! FIXME
+parse_type2([N="GLhandleARB"|R],T,Opts) ->  
+    parse_type2(R,T#type{name=N, size=8,base=int},Opts); 
 parse_type2(["GLchar" ++ _ARB|R],T,Opts) -> 
     parse_type2(R,T#type{name="GLchar",size=1,base=string},Opts);
+parse_type2(["GLUquadric"|R],T,Opts) -> 
+    parse_type2(R,T#type{name="GLUquadric",size=8,base=int},Opts);
 parse_type2(["GLintptr" ++ _ARB|R],T,Opts) -> 
     parse_type2(R,T#type{name="GLintptr",size=8,base=int},Opts);
 parse_type2(["GLsizeiptr" ++ _ARB|R],T,Opts) -> 
@@ -521,18 +523,18 @@ is_vector(Name, Opts) ->
 
 lookup(Name,[{Vector, VecPos}|R],Def) when is_list(Vector) ->
     case lists:prefix(Vector,Name) of
-	true -> 
+	true ->
+	    %%	    VecPos;
 	    %%io:format("~s ~s => ~p ~n", [Vector,Name,VecPos]),
-%% 	    case Vector == Name of
-%% 		true -> 
-%% 		    VecPos;
-%% 		false -> %% Look for exactly the correct Name
-%% 		    case lookup(Name,R,Def) of
-%% 			Def -> VecPos;
-%% 			Other -> Other
-%% 		    end
-%% 	    end;
-	    VecPos;
+ 	    case Vector == Name of
+		true -> 
+ 		    VecPos;
+ 		false -> %% Look for exactly the correct Name
+ 		    case lookup(Name,R,Def) of
+ 			Def -> VecPos;
+ 			Other -> Other
+ 		    end
+ 	    end;
 	false -> lookup(Name,R, Def)
     end;
 lookup(Name,[_|R],Def) ->
@@ -547,6 +549,7 @@ setup_idx_binary(Name,Ext,_Opts) ->
     %% Ok warn if single is undefined
     lists:foreach(fun(#arg{type=#type{base=memory}}) -> ok;
 		     (#arg{type=#type{base=idx_binary}}) -> ok;
+		     (#arg{type=#type{name="GLUquadric"}}) -> ok;
 		     (A=#arg{type=#type{single=undefined}}) -> 
 			  ?warning("~p Unknown size of~n ~p~n",
 				   [get(current_func),A]),
@@ -560,10 +563,15 @@ setup_idx_binary(Name,Ext,_Opts) ->
 	ignore -> 
 	    put(FuncName, Func#func{id=Id}),
 	    Name++Ext;
-	{A1,A2} ->
+	{bin, A1,A2} ->
 	    put(FuncName, Func#func{id=Id,params=A1}),
 	    Extra = FuncName++"Bin",
 	    put(Extra, Func#func{params=A2, id=next_id(function)}),
+	    [FuncName,Extra];
+	{matrix, A1,A2} ->
+	    put(FuncName, Func#func{id=Id,params=A2}),
+	    Extra = FuncName++"Matrix",
+	    put(Extra, Func#func{where=erl, params=A1, id=Id}),
 	    [FuncName,Extra]
     end.
 
@@ -573,9 +581,19 @@ setup_idx_binary([A=#arg{in=true,type=T=#type{base=idx_binary}}|R], Acc) ->
     Head = reverse(Acc),
     case setup_idx_binary(R, []) of
 	ignore -> 
-	    {Head ++ [A1|R], Head ++ [A2|R]};
-	{R1,R2} ->
-	    {Head ++ [A1|R1], Head ++ [A2|R2]}
+	    {bin, Head ++ [A1|R], Head ++ [A2|R]};
+	{bin, R1,R2} ->
+	    {bin, Head ++ [A1|R1], Head ++ [A2|R2]}
+    end;
+setup_idx_binary([A=#arg{in=true,type=T=#type{single={tuple,matrix}}}|R], Acc) ->
+    A1 = A#arg{type=T#type{single={tuple, matrix12}}},
+    A2 = A#arg{type=T#type{single={tuple, 16}}},
+    Head = reverse(Acc),
+    case setup_idx_binary(R, []) of
+	ignore -> 
+	    {matrix, Head ++ [A1|R], Head ++ [A2|R]};
+	{matrix, R1,R2} ->
+	    {matrix, Head ++ [A1|R1], Head ++ [A2|R2]}
     end;
 setup_idx_binary([H|R],Acc) -> 
     setup_idx_binary(R,[H|Acc]);
@@ -586,6 +604,7 @@ is_equal(F1=#func{type=T1,params=A1},F2=#func{type=T2,params=A2}) ->
     case Equal of
 	true -> ok;
 	false ->
+	    %% io:format("A1: ~p~nA2: ~p~n",[A1,A2]),	    
 	    ?warning("Skipped Ext Not Equal ~p ~p~n", 
 		     [F1#func.name,F2#func.name])
     end,
@@ -607,6 +626,7 @@ is_equal_type(#type{name="GLenum"},#type{name="GLuint"}) -> true;
 is_equal_type(#type{name="GLenum"},#type{name="GLint"}) -> true;
 is_equal_type(#type{base=idx_binary},#type{base=guard_int}) -> true;
 is_equal_type(#type{base=idx_binary},#type{base=memory}) -> true;
+is_equal_type(#type{single={tuple,matrix}},#type{single={tuple,matrix12}}) -> true;
 is_equal_type(#type{base=B,single=S,name=N,size=Sz},
 	      #type{base=B,single=S,name=N,size=Sz}) -> true;
 is_equal_type(_,_) -> false.
@@ -625,6 +645,7 @@ get_extension(ExtName,_Opts) ->
 	"TXE"  ++ Name -> {reverse(Name),"EXT"};
 	"ASEM" ++ Name -> {reverse(Name),"MESA"};
 	"ITA"  ++ Name -> {reverse(Name),"ATI"};
+	"DMA"  ++ Name -> {reverse(Name),"AMD"};
 	"VN"   ++ Name -> {reverse(Name),"NV"}; %Nvidia
 	"ELPPA"++ Name -> {reverse(Name),"APPLE"};
 	"LETNI"++ Name -> {reverse(Name),"INTEL"};
@@ -659,7 +680,7 @@ name(Name, _Opts) -> Name.
 
 next_id(What) ->
     Next = case get(What) of
-	       undefined -> 5001;  %% Opengl 
+	       undefined -> 5010;  %% Opengl 
 	       N -> N+1
 	   end,
     put(What, Next),

@@ -21,6 +21,7 @@
 %% Public
 -compile([export_all]).
 
+-include_lib("kernel/include/file.hrl").
 -include_lib("wx/include/wx.hrl").
 -include("reltool.hrl").
 
@@ -363,3 +364,192 @@ add_warning(Status, Warning) ->
 	{error, Error} ->
 	    {error, Error}
     end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_dir(Dir) ->
+    filelib:ensure_dir(Dir),
+    case file:make_dir(Dir) of
+        ok ->
+            ok;
+        {error, eexist} ->
+            ok;
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            throw_error("create dir ~s: ~s\n", [Dir, Text])
+    end.
+
+list_dir(Dir) ->
+    case erl_prim_loader:list_dir(Dir) of
+        {ok, Files} ->
+	    Files;
+        error ->
+            Text = file:format_error(enoent),
+            throw_error("list dir ~s: ~s\n", [Dir, Text])
+    end.
+
+read_file_info(File) ->
+    case file:read_file_info(File) of
+        {ok, Info} ->
+	    Info;
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            throw_error("read file info ~s: ~s\n", [File, Text])
+    end.
+
+write_file_info(File, Info) ->
+    case file:write_file_info(File, Info) of
+        ok ->
+	    ok;
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            throw_error("write file info ~s: ~s\n", [File, Text])
+    end.
+
+read_file(File) ->
+    case file:read_file(File) of
+        {ok, Bin} ->
+	    Bin;
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            throw_error("read file ~s: ~s\n", [File, Text])
+    end.
+
+write_file(File, IoList) ->
+    case file:write_file(File, IoList) of
+        ok ->
+	    ok;
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            throw_error("write file ~s: ~s\n", [File, Text])
+    end.
+
+recursive_delete(Dir) ->
+    case filelib:is_dir(Dir) of
+	true ->
+	    case file:list_dir(Dir) of
+		{ok, Files} ->
+		    Fun = fun(F) -> recursive_delete(filename:join([Dir, F])) end,
+		    lists:foreach(Fun, Files),
+		    delete(Dir, directory);
+		{error, enoent} ->
+		    ok;
+		{error, Reason} ->
+		    Text = file:format_error(Reason),
+		    throw_error("delete file ~s: ~s\n", [Dir, Text])
+	    end;
+	false ->
+            delete(Dir, regular)
+    end.
+
+delete(File, Type) ->
+    case do_delete(File, Type) of
+        ok ->
+            ok;
+        {error, enoent} ->
+            ok;
+        {error, Reason} ->
+            Text = file:format_error(Reason),
+            throw_error("delete file ~s: ~s\n", [File, Text])
+    end.
+
+do_delete(File, regular) ->
+    file:delete(File);
+do_delete(Dir, directory) ->
+    file:del_dir(Dir).
+
+recursive_copy_file(From, To) ->
+    case erl_prim_loader:list_dir(From) of
+        {ok, Files} ->
+	    %% Copy all files in the directory
+            create_dir(To),
+            Copy =
+                fun(F) ->
+                        recursive_copy_file(filename:join([From, F]),
+					    filename:join([To, F]))
+                end,
+            lists:foreach(Copy, Files);
+        error ->
+            %% Copy single file
+	    copy_file(From, To)
+    end.
+
+copy_file(From, To) ->
+    case erl_prim_loader:get_file(From) of
+	{ok, Bin, _} ->
+	    case file:write_file(To, Bin) of
+		ok ->
+		    FromInfo = read_file_info(From),
+		    ToInfo = read_file_info(To),
+		    FromMode = FromInfo#file_info.mode,
+		    ToMode = ToInfo#file_info.mode,
+		    ToMode2 = FromMode bor ToMode,
+		    FileInfo = FromInfo#file_info{mode = ToMode2},
+		    write_file_info(To, FileInfo),
+		    ok;
+		{error, Reason} ->
+		    Text = file:format_error(Reason),
+		    throw_error("copy file ~s -> ~s: ~s\n", [From, To, Text])
+	    end;
+	error ->
+	    Text = file:format_error(enoent),
+	    throw_error("copy file ~s -> ~s: ~s\n", [From, To, Text])
+    end.
+
+throw_error(Format, Args) ->
+    throw({error, lists:flatten(io_lib:format(Format, Args))}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+decode_regexps(Key, {add, Regexps}, Old) when is_list(Regexps) ->
+    do_decode_regexps(Key, Regexps, Old);
+decode_regexps(_Key, {del, Regexps}, Old)  when is_list(Regexps) ->
+    [Re || Re <- Old, not lists:member(Re#regexp.source, Regexps)];
+decode_regexps(Key, Regexps, _Old) when is_list(Regexps) ->
+    do_decode_regexps(Key, Regexps, []);
+decode_regexps(Key, Regexps, _Old) when is_list(Regexps) ->
+    Text = lists:flatten(io_lib:format("~p", [{Key, Regexps}])),
+    throw({error, "Illegal option: " ++ Text}).
+
+do_decode_regexps(Key, [Regexp | Regexps], Acc) ->
+    case catch re:compile(Regexp, []) of
+        {ok, MP} ->
+            do_decode_regexps(Key, Regexps, [#regexp{source = Regexp, compiled = MP} | Acc]);
+        _ ->
+            Text = lists:flatten(io_lib:format("~p", [{Key, Regexp}])),
+            throw({error, "Illegal option: " ++ Text})
+    end;
+do_decode_regexps(_Key, [], Acc) ->
+    lists:sort(Acc).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+default_val(Val, Default) ->
+    case Val of
+        undefined -> Default;
+        _         -> Val
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+call(Name, Msg) when is_atom(Name) ->
+    call(whereis(Name), Msg);
+call(Pid, Msg) when is_pid(Pid) ->
+    Ref = erlang:monitor(process, Pid),
+    Pid ! {call, self(), Ref, Msg},
+    receive
+        {Ref, Reply} ->
+            Reply;
+        {'EXIT', Pid, Reason} ->
+            erlang:demonitor(Ref, [flush]),
+            {error, Reason};
+	{'DOWN', Ref, _, _, Reason} ->
+            {error, Reason}
+    end.
+
+cast(Pid, Msg) ->
+    Pid ! {cast, self(), Msg},
+    ok.
+
+reply(Pid, Ref, Msg) ->
+    Pid ! {Ref, Msg}.

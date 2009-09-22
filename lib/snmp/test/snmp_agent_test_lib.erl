@@ -119,7 +119,7 @@
 %%% didn't undo (since it failed).
 %%%-----------------------------------------------------------------
 
-init_all(Config0) when list(Config0) ->
+init_all(Config0) when is_list(Config0) ->
     ?LOG("init_all -> entry with"
 	 "~n   Config0: ~p",[Config0]),
 
@@ -209,7 +209,7 @@ init_all(Config0) when list(Config0) ->
      Config].
 
 
-finish_all(Config) when list(Config) ->
+finish_all(Config) when is_list(Config) ->
     SaNode = ?config(snmp_sa, Config),
     MgrNode = ?config(snmp_mgr, Config),
     stop_node(SaNode),
@@ -219,7 +219,7 @@ finish_all(Config) when list(Config) ->
 
 %% --- This one *must* be run first in each case ---
 
-init_case(Config) when list(Config) ->
+init_case(Config) when is_list(Config) ->
     ?DBG("init_case -> entry with"
 	   "~n   Config: ~p", [Config]),
     SaNode     = ?config(snmp_sa, Config),
@@ -388,45 +388,72 @@ run(Mod, Func, Args, Opts) ->
 start_v1_agent(Config) when is_list(Config) ->
     start_agent(Config, [v1]).
  
-start_v1_agent(Config, Opts) when is_list(Config) and is_list(Opts)  ->
+start_v1_agent(Config, Opts) when is_list(Config) andalso is_list(Opts)  ->
     start_agent(Config, [v1], Opts).
  
 start_v2_agent(Config) when is_list(Config) ->
     start_agent(Config, [v2]).
  
-start_v2_agent(Config, Opts) when is_list(Config) and is_list(Opts) ->
+start_v2_agent(Config, Opts) when is_list(Config) andalso is_list(Opts) ->
     start_agent(Config, [v2], Opts).
  
 start_v3_agent(Config) when is_list(Config) ->
     start_agent(Config, [v3]).
  
-start_v3_agent(Config, Opts) when is_list(Config) and is_list(Opts) ->
+start_v3_agent(Config, Opts) when is_list(Config) andalso is_list(Opts) ->
     start_agent(Config, [v3], Opts).
  
 start_bilingual_agent(Config) when is_list(Config) ->
     start_agent(Config, [v1,v2]).
  
-start_bilingual_agent(Config, Opts) when is_list(Config) and is_list(Opts) ->
+start_bilingual_agent(Config, Opts) when is_list(Config) andalso is_list(Opts) ->
     start_agent(Config, [v1,v2], Opts).
  
 start_mt_agent(Config) when is_list(Config) ->
     start_agent(Config, [v2], [{snmp_multi_threaded, true}]).
  
-start_mt_agent(Config, Opts) when is_list(Config) and is_list(Opts) ->
+start_mt_agent(Config, Opts) when is_list(Config) andalso is_list(Opts) ->
     start_agent(Config, [v2], [{snmp_multi_threaded, true}|Opts]).
  
-start_agent(Config, Vsn) ->
-    start_agent(Config, Vsn, []).
-start_agent(Config, Vsn, Opts) -> 
+start_agent(Config, Vsns) ->
+    start_agent(Config, Vsns, []).
+start_agent(Config, Vsns, Opts) -> 
     ?LOG("start_agent -> entry (~p) with"
 	"~n   Config: ~p"
-	"~n   Vsn:    ~p"
-	"~n   Opts:   ~p",[node(), Config, Vsn, Opts]),
+	"~n   Vsns:   ~p"
+	"~n   Opts:   ~p",[node(), Config, Vsns, Opts]),
     
     ?line AgentDir = ?config(agent_dir, Config),
     ?line SaNode   = ?config(snmp_sa,   Config),
 
-    app_env_init(vsn_init(Vsn) ++ 
+%%     AgentConfig = 
+%% 	[{agent_type, master},
+%% 	 %% {multi_threaded,         MultiT},
+%% 	 %% {priority,               Prio}, 
+%% 	 %% {error_report_mod,       ErrorReportMod},
+%% 	 {versions,   Vsns},
+%% 	 {db_dir,     AgentDir}, 
+%% 	 %% {db_init_error,          DbInitError},
+%% 	 %% {set_mechanism,          SetModule},
+%% 	 %% {authentication_service, AuthModule},
+%% 	 {audit_trail_log, [{type,   read_write},
+%% 			    {dir,    AgentDir},
+%% 			    {size,   {10240, 10}},
+%% 			    {repair, true}]},
+%% 	 {config, [{verbosity,  info},
+%% 		   {dir,        AgentDir},
+%% 		   {force_load, false}]},
+%% 	 {mibs, Mibs},
+%% 	 %% {mib_storage, MibStorage}, 
+%% 	 {local_db, []},
+%% 	 {mib_server, []},
+%% 	 {symbolic_store, []},
+%% 	 {note_store, []}, 
+%% 	 {net_if, []}, 
+%% 	 %% {supervisor,             SupOpts}
+%% 	],
+    
+    app_env_init(vsn_init(Vsns) ++ 
 		 [{audit_trail_log, read_write_log},
 		  {audit_trail_log_dir, AgentDir},
 		  {audit_trail_log_size, {10240, 10}},
@@ -501,7 +528,7 @@ app_env_init(Env0, Opts) ->
     lists:foreach(F2, Env).
 
 
-stop_agent(Config) when list(Config) ->
+stop_agent(Config) when is_list(Config) ->
     ?LOG("stop_agent -> entry with"
 	 "~n   Config: ~p",[Config]),
 
@@ -545,9 +572,9 @@ start_sup() ->
 	    ?FAIL({start_failed,Else, ?IS_MNESIA_RUNNING()})
     end.
 
-stop_sup(Pid, _) when (node(Pid) == node()) ->
+stop_sup(Pid, _) when (node(Pid) =:= node()) ->
     case (catch process_info(Pid)) of
-	PI when list(PI) ->
+	PI when is_list(PI) ->
 	    ?LOG("stop_sup -> attempt to stop ~p", [Pid]),
 	    Ref = erlang:monitor(process, Pid),
 	    exit(Pid, kill),
@@ -722,7 +749,7 @@ get_timeout(_)       -> 3500.
 
 receive_pdu(To) ->
     receive
-	{snmp_pdu, PDU} when record(PDU, pdu) ->
+	{snmp_pdu, PDU} when is_record(PDU, pdu) ->
 	    PDU
     after To ->
 	    {error, timeout}
@@ -730,7 +757,7 @@ receive_pdu(To) ->
 
 receive_trap(To) ->
     receive
-	{snmp_pdu, PDU} when record(PDU, trappdu) ->
+	{snmp_pdu, PDU} when is_record(PDU, trappdu) ->
 	    PDU
     after To ->
 	    {error, timeout}
@@ -741,7 +768,7 @@ do_expect(Expect) when is_atom(Expect) ->
     do_expect({Expect, get_timeout()});
 
 do_expect({any_pdu, To}) 
-  when is_integer(To) or (To == infinity) ->
+  when is_integer(To) orelse (To =:= infinity) ->
     io:format("~w:do_expect(any_pdu) -> entry with"
 	      "~n   To:   ~w"
 	      "~n", [?MODULE, To]),
@@ -766,7 +793,7 @@ do_expect({timeout, To}) ->
     end;
 
 do_expect({Err, To}) 
-  when is_atom(Err) and (is_integer(To) or (To == infinity)) ->
+  when is_atom(Err) andalso (is_integer(To) orelse (To =:= infinity)) ->
     do_expect({{error, Err}, To});
 
 do_expect({error, Err}) when is_atom(Err) ->
@@ -882,12 +909,12 @@ do_expect(trap, Enterp, Generic, Specific, ExpVBs, To) ->
 
 
 do_expect2(Check, Type, Err, Idx, ExpVBs, To) 
-  when is_function(Check) and 
-       is_atom(Type) and 
-       is_atom(Err) and
-       (is_integer(Idx) or is_list(Idx) or (Idx == any)) and 
-       (is_list(ExpVBs) or (ExpVBs == any)) and
-       (is_integer(To) or (To == infinity)) ->
+  when is_function(Check) andalso 
+       is_atom(Type) andalso 
+       is_atom(Err) andalso 
+       (is_integer(Idx) orelse is_list(Idx) orelse (Idx =:= any)) andalso 
+       (is_list(ExpVBs) orelse (ExpVBs =:= any)) andalso
+       (is_integer(To) orelse (To =:= infinity)) ->
 
     io:format("~w:do_expect2 -> entry with"
 	      "~n   Type:   ~w"
@@ -903,39 +930,41 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 
 	#pdu{type         = Type, 
 	     error_status = Err,
-	     error_index  = Idx} when ExpVBs == any -> 
+	     error_index  = Idx} when ExpVBs =:= any -> 
 	    ok;
 
 	#pdu{type         = Type, 
 	     request_id   = ReqId, 
 	     error_status = Err2,
-	     error_index  = Idx} when ExpVBs == any -> 
+	     error_index  = Idx} when ExpVBs =:= any -> 
 	    {error, {unexpected_error_status, Err, Err2, ReqId}};
 
-	#pdu{error_status = Err} when (Type   == any) and 
-				      (Idx    == any) and 
-				      (ExpVBs == any) -> 
+	#pdu{error_status = Err} when (Type   =:= any) andalso 
+				      (Idx    =:= any) andalso 
+				      (ExpVBs =:= any) -> 
 	    ok;
 
 	#pdu{request_id   = ReqId, 
-	     error_status = Err2} when (Type   == any) and 
-				       (Idx    == any) and 
-				       (ExpVBs == any) -> 
+	     error_status = Err2} when (Type   =:= any) andalso 
+				       (Idx    =:= any) andalso 
+				       (ExpVBs =:= any) -> 
 	    {error, {unexpected_error_status, Err, Err2, ReqId}};
 
 	#pdu{type         = Type, 
-	     error_status = Err} when (Idx == any) and (ExpVBs == any) -> 
+	     error_status = Err} when (Idx =:= any) andalso 
+				      (ExpVBs =:= any) -> 
 	    ok;
 
 	#pdu{type         = Type, 
 	     request_id   = ReqId, 
-	     error_status = Err2} when (Idx == any) and (ExpVBs == any) -> 
+	     error_status = Err2} when (Idx =:= any) andalso 
+				       (ExpVBs =:= any) -> 
 	    {error, {unexpected_error_status, Err, Err2, ReqId}};
 
 	#pdu{type         = Type, 
 	     request_id   = ReqId, 
 	     error_status = Err,
-	     error_index  = EI} when is_list(Idx) and (ExpVBs == any) -> 
+	     error_index  = EI} when is_list(Idx) andalso (ExpVBs =:= any) -> 
 	    case lists:member(EI, Idx) of
 		true ->
 		    ok;
@@ -946,7 +975,7 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 	#pdu{type         = Type, 
 	     request_id   = ReqId, 
 	     error_status = Err2,
-	     error_index  = EI} when is_list(Idx) and (ExpVBs == any) -> 
+	     error_index  = EI} when is_list(Idx) andalso (ExpVBs =:= any) -> 
 	    case lists:member(EI, Idx) of
 		true ->
 		    {error, {unexpected_error_status, Err, Err2, ReqId}};
@@ -957,7 +986,7 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 	#pdu{type         = Type2, 
 	     request_id   = ReqId, 
 	     error_status = Err2, 
-	     error_index  = Idx2} when ExpVBs == any ->
+	     error_index  = Idx2} when ExpVBs =:= any ->
 	    {error, 
 	     {unexpected_pdu, 
 	      {Type, Err, Idx}, {Type2, Err2, Idx2}, ReqId}};
@@ -970,7 +999,7 @@ do_expect2(Check, Type, Err, Idx, ExpVBs, To)
 
 	#pdu{type         = Type, 
 	     error_status = Err, 
-	     varbinds     = VBs} = PDU when Idx == any ->
+	     varbinds     = VBs} = PDU when Idx =:= any ->
 	    Check(PDU, check_vbs(purify_oids(ExpVBs), VBs));
 
 	#pdu{type         = Type, 
@@ -1022,7 +1051,7 @@ check_vbs([{Oid1, _}|_], [#varbind{oid = Oid2}|_]) ->
 
 
 purify_oids({VbsCondition, VBs}) 
-  when ((VbsCondition == true) orelse (VbsCondition == false)) andalso 
+  when ((VbsCondition =:= true) orelse (VbsCondition =:= false)) andalso 
        is_list(VBs) ->
     {VbsCondition, do_purify_oids(VBs)};
 purify_oids(VBs) when is_list(VBs) ->
@@ -1328,7 +1357,7 @@ write_target_params_conf(Dir, Vsns) ->
     snmp_config:write_agent_target_params_config(Dir, "", Conf).
 
 rewrite_target_params_conf(Dir, SecName, SecLevel) 
-  when is_list(SecName) and is_atom(SecLevel) -> 
+  when is_list(SecName) andalso is_atom(SecLevel) -> 
     ?line ok = file:rename(filename:join(Dir,"target_params.conf"),
 			   filename:join(Dir,"target_params.old")),
     Conf = [{"target_v3", v3, usm, SecName, SecLevel}],
@@ -1376,14 +1405,14 @@ display_memory_usage() ->
     
 key1search([], Res) ->
     Res;
-key1search([Key|Keys], List) when atom(Key), list(List) ->
+key1search([Key|Keys], List) when is_atom(Key) andalso is_list(List) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {Key, Val}} ->
 	    key1search(Keys, Val);
 	false ->
 	    undefined
     end;
-key1search(Key, List) when atom(Key) ->
+key1search(Key, List) when is_atom(Key) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {Key, Val}} ->
 	    Val;
@@ -1413,14 +1442,14 @@ rpc(Node, F, A) ->
 %% await_response(To, What) ->
 %%     await_response(To, What, []).
 %% 
-%% await_response(To, What, Stuff) when integer(To), To >= 0 ->
+%% await_response(To, What, Stuff) when is_integer(To) andalso (To >= 0) ->
 %%     T = t(),
 %%     receive
-%% 	{snmp_pdu, PDU} when record(Trap, pdu), What == pdu ->
+%% 	{snmp_pdu, PDU} when is_record(Trap, pdu) andalso (What =:= pdu) ->
 %% 	    {ok, PDU};
-%% 	{snmp_pdu, Trap} when record(Trap, trappdu), What == trap ->
+%% 	{snmp_pdu, Trap} is_when record(Trap, trappdu) andalso (What =:= trap) ->
 %% 	    {ok, Trap};
-%% 	Any when What == any ->
+%% 	Any when What =:= any ->
 %% 	    {ok, Any};
 %% 	Any ->
 %% 	    %% Recalc time

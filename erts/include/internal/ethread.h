@@ -681,11 +681,14 @@ ETHR_INLINE_FUNC_NAME_(ethr_write_lock)(ethr_rwlock_t *lock)
 
 #endif
 
+/* __builtin_expect() is needed by both native atomics code 
+ * and the fallback code */
+#if !defined(__GNUC__) || (__GNUC__ < 2) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
+#define __builtin_expect(X, Y) (X)
+#endif
+
 /* For CPU-optimised atomics, spinlocks, and rwlocks. */
 #if !defined(ETHR_DISABLE_NATIVE_IMPLS) && defined(__GNUC__)
-#  if __GNUC__ < 3 && (__GNUC__ != 2 || __GNUC_MINOR__ < 96)
-#    define __builtin_expect(X, Y) (X)
-#  endif
 #  if ETHR_SIZEOF_PTR == 4
 #    if defined(__i386__)
 #      include "i386/ethread.h"

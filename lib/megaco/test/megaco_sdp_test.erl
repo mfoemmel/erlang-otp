@@ -26,7 +26,9 @@
 
 -export([all/1,
 	 decode_encode/1,
-	 %% tickets/1, 
+
+	 tickets/1, 
+	 otp8123/1, 
 
 	 init_per_testcase/2, fin_per_testcase/2, 
 
@@ -55,19 +57,21 @@ fin_per_testcase(Case, Config) ->
 
 all(suite) ->
     [
-     decode_encode%% ,
-%%      tickets
+     decode_encode,
+     tickets
     ].
 
-%% tickets(suite) ->
-%%     [].
+tickets(suite) ->
+    [
+     otp8123
+    ].
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 decode_encode(suite) ->
     [];
-decode_encode(Config) when list(Config) ->
+decode_encode(Config) when is_list(Config) ->
     io:format("decode_encode -> entry with"
 	      "~n   Config: ~p"
 	      "~n", [Config]),
@@ -761,6 +765,75 @@ verify_decode_pg([{_PP, _ExpStatus}|PG], [_SDP|SDP_PG]) ->
 
 verify_decode_pgs(PGS, SDP_PGS) ->
     verify_decode_pg(lists:flatten(PGS), lists:flatten(SDP_PGS)).
+
+
+%% ===============================================================
+
+otp8123(suite) ->
+    [];
+otp8123(Config) when is_list(Config) ->
+    io:format("otp8123 -> entry with"
+	      "~n   Config: ~p"
+	      "~n", [Config]),
+
+    Instructions = 
+	[
+	 pg_dec_instruction("property group 01 - dec [ok]", otp8123_pg1()),
+	 pg_dec_instruction("property group 02 - dec [ok]", otp8123_pg2()),
+	 pg_dec_instruction("property group 03 - dec [ok]", otp8123_pg3()),
+	 pg_dec_instruction("property group 04 - dec [ok]", otp8123_pg4())
+	],
+    exec(Instructions),
+    ok.
+
+otp8123_pg1() ->
+    PP1 = #'PropertyParm'{name = "m",
+			  value = ["audio 49154 RTP/AVP 8"]},
+    PP2 = #'PropertyParm'{name = "a",
+			  value = ["maxptime: 30"]},
+    PP3 = #'PropertyParm'{name = "a",
+			  value = ["ptime:2"]},
+    PP4 = #'PropertyParm'{name = "a",
+			  value = ["tpmap:8 PCMA/8000/1"]},
+    PG = [PP1, PP2, PP3, PP4],
+    [{PP, ok} || PP <- PG].
+
+otp8123_pg2() ->
+    PP1 = #'PropertyParm'{name = "m",
+			  value = ["audio 49154 RTP/AVP 8"]},
+    PP2 = #'PropertyParm'{name = "a",
+			  value = ["maxptime: 30 "]},
+    PP3 = #'PropertyParm'{name = "a",
+			  value = ["ptime:2"]},
+    PP4 = #'PropertyParm'{name = "a",
+			  value = ["tpmap:8 PCMA/8000/1"]},
+    PG = [PP1, PP2, PP3, PP4],
+    [{PP, ok} || PP <- PG].
+
+otp8123_pg3() ->
+    PP1 = #'PropertyParm'{name = "m",
+			  value = ["audio 49154 RTP/AVP 8"]},
+    PP2 = #'PropertyParm'{name = "a",
+			  value = ["maxptime:30"]},
+    PP3 = #'PropertyParm'{name = "a",
+			  value = ["ptime: 2"]},
+    PP4 = #'PropertyParm'{name = "a",
+			  value = ["tpmap:8 PCMA/8000/1"]},
+    PG = [PP1, PP2, PP3, PP4],
+    [{PP, ok} || PP <- PG].
+
+otp8123_pg4() ->
+    PP1 = #'PropertyParm'{name = "m",
+			  value = ["audio 49154 RTP/AVP 8"]},
+    PP2 = #'PropertyParm'{name = "a",
+			  value = ["maxptime:30"]},
+    PP3 = #'PropertyParm'{name = "a",
+			  value = ["ptime: 2 "]},
+    PP4 = #'PropertyParm'{name = "a",
+			  value = ["tpmap:8 PCMA/8000/1"]},
+    PG = [PP1, PP2, PP3, PP4],
+    [{PP, ok} || PP <- PG].
+
 
 
 %% ===============================================================

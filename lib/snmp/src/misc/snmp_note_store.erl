@@ -371,7 +371,7 @@ gc(#state{mod = Mod, notes = Notes}) ->
 
 gc(Flag, [{_Key, {infinity, _}} | T], Tab, Now) -> gc(Flag, T, Tab, Now);
 gc(Flag, [{Key, {BestBefore, _}} | T], Tab, Now) 
-  when integer(BestBefore), BestBefore < Now ->
+  when is_integer(BestBefore) andalso (BestBefore < Now) ->
     ets:delete(Tab, Key),
     gc(Flag, T, Tab, Now);
 gc(_Flag, [_ | T], Tab, Now) -> gc(work_to_do, T, Tab, Now);
@@ -387,7 +387,7 @@ get_info(Tmr, Notes) ->
     [{process_memory, [{notes, ProcSize}, {timer, TMRSz}]},
      {db_memory, [{notes, NotesSz}]}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
 	{memory, Sz} ->
 	    Sz;
@@ -399,7 +399,7 @@ proc_mem(_) ->
 
 tab_size(T) ->
     case (catch ets:info(T, memory)) of
-	Sz when integer(Sz) ->
+	Sz when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined

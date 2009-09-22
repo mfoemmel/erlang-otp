@@ -202,7 +202,12 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #  define printf real_printf
 #endif
 
+/* In VC++, noreturn is a declspec that has to be before the types,
+ * but in GNUC it is an att ribute to be placed between return type 
+ * and function name, hence __decl_noreturn <types> __noreturn <function name>
+ */
 #if __GNUC__
+#  define __decl_noreturn 
 #  define __noreturn __attribute__((noreturn))
 #  undef __deprecated
 #  if __GNUC__ >= 3
@@ -211,7 +216,13 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #    define __deprecated
 #  endif
 #else
-#  define __noreturn
+#  if defined(__WIN32__) && defined(_MSC_VER)
+#    define __noreturn 
+#    define __decl_noreturn __declspec(noreturn)
+#  else
+#    define __noreturn
+#    define __decl_noreturn 
+#  endif
 #  define __deprecated
 #endif
 
@@ -449,7 +460,7 @@ static const int zero_value = 0, one_value = 1;
 
 extern erts_cpu_info_t *erts_cpuinfo; /* erl_init.c */
 
-void __noreturn erl_exit(int n, char*, ...);
+__decl_noreturn void __noreturn erl_exit(int n, char*, ...);
 
 /* Some special erl_exit() codes: */
 #define ERTS_INTR_EXIT	INT_MIN		/* called from signal handler */

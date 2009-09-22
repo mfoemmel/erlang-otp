@@ -127,7 +127,7 @@ single_user_light_load(suite) ->
     [];
 single_user_light_load(doc) ->
     [];
-single_user_light_load(Config) when list(Config) ->
+single_user_light_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        single_user_light_load),
     put(sname,     "TEST"),
@@ -150,7 +150,7 @@ single_user_medium_load(suite) ->
     [];
 single_user_medium_load(doc) ->
     [];
-single_user_medium_load(Config) when list(Config) ->
+single_user_medium_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        single_user_medium_load),
     put(sname,     "TEST"),
@@ -172,7 +172,7 @@ single_user_heavy_load(suite) ->
     [];
 single_user_heavy_load(doc) ->
     [];
-single_user_heavy_load(Config) when list(Config) ->
+single_user_heavy_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        single_user_heavy_load),
     put(sname,     "TEST"),
@@ -194,7 +194,7 @@ single_user_extreme_load(suite) ->
     [];
 single_user_extreme_load(doc) ->
     [];
-single_user_extreme_load(Config) when list(Config) ->
+single_user_extreme_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        single_user_extreme_load),
     put(sname,     "TEST"),
@@ -216,7 +216,7 @@ multi_user_light_load(suite) ->
     [];
 multi_user_light_load(doc) ->
     [];
-multi_user_light_load(Config) when list(Config) ->
+multi_user_light_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        multi_user_light_load),
     put(sname,     "TEST"),
@@ -238,7 +238,7 @@ multi_user_medium_load(suite) ->
     [];
 multi_user_medium_load(doc) ->
     [];
-multi_user_medium_load(Config) when list(Config) ->
+multi_user_medium_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        multi_user_medium_load),
     put(sname,     "TEST"),
@@ -260,7 +260,7 @@ multi_user_heavy_load(suite) ->
     [];
 multi_user_heavy_load(doc) ->
     [];
-multi_user_heavy_load(Config) when list(Config) ->
+multi_user_heavy_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        multi_user_heavy_load),
     put(sname,     "TEST"),
@@ -282,7 +282,7 @@ multi_user_extreme_load(suite) ->
     [];
 multi_user_extreme_load(doc) ->
     [];
-multi_user_extreme_load(Config) when list(Config) ->
+multi_user_extreme_load(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(tc,        multi_user_extreme_load),
     put(sname,     "TEST"),
@@ -601,9 +601,9 @@ make_node_names(BaseName, N, Names) ->
     Name = lists:flatten(io_lib:format("~p~w", [BaseName,N])),
     make_node_names(BaseName, N-1, [make_node_name(Name)|Names]).
 
-make_node_name(Name) when atom(Name) ->
+make_node_name(Name) when is_atom(Name) ->
     make_node_name(atom_to_list(Name));
-make_node_name(Name) when list(Name) ->
+make_node_name(Name) when is_list(Name) ->
     case string:tokens(atom_to_list(node()), [$@]) of
 	[_,Host] ->
 	    list_to_atom(lists:concat([Name ++ "@" ++ Host]));
@@ -611,7 +611,7 @@ make_node_name(Name) when list(Name) ->
 	    exit("Test node must be started with '-sname'")
      end.
 
-make_mids(MgNodes) when list(MgNodes), length(MgNodes) > 0 ->
+make_mids(MgNodes) when is_list(MgNodes) andalso (length(MgNodes) > 0) ->
     make_mids(MgNodes, []).
 
 make_mids([], Mids) ->

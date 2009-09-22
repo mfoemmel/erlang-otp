@@ -128,4 +128,4 @@ $(EBIN)/hipe_x86_registers.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_x86_spill_restore.beam: ../main/hipe.hrl ../flow/cfg.hrl
 $(EBIN)/hipe_x86_x87.beam: ../main/hipe.hrl
 
-$(TARGET_FILES): hipe_x86.hrl
+$(TARGET_FILES): hipe_x86.hrl ../misc/hipe_consttab.hrl

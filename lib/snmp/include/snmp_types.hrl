@@ -115,7 +115,8 @@
 %%   defval           is a default value for the variable
 %%-----------------------------------------------------------------
 -record(variable_info, 
-	{defval
+	{
+	  defval
 	}
        ).
 
@@ -124,7 +125,7 @@
 %% MibEntry
 %% aliasname is the name for the oid.
 %% asn1_type is a record of asn1_type.
-%% entrytype: variable | table | tableColumn | internal
+%% entrytype: variable | table | table_column | internal
 %% access: notAccessible | readOnly | readWrite | readCreate     (see rfc 1142)
 %% assocList: list of
 %%   {table_info, #table_info}      when entrytype == table
@@ -134,18 +135,20 @@
 %% description: DESCRIPTIONS field
 %%----------------------------------------------------------------------
 -record(me, 
-	{oid, 
-	 entrytype, 
-	 aliasname, 
-	 asn1_type,
-	 access, 
-	 mfa, 
-	 imported = false,
-	 assocList = [], 
-	 description = undefined,
-	 units
-	}
+	{
+	  oid, 
+	  entrytype, 
+	  aliasname, 
+	  asn1_type,
+	  access, 
+	  mfa, 
+	  imported = false,
+	  assocList = [], 
+	  description = undefined,
+	  units
+	 }
        ).
+
 
 %% oidobjects is a list of {oid, asn1_type} to be sent in the trap
 %% with the description field included.

@@ -33,7 +33,10 @@
   <description>
     <p>This module provides the Erlang Web Server API module
       programmer with miscellaneous utility functions.</p>
+
+    <marker id="convert_request_date"></marker>
   </description>
+
   <funcs>
     <func>
       <name>convert_request_date(DateString) -> ErlDate|bad_date</name>
@@ -44,12 +47,14 @@
         <v>Year = Month = Date = Hour = Min = Sec = integer()</v>
       </type>
       <desc>
-        <marker id="convert_request_date"></marker>
-        <p><c>convert_request_date/1</c> converts <c>DateString</c> to the Erlang
-          date format. DateString must be in one of the three date formats that is defined
-          in the RFC 2616.</p>
+        <p><c>convert_request_date/1</c> converts <c>DateString</c> to 
+          the Erlang date format. DateString must be in one of the three 
+          date formats that is defined in the RFC 2616.</p>
+
+	<marker id="create_etag"></marker>
       </desc>
     </func>
+
     <func>
       <name>create_etag(FileInfo) -> Etag</name>
       <fsummary>Calculates the Etag for a file.</fsummary>
@@ -58,11 +63,14 @@
         <v>Etag = string()</v>
       </type>
       <desc>
-        <marker id="create_etag"></marker>
-        <p><c>create_etag/1</c> calculates the Etag for a file, from it's size and time for
-          last modification. fileinfo is a record defined in <c>kernel/include/file.hrl</c></p>
+        <p><c>create_etag/1</c> calculates the Etag for a file, from it's 
+          size and time for last modification. fileinfo is a record defined 
+          in <c>kernel/include/file.hrl</c></p>
+
+	<marker id="decode_hex"></marker>
       </desc>
     </func>
+
     <func>
       <name>decode_hex(HexValue) -> DecValue</name>
       <fsummary>Convert a hex value into its decimal equivalent.</fsummary>
@@ -70,11 +78,13 @@
         <v>HexValue = DecValue = string()</v>
       </type>
       <desc>
-        <marker id="decode_hex"></marker>
         <p>Converts the hexadecimal value <c>HexValue</c> into it's
           decimal equivalent (<c>DecValue</c>).</p>
+
+	<marker id="day"></marker>
       </desc>
     </func>
+
     <func>
       <name>day(NthDayOfWeek) -> DayOfWeek</name>
       <fsummary>Convert the day of the week (integer [1-7]) to an abbreviated string.</fsummary>
@@ -88,8 +98,11 @@
           (<c>NthDayOfWeek</c>) as an integer (1-7) to an abbreviated
           string, that is: </p>
         <p>1 = "Mon", 2 = "Tue", ..., 7 = "Sat".</p>
+
+	<marker id="flatlength"></marker>
       </desc>
     </func>
+
     <func>
       <name>flatlength(NestedList) -> Size</name>
       <fsummary>Compute the size of a possibly nested list.</fsummary>
@@ -101,8 +114,12 @@
         <marker id="flatlength"></marker>
         <p><c>flatlength/1</c> computes the size of the possibly nested
           list <c>NestedList</c>. Which may contain binaries.</p>
+
+        <marker id="hexlist_to_integer"></marker>
       </desc>
     </func>
+
+<!--
     <func>
       <name>header(StatusCode,PersistentConn)</name>
       <name>header(StatusCode,Date)</name>
@@ -127,8 +144,12 @@
           backward compability, and must not be used in new Erlang
           Webserver API modules.  that will support persistent
           connections.</p>
+
+	<marker id="hexlist_to_integer"></marker>
       </desc>
     </func>
+-->
+
     <func>
       <name>hexlist_to_integer(HexString) -> Number</name>
       <fsummary>Convert a hexadecimal string to an integer.</fsummary>
@@ -137,10 +158,13 @@
         <v>HexString = string()</v>
       </type>
       <desc>
-        <marker id="hexlist_to_integer"></marker>
-        <p><c>hexlist_to_integer</c> Convert the Hexadecimal value of HexString to an integer.</p>
+        <p><c>hexlist_to_integer</c> Convert the Hexadecimal value of 
+          HexString to an integer.</p>
+
+	<marker id="integer_to_hexlist"></marker>
       </desc>
     </func>
+
     <func>
       <name>integer_to_hexlist(Number) -> HexString</name>
       <fsummary>Convert an integer to a hexadecimal string.</fsummary>
@@ -150,9 +174,13 @@
       </type>
       <desc>
         <marker id="integer_to_hexlist"></marker>
-        <p><c>integer_to_hexlist/1</c> Returns a string that represents the Number in a Hexadecimal form.</p>
+        <p><c>integer_to_hexlist/1</c> Returns a string that represents 
+          the Number in a Hexadecimal form.</p>
+
+	<marker id="lookup"></marker>
       </desc>
     </func>
+
     <func>
       <name>lookup(ETSTable,Key) -> Result</name>
       <name>lookup(ETSTable,Key,Undefined) -> Result</name>
@@ -164,7 +192,6 @@
         <v>Undefined = term()</v>
       </type>
       <desc>
-        <marker id="lookup"></marker>
         <p><c>lookup</c> extracts <c>{Key,Value}</c> tuples from
           <c>ETSTable</c> and returns the <c>Value</c> associated  
           with <c>Key</c>. If <c>ETSTable</c> is of type <c>bag</c>
@@ -172,8 +199,11 @@
           returned. <c>lookup/2</c> returns <c>undefined</c> and
           <c>lookup/3</c> returns <c>Undefined</c> if no <c>Value</c>
           is found.</p>
+
+	<marker id="lookup_mime"></marker>
       </desc>
     </func>
+
     <func>
       <name>lookup_mime(ConfigDB,Suffix)</name>
       <name>lookup_mime(ConfigDB,Suffix,Undefined) -> MimeType</name>
@@ -189,8 +219,11 @@
         <p><c>lookup_mime</c> returns the mime type associated with a
           specific file suffix as specified in the <c>mime.types</c>
           file (located in the <path unix="$SERVER_ROOT/conf/mime.types" windows="%SERVER_ROOT%\\\\conf\\\\mime.types">config directory</path>).</p>
+
+	<marker id="lookup_mime_default"></marker>
       </desc>
     </func>
+
     <func>
       <name>lookup_mime_default(ConfigDB,Suffix)</name>
       <name>lookup_mime_default(ConfigDB,Suffix,Undefined) -> MimeType</name>
@@ -206,11 +239,15 @@
         <p><c>lookup_mime_default</c> returns the mime type associated
           with a specific file suffix as specified in the
           <c>mime.types</c> file (located in the
-          <path unix="$SERVER_ROOT/conf/mime.types" windows="%SERVER_ROOT%\\\\conf\\\\mime.types">config  directory</path>). If no appropriate association can be found 
+          <path unix="$SERVER_ROOT/conf/mime.types" windows="%SERVER_ROOT%\\\\conf\\\\mime.types">config  directory</path>). 
+          If no appropriate association can be found 
           the value of DefaultType is
           returned.</p>
+
+	<marker id="message"></marker>
       </desc>
     </func>
+
     <func>
       <name>message(StatusCode,PhraseArgs,ConfigDB) -> Message</name>
       <fsummary>Return an informative HTTP 1.1 status string in HTML.</fsummary>
@@ -243,8 +280,11 @@
           <item><c>string()</c>: A string describing why the service
            was unavailable.</item>
         </taglist>
+
+	<marker id="month"></marker>
       </desc>
     </func>
+
     <func>
       <name>month(NthMonth) -> Month</name>
       <fsummary>Convert the month as an integer (1-12) to an abbreviated string.</fsummary>
@@ -257,8 +297,11 @@
         <p><c>month/1</c> converts the month <c>NthMonth</c> as an
           integer (1-12) to an abbreviated string, that is: </p>
         <p>1 = "Jan", 2 = "Feb", ..., 12 = "Dec".</p>
+
+	<marker id="multi_lookup"></marker>
       </desc>
     </func>
+
     <func>
       <name>multi_lookup(ETSTable,Key) -> Result</name>
       <fsummary>Extract the values associated with a key in a ETS table.</fsummary>
@@ -268,11 +311,13 @@
         <v>Result = [term()]</v>
       </type>
       <desc>
-        <marker id="multi_lookup"></marker>
         <p><c>multi_lookup</c> extracts all <c>{Key,Value}</c> tuples
           from an <c>ETSTable</c> and returns <em>all</em><c>Values</c> associated with the <c>Key</c> in a list.</p>
+
+	<marker id="reason phrase"></marker>
       </desc>
     </func>
+
     <func>
       <name>reason_phrase(StatusCode) -> Description</name>
       <fsummary>Return the description of an HTTP 1.1 status code.</fsummary>
@@ -281,12 +326,14 @@
         <v>Description = string()</v>
       </type>
       <desc>
-        <marker id="reason phrase"></marker>
         <p><c>reason_phrase</c> returns the <c>Description</c> of an
           HTTP 1.1 <c>StatusCode</c>, for example 200 is "OK" and 201
           is "Created". Read RFC 2616 for further information.</p>
+
+	<marker id="rfc1123_date"></marker>
       </desc>
     </func>
+
     <func>
       <name>rfc1123_date() -> RFC1123Date</name>
       <name>rfc1123_date({{YYYY,MM,DD},{Hour,Min,Sec}}}) -> RFC1123Date</name>
@@ -300,8 +347,11 @@
         <p><c>rfc1123_date/0</c> returns the current date in RFC 1123
           format. <c>rfc_date/1</c> converts the date in the Erlang format
           to the RFC 1123 date format.</p>
+
+	<marker id="split"></marker>
       </desc>
     </func>
+
     <func>
       <name>split(String,RegExp,N) -> SplitRes</name>
       <fsummary>Split a string in N chunks using a regular expression.</fsummary>
@@ -318,8 +368,11 @@
           <c>regexp:split/2</c> with one exception, that is <c>N</c>
           defines the number of maximum number of fields in the
           <c>FieldList</c>.</p>
+
+	<marker id="split_script_path"></marker>
       </desc>
     </func>
+
     <func>
       <name>split_script_path(RequestLine) -> Splitted</name>
       <fsummary>Split a <c>RequestLine</c>in a file reference to an executable and a<c>QueryString</c>or a <c>PathInfo</c>string.</fsummary>
@@ -334,8 +387,11 @@
           <c>split_path/1</c> with one exception. If the longest
           possible path is not a regular, accessible and executable
           file <c>not_a_script</c> is returned.</p>
+
+	<marker id="split_path"></marker>
       </desc>
     </func>
+
     <func>
       <name>split_path(RequestLine) -> {Path,QueryStringOrPathInfo}</name>
       <fsummary>Split a <c>RequestLine</c>in a file reference and a <c>QueryString</c>or a<c>PathInfo</c>string.</fsummary>
@@ -358,8 +414,11 @@
           <c>Path</c>, isolated with a <c>/</c>, is regarded as
           <c>PathInfo</c>. The resulting <c>Path</c> is decoded using
           <c>decode_hex/1</c> before delivery.</p>
+
+	<marker id="strip"></marker>
       </desc>
     </func>
+
     <func>
       <name>strip(String) -> Stripped</name>
       <fsummary>Returns String where the leading and trailing space and tabs has been removed.</fsummary>
@@ -371,8 +430,11 @@
         <p><c>strip/1</c> removes any leading or trailing linear white
           space from the string.  Linear white space should be read as
           horisontal tab or space.</p>
+
+	<marker id="suffix"></marker>
       </desc>
     </func>
+
     <func>
       <name>suffix(FileName) -> Suffix</name>
       <fsummary>Extract the file suffix from a given filename.</fsummary>
@@ -395,5 +457,3 @@
   </section>
   
 </erlref>
-
-

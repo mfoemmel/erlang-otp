@@ -23,10 +23,10 @@
 %%
 %% Exports:
 %% ~~~~~~~
-%% analyze(CFG) - returns a livenes analyzis of CFG.
-%% liveout(Liveness, Label) - returns a set of variables that are alive at
+%% analyze(CFG) - returns a liveness analysis of CFG.
+%% liveout(Liveness, Label) - returns a set of variables that are live on
 %%      exit from basic block named Label.
-%% livein(Liveness, Label) - returns a set of variables that are alive at
+%% livein(Liveness, Label) - returns a set of variables that are live on
 %%      entry to the basic block named Label.
 %% list(Instructions, LiveOut) - Given a list of instructions and a liveout
 %%      set, returns a set of variables live at the first instruction.
@@ -35,7 +35,7 @@
 -module(hipe_rtl_liveness).
 
 %% -define(LIVEOUT_NEEDED,true).	% needed for liveness.inc below.
--define(PRETTY_PRINT,true).
+-define(PRETTY_PRINT,false).
 
 -include("hipe_rtl.hrl").
 -include("../flow/liveness.inc").

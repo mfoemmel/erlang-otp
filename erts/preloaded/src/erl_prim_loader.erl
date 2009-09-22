@@ -868,7 +868,7 @@ prim_get_file(PS, File) ->
                 {Res, PS};
             {archive, ArchiveFile, FileInArchive} ->
                 debug(PS, {archive_get_file, ArchiveFile, FileInArchive}),
-                FunnyFile = funny_split(FileInArchive),
+                FunnyFile = funny_split(FileInArchive, $/),
                 Fun =
                     fun({Funny, _GetInfo, GetBin}, Acc) ->
                             if
@@ -893,7 +893,7 @@ prim_list_dir(PS, Dir) ->
                 {Res, PS};
             {archive, ArchiveFile, FileInArchive} ->
                 debug(PS, {archive_list_dir, ArchiveFile, FileInArchive}),
-                FunnyDir = funny_split(FileInArchive),
+                FunnyDir = funny_split(FileInArchive, $/),
                 Fun =
                     fun({Funny, _GetInfo, _GetBin}, {Status, Names} = Acc) ->
                             case Funny of
@@ -953,7 +953,7 @@ prim_read_file_info(PS, File) ->
                 end;
             {archive, ArchiveFile, FileInArchive} ->
                 debug(PS, {archive_read_file_info, File}),
-                FunnyFile = funny_split(FileInArchive),
+                FunnyFile = funny_split(FileInArchive, $/),
                 Fun =
                     fun({Funny, GetInfo, _GetBin}, Acc)  ->
 			    if
@@ -1044,7 +1044,7 @@ open_archive(Archive, Acc, Fun) ->
     Wrapper =
         fun({N, GI, GB}, A) ->
                 %% Ensure full iteration at open
-                Funny = funny_split(N),
+                Funny = funny_split(N, $/),
                 {_Continue, A2} = Fun({Funny, GI, GB}, A),
                 {true, {true, Funny}, A2}
         end,
@@ -1077,15 +1077,17 @@ clear_cache(Archive, Cache) ->
 
 %%% Look for directory separators
 is_basename(File) ->
-    case member($/, File) of
+    case deep_member($/, File) of
         true -> 
             false;
         false ->
             case erlang:system_info(os_type) of
                 {win32, _} ->
                     case File of
-                        [_,$:|_] -> false;
-                        _        -> not member($\\, File)
+                        [_,$: | _] ->
+			    false;
+                        _ -> 
+			    not deep_member($\\, File)
                     end;
                 _ ->
                     true
@@ -1110,6 +1112,17 @@ concat([]) ->
 member(X, [X|_]) -> true;
 member(X, [_|Y]) -> member(X, Y);
 member(_X, [])   -> false.
+
+deep_member(X, [X|_]) -> 
+    true;
+deep_member(X, [List | Y]) when is_list(List) ->
+    deep_member(X, List) orelse deep_member(X, Y);
+deep_member(X, [Atom | Y]) when is_atom(Atom) ->
+    deep_member(X, atom_to_list(Atom)) orelse deep_member(X, Y);
+deep_member(X, [_ | Y]) -> 
+    deep_member(X, Y);
+deep_member(_X, [])   ->
+    false.
 
 keymember(X, I, [Y | _]) when element(I,Y) =:= X -> true;
 keymember(X, I, [_ | T]) -> keymember(X, I, T);
@@ -1147,14 +1160,14 @@ reverse([A, B | L]) ->
     lists:reverse(L, [B, A]). % BIF
                         
 %% Returns all lists in reverse order
-funny_split(List) ->
-   funny_split(List, [], []).
+funny_split(List, Sep) ->
+   funny_split(List, Sep, [], []).
 
-funny_split([Sep | Tail], Path, Paths) when Sep =:= $/; Sep =:= $\\->
-    funny_split(Tail, [], [Path | Paths]);
-funny_split([Head | Tail], Path, Paths) ->
-    funny_split(Tail, [Head | Path], Paths);
-funny_split([], Path, Paths) ->
+funny_split([Sep | Tail], Sep, Path, Paths) ->
+    funny_split(Tail, Sep, [], [Path | Paths]);
+funny_split([Head | Tail], Sep, Path, Paths) ->
+    funny_split(Tail, Sep, [Head | Path], Paths);
+funny_split([], _Sep, Path, Paths) ->
     [Path | Paths].
 
 name_split(ArchiveFile, File0) ->
@@ -1171,8 +1184,7 @@ do_name_split(undefined, File) ->
             %% Top dir in archive
             ArchiveFile = reverse(RevArchiveFile),
             {archive, ArchiveFile, []};
-        {split, _RevArchiveBase, RevArchiveFile, [Sep | FileInArchive]} 
-	when Sep =:= $/; Sep =:= $\\ ->
+        {split, _RevArchiveBase, RevArchiveFile, [$/ | FileInArchive]} ->
             %% File in archive
             ArchiveFile = reverse(RevArchiveFile),
             {archive, ArchiveFile, FileInArchive};
@@ -1190,7 +1202,7 @@ do_name_split(ArchiveFile0, File) ->
         {match, _RevPrimArchiveFile, FileInArchive} ->
             %% Primary archive
             case FileInArchive of
-                [Sep | FileInArchive2] when Sep =:= $/; Sep =:= $\\ ->
+                [$/ | FileInArchive2] ->
                     {archive, ArchiveFile, FileInArchive2};
                 _ ->
                     {archive, ArchiveFile, FileInArchive}
@@ -1251,64 +1263,144 @@ ipv4_addr([], D, [C,B,A]) when D < 256 -> {A,B,C,D}.
 
 %% A simplified version of filename:absname/1
 absname(Name) ->
-    case pathtype(Name) of
+    Name2 = normalize(Name, []),
+    case pathtype(Name2) of
 	absolute ->
-	    normalize(Name, []);
+	    Name2;
 	relative ->
 	    case prim_file:get_cwd() of
 		{ok, Cwd} ->
-		    normalize(Cwd ++ "/" ++ Name, []);
+		    Cwd ++ "/" ++ Name2;
 		{error, _} -> 
-		    normalize(Name, [])
+		    Name2
 	    end;
 	volumerelative ->
 	    case prim_file:get_cwd() of
 		{ok, Cwd} ->
-		    absname_vr(Name, Cwd);
+		    absname_vr(Name2, Cwd);
 		{error, _} -> 
-		    normalize(Name, [])
+		    Name2
 	    end
     end.
 
+%% Assumes normalized name
 absname_vr([$/ | NameRest], [Drive, $\: | _]) ->
     %% Absolute path on current drive.
-    normalize([Drive, $\: | NameRest], []);
+    [Drive, $\: | NameRest];
 absname_vr([Drive, $\: | NameRest], [Drive, $\: | _] = Cwd) ->
     %% Relative to current directory on current drive.
-    normalize(Cwd ++ "/" ++ NameRest, []);
-absname_vr([Drive, $: | NameRest], _) ->
+    Cwd ++ "/" ++ NameRest;
+absname_vr([Drive, $\: | NameRest], _) ->
     %% Relative to current directory on another drive.
-    case prim_file:get_cwd([Drive, $:]) of
-	{ok, DriveCwd}  -> normalize(DriveCwd ++ "/" ++ NameRest, []);
-	{error, _}      -> normalize([Drive, $\:, $/] ++ NameRest, [])
+    case prim_file:get_cwd([Drive, $\:]) of
+	{ok, DriveCwd}  ->
+	    DriveCwd ++ "/" ++ NameRest;
+	{error, _} ->
+	    [Drive, $\:, $/] ++ NameRest
     end.
 
-pathtype(Name) ->
+%% Assumes normalized name
+pathtype(Name) when is_list(Name) -> 
     case erlang:system_info(os_type) of
+	{unix, _}  -> 
+	    unix_pathtype(Name);
 	{win32, _} ->
-	    case Name of
-		[$/, $/|_]             -> absolute;
-		[$\\, $/|_]            -> absolute;
-		[$/, $\\|_]            -> absolute;
-		[$\\, $\\|_]           -> absolute;
-		[$/|_]                 -> volumerelative;
-		[$\\|_]                -> volumerelative;
-		[_Drive, $\:, $/ | _]  -> absolute;
-		[_Drive, $\:, $\\ | _] -> absolute;
-		[_Drive, $\: | _]      -> volumerelative;
-		_                      -> relative
+	    win32_pathtype(Name);
+	{vxworks, _} ->
+	    case vxworks_first(Name) of
+		{device, _Rest, _Dev} ->
+		    absolute;
+		_ ->
+		    relative
 	    end;
-	_ ->
-	    case Name of
-		[$/|_]  -> absolute;
-		[$\\|_] -> absolute;
-		_       -> relative
-	    end
+	{ose,_} ->
+	    unix_pathtype(Name)
     end.
 
-normalize([$\\ | Chars], Acc) ->
-    normalize(Chars, [$/ | Acc]);
-normalize([Char | Chars], Acc) ->
-    normalize(Chars, [Char | Acc]);
-normalize([], Acc) ->
-    reverse(Acc).
+unix_pathtype(Name) ->
+    case Name of
+	[$/|_] ->
+	    absolute;
+	[List|Rest] when is_list(List) ->
+	    unix_pathtype(List++Rest);
+	[Atom|Rest] when is_atom(Atom) ->
+	    atom_to_list(Atom)++Rest;
+	_ ->
+	    relative
+    end.
+
+win32_pathtype(Name) ->
+    case Name of
+	[List|Rest] when is_list(List) ->
+	    win32_pathtype(List++Rest);
+	[Atom|Rest] when is_atom(Atom) ->
+	    win32_pathtype(atom_to_list(Atom)++Rest);
+	[Char, List | Rest] when is_list(List) ->
+	    win32_pathtype([Char | List++Rest]);
+	[$/, $/|_] -> 
+	    absolute;
+	[$\\, $/|_] -> 
+	    absolute;
+	[$/, $\\|_] ->
+	    absolute;
+	[$\\, $\\|_] -> 
+	    absolute;
+	[$/|_] -> 
+	    volumerelative;
+	[$\\|_] -> 
+	    volumerelative;
+	[C1, C2, List | Rest] when is_list(List) ->
+	    pathtype([C1, C2|List ++ Rest]);
+	[_Letter, $:, $/|_] -> 
+	    absolute;
+	[_Letter, $:, $\\|_] ->
+	    absolute;
+	[_Letter, $:|_] -> 
+	    volumerelative;
+	_ -> 
+	    relative
+    end.
+
+vxworks_first(Name) ->
+    case Name of
+	[] ->
+	    {not_device, [], []};
+	[$/ | T] ->
+	    vxworks_first2(device, T, [$/]);
+	[$\\ | T] ->
+	    vxworks_first2(device, T, [$/]);
+	[H | T] when is_list(H) ->
+	    vxworks_first(H ++ T);
+	[H | T] ->
+	    vxworks_first2(not_device, T, [H])
+    end.
+
+vxworks_first2(Devicep, Name, FirstComp) ->
+    case Name of 
+	[] ->
+    {Devicep, [], FirstComp};
+	[$/ |T ] ->
+	    {Devicep, [$/ | T], FirstComp};
+	[$\\ | T] ->
+	    {Devicep, [$/ | T], FirstComp};
+	[$: | T]->
+	    {device, T, [$: | FirstComp]};
+	[H | T] when is_list(H) ->
+	    vxworks_first2(Devicep, H ++ T, FirstComp);
+	[H | T] ->
+	    vxworks_first2(Devicep, T, [H | FirstComp])
+    end.
+
+normalize(Name, Acc) ->
+    case Name of
+	[List | Rest] when is_list(List) ->
+	    normalize(List ++ Rest, Acc);
+	[Atom | Rest] when is_atom(Atom) ->
+	    normalize(atom_to_list(Atom) ++ Rest, Acc);
+	[$\\ | Chars] ->
+	    normalize(Chars, [$/ | Acc]);
+	[Char | Chars] ->
+	    normalize(Chars, [Char | Acc]);
+	[] ->
+	    reverse(Acc)
+    end.

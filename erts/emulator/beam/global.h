@@ -616,17 +616,18 @@ extern int stackdump_on_exit;
  * ...
  * DESTROY_ESTACK(Stack)
  */
- 
-Eterm* erl_grow_stack(Eterm* ptr, size_t new_size);
+
+
+void erl_grow_stack(Eterm** start, Eterm** sp, Eterm** end);
 #define ESTK_CONCAT(a,b) a##b
 #define ESTK_SUBSCRIPT(s,i) *((Eterm *)((byte *)ESTK_CONCAT(s,_start) + (i)))
-#define DEF_ESTACK_SIZE (16*sizeof(Eterm))
+#define DEF_ESTACK_SIZE (16)
 
 #define DECLARE_ESTACK(s)						\
-    Eterm ESTK_CONCAT(s,_default_stack)[DEF_ESTACK_SIZE/sizeof(Eterm)];	\
+    Eterm ESTK_CONCAT(s,_default_stack)[DEF_ESTACK_SIZE];		\
     Eterm* ESTK_CONCAT(s,_start) = ESTK_CONCAT(s,_default_stack);	\
-    size_t ESTK_CONCAT(s,_sp) = 0;					\
-    size_t ESTK_CONCAT(s,_size) = DEF_ESTACK_SIZE
+    Eterm* ESTK_CONCAT(s,_sp) = ESTK_CONCAT(s,_start);			\
+    Eterm* ESTK_CONCAT(s,_end) = ESTK_CONCAT(s,_start) + DEF_ESTACK_SIZE
 
 #define DESTROY_ESTACK(s)						\
 do {									\
@@ -635,22 +636,41 @@ do {									\
     }									\
 } while(0)
 
-#define ESTACK_PUSH(s, x)							\
-do {										\
-    if (ESTK_CONCAT(s,_sp) == ESTK_CONCAT(s,_size)) {				\
-	ESTK_CONCAT(s,_size) *= 2;						\
-	ESTK_CONCAT(s,_start) =							\
-	    erl_grow_stack(ESTK_CONCAT(s,_start), ESTK_CONCAT(s,_size));	\
-    }										\
-    ESTK_SUBSCRIPT(s,ESTK_CONCAT(s,_sp)) = (x);					\
-    ESTK_CONCAT(s,_sp) += sizeof(Eterm);					\
+#define ESTACK_PUSH(s, x)						\
+do {									\
+    if (ESTK_CONCAT(s,_sp) == ESTK_CONCAT(s,_end)) {			\
+	erl_grow_stack(&ESTK_CONCAT(s,_start), &ESTK_CONCAT(s,_sp),	\
+	               &ESTK_CONCAT(s,_end));				\
+    }									\
+    *ESTK_CONCAT(s,_sp)++ = (x);					\
 } while(0)
 
-#define ESTACK_COUNT(s) (ESTK_CONCAT(s,_sp) / sizeof(Eterm))
+#define ESTACK_PUSH2(s, x, y)						\
+do {									\
+    if (ESTK_CONCAT(s,_sp) > ESTK_CONCAT(s,_end) - 2) {			\
+	erl_grow_stack(&ESTK_CONCAT(s,_start), &ESTK_CONCAT(s,_sp),	\
+		&ESTK_CONCAT(s,_end));	\
+    }									\
+    *ESTK_CONCAT(s,_sp)++ = (x);					\
+    *ESTK_CONCAT(s,_sp)++ = (y);					\
+} while(0)
 
-#define ESTACK_ISEMPTY(s) (ESTK_CONCAT(s,_sp) == 0)
-#define ESTACK_POP(s)								\
-((ESTK_CONCAT(s,_sp) -= sizeof(Eterm)), ESTK_SUBSCRIPT(s,ESTK_CONCAT(s,_sp)))
+#define ESTACK_PUSH3(s, x, y, z)					\
+do {									\
+    if (ESTK_CONCAT(s,_sp) > ESTK_CONCAT(s,_end) - 3) {			\
+	erl_grow_stack(&ESTK_CONCAT(s,_start), &ESTK_CONCAT(s,_sp),	\
+		&ESTK_CONCAT(s,_end));					\
+    }									\
+    *ESTK_CONCAT(s,_sp)++ = (x);					\
+    *ESTK_CONCAT(s,_sp)++ = (y);					\
+    *ESTK_CONCAT(s,_sp)++ = (z);					\
+} while(0)
+
+#define ESTACK_COUNT(s) (ESTK_CONCAT(s,_sp) - ESTK_CONCAT(s,_start))
+
+#define ESTACK_ISEMPTY(s) (ESTK_CONCAT(s,_sp) == ESTK_CONCAT(s,_start))
+#define ESTACK_POP(s) (*(--ESTK_CONCAT(s,_sp)))
+
 
 /* port status flags */
 
@@ -747,8 +767,8 @@ void loaded(int, void *);
 
 /* config.c */
 
-void __noreturn erl_exit(int n, char*, ...);
-void __noreturn erl_exit0(char *, int, int n, char*, ...);
+__decl_noreturn void __noreturn erl_exit(int n, char*, ...);
+__decl_noreturn void __noreturn erl_exit0(char *, int, int n, char*, ...);
 void erl_error(char*, va_list);
 
 #define ERL_EXIT0(n,f)		erl_exit0(__FILE__, __LINE__, n, f)
@@ -1381,10 +1401,10 @@ Uint erts_fit_in_bits(Uint);
 int list_length(Eterm);
 Export* erts_find_function(Eterm, Eterm, unsigned int);
 int erts_is_builtin(Eterm, Eterm, int);
-Uint32 make_broken_hash(Eterm, Uint32);
+Uint32 make_broken_hash(Eterm);
 Uint32 block_hash(byte *, unsigned, Uint32);
 Uint32 make_hash2(Eterm);
-Uint32 make_hash(Eterm, Uint32);
+Uint32 make_hash(Eterm);
 
 
 Eterm erts_bld_atom(Uint **hpp, Uint *szp, char *str);

@@ -22,8 +22,8 @@
     </legalnotice>
     
     <title>Inets Release Notes</title>
-    <prepared>UAB/F/P Micael Karlberg</prepared>
-    <responsible>UAB/F/P Micael Karlberg</responsible>
+    <prepared></prepared>
+    <responsible></responsible>
     <docno></docno>
     <approved></approved>
     <checked></checked>
@@ -32,6 +32,168 @@
     <file>notes.sgml</file>
   </header>
   
+  <section><title>Inets 5.1.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <p>-</p>
+<!--
+        <list>
+          <item>
+            <p>[httpc] Added support for web services using only basic auth,
+              with a token as the user part and no password part.</p>
+            <p>twoggle@gmail.com</p>
+            <p>Own Id: OTP-7998</p>
+          </item>
+
+	  <item>
+	    <p>[httpc] - Bind HTTP client to IP-addr. It is now possible 
+              to specify an alternate ip-address and port to be used when 
+              the client connects to the server. </p>
+	    <p>As a side-effect of this, the option <c>ipv6</c> has been 
+              removed and replaced by the <c>ipfamily</c> option. </p>
+	    <p>See <seealso marker="http#set_options">http:set_options/1,2</seealso> 
+              for more info. </p>
+            <p>*** POTENTIAL INCOMPATIBILITY ***</p>
+	    <p>Own Id: OTP-8004</p>
+          </item>
+
+        </list>
+-->
+    </section>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+
+<!--
+      <p>-</p>
+-->
+
+      <list>
+        <item>
+	  <p>[httpc] - Raise condition. 
+            When http:request is called and httpc_manager selects a session 
+            where there's already a pending request, then the connection 
+            handler for that session effectively resets its parser, readying
+            it for the response to the second request. But if there are still 
+            some inbound packets for the response to the first request, things 
+            get confused.</p>
+          <p>tomas.abrahamsson@gmail.com</p>
+	  <p>Own Id: OTP-8154</p>
+        </item>
+
+      </list>
+    </section>
+
+  </section> <!-- 5.1.3 -->
+
+
+  <section><title>Inets 5.1.2</title>
+<!--
+        <p>-</p>
+-->
+
+      <section><title>Improvements and New Features</title>
+<!--
+        <p>-</p>
+-->
+
+        <list>
+	  <item>
+	    <p>[httpc] - Added http option <c>connect_timeout</c> for http 
+              client request.
+              The <c>connect_timeout</c> option is used for the initial 
+              request, when the client connects to the server. Default 
+              value is that of the <c>timeout</c> option. </p>
+            <p>See the 
+	      <seealso marker="http#request2">request/4,5</seealso> 
+              function for more info. </p>
+	    <p>Own Id: OTP-7298</p>
+	    <!-- <p>Aux Id: seq11086</p> -->
+          </item>
+
+        </list>
+      </section>
+
+
+      <section><title>Fixed Bugs and Malfunctions</title>
+<!--
+        <p>-</p>
+-->
+
+        <list>
+	  <item>
+	    <p>[httpd] - Failed to create listen socket with invalid 
+              option combo. The http-server failed to create its listen 
+              socket when the bind-address was an IPv4-address (a tuple of
+              size 4) and the ipfamily option was inet6fb4. </p>
+	    <p>Own Id: OTP-8118</p>
+	    <p>Aux Id: seq11321</p>
+          </item>
+
+	  <item>
+	    <p>[httpd] - Removed documentation for non-existing function 
+              (httpd_util:header/2,3,4). </p>
+	    <p>Own Id: OTP-8101</p>
+	    <!-- <p>Aux Id: seq11321</p> -->
+          </item>
+
+        </list>
+      </section>
+
+  </section> <!-- 5.1.2 -->
+
+
+  <section><title>Inets 5.1.1</title>
+<!--
+        <p>-</p>
+-->
+
+      <section><title>Improvements and New Features</title>
+        <list>
+	  <item>
+	    <p>[httpd] - When starting inets (the web-server) and supplying 
+              a descriptor on the command line 
+              (example: erl -httpd_8888 &lt;descriptor&gt;) 
+              it is now possible to specify which ip-family to use:
+              <c>inet | inet6 | inet6fb4</c>. </p>
+            <p>Example: erl -httpd_8888 10|inet6</p>
+            <p>When starting the web-server either using a file with 
+              property list (the proplist_file) or a an property list,
+              using the ipfamily option: 
+              <c>{ipfamily, inet | inet6 | inet6fb4}</c>. </p>
+            <p>Finally, when starting the web-server using the classical
+              apache-style config file, the <c>BindAddress</c> directive
+              has been augmented to allow the specification of the 
+              IpFamily: <c>BindAddress blirk.ericsson.se|inet</c></p>
+            <p>Default is <c>inet6fb4</c> which emulates the 
+              behaviour of the previous version. </p>
+            <p>See the 
+	      <seealso marker="httpd#comm_prop">Communication properties</seealso> 
+              section for more info. </p>
+	    <p>Own Id: OTP-8069</p>
+	    <p>Aux Id: seq11086</p>
+          </item>
+
+        </list>
+      </section>
+
+
+      <section><title>Fixed Bugs and Malfunctions</title>
+<!--
+        <p>-</p>
+-->
+
+        <list>
+	  <item>
+	    <p>[httpc] - Reception of unexpected data causes handler crash. </p>
+	    <p>Own Id: OTP-8052</p>
+          </item>
+
+        </list>
+      </section>
+
+  </section> <!-- 5.1.1 -->
+
+
   <section><title>Inets 5.1</title>
 
       <section><title>Improvements and New Features</title>

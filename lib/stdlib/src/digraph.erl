@@ -39,7 +39,7 @@
 -record(digraph, {vtab = notable :: ets:tab(),
 		  etab = notable :: ets:tab(),
 		  ntab = notable :: ets:tab(),
-	          cyclic = true  :: bool()}).
+	          cyclic = true  :: boolean()}).
 %% A declaration equivalent to the following one is hard-coded in erl_types.
 %% That declaration contains hard-coded information about the #digraph{}
 %% record and the types of its fields.  So, please make sure that any
@@ -85,8 +85,8 @@ new(Type) ->
 %%
 %% Check type of graph
 %%
-%-spec check_type([d_type()], d_protection(), [{'cyclic', bool()}]) ->
-%       	{d_protection(), [{'cyclic', bool()}]}.
+%-spec check_type([d_type()], d_protection(), [{'cyclic', boolean()}]) ->
+%       	{d_protection(), [{'cyclic', boolean()}]}.
 
 check_type([acyclic|Ts], A, L) ->
     check_type(Ts, A,[{cyclic,false} | L]);
@@ -102,7 +102,7 @@ check_type(_, _, _) -> error.
 %%
 %% Set graph type
 %%
--spec set_type([{'cyclic', bool()}], digraph()) -> digraph().
+-spec set_type([{'cyclic', boolean()}], digraph()) -> digraph().
 
 set_type([{cyclic,V} | Ks], G) ->
     set_type(Ks, G#digraph{cyclic = V});
@@ -316,10 +316,10 @@ do_add_vertex({V, _Label} = VL, G) ->
 %%
 %% Collect either source or sink vertices.
 %%
-collect_vertices(#digraph{vtab=VT, ntab=NT}, Type) ->
-    Vs = ets:select(VT, [{{'$1', '_'}, [], ['$1']}]),
+collect_vertices(G, Type) ->
+    Vs = vertices(G),
     lists:foldl(fun(V, A) ->
-			case ets:member(NT, {Type, V}) of
+			case ets:member(G#digraph.ntab, {Type, V}) of
 			    true -> A;
 			    false -> [V|A]
 			end
@@ -343,7 +343,7 @@ do_del_nedges([{_, E}|Ns], G) ->
 	[{E, V1, V2, _}] ->
 	    do_del_edge(E, V1, V2, G),
 	    do_del_nedges(Ns, G);
-	[] ->
+	[] -> % cannot happen
 	    do_del_nedges(Ns, G)
     end;
 do_del_nedges([], #digraph{}) -> true.
@@ -376,13 +376,13 @@ rm_edges(_, _) -> true.
 -spec rm_edge(vertex(), vertex(), digraph()) -> 'ok'.
 
 rm_edge(V1, V2, G) ->
-    Ns = ets:lookup(G#digraph.ntab, {out, V1}),
-    rm_edge_0(Ns, V1, V2, G).
+    Es = out_edges(G, V1),
+    rm_edge_0(Es, V1, V2, G).
     
-rm_edge_0([{_, E}|Es], V1, V2, G) ->
+rm_edge_0([E|Es], V1, V2, G) ->
     case ets:lookup(G#digraph.etab, E) of
 	[{E, V1, V2, _}]  ->
-	    ets:delete(G#digraph.etab, E),
+            do_del_edge(E, V1, V2, G),
 	    rm_edge_0(Es, V1, V2, G);
 	_ ->
 	    rm_edge_0(Es, V1, V2, G)
@@ -401,11 +401,23 @@ do_add_edge({E, V1, V2, Label}, G) ->
 	true  ->
 	    case ets:member(G#digraph.vtab, V2) of
 		false -> {error, {bad_vertex, V2}};
-		true when G#digraph.cyclic =:= false ->
-		    acyclic_add_edge(E, V1, V2, Label, G);
-		true ->
-		    do_insert_edge(E, V1, V2, Label, G)
+                true ->
+                    case other_edge_exists(G, E, V1, V2) of
+                        true -> {error, {bad_edge, [V1, V2]}};
+                        false when G#digraph.cyclic =:= false ->
+                            acyclic_add_edge(E, V1, V2, Label, G);
+                        false ->
+                            do_insert_edge(E, V1, V2, Label, G)
+                    end
 	    end
+    end.
+
+other_edge_exists(#digraph{etab = ET}, E, V1, V2) ->
+    case ets:lookup(ET, E) of
+        [{E, Vert1, Vert2, _}] when Vert1 =/= V1; Vert2 =/= V2 ->
+            true;
+        _ ->
+            false
     end.
 
 -spec do_insert_edge(edge(), vertex(), vertex(), label(), digraph()) -> edge().
@@ -436,7 +448,7 @@ del_path(G, V1, V2) ->
     case get_path(G, V1, V2) of
 	false -> true;
 	Path ->
-	    rm_edges([V1|Path], G),
+	    rm_edges(Path, G),
 	    del_path(G, V1, V2)
     end.
 

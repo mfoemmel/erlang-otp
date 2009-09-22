@@ -18,7 +18,7 @@
 
 {application, test_server,
  [{description, "The OTP Test Server application"},
-  {vsn, "3.3.2"},
+  {vsn, "3.3.4"},
   {modules, [
 	     erl2html2,
 	     test_server_ctrl,
@@ -30,7 +30,7 @@
 	    ]},
   {registered, [test_server_ctrl,
 		test_server,
-		test_server_break_process]}
+		test_server_break_process]},
   {applications, [kernel,stdlib]},
   {env, []}]}.
   

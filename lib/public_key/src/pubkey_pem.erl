@@ -40,7 +40,7 @@
 
 -module(pubkey_pem).
 
--export([read_file/1, read_file/2, write_file/2]).
+-export([read_file/1, read_file/2, write_file/2, decode/2]).
 -export([decode_key/2]).
 
 -define(ENCODED_LINE_LENGTH, 64).
@@ -53,8 +53,7 @@ read_file(File) ->
 
 read_file(File, Passwd) ->
     {ok, Bin} = file:read_file(File),
-    Result = decode_file(split_bin(Bin), Passwd),    
-    Result.
+    decode(Bin, Passwd).
 
 write_file(File, Ds) ->
     file:write_file(File, encode_file(Ds)).
@@ -63,6 +62,9 @@ decode_key({_Type, Bin, not_encrypted}, _) ->
     Bin;
 decode_key({_Type, Bin, {Chipher,Salt}}, Password) ->
     decode_key(Bin, Password, Chipher, Salt).
+
+decode(Bin, Passwd) ->
+    decode_file(split_bin(Bin), Passwd).
 
 %%--------------------------------------------------------------------
 %%% Internal functions

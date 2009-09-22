@@ -44,7 +44,7 @@ start(CertOpts) ->
 
     %% Accept
     {ok, ASock} = ssl:transport_accept(LSock),
-    ok = ssl:ssl_accept(LSock),
+    ok = ssl:ssl_accept(ASock),
     io:fwrite("Accept: accepted.~n"),
     {ok, Cert} = ssl:peercert(ASock, CertOpts),
     io:fwrite("Accept: peer cert:~n~p~n", [Cert]),

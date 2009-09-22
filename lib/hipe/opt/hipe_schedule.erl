@@ -151,13 +151,13 @@ chain_i(N,[{M,_}|Xs],DAG) ->
 
 zero_latency() -> 0.
 
-lookup_instr([{N,I}|_],N) -> I;
-lookup_instr([_|Xs],N) -> lookup_instr(Xs,N).
+lookup_instr([{N,I}|_], N) -> I;
+lookup_instr([_|Xs], N) -> lookup_instr(Xs, N).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : block
-%% Argument    : Instrs - [Instr] , list of all the instructions in a basic
-%%                                  block.
+%% Argument    : Instrs - [Instr], list of all the instructions in a basic
+%%                                 block.
 %% Returns     : A new scheduled block
 %% Description : Schedule a basic block
 %%
@@ -171,25 +171,23 @@ lookup_instr([_|Xs],N) -> lookup_instr(Xs,N).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Don't fire up the scheduler if there's no work to do.
-block(_,[]) ->
+block(_, []) ->
     [];
-block(_L,[I]) -> 
+block(_L, [I]) -> 
     case hipe_sparc:is_any_branch(I) of
 	true -> [hipe_sparc:nop_create(), I];
 	false -> [I]
     end;
-block(_L,Blk) ->
+block(_L, Blk) ->
     IxBlk = indexed_bb(Blk),
-    case length(IxBlk) =:= 1 of % have to check length again, because comments
-	true ->                 % and nops can have been removed.
-	    {_N,I} = hd(IxBlk),
+    case IxBlk of
+	[{_N, I}] -> % comments and nops may have been removed.
 	    case hipe_sparc:is_any_branch(I) of
 		true -> [hipe_sparc:nop_create(), I];
 		false -> [I]
 	    end;
-	false ->
-	    {DAG, Preds} = deps(IxBlk),
-	    Sch = bb(IxBlk,{DAG, Preds}),
+	_ ->
+	    Sch = bb(IxBlk, {DAG, _Preds} = deps(IxBlk)),
 	    {NewSch, NewIxBlk} = fill_delays(Sch, IxBlk, DAG),
 	    X = finalize_block(NewSch, NewIxBlk),
 	    debug1_stuff(Blk, DAG, IxBlk, Sch, X),
@@ -729,8 +727,7 @@ deps(IxBB) ->
                          % number of predeccessors...
     {_DepTab,DAG1} = dd(IxBB, DAG),
     DAG2 = md(IxBB, DAG1),
-    DAG3 = cd(IxBB, DAG2),     
-    DAG3.
+    cd(IxBB, DAG2).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : empty_dag
@@ -1219,7 +1216,7 @@ st_overlap(N, {hp,Dst,Off}, { St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
 %% Description : Adds dependencies for overlapping laods
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 ld_overlap(N, {sp,Off}, {St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
-    DepSt =  sp_dep_only(St_Sp,Off),
+    DepSt = sp_dep_only(St_Sp, Off),
     {DepSt, {St_Sp, St_Hp, [{N,Off}|Ld_Sp], Ld_Hp}};
 ld_overlap(N, {hp,Src,Off}, {St_Sp, St_Hp, Ld_Sp, Ld_Hp}) ->
     DepSt = hp_dep_only(St_Hp, Src, Off),
@@ -1258,11 +1255,11 @@ ld_hp_dep(Loads, {Reg, Off}) ->
 %% Description : Returns {Dependent, Independent} which are lists of nodes
 %%               that depends or not on a stack load/store
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-sp_dep([],_Off,Dep,Indep) -> {Dep,Indep};
-sp_dep([{N,Off}|Xs],Off,Dep,Indep) ->
-    sp_dep(Xs,Off,[N|Dep],Indep);
-sp_dep([X|Xs],Off,Dep,Indep) ->
-    sp_dep(Xs,Off,Dep,[X|Indep]).
+sp_dep([], _Off, Dep, Indep) -> {Dep, Indep};
+sp_dep([{N,Off}|Xs], Off, Dep, Indep) ->
+    sp_dep(Xs, Off, [N|Dep], Indep);
+sp_dep([X|Xs], Off, Dep, Indep) ->
+    sp_dep(Xs, Off, Dep, [X|Indep]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : hp_dep
@@ -1296,11 +1293,11 @@ sp_dep_only(Stores, Off) ->
 %%
 %% (As said before, it might be possible to lighten this restriction?)
 
-hp_dep_only([],_Reg,_Off) -> [];
-hp_dep_only([{_N,Reg,Off_1}|Xs],Reg,Off) when Off_1 =/= Off ->
-    hp_dep_only(Xs,Reg,Off);
-hp_dep_only([{N,_,_}|Xs],Reg,Off) ->
-    [N|hp_dep_only(Xs,Reg,Off)].
+hp_dep_only([], _Reg, _Off) -> [];
+hp_dep_only([{_N,Reg,Off_1}|Xs], Reg, Off) when Off_1 =/= Off ->
+    hp_dep_only(Xs, Reg, Off);
+hp_dep_only([{N,_,_}|Xs], Reg, Off) ->
+    [N|hp_dep_only(Xs, Reg, Off)].
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Control dependences:
@@ -1338,9 +1335,9 @@ cd([{N,I}|Xs], DAG, PrevBr, PrevUnsafe, PrevOthers) ->
 	    cd(Xs,NewDAG,{N,Ty},[],[]);
 	{unsafe,Ty} ->
 	    NewDAG = cd_unsafe_deps(PrevBr,N,Ty,DAG),
-	    cd(Xs,NewDAG,PrevBr,[{N,Ty}|PrevUnsafe],PrevOthers);
+	    cd(Xs, NewDAG, PrevBr, [{N,Ty}|PrevUnsafe], PrevOthers);
 	{other,_Ty} ->
-	    cd(Xs,DAG,PrevBr,PrevUnsafe,[N|PrevOthers])
+	    cd(Xs, DAG, PrevBr, PrevUnsafe, [N|PrevOthers])
    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1403,26 +1400,26 @@ cd_type(I) ->
 %% Description : Adds arcs between branches and calls deps_to_unsafe that adds
 %%               arcs between branches and unsafe ops.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-cd_branch_deps(PrevBr,PrevUnsafe,N,Ty,DAG) ->
+cd_branch_deps(PrevBr, PrevUnsafe, N, Ty, DAG) ->
     DAG1 = case PrevBr of
 	       none ->
 		   DAG;
 	       {Br,BrTy} ->
 		   dep_arc(Br,
 			   hipe_target_machine:br_br_latency(BrTy,Ty),
-			   N,DAG)
+			   N, DAG)
 	   end,
-    deps_to_unsafe(PrevUnsafe,N,Ty,DAG1).
+    deps_to_unsafe(PrevUnsafe, N, Ty, DAG1).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : deps_to_unsafe
 %% Description : Adds dependencies between unsafe's and branches
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-deps_to_unsafe([],_,_,DAG) -> DAG;
-deps_to_unsafe([{M,UTy}|Us],N,Ty,DAG) ->
+deps_to_unsafe([], _, _, DAG) -> DAG;
+deps_to_unsafe([{M,UTy}|Us], N, Ty, DAG) ->
     deps_to_unsafe(Us,N,Ty,
-		   dep_arc(M,hipe_target_machine:unsafe_to_br_latency(UTy,Ty),
-			   N,DAG)).
+		   dep_arc(M, hipe_target_machine:unsafe_to_br_latency(UTy,Ty),
+			   N, DAG)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : cd_unsafe_deps

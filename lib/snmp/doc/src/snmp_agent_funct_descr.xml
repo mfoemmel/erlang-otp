@@ -924,6 +924,12 @@ snmpa:send_trap(Agent, Notification, Community [, Receiver, Varbinds])
   <section>
     <title>Discovery</title>
     <marker id="discovery"></marker>
+    <p>The <em>sender</em> is <em>authoritative</em> for messages containing
+      payload which does <em>not</em> expect a response (for example 
+      SNMPv2-Trap, Response or Report PDU). </p>
+    <p>The <em>receiver</em> is <em>authoritative</em> for messages containing
+      payload which expects a response (for example 
+      Get, GetNext, Get-Bulk, Set or Inform PDU). </p>
     <p>The agent can both perform and respond to discovery.</p>
     <p>The agent responds to discovery autonomously, without interaction
       by the user. </p> 

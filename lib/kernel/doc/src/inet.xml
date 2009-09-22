@@ -519,9 +519,10 @@ fe80::204:acff:fe17:bf38
                 <p>Packets consist of a header specifying the number of
                   bytes in the packet, followed by that number of bytes.
                   The length of header can be one, two, or four bytes;
-                  the order of the bytes is big-endian. Each send
-                  operation will generate the header, and the header
+                  containing an unsigned integer in big-endian byte order.
+                  Each send operation will generate the header, and the header
                   will be stripped off on each receive operation.</p>
+                <p>In current implementation the 4-byte header is limited to 2Gb.</p>
               </item>
               <tag><c>asn1 | cdr | sunrm | fcgi | tpkt | line</c></tag>
               <item>

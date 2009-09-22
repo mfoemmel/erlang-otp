@@ -484,8 +484,20 @@ int erts_unregister_name(Process *c_p,
 
     reg_safe_write_lock(c_p, &current_c_p_locks);
 #endif
-    
+
     r.name = name;
+    if (is_non_value(name)) {
+	/* Unregister current process name */
+	ASSERT(c_p);
+	if (c_p->reg)
+	    r.name = c_p->reg->name;
+	else {
+	    /* Name got unregistered while main lock was released */
+	    res = 0;
+	    goto done;
+	}
+    }
+
     if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) != NULL) {
 	if (rp->pt) {
 #ifdef ERTS_SMP
@@ -503,7 +515,7 @@ int erts_unregister_name(Process *c_p,
 			erts_smp_proc_unlock(c_p, current_c_p_locks);
 			current_c_p_locks = 0;
 		    }
-		    reg_read_unlock();
+		    reg_write_unlock();
 		    port = erts_id2port(id, NULL, 0);
 		    goto restart;
 		}
@@ -514,7 +526,7 @@ int erts_unregister_name(Process *c_p,
 	    rp->pt->reg = NULL;
 	    
 	    if (IS_TRACED_FL(port, F_TRACE_PORTS)) {
-		trace_port(port, am_unregister, name);
+		trace_port(port, am_unregister, r.name);
 	    }
 
 	} else if (rp->p) {
@@ -534,12 +546,14 @@ int erts_unregister_name(Process *c_p,
 		erts_smp_proc_unlock(rp->p, ERTS_PROC_LOCK_MAIN);
 #endif
 	    if (IS_TRACED_FL(p, F_TRACE_PROCS)) {
-		trace_proc(c_p, p, am_unregister, name);
+		trace_proc(c_p, p, am_unregister, r.name);
 	    }
 	}
 	hash_erase(&process_reg, (void*) &r);
 	res = 1;
     }
+
+ done:
 
     reg_write_unlock();
     if (c_prt != port) {

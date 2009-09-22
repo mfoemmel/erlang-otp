@@ -356,9 +356,14 @@ nbif_3_gc_after_bif:
  * exceptional condition.
  * The stack/heap registers were just read from P.
  */
+	.global nbif_0_simple_exception
 	.global	nbif_1_simple_exception
 	.global	nbif_2_simple_exception
 	.global	nbif_3_simple_exception
+	.align	4
+nbif_0_simple_exception:
+	xorl	%eax, %eax
+	jmp	.nbif_simple_exception
 	.align	4
 nbif_1_simple_exception:
 	movl	$1, %eax
@@ -394,10 +399,6 @@ nbif_3_simple_exception:
 	 * - the BIF's arity is in %rax
 	 * - the native heap/stack/reds registers are saved in P
 	 */
-	.global	nbif_0_trap_exception
-	.align	4
-nbif_0_trap_exception:
-	xorl	%eax, %eax
 .handle_trap:
 	movq	%rax, P_NARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax

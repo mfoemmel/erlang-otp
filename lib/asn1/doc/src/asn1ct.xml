@@ -34,10 +34,10 @@
   <module>asn1ct</module>
   <modulesummary>ASN.1 compiler and compile-time support functions</modulesummary>
   <description>
-    <p>The ASN.1 compiler takes an ASN.1 module as input and genarates a 
-      corresponding Erlang module which can encode and decode the datatypes
+    <p>The ASN.1 compiler takes an ASN.1 module as input and generates a 
+      corresponding Erlang module which can encode and decode the data-types
       specified. Alternatively the compiler takes a specification module 
-      (se below) specifying all input modules and generates one module with 
+      (see below) specifying all input modules and generates one module with 
       encode/decode functions. There are also some generic functions which
       can be used in during development of applications which handles ASN.1
       data (encoded as BER or PER).</p>
@@ -49,8 +49,11 @@
       <fsummary>Compile an ASN.1 module and generate encode/decode functions according to the encoding rules BER or PER.</fsummary>
       <type>
         <v>Asn1module = atom() | string()</v>
-        <v>Options = [Option]</v>
-        <v>Option = ber | per | ber_bin | per_bin | uper_bin | der | compact_bit_string | noobj | {outdir,Dir} | {i,IncludeDir} | optimize | driver | asn1config | undec_rest | {inline,OutputName} | inline</v>
+        <v>Options = [Option| OldOption]</v>
+        <v>Option = ber_bin | per_bin | uper_bin | der | compact_bit_string | 
+	noobj | {n2n,EnumTypeName} |{outdir,Dir} | {i,IncludeDir} | optimize | 
+	driver | asn1config | undec_rest | {inline,OutputName} | inline</v>
+        <v>OldOption = ber | per</v> 
         <v>Reason = term()</v>
       </type>
       <desc>
@@ -71,7 +74,7 @@
           involved files in a configuration file. This configuration
           file must have a double extension ".set.asn", (".asn" can
           alternatively be ".asn1" or ".py"). The input files' names
-          must be listed, within qoutation marks (""), one at each row
+          must be listed, within quotation marks (""), one at each row
           in the file. If the input files are <c>File1.asn</c>,
           <c>File2.asn</c> and <c>File3.asn</c> the configuration file
           shall look like:</p>
@@ -82,68 +85,108 @@ File3.asn        </pre>
         <p>The output files will in this case get their names from the
           configuration file. If the configuration file has the name
           <c>SetOfFiles.set.asn</c> the name of the output files will be
-          <c>SetOfFiles.hrl, SetOfFiles.hrl and SetOfFiles.asn1db</c>.</p>
+          <c>SetOfFiles.hrl, SetOfFiles.erl and SetOfFiles.asn1db</c>.</p>
         <p>Sometimes in a system of ASN.1 modules there are different
           default tag modes, e.g. AUTOMATIC, IMPLICIT or EXPLICIT. The
           multi file compilation resolves the default tagging as if
-          the modules were compiled separetely.</p>
-        <p>Another unwanted effect that may occure in multi file compilation
+          the modules were compiled separately.</p>
+        <p>Another unwanted effect that may occur in multi file compilation
           is name collisions. The compiler solves this problem in two
           ways: If the definitions are identical then the output module
           keeps only one definition with the original name. But if
           definitions only have same name and differs in the definition, 
           then they will be renamed. The new names will be the definition
           name and the original module name concatenated.</p>
-        <p>If any name collision have occured the compiler reports a 
+        <p>If any name collision have occurred the compiler reports a 
           "NOTICE: ..." message that tells if a definition was renamed,
           and the new name that must be used to encode/decode data.</p>
-        <p><c>Options</c> is a list with options specific for the asn1
-        compiler and options that are applied to the Erlang compiler.
-        The latter are those that not is recognized as asn1 specific.
-        For <em>preferred option use</em> see <seealso
-        marker="asn1_ug#preferred option use">Preferred Option Use
-        section in users guide</seealso>. Available options are:</p>
-        <taglist>
+
+        <p>
+	  <c>Options</c> is a list with options specific for the asn1
+	  compiler and options that are applied to the Erlang compiler.
+	  The latter are those that not is recognized as asn1 specific.
+	  For <em>preferred option use</em> see <seealso
+	  marker="asn1_ug#preferred option use">Preferred Option Use
+	  section in users guide</seealso>. Available options are:
+	</p>
+	<taglist>
           <tag><c>ber | ber_bin | per | per_bin | uper_bin</c></tag>
           <item>
-            <p>The encoding rule to be used. EncodingRule is BER or
-            PER with the variants <c>aligned</c> or
-            <c>unaligned</c>. If this option is omitted <c>ber</c> is
-            the default. The <c>per</c> option means the aligned
-            variant. To use the unaligned variant the <c>uper_bin</c>
-            option has to be used.</p>
-	    <p>The generated Erlang module always gets the same name
-	    as the ASN.1 module and as a consequence of this only one
-	    encoding rule per ASN.1 module can be used at runtime.</p>
-            <p>The <c>ber_bin</c> and <c>per_bin</c> options are
-            equivalent with the <c>ber</c> and <c>per</c> options with
-            the difference that the generated encoding/decoding
-            functions take advantage of the bit syntax, which in most
-            cases increases the performance considerably. The result
-            from encoding is a binary or a list (mayby nested) with
-            Erlang terms, including binaries.</p>
+            <p>
+	      The encoding rule to be used. The supported encoding rules
+	      are BER (Basic Encoding Rules), 
+	      PER aligned (Packed Encoding Rules) and PER unaligned. 
+	      If the encoding rule option is omitted <c>ber</c> 
+	      is the default.
+	      The <c>per_bin</c> option means the aligned
+	      variant. To use the unaligned variant the <c>uper_bin</c>
+	      option has to be used.
+	    </p>
+	    <p>
+	      The generated Erlang module always gets the same name
+	      as the ASN.1 module and as a consequence of this only one
+	    encoding rule per ASN.1 module can be used at runtime.
+	    </p>
+	    <p>
+	      The <c>ber_bin</c> and <c>per_bin</c> options are
+	      equivalent with the <c>OldOptions</c> <c>ber</c> and <c>per</c>
+	      with the difference that the generated encoding/decoding
+	      functions take advantage of the bit syntax, which in most
+	      cases increases the performance considerably. The result
+	      from encoding is a binary or an iolist.
+	    </p>
           </item>
           <tag><c>der</c></tag>
           <item>
-            <p>By this option the Distinguished Encoding Rule (DER) is chosed.
-              DER is regarded as a specialized variant of the BER encoding 
-              rule, therefore the <c>der</c> option only makes sense when
-              the <c>ber</c> or <c>ber_bin</c> option is used. This option
+            <p>
+	      By this option the Distinguished Encoding Rules (DER) is chosen.
+	      DER is regarded as a specialized variant of the BER encoding 
+              rule, therefore the <c>der</c> option only makes sense together
+	      with the <c>ber</c> or <c>ber_bin</c> option. 
+	      This option
               sometimes adds sorting and value checks when encoding, which
-              implies a slower encoding. The decoding rutines are the same
-              as for <c>ber</c>.</p>
+              implies a slower encoding. The decoding routines are the same
+              as for <c>ber</c>.
+	    </p>
           </item>
           <tag><c>compact_bit_string</c></tag>
           <item>
-            <p>Makes it possible to use a compact notation for values
-              of the BIT STRING type in Erlang. The notation: </p>
+            <p>
+	      Makes it possible to use a compact notation for values
+              of the BIT STRING type in Erlang. The notation: 
+	    </p>
             <pre>
 BitString = {Unused,Binary},
 Unused = integer(),
-Binary = binary()            </pre>
-            <p><c>Unused</c> must be a number in the range 0 to 7. It
-              tells how many bits in the least significant byte in
-              <c>Binary</c> that is unused. For details see <seealso marker="asn1_ug#BIT STRING">BIT STRING type section in users guide</seealso>.</p>
+Binary = binary()            
+	    </pre>
+            <p>
+	      <c>Unused</c> must be a number in the range 0 to 7. It
+	      tells how many bits in the least significant byte in
+	      <c>Binary</c> that is unused. 
+	      For details see 
+	      <seealso marker="asn1_ug#BIT STRING">
+		BIT STRING type section in users guide
+		</seealso>.
+	    </p>
+	  </item>
+          <tag><c>{n2n,EnumTypeName}</c></tag>
+          <item>
+            <p>
+	      Tells the compiler to generate functions for conversion between
+	      names (as atoms) and numbers and vice versa for the EnumTypeName specified. There can be multiple occurrences of this option in order to specify several type names. The type names must be declared as ENUMERATIONS in the ASN.1 spec.
+	      If the EnumTypeName does not exist in the ASN.1 spec the 
+	      compilation will stop with an error code.
+	      The generated conversion functions are named 
+	      <c>name2num_EnumTypeName/1</c> and 
+	      <c>num2name_EnumTypeName/1</c>.
+	    </p>
+          </item>
+          <tag><c>noobj</c></tag>
+          <item>
+            <p>Do not compile (i.e do not produce object code) the generated 
+              <c>.erl</c> file. If this option is omitted the generated Erlang module
+              will be compiled.</p>
           </item>
           <tag><c>{i,IncludeDir}</c></tag>
           <item>
@@ -154,12 +197,6 @@ Binary = binary()            </pre>
               <c>.asn1db</c> file is found the asn1 source file is
               parsed.  Several <c>{i,IncludeDir}</c> can be given.
               </p>
-          </item>
-          <tag><c>noobj</c></tag>
-          <item>
-            <p>Do not compile (i.e do not produce object code) the generated 
-              <c>.erl</c> file. If this option is omitted the generated Erlang module
-              will be compiled.</p>
           </item>
           <tag><c>{outdir,Dir}</c></tag>
           <item>
@@ -203,7 +240,7 @@ Binary = binary()            </pre>
           </item>
           <tag><c>undec_rest</c></tag>
           <item>
-            <p>A buffer that holds a message, beeing decoded may
+            <p>A buffer that holds a message, being decoded may
               also have some following bytes. Now it is possible to get
               those following bytes returned together with the decoded
               value. If an asn1 spec is compiled with this option a tuple
@@ -218,13 +255,13 @@ Binary = binary()            </pre>
               are provided in a target module Module.set.asn as described
               <seealso marker="#asn1set">above</seealso>. The name of the
               resulting module containing generated encode/decode functions
-              and inlined run-time functions will be
-              <c>OutputName.erl</c>. The merging/inlining of code is done
+              and in-lined run-time functions will be
+              <c>OutputName.erl</c>. The merging/in-lining of code is done
               by the <c>igor</c> module of <c>syntax_tools</c>. By default
               the functions generated from the first asn1 spec in the
               <c>.set.asn</c> are exported, unless a
               <c>{export,[atom()]}</c> or <c>{export_all,true}</c> option
-              are provided. The list of atoms are names of choosen asn1
+              are provided. The list of atoms are names of chosen asn1
               specs from the <c>.set.asn</c> file.</p>
           </item>
           <tag><c>inline</c></tag>
@@ -269,7 +306,7 @@ Binary = binary()            </pre>
           <c>Value</c>
           is a correct instance of <c>Type</c>. The length of strings is for example
           not always checked. Returns <c>{ok,Bytes}</c> if successful or 
-          <c>{error,Reason}</c> if an error occured.
+          <c>{error,Reason}</c> if an error occurred.
           </p>
       </desc>
     </func>
@@ -333,7 +370,7 @@ Binary = binary()            </pre>
         <code type="none">
 {ok,Value} = asn1ct:value(Module,Type),
 {ok,Bytes} = asn1ct:encode(Module,Type,Value),
-{ok,Value} = asn1:decode(Module,Type,Bytes).         </code>
+{ok,Value} = asn1ct:decode(Module,Type,Bytes).         </code>
       </desc>
     </func>
   </funcs>

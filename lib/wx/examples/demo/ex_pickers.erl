@@ -18,7 +18,7 @@
 
 -module(ex_pickers).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 %% Client API
 -export([start/1]).
@@ -65,6 +65,12 @@ do_init(Config) ->
     DatePicker = wxDatePickerCtrl:new(Panel, 4, []),
     ColourPicker = wxColourPickerCtrl:new(Panel, 5, []),
 
+    wxColourPickerCtrl:connect(ColourPicker, command_colourpicker_changed, []),
+    wxDirPickerCtrl:connect(DirPicker, command_dirpicker_changed, []),
+    wxFilePickerCtrl:connect(FilePicker, command_filepicker_changed, []),
+    wxFontPickerCtrl:connect(FontPicker, command_fontpicker_changed, []),
+    wxDatePickerCtrl:connect(DatePicker, date_changed, []),
+
     %% Add to sizers
     PickerOptions = [{border, 4},{flag, ?wxALL bor ?wxEXPAND}],
     wxSizer:add(DirPickerSizer, DirPicker, PickerOptions),
@@ -80,25 +86,10 @@ do_init(Config) ->
     wxSizer:add(MainSizer, DatePickerSizer, SizerOptions),
     wxSizer:add(MainSizer, ColourPickerSizer, SizerOptions),
 
-    wxColourPickerCtrl:connect(ColourPicker, command_colourpicker_changed, []),
-    wxDirPickerCtrl:connect(DirPicker, command_dirpicker_changed, []),
-    wxFilePickerCtrl:connect(FilePicker, command_filepicker_changed, []),
-    wxFontPickerCtrl:connect(FontPicker, command_fontpicker_changed, []),
-    wxDatePickerCtrl:connect(DatePicker, date_changed, []),
-
     wxPanel:setSizer(Panel, MainSizer),
     {Panel, #state{parent=Panel, config=Config}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
-    {reply,{error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxFontPicker{font = Font}}, State = #state{}) ->
     demo:format(State#state.config, "Font changed to ~p.\n", [Font]),
@@ -123,6 +114,15 @@ handle_event(#wx{event = #wxDate{date = Date}},
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config, "Got Event ~p\n", [Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n", [Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config, "Got Call ~p\n", [Msg]),
+    {reply,{error, nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

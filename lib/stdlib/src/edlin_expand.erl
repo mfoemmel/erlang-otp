@@ -22,7 +22,7 @@
 
 -export([expand/1, format_matches/1]).
 
--import(lists, [reverse/1, nthtail/2, keysearch/3, prefix/2]).
+-import(lists, [reverse/1, nthtail/2, prefix/2]).
 
 %% expand(CurrentBefore) ->
 %%	{yes, Expansion, Matches} | {no, Matches}
@@ -50,8 +50,8 @@ expand_function_name(ModStr, FuncPrefix) ->
     case erlang:module_loaded(Mod) of
  	true ->
             L = Mod:module_info(),
- 	    case keysearch(exports, 1, L) of
- 		{value, {_, Exports}} ->
+ 	    case lists:keyfind(exports, 1, L) of
+ 		{_, Exports} ->
  		    match(FuncPrefix, Exports, "(");
  		_ ->
  		    {no, [], []}
@@ -63,7 +63,7 @@ expand_function_name(ModStr, FuncPrefix) ->
 match(Prefix, Alts, Extra) ->
     Len = length(Prefix),
     Matches = [{S, A} || {H, A} <- Alts, prefix(Prefix, S=atom_to_list(H))],
-    case longest_common_head([N || {N,_} <- Matches]) of
+    case longest_common_head([N || {N, _} <- Matches]) of
  	{partial, []} ->
  	    {no, [], Matches}; % format_matches(Matches)};
  	{partial, Str} ->
@@ -82,11 +82,10 @@ match(Prefix, Alts, Extra) ->
 %% Return the list of names L in multiple columns.
 format_matches(L) ->
     S = format_col(lists:sort(L), []),
-    Res = ["\n" | S],
-    Res.
+    ["\n" | S].
 
 format_col([], _) -> [];
-format_col(L, Acc)  -> format_col(L, field_width(L), 0, Acc).
+format_col(L, Acc) -> format_col(L, field_width(L), 0, Acc).
 
 format_col(X, Width, Len, Acc) when Width + Len > 79 ->
     format_col(X, Width, 0, ["\n" | Acc]);
@@ -99,7 +98,7 @@ format_col([A|T], Width, Len, Acc0) ->
 	    {H1, _} -> H1;
  	    H2 -> H2
  	end,
-    Acc = [io_lib:format("~-*s",[Width,H]) | Acc0],
+    Acc = [io_lib:format("~-*s", [Width,H]) | Acc0],
     format_col(T, Width, Len+Width, Acc);
 format_col([], _, _, Acc) ->
     lists:reverse(Acc, "\n").

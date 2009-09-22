@@ -35,7 +35,9 @@
 %% Create a brand new empty process group with the master residing 
 %% at the local node
 
-create(PgName)    -> 
+-spec create(term()) -> 'ok' | {'error', term()}.
+
+create(PgName) -> 
     catch begin check(PgName),
     Pid = spawn(pg,master,[PgName]),
     global:register_name(PgName,Pid),
@@ -44,25 +46,29 @@ create(PgName)    ->
 %% Create a brand new empty process group with the master 
 %% residing at Node
 
-create(PgName,Node)    -> 
+-spec create(term(), node()) -> 'ok' | {'error', term()}.
+
+create(PgName, Node) ->
     catch begin check(PgName),
     Pid = spawn(Node,pg,master,[PgName]),
     global:register_name(PgName,Pid),
     ok end.
 
-%% Have a process on Node that will act as a standby for
-%% the process group manager. So if the node where the
-%% manager runs fails, the process group will continue 
-%% to function.
+%% Have a process on Node that will act as a standby for the process
+%% group manager. So if the node where the manager runs fails, the
+%% process group will continue to function.
+
+-spec standby(term(), node()) -> 'ok'.
 
 standby(_PgName, _Node) ->
     ok.
 
-
 %% Tell process group PgName that Pid is a new member of the group
 %% synchronously return a list of all old members in the group
 
-join(PgName,Pid)  when is_atom(PgName) -> 
+-spec join(atom(), pid()) -> [pid()].
+
+join(PgName, Pid) when is_atom(PgName) -> 
     global:send(PgName, {join,self(),Pid}),
     receive
 	{_P,{members,Members}} ->
@@ -71,21 +77,30 @@ join(PgName,Pid)  when is_atom(PgName) ->
 
 %% Multi cast Mess to all members in the group
 
-send(PgName,Mess) when is_atom(PgName) ->
-    global:send(PgName, {send, self(), Mess});
-send(Pg,Mess) when is_pid(Pg) ->
-    Pg ! {send,self(),Mess}.
+-spec send(atom() | pid(), term()) -> 'ok'.
 
+send(PgName, Mess) when is_atom(PgName) ->
+    global:send(PgName, {send, self(), Mess}),
+    ok;
+send(Pg, Mess) when is_pid(Pg) ->
+    Pg ! {send,self(),Mess},
+    ok.
 
 %% multi cast a message to all members in the group but ourselves
 %% If we are a member
 
-esend(PgName,Mess) when is_atom(PgName) ->
-    global:send(PgName,{esend,self(),Mess});
-esend(Pg,Mess) when is_pid(Pg) ->
-    Pg ! {esend,self(),Mess}.
+-spec esend(atom() | pid(), term()) -> 'ok'.
+
+esend(PgName, Mess) when is_atom(PgName) ->
+    global:send(PgName, {esend,self(),Mess}),
+    ok;
+esend(Pg, Mess) when is_pid(Pg) ->
+    Pg ! {esend,self(),Mess},
+    ok.
 
 %% Return the members of the group
+
+-spec members(atom() | pid()) -> [pid()].
 
 members(PgName) when is_atom(PgName) ->
     global:send(PgName, {self() ,members}),
@@ -100,12 +115,16 @@ members(Pg) when is_pid(Pg) ->
 	    Members
     end.
 
+-spec name_to_pid(atom()) -> pid() | 'undefined'.
+
 name_to_pid(PgName) when is_atom(PgName) ->
     global:whereis_name(PgName).
 
+-spec master(term()) -> no_return().
+
 master(PgName) ->
-    process_flag(trap_exit,true),
-    master_loop(PgName,[]).
+    process_flag(trap_exit, true),
+    master_loop(PgName, []).
 
 master_loop(PgName,Members) ->
     receive
@@ -134,14 +153,13 @@ master_loop(PgName,Members) ->
 		    false ->
 			Members
 		end,
-	    master_loop(PgName,L)
-	    
+	    master_loop(PgName,L)  
     end.
 
-send_all([],_) -> done;
-send_all([P|Tail],M) ->
+send_all([], _) -> ok;
+send_all([P|Ps], M) ->
     P ! M,
-    send_all(Tail,M).
+    send_all(Ps, M).
 
 %% Check if the process group already exists
 
@@ -152,7 +170,3 @@ check(PgName) ->
         undefined ->
 	    ok
     end.
-	    
-		    
-	    
-

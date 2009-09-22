@@ -385,7 +385,7 @@ decode(profile, Package) ->
     decode_profile(Package);
 decode(dialplan, Dialplan) ->
     decode_dialplan(Dialplan);
-decode(Scope, [A, B | Item]) when atom(Scope) ->
+decode(Scope, [A, B | Item]) when is_atom(Scope) ->
     ?d("decode(~p) -> entry with"
        "~n   A:    ~p"
        "~n   B:    ~p"
@@ -398,7 +398,7 @@ decode(Scope, [A, B | Item]) when atom(Scope) ->
  	    ?d("decode -> Package: ~p", [Package]),
 	    Package ++ "/" ++ decode_item(Scope, [A, B], Item)
     end;
-decode({Scope, [A, B | Item]}, SubItem) when atom(Scope) ->
+decode({Scope, [A, B | Item]}, SubItem) when is_atom(Scope) ->
     ?d("decode(~p) -> entry with"
        "~n   A:       ~p"
        "~n   B:       ~p"
@@ -433,7 +433,7 @@ decode_item(Scope, [A, B], Item) ->
             end;
         16#ff ->
             case B of
-                16#ff when Item == [16#ff, 16#ff] -> "*"
+                16#ff when Item =:= [16#ff, 16#ff] -> "*"
             end
     end.
 
@@ -511,7 +511,7 @@ encode(profile, Profile) ->
     encode_profile(Profile);
 encode(dialplan, Dialplan) ->
     encode_dialplan(Dialplan);
-encode(Scope, PackageItem) when atom(Scope) ->
+encode(Scope, PackageItem) when is_atom(Scope) ->
     ?d("encode(~p) -> entry with"
        "~n   PackageItem: ~p", [Scope, PackageItem]),
     case string:tokens(PackageItem, [$/]) of
@@ -524,7 +524,7 @@ encode(Scope, PackageItem) when atom(Scope) ->
 	    ?d("encode -> Item: ~p", [Item]),
 	    [16#00, 16#00 | encode_native(Scope, Item)]
     end;
-encode({Scope, PackageItem}, SubItem) when atom(Scope) ->
+encode({Scope, PackageItem}, SubItem) when is_atom(Scope) ->
     ?d("encode(~p) -> entry with"
        "~n   PackageItem: ~p"
        "~n   SubItem:     ~p", [Scope, PackageItem, SubItem]),

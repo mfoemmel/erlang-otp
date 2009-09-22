@@ -80,7 +80,7 @@ start_link(Prio, NoteStore, MasterAgent, Opts) ->
     
 info(Pid) ->
     case call(Pid, info) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    Info;
 	_ ->
 	    []
@@ -312,16 +312,6 @@ loop(S) ->
 	    NewS = handle_send_discovery(S, Pdu, MsgData, To, From),
 	    loop(NewS);
 
-%% 	{send_discovery, Pdu, MsgData, Timeout, To, From} ->
-%% 	    ?vdebug("send pdu request: "
-%% 		    "~n   Pdu:  ~p"
-%% 		    "~n   Timeout: ~p"
-%% 		    "~n   To:   ~p"
-%% 		    "~n   From: ~p", 
-%% 		    [Pdu, Timeout, To, toname(From)]),
-%% 	    NewS = handle_send_discovery(S, Pdu, MsgData, To, From),
-%% 	    loop(NewS);
-
 	{discarded_pdu, _Vsn, ReqId, _ACMData, Variable, _Extra} ->
 	    ?vdebug("discard PDU: ~p", [Variable]),
 	    snmpa_mpd:discarded_pdu(Variable),
@@ -390,7 +380,7 @@ loop(S) ->
 		end,
 	    loop(NewS);
 
-	{'EXIT', Port, Reason} when port(Port) ->
+	{'EXIT', Port, Reason} when is_port(Port) ->
 	    error_msg("Exit message from port ~p for reason ~p~n", 
 		      [Port, Reason]),
 	    loop(S);
@@ -479,9 +469,10 @@ maybe_handle_recv(#state{filter = FilterMod} = S,
 
 handle_discovery_response(_Ip, _Port, #pdu{request_id = ReqId} = Pdu, 
 			  ManagerEngineId, 
-			  #state{reqs = Reqs} = S) ->
+			  #state{usock = Sock, reqs = Reqs} = S) ->
     case lists:keysearch(ReqId, 1, S#state.reqs) of
 	{value, {_, Pid}} ->
+	    active_once(Sock),
 	    Pid ! {snmp_discovery_response_received, Pdu, ManagerEngineId},
 	    NReqs = lists:keydelete(ReqId, 1, Reqs),
 	    S#state{reqs = NReqs};
@@ -508,16 +499,14 @@ handle_recv(#state{usock      = Sock,
 	    handle_discovery_response(Ip, Port, Pdu, undefined, S);
 
 	{ok, Vsn, Pdu, PduMS, ACMData} ->
-	    ?vlog("got pdu"
-		"~n   ~s", 
-		[?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
+	    ?vlog("got pdu ~s", 
+		  [?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
 	    %% handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
 	    maybe_handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
 
 	{discarded, Reason} ->
-	    ?vlog("packet discarded for reason: "
-		"~n   ~s",
-		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
+	    ?vlog("packet discarded for reason: ~s",
+		  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
 	    active_once(Sock),
 	    S;
 
@@ -833,8 +822,8 @@ udp_send(UdpId, AgentIp, UdpPort, B) ->
 	    ok
     end.
 
-sz(L) when list(L) -> length(L);
-sz(B) when binary(B) -> size(B);
+sz(L) when is_list(L) -> length(L);
+sz(B) when is_binary(B) -> size(B);
 sz(_) -> undefined.
 
 

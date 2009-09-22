@@ -82,7 +82,8 @@ format_timestamp({_N1, _N2, N3} = Now) ->
 
 process_args([], Acc) ->
     lists:reverse(Acc);
-process_args([{vapply, {M,F,A}}|T], Acc) when atom(M), atom(F), list(A) ->
+process_args([{vapply, {M,F,A}}|T], Acc) 
+  when is_atom(M) andalso is_atom(F) andalso is_list(A) ->
     process_args(T, [(catch apply(M,F,A))|Acc]);
 process_args([H|T], Acc) ->
     process_args(T, [H|Acc]).

@@ -19,7 +19,9 @@
 %%
 
 -module(hipe_ppc_ra_postconditions).
+
 -export([check_and_rewrite/3, check_and_rewrite2/3]).
+
 -include("hipe_ppc.hrl").
 
 check_and_rewrite(Defun, Coloring, Allocator) ->
@@ -221,10 +223,7 @@ temp_is_spilled(Temp, TempMap) ->
   case hipe_ppc:temp_is_allocatable(Temp) of
     true ->
       Reg = hipe_ppc:temp_reg(Temp),
-      case tuple_size(TempMap) > Reg of
-	true -> hipe_temp_map:is_spilled(Reg, TempMap);
-	false -> false
-      end;
+      tuple_size(TempMap) > Reg andalso hipe_temp_map:is_spilled(Reg, TempMap);
     false -> true
   end.
 

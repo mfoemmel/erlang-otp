@@ -33,9 +33,10 @@
 %% External exports
 -export([start/0, start_link/0, stop/0, reset/0, clear_cache/0]).
 -export([add_rr/1,add_rr/5,del_rr/4]).
--export([add_ns/1,add_ns/2, ins_ns/1, ins_ns/2, del_ns/1, del_ns/0]).
+-export([add_ns/1,add_ns/2, ins_ns/1, ins_ns/2,
+	 del_ns/2, del_ns/1, del_ns/0]).
 -export([add_alt_ns/1,add_alt_ns/2, ins_alt_ns/1, ins_alt_ns/2, 
-	 del_alt_ns/1, del_alt_ns/0]).
+	 del_alt_ns/2, del_alt_ns/1, del_alt_ns/0]).
 -export([add_search/1,ins_search/1,del_search/1, del_search/0]).
 -export([set_lookup/1, set_recurse/1]).
 -export([set_socks_server/1, set_socks_port/1, add_socks_methods/1,
@@ -43,6 +44,8 @@
 	 add_socks_noproxy/1, del_socks_noproxy/1]).
 -export([set_cache_size/1, set_cache_refresh/1]).
 -export([set_timeout/1, set_retry/1, set_inet6/1, set_usevc/1]).
+-export([set_edns/1, set_udp_payload_size/1]).
+-export([set_resolv_conf/1, set_hosts_file/1, get_hosts_file/0]).
 -export([tcp_module/0, set_tcp_module/1]).
 -export([udp_module/0, set_udp_module/1]).
 -export([sctp_module/0,set_sctp_module/1]).
@@ -57,11 +60,12 @@
 -export([add_resolv/1]).
 -export([add_rc/1, add_rc_bin/1, add_rc_list/1, get_rc/0]).
 
--export([res_option/1]).
+-export([res_option/1, res_option/2, res_check_option/2]).
 -export([socks_option/1]).
 -export([getbyname/2, get_searchlist/0]).
 -export([gethostbyaddr/1]).
 -export([res_gethostbyaddr/2,res_hostent_by_domain/3]).
+-export([res_update_conf/0, res_update_hosts/0]).
 %% inet help functions
 -export([tolower/1]).
 -ifdef(DEBUG).
@@ -70,17 +74,19 @@
 -define(dbg(Fmd, Args), ok).
 -endif.
 
--import(lists, [member/2, foreach/2, reverse/1, keydelete/3]).
+-include_lib("kernel/include/file.hrl").
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -record(state, 
-	{
-	 db,          %% resolver data
-	 cache,       %% bag of resource records
-	 hosts,       %% hosts table
-	 cache_timer  %% timer reference for refresh
+	{db,                %% resolver data
+	 cache,             %% bag of resource records
+	 hosts_byname,      %% hosts table
+	 hosts_byaddr,      %% hosts table
+	 hosts_file_byname, %% hosts table from system file
+	 hosts_file_byaddr, %% hosts table from system file
+	 cache_timer        %% timer reference for refresh
 	}).
 
 -include("inet.hrl").
@@ -88,7 +94,6 @@
 -include("inet_res.hrl").
 -include("inet_dns.hrl").
 -include("inet_config.hrl").
-
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -128,7 +133,7 @@ add_resolv(File) ->
 add_hosts(File) ->
     case inet_parse:hosts(File) of
 	{ok, Res} ->
-	    foreach(
+	    lists:foreach(
 	      fun({IP, Name, Aliases}) -> add_host(IP, [Name|Aliases]) end,
 	      Res);
 	Error -> Error
@@ -145,53 +150,57 @@ clear_hosts() -> call(clear_hosts).
 add_ns(IP) -> 
     add_ns(IP,?NAMESERVER_PORT).
 add_ns(IP,Port) ->
-    call({add_ns, IP, Port}).
+    call({listop, nameservers, add, {IP,Port}}).
 
 %% insert at head of name server list
 ins_ns(IP) ->
-    call({ins_ns, IP, ?NAMESERVER_PORT}).
+    ins_ns(IP, ?NAMESERVER_PORT).
 ins_ns(IP,Port) ->
-    call({ins_ns, IP,Port}).
+    call({listop, nameservers, ins, {IP,Port}}).
 
 %% delete this name server entry (delete all ns having this ip)
 del_ns(IP) -> 
-    call({del_ns, IP}).
+    del_ns(IP, ?NAMESERVER_PORT).
+del_ns(IP, Port) ->
+    call({listop, nameservers, del, {IP,Port}}).
 
 del_ns() -> 
-    call(del_ns).
+    call({listdel, nameservers}).
 
 %% ALTERNATIVE NAME SERVER
 %% add to the end of name server list
 add_alt_ns(IP) -> 
     add_alt_ns(IP, ?NAMESERVER_PORT).
 add_alt_ns(IP,Port) ->
-    call({add_alt_ns, IP,Port}).
+    call({listop, alt_nameservers, add, {IP,Port}}).
 
 %% insert at head of name server list
 ins_alt_ns(IP) -> 
     ins_alt_ns(IP, ?NAMESERVER_PORT).
 ins_alt_ns(IP,Port) ->
-    call({ins_alt_ns, IP,Port}).
+    call({listop, alt_nameservers, ins, {IP,Port}}).
 
 %% delete this name server entry
 del_alt_ns(IP) ->
-    call({del_alt_ns, IP}).
+    del_alt_ns(IP, ?NAMESERVER_PORT).
+del_alt_ns(IP, Port) ->
+    call({listop, alt_nameservers, del, {IP,Port}}).
 
 del_alt_ns() -> 
-    call(del_alt_ns).
+    call({listdel, alt_nameservers}).
 
 %% add this domain to the search list
 add_search(Domain) when is_list(Domain) -> 
-    call({add_search, Domain}).
+    call({listop, search, add, Domain}).
 
 ins_search(Domain) when is_list(Domain) ->
-    call({ins_search, Domain}).
+    call({listop, search, ins, Domain}).
 
 del_search(Domain) ->
-    call({del_search, Domain}).
+    call({listop, search, del, Domain}).
 
 del_search() ->
-    call(del_search).
+    call({listdel, search}).
 
 %% set host name used by inet
 %% Should only be used by inet_config at startup!
@@ -199,23 +208,32 @@ set_hostname(Name) ->
     call({set_hostname, Name}).
 
 %% set default domain
-set_domain(Domain) ->
-    call({set_domain, Domain}).
+set_domain(Domain) -> res_option(domain, Domain).
 
 %% set lookup methods
-set_lookup(Methods) ->
-    call({set_lookup, Methods}).
+set_lookup(Methods) -> res_option(lookup, Methods).
 
 %% resolver
-set_recurse(Flag) -> call({set_recurse, Flag}).
+set_recurse(Flag) -> res_option(recurse, Flag).
 
-set_timeout(Time) -> call({set_timeout, Time}).
+set_timeout(Time) -> res_option(timeout, Time).
 
-set_retry(N) -> call({set_retry, N}).
+set_retry(N) -> res_option(retry, N).
 
-set_inet6(Bool) -> call({set_inet6,Bool}).
+set_inet6(Bool) -> res_option(inet6, Bool).
 
-set_usevc(Bool) -> call({set_usevc,Bool}).
+set_usevc(Bool) -> res_option(usevc, Bool).
+
+set_edns(Version) -> res_option(edns, Version).
+
+set_udp_payload_size(Size) -> res_option(udp_payload_size, Size).
+
+set_resolv_conf(Fname) -> res_option(resolv_conf, Fname).
+
+set_hosts_file(Fname) -> res_option(hosts_file, Fname).
+
+get_hosts_file() ->
+    get_rc_hosts([], [], inet_hosts_file_byname).
 
 %% set socks options
 set_socks_server(Server) -> call({set_socks_server, Server}).
@@ -252,7 +270,6 @@ set_sctp_module(Family)-> call({set_sctp_module,Family}).
 
 sctp_module()-> db_get(sctp_module).
 
-
 %% Add an inetrc file
 add_rc(File) -> 
     case file:consult(File) of
@@ -269,69 +286,9 @@ add_rc_bin(Bin) ->
 	    {error, badarg}
     end.
 
-add_rc_list(List) ->
-    case catch add_rc_list_int(List) of
-	{'EXIT', Reason} -> {error, Reason};
-	Value -> Value
-    end.
+add_rc_list(List) -> call({add_rc_list, List}).
 
-add_rc_list_int(List) ->
-    foreach(
-      fun({domain, Name}) ->
-	      set_domain(Name);
-	 ({nameserver,Ns}) -> 
-	      add_ns(Ns);
-	 ({nameserver,Ns,Port}) ->
-	      add_ns(Ns,Port);
-	 ({alt_nameserver,Ns}) ->
-	      add_alt_ns(Ns);
-	 ({alt_nameserver,Ns,Port}) ->
-	      add_alt_ns(Ns,Port);
-	 ({socks5_server,Server}) ->
-	      set_socks_server(Server);
-	 ({socks5_port,Port}) ->
-	      set_socks_port(Port);
-	 ({socks5_methods, Ms}) ->
-	      add_socks_methods(Ms);
-	 ({socks5_noproxy, IP, Mask}) ->
-	      add_socks_noproxy({IP,Mask});
-	 ({search, Ds}) -> 
-	      foreach(fun(Domain) -> add_search(Domain) end, Ds);
-	 ({host, IP, Aliases}) ->
-	      add_host(IP, Aliases);
-	 ({cache_refresh, Time}) ->
-	      set_cache_refresh(Time);
-	 ({cache_size, Size}) ->
-	      set_cache_size(Size);
-	 ({timeout, Time}) ->
-	      set_timeout(Time);
-	 ({retry, N}) ->
-	      set_retry(N);
-	 ({inet6, Bool}) ->
-	      set_inet6(Bool);
-	 ({udp, Module}) ->
-	      set_udp_module(Module);
-	 ({sctp,Module}) ->
-	      set_sctp_module(Module);
-	 ({tcp, Module}) ->
-	      set_tcp_module(Module);
-	 (reset) ->
-	      reset();       %% reset before loading new defs
-	 (clear_cache) ->
-	      clear_cache();
-	 (clear_hosts) ->
-	      clear_hosts();
-	 (clear_ns) ->
-	      del_ns(),
-	      del_alt_ns();
-	 (clear_search) ->
-	      del_search();
-	 ({lookup, Ls}) ->
-	      set_lookup(translate_lookup(Ls));
-	 (Opt) -> 
-	      throw({error, {badopt, Opt}})
-      end, List),
-    ok.
+
 
 %% All kind of flavors !
 translate_lookup(["bind" | Ls]) -> [dns | translate_lookup(Ls)];
@@ -347,24 +304,33 @@ translate_lookup([M | Ls]) when is_atom(M) -> translate_lookup([atom_to_list(M) 
 translate_lookup([_ | Ls]) -> translate_lookup(Ls);
 translate_lookup([]) -> [].
 
+valid_lookup() -> [dns, file, yp, nis, nisplus, native].
+    
+
 %% Reconstruct an inetrc sturcture from inet_db
 get_rc() -> 
-    get_rc([hosts, domain, nameserver, search, alt_nameserver,
+    get_rc([hosts, domain, nameservers, search, alt_nameservers,
 	    timeout, retry, inet6, usevc,
+	    edns, udp_payload_size, resolv_conf, hosts_file,
 	    socks5_server,  socks5_port, socks5_methods, socks5_noproxy,
 	    udp, sctp, tcp, host, cache_size, cache_refresh, lookup], []).
 
 get_rc([K | Ks], Ls) ->
     case K of
-	hosts      -> get_rc_hosts(Ks, Ls);
+	hosts      -> get_rc_hosts(Ks, Ls, inet_hosts_byname);
 	domain     -> get_rc(domain, res_domain, "", Ks, Ls);
-	nameserver -> get_rc_ns(db_get(res_ns),nameserver,Ks,Ls);
-	alt_nameserver -> get_rc_ns(db_get(res_alt_ns),alt_nameserver,Ks,Ls);
+	nameservers -> get_rc_ns(db_get(res_ns),nameservers,Ks,Ls);
+	alt_nameservers -> get_rc_ns(db_get(res_alt_ns),alt_nameservers,Ks,Ls);
 	search  -> get_rc(search, res_search, [], Ks, Ls);
 	timeout -> get_rc(timeout,res_timeout,?RES_TIMEOUT, Ks,Ls);
 	retry   -> get_rc(retry, res_retry, ?RES_RETRY, Ks, Ls);
 	inet6   -> get_rc(inet6, res_inet6, false, Ks, Ls);
 	usevc   -> get_rc(usevc, res_usevc, false, Ks, Ls);
+	edns    -> get_rc(edns, res_edns, false, Ks, Ls);
+	udp_payload_size -> get_rc(udp_payload_size, res_udp_payload_size,
+				   ?DNS_UDP_PAYLOAD_SIZE, Ks, Ls);
+	resolv_conf -> get_rc(resolv_conf, res_resolv_conf, undefined, Ks, Ls);
+	hosts_file -> get_rc(hosts_file, res_hosts_file, undefined, Ks, Ls);
 	tcp     -> get_rc(tcp,  tcp_module,  ?DEFAULT_TCP_MODULE,  Ks, Ls); 
 	udp     -> get_rc(udp,  udp_module,  ?DEFAULT_UDP_MODULE,  Ks, Ls);
 	sctp	-> get_rc(sctp, sctp_module, ?DEFAULT_SCTP_MODULE, Ks, Ls);
@@ -384,14 +350,14 @@ get_rc([K | Ks], Ls) ->
 	    get_rc(Ks, Ls)
     end;
 get_rc([], Ls) -> 
-    reverse(Ls).
+    lists:reverse(Ls).
 
 get_rc(Name, Key, Default, Ks, Ls) ->
     case db_get(Key) of
 	Default -> get_rc(Ks, Ls);
 	Value -> get_rc(Ks, [{Name, Value} | Ls])
     end.
-	    
+
 get_rc_noproxy([{Net,Mask} | Ms], Ks, Ls) ->
     get_rc_noproxy(Ms, Ks, [{socks5_noproxy, Net, Mask} | Ls]);
 get_rc_noproxy([], Ks, Ls) -> get_rc(Ks, Ls).
@@ -403,24 +369,22 @@ get_rc_ns([{IP,Port} | Ns], Tag, Ks, Ls) ->
 get_rc_ns([], _Tag, Ks, Ls) ->
     get_rc(Ks, Ls).
 
-get_rc_hosts(Ks, Ls) ->
-    Hosts = lists:map(fun({IP,_Ver,Aliases}) ->
-			      {host,IP,Aliases}
-		      end, ets:tab2list(inet_hosts)),
-    get_rc(Ks, Hosts++Ls).
+get_rc_hosts(Ks, Ls, Tab) ->
+    case lists:keysort(3, ets:tab2list(Tab)) of
+	[] -> get_rc(Ks, Ls);
+	[{N,_,IP}|Hosts] -> get_rc_hosts(Ks, Ls, IP, Hosts, [N])
+    end.
+
+get_rc_hosts(Ks, Ls, IP, [], Ns) ->
+    get_rc(Ks, [{host,IP,lists:reverse(Ns)}|Ls]);
+get_rc_hosts(Ks, Ls, IP, [{N,_,IP}|Hosts], Ns) ->
+    get_rc_hosts(Ks, Ls, IP, Hosts, [N|Ns]);
+get_rc_hosts(Ks, Ls, IP, [{N,_,NewIP}|Hosts], Ns) ->
+    [{host,IP,lists:reverse(Ns)}|get_rc_hosts(Ks, Ls, NewIP, Hosts, [N])].
 
 %%
 %% Resolver options
 %%
-res_option(nameserver)     -> db_get(res_ns);
-res_option(alt_nameserver) -> db_get(res_alt_ns);
-res_option(domain)         -> db_get(res_domain);
-res_option(lookup)         -> db_get(res_lookup);
-res_option(recurse)        -> db_get(res_recurse);
-res_option(search)         -> db_get(res_search);
-res_option(retry)          -> db_get(res_retry);
-res_option(timeout)        -> db_get(res_timeout);
-res_option(inet6)          -> db_get(res_inet6);
 res_option(next_id)        ->
     Cnt = ets:update_counter(inet_db, res_id, 1),
     case Cnt band 16#ffff of
@@ -430,7 +394,99 @@ res_option(next_id)        ->
 	Id ->
 	    Id
     end;
-res_option(usevc)          -> db_get(res_usevc).
+res_option(Option) ->
+    case res_optname(Option) of
+	undefined ->
+	    erlang:error(badarg, [Option]);
+	ResOptname ->
+	    db_get(ResOptname)
+    end.
+
+res_option(Option, Value) ->
+    case res_optname(Option) of
+	undefined ->
+	    erlang:error(badarg, [Option,Value]);
+	_ ->
+	    call({res_set,Option,Value})
+    end.
+
+res_optname(nameserver) -> res_ns;     %% Legacy
+res_optname(alt_nameserver) -> res_alt_ns; %% Legacy
+res_optname(nameservers) -> res_ns;
+res_optname(alt_nameservers) -> res_alt_ns;
+res_optname(domain) -> res_domain;
+res_optname(lookup) -> res_lookup;
+res_optname(recurse) -> res_recurse;
+res_optname(search) -> res_search;
+res_optname(retry) -> res_retry;
+res_optname(timeout) -> res_timeout;
+res_optname(inet6) -> res_inet6;
+res_optname(usevc) -> res_usevc;
+res_optname(edns) -> res_edns;
+res_optname(udp_payload_size) -> res_udp_payload_size;
+res_optname(resolv_conf) -> res_resolv_conf;
+res_optname(hosts_file) -> res_hosts_file;
+res_optname(_) -> undefined.
+
+res_check_option(nameserver, NSs) -> %% Legacy
+    res_check_list(NSs, fun res_check_ns/1);
+res_check_option(alt_nameserver, NSs) -> %% Legacy
+    res_check_list(NSs, fun res_check_ns/1);
+res_check_option(nameservers, NSs) ->
+    res_check_list(NSs, fun res_check_ns/1);
+res_check_option(alt_nameservers, NSs) ->
+    res_check_list(NSs, fun res_check_ns/1);
+res_check_option(domain, Dom) ->
+    inet_parse:visible_string(Dom);
+res_check_option(lookup, Methods) ->
+    try lists_subtract(Methods, valid_lookup()) of
+	[] -> true;
+	_ -> false
+    catch
+	error:_ -> false
+    end;
+res_check_option(recurse, R) when R =:= 0; R =:= 1 -> true; %% Legacy
+res_check_option(recurse, R) when is_boolean(R) -> true;
+res_check_option(search, SearchList) ->
+    res_check_list(SearchList, fun res_check_search/1);
+res_check_option(retry, N) when is_integer(N), N > 0 -> true;
+res_check_option(timeout, T) when is_integer(T), T > 0 -> true;
+res_check_option(inet6, Bool) when is_boolean(Bool) -> true;
+res_check_option(usevc, Bool) when is_boolean(Bool) -> true;
+res_check_option(edns, V) when V =:= false; V =:= 0 -> true;
+res_check_option(udp_payload_size, S) when is_integer(S), S >= 512 -> true;
+res_check_option(resolv_conf, "") -> true;
+res_check_option(resolv_conf, F) ->
+    res_check_option_absfile(F);
+res_check_option(hosts_file, "") -> true;
+res_check_option(hosts_file, F) ->
+    res_check_option_absfile(F);
+res_check_option(_, _) -> false.
+
+res_check_option_absfile(F) ->
+    try filename:pathtype(F) of
+	absolute -> true;
+	_ -> false
+    catch
+	_:_ -> false
+    end.
+
+res_check_list([], _Fun) -> true;
+res_check_list([H|T], Fun) ->
+    case Fun(H) of
+	true -> res_check_list(T, Fun);
+	false -> false
+    end;
+res_check_list(_, _Fun) -> false.
+
+res_check_ns({{A,B,C,D,E,F,G,H}, Port})
+  when ?ip6(A,B,C,D,E,F,G,H), Port band 65535 =:= Port -> true;
+res_check_ns({{A,B,C,D}, Port})
+  when ?ip(A,B,C,D), Port band 65535 =:= Port -> true;
+res_check_ns(_) -> false.
+
+res_check_search("") -> true;
+res_check_search(Dom) -> inet_parse:visible_string(Dom).
 
 socks_option(server)       -> db_get(socks5_server);
 socks_option(port)         -> db_get(socks5_port);
@@ -439,6 +495,45 @@ socks_option(noproxy)      -> db_get(socks5_noproxy).
 
 gethostname()              -> db_get(hostname).
 
+res_update_conf() ->
+    res_update(res_resolv_conf, res_resolv_conf_tm, res_resolv_conf_info,
+	       set_resolv_conf_tm, fun set_resolv_conf/1).
+
+res_update_hosts() ->
+    res_update(res_hosts_file, res_hosts_file_tm, res_hosts_file_info,
+	       set_hosts_file_tm, fun set_hosts_file/1).
+
+res_update(Tag, TagTm, TagInfo, CallTag, SetFun) ->
+    case db_get(TagTm) of
+	undefined -> ok;
+	TM ->
+	    case times() of
+		Now when Now >= TM + ?RES_FILE_UPDATE_TM ->
+		    case db_get(Tag) of
+			undefined ->
+			    SetFun("");
+			"" ->
+			    SetFun("");
+			File ->
+			    case erl_prim_loader:read_file_info(File) of
+				{ok, Finfo0} ->
+				    Finfo =
+					Finfo0#file_info{access = undefined,
+							 atime = undefined},
+				    case db_get(TagInfo) of
+					Finfo ->
+					    call({CallTag, Now});
+					_ ->
+					    SetFun(File)
+				    end;
+				_ ->
+				    call({CallTag, Now}),
+				    error
+			    end
+		    end;
+		_ -> ok
+	    end
+    end.
 
 db_get(Name) ->
     case ets:lookup(inet_db, Name) of
@@ -459,7 +554,9 @@ del_rr(Domain, Class, Type, Data) ->
 		       bm = '_', func = '_', data = Data}}).
 
 res_cache_answer(Rec) ->
-    foreach( fun(RR) -> add_rr(RR) end, Rec#dns_rec.anlist).
+    lists:foreach( fun(RR) -> add_rr(RR) end, Rec#dns_rec.anlist).
+
+    
 
 
 %%
@@ -711,6 +808,13 @@ lookup_socket(Socket) when is_port(Socket) ->
 %% res_id         Integer         - NS query identifier
 %% res_retry      Integer         - Retry count for UDP query
 %% res_timeout    Integer         - UDP query timeout before retry
+%% res_inet6      Bool            - address family inet6 for gethostbyname/1
+%% res_usevc      Bool            - use Virtual Circuit (TCP)
+%% res_edns       false|Integer   - false or EDNS version
+%% res_udp_payload_size Integer   - size for EDNS, both query and reply
+%% res_resolv_conf Filename       - file to watch for resolver config i.e
+%%                                  {res_ns, res_search}
+%% res_hosts_file Filename        - file to watch for hosts config
 %%
 %% Socks5 options
 %% --------------
@@ -737,11 +841,18 @@ init([]) ->
     Db = ets:new(inet_db, [public, named_table]),
     reset_db(Db),
     Cache = ets:new(inet_cache, [public, bag, {keypos,2}, named_table]),
-    Hosts = ets:new(inet_hosts, [public, named_table]),
-    {ok, #state{
-		db = Db,
+    BynameOpts = [protected, bag, named_table, {keypos,1}],
+    ByaddrOpts = [protected, bag, named_table, {keypos,3}],
+    HostsByname = ets:new(inet_hosts_byname, BynameOpts),
+    HostsByaddr = ets:new(inet_hosts_byaddr, ByaddrOpts),
+    HostsFileByname = ets:new(inet_hosts_file_byname, BynameOpts),
+    HostsFileByaddr = ets:new(inet_hosts_file_byaddr, ByaddrOpts),
+    {ok, #state{db = Db,
 		cache = Cache,
-		hosts = Hosts,
+		hosts_byname = HostsByname,
+		hosts_byaddr = HostsByaddr,
+		hosts_file_byname = HostsFileByname,
+		hosts_file_byaddr = HostsFileByaddr,
 		cache_timer = init_timer() }}.
 
 reset_db(Db) ->
@@ -751,12 +862,14 @@ reset_db(Db) ->
     ets:insert(Db, {res_search, []}),
     ets:insert(Db, {res_domain, ""}),
     ets:insert(Db, {res_lookup, []}),
-    ets:insert(Db, {res_recurse, 1}),
+    ets:insert(Db, {res_recurse, true}),
     ets:insert(Db, {res_usevc, false}),
     ets:insert(Db, {res_id, 0}),
     ets:insert(Db, {res_retry, ?RES_RETRY}),
     ets:insert(Db, {res_timeout, ?RES_TIMEOUT}),
     ets:insert(Db, {res_inet6, false}),
+    ets:insert(Db, {res_edns, false}),
+    ets:insert(Db, {res_udp_payload_size, ?DNS_UDP_PAYLOAD_SIZE}),
     ets:insert(Db, {cache_size, ?CACHE_LIMIT}),
     ets:insert(Db, {cache_refresh_interval,?CACHE_REFRESH}),
     ets:insert(Db, {socks5_server, ""}),
@@ -776,60 +889,45 @@ reset_db(Db) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, Reply, State}     (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_call(Request, _From, State) ->
-    Db = State#state.db,
+handle_call(Request, From, #state{db=Db}=State) ->
     case Request of
-	%% temporary special case used only by inet_config to
-	%% add the own hostname as an alias for localhost if the real 
-	%% IP adress is not specified anywhere
-	%% This code will be changed when the hosts-table is reorganized
-	%% to use names as keys
-	{add_host,{127,0,0,1},[TName|TAs]} when is_list(TName), is_list(TAs) ->
-	    [Name|As] = [tolower(N) || N <- [TName|TAs]],
-	    NameList = case ets:lookup(State#state.hosts,{127,0,0,1}) of
-			   [{_IP,_,NList}] -> NList;
-			   _ -> []
-		       end,
-	    Ns = [N || N <- [Name|As], not member(N, NameList)],
-	    ets:insert(State#state.hosts, {{127,0,0,1},inet,NameList ++ Ns}),
+	{load_hosts_file,IPNmAs} when is_list(IPNmAs) ->
+	    NIPs = lists:flatten([ [{N,if tuple_size(IP) =:= 4 -> inet;
+					  tuple_size(IP) =:= 8 -> inet6
+				       end,IP} || N <- [Nm|As]]
+				   || {IP,Nm,As} <- IPNmAs]),
+	    Byname = State#state.hosts_file_byname,
+	    Byaddr = State#state.hosts_file_byaddr,
+	    ets:delete_all_objects(Byname),
+	    ets:delete_all_objects(Byaddr),
+	    ets:insert(Byname, NIPs),
+	    ets:insert(Byaddr, NIPs),
 	    {reply, ok, State};
 
-	{add_host,IP,[TName|TAs]} when is_tuple(IP), is_list(TName), is_list(TAs) ->
-	    As = [tolower(N) || N <- [TName|TAs]],
-	    As1 = 
-		case ets:lookup(State#state.hosts, IP) of
-		    [{IP,_,PrevAs}] ->
-			lists:foldl(fun(A,L) -> 
-					    lists:delete(A,L) 
-				    end, PrevAs, As) ++ As;
-		    [] ->
-			As
-		end,
-	    if tuple_size(IP) =:= 4 ->
-		    %% temporary special as above
-		    case ets:lookup(State#state.hosts,{127,0,0,1}) of
-			[{IP,_,AList}] ->
-			    ets:insert(State#state.hosts, 
-				       {{127,0,0,1},inet,
-					lists:foldl(fun(A,L) -> 
-							    lists:delete(A,L) 
-						    end, AList, As1)});
-			_ -> true
-		    end,
-		    %% end temporary special
-		    ets:insert(State#state.hosts, {IP,inet,As1}),
-		    {reply, ok, State};
-	       tuple_size(IP) =:= 8 ->
-		    ets:insert(State#state.hosts, {IP,inet6,As1}),
-		    {reply, ok, State};
-	       true ->
-		    {reply, error, State}
-	    end;
-
-	{del_host, IP} when is_tuple(IP) ->
-	    ets:delete(State#state.hosts, IP),
+	{add_host,{A,B,C,D}=IP,[N|As]=Names}
+	when ?ip(A,B,C,D), is_list(N), is_list(As) ->
+	    do_add_host(State#state.hosts_byname,
+			State#state.hosts_byaddr,
+			Names, inet, IP),
 	    {reply, ok, State};
-		    
+	{add_host,{A,B,C,D,E,F,G,H}=IP,[N|As]=Names}
+	when ?ip6(A,B,C,D,E,F,G,H), is_list(N), is_list(As) ->
+	    do_add_host(State#state.hosts_byname,
+			State#state.hosts_byaddr,
+			Names, inet6, IP),
+	    {reply, ok, State};
+
+	{del_host,{A,B,C,D}=IP}	when ?ip(A,B,C,D) ->
+	    do_del_host(State#state.hosts_byname,
+			State#state.hosts_byaddr,
+			IP),
+	    {reply, ok, State};
+	{del_host,{A,B,C,D,E,F,G,H}=IP}	when ?ip6(A,B,C,D,E,F,G,H) ->
+	    do_del_host(State#state.hosts_byname,
+			State#state.hosts_byaddr,
+			IP),
+	    {reply, ok, State};
+
 	{add_rr, RR} when is_record(RR, dns_rr) ->
 	    RR1 = lower_rr(RR),
 	    ?dbg("add_rr: ~p~n", [RR1]),
@@ -846,85 +944,26 @@ handle_call(Request, _From, State) ->
 	{lookup_rr, Domain, Class, Type} ->
 	    {reply, do_lookup_rr(Domain, Class, Type), State};
 
-	%% XXX Fix IPv6 nameservers
-	{ins_ns, {A,B,C,D},Port} when ?ip(A,B,C,D), is_integer(Port) ->
-	    [{_,Ns}] = ets:lookup(Db, res_ns),
-	    ets:insert(Db, {res_ns, [{{A,B,C,D},Port} | Ns]}),
-	    {reply, ok, State};
-
-	{add_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), is_integer(Port) ->
-	    [{_,Ns}] = ets:lookup(Db, res_ns),
-	    ets:insert(Db, {res_ns, Ns ++ [{{A,B,C,D},Port}]}),
-	    {reply, ok, State};
-
-	{del_ns, {A,B,C,D}} when ?ip(A,B,C,D) ->
-	    [{_,Ns}] = ets:lookup(Db, res_ns),
-	    ets:insert(Db, {res_ns, keydelete({A,B,C,D}, 1, Ns)}),
-	    {reply, ok, State};
-
-	del_ns ->
-	    ets:insert(Db, {res_ns, []}),
-	    {reply, ok, State};
-
-	%% Fix IPv6 nameservers
-	{ins_alt_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), is_integer(Port) ->
-	    [{_,Ns}] = ets:lookup(Db, res_alt_ns),
-	    ets:insert(Db, {res_alt_ns, [{{A,B,C,D},Port} | Ns]}),
-	    {reply, ok, State};
-
-	{add_alt_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), is_integer(Port) ->
-	    [{_,Ns}] = ets:lookup(Db, res_alt_ns),
-	    ets:insert(Db, {res_alt_ns, Ns ++ [{{A,B,C,D},Port}]}),
-	    {reply, ok, State};
-
-	{del_alt_ns, {A,B,C,D}} when ?ip(A,B,C,D) ->
-	    [{_,Ns}] = ets:lookup(Db, res_alt_ns),
-	    ets:insert(Db, {res_alt_ns, keydelete({A,B,C,D}, 1, Ns)}),
-	    {reply, ok, State};
-
-	del_alt_ns ->
-	    ets:insert(Db, {res_alt_ns, []}),
-	    {reply, ok, State};
-
-	{ins_search, Dom} ->
-	    case inet_parse:visible_string(Dom) of
-		false when Dom =/= [] -> %% Allow "" for root domain
-		    {reply, error, State};
-		_ ->
-		    [{_,Ds}] = ets:lookup(Db, res_search),
-		    Ds1 = lists:delete(Dom, Ds),
-		    ets:insert(Db, {res_search, [Dom | Ds1]}),
-		    {reply, ok, State}
+	{listop, Opt, Op, E} ->
+	    El = [E],
+	    case res_check_option(Opt, El) of
+		true ->
+		    Optname = res_optname(Opt),
+		    [{_,Es}] = ets:lookup(Db, Optname),
+		    NewEs = case Op of
+				ins -> [E | lists_delete(E, Es)];
+				add -> lists_delete(E, Es) ++ El;
+				del -> lists_delete(E, Es)
+			    end,
+		    ets:insert(Db, {Optname, NewEs}),
+		    {reply,ok,State};
+		false ->
+		    {reply,error,State}
 	    end;
 
-	{add_search, Dom} ->
-	    case inet_parse:visible_string(Dom) of
-		false when Dom =/= [] -> %% Allow "" for root domain
-		    {reply, error, State};
-		_ ->
-		    [{_,Ds}] = ets:lookup(Db, res_search),
-		    case member(Dom, Ds) of
-			true ->
-			    {reply, ok, State};
-			false ->
-			    ets:insert(Db, {res_search, Ds ++ [Dom]}),
-			    {reply, ok, State}
-		    end
-	    end;
-
-	{del_search, Dom} ->
-	    case inet_parse:visible_string(Dom) of
-		false when Dom =/= [] -> %% Allow "" for root domain
-		    {reply, error, State};
-		_ ->
-		    [{_,Ds}] = ets:lookup(Db, res_search),
-		    ets:insert(Db, {res_search, Ds -- [Dom]}),
-		    {reply, ok, State}
-	    end;
-
-	del_search ->
-	    ets:insert(Db, {res_search, []}),
-	    {reply, ok, State};
+	{listdel, Opt} ->
+ 	    ets:insert(Db, {res_optname(Opt), []}),
+ 	    {reply, ok, State};
 
 	{set_hostname, Name} ->
 	    case inet_parse:visible_string(Name) of
@@ -935,49 +974,58 @@ handle_call(Request, _From, State) ->
 		    {reply, error, State}
 	    end;
 
-	{set_domain, Dom} ->
-	    case inet_parse:visible_string(Dom) of
-		true ->
-		    ets:insert(Db, {res_domain, Dom}),
-		    {reply, ok, State};
-		false ->
-		    {reply, error, State}
+	{res_set, hosts_file=Option, Fname} ->
+	    handle_set_file(Option, Fname,
+			    res_hosts_file_tm, res_hosts_file_info,
+			    fun (Bin) ->
+				    case inet_parse:hosts(Fname,
+							  {chars,Bin}) of
+					{ok,Opts} ->
+					    [{load_hosts_file,Opts}];
+					_ -> error
+				    end
+			    end,
+			    From, State);
+	%%
+	{res_set, resolv_conf=Option, Fname} ->
+	    handle_set_file(Option, Fname,
+			    res_resolv_conf_tm, res_resolv_conf_info,
+			    fun (Bin) ->
+				    case inet_parse:resolv(Fname,
+							  {chars,Bin}) of
+					{ok,Opts} ->
+					    [del_ns,
+					     clear_search,
+					     clear_cache
+					     |[Opt ||
+						  {T,_}=Opt <- Opts,
+						  (T =:= nameserver orelse
+						   T =:= search)]];
+					_ -> error
+				    end
+			    end,
+			    From, State);
+	%%
+	{res_set, Opt, Value} ->
+	    case res_optname(Opt) of
+		undefined ->
+		    {reply, error, State};
+		Optname ->
+		    case res_check_option(Opt, Value) of
+			true ->
+			    ets:insert(Db, {Optname, Value}),
+			    {reply, ok, State};
+			false ->
+			    {reply, error, State}
+		    end
 	    end;
 
-	{set_lookup, Methods} ->
-	    ets:insert(Db, {res_lookup, Methods}),
+	{set_resolv_conf_tm, TM} ->
+	    ets:insert(Db, {res_resolv_conf_tm, TM}),
 	    {reply, ok, State};
 
-	{set_recurse, 1} ->
-	    ets:insert(Db, {res_recurse, 1}),
-	    {reply, ok, State};
-
-	{set_recurse, 0} ->
-	    ets:insert(Db, {res_recurse, 0}),
-	    {reply, ok, State};
-
-	{set_timeout, Time} when is_integer(Time), Time > 0 ->
-	    ets:insert(Db, {res_timeout, Time}),
-	    {reply, ok, State};
-
-	{set_retry, N} when is_integer(N), N > 0 ->
-	    ets:insert(Db, {res_retry, N}),
-	    {reply, ok, State};
-
-	{set_inet6, true} ->
-	    ets:insert(Db, {res_inet6, true}),
-	    {reply, ok, State};
-
-	{set_inet6, false} ->
-	    ets:insert(Db, {res_inet6, false}),
-	    {reply, ok, State};
-
-	{set_usevc, true} ->
-	    ets:insert(Db, {res_usevc, true}),
-	    {reply, ok, State};
-
-	{set_usevc, false} ->
-	    ets:insert(Db, {res_usevc, false}),
+	{set_hosts_file_tm, TM} ->
+	    ets:insert(Db, {res_hosts_file_tm, TM}),
 	    {reply, ok, State};
 
 	{set_socks_server, {A,B,C,D}} when ?ip(A,B,C,D) ->
@@ -990,14 +1038,14 @@ handle_call(Request, _From, State) ->
 
 	{add_socks_methods, Ls} -> 
 	    [{_,As}] = ets:lookup(Db, socks5_methods),
-	    As1 = As -- Ls,
+	    As1 = lists_subtract(As, Ls),
 	    ets:insert(Db, {socks5_methods, As1 ++ Ls}),
 	    {reply, ok, State};
 	    
 	{del_socks_methods, Ls} ->
 	    [{_,As}] = ets:lookup(Db, socks5_methods),
-	    As1 = As -- Ls,
-	    case member(none, As1) of
+	    As1 = lists_subtract(As, Ls),
+	    case lists:member(none, As1) of
 		false -> ets:insert(Db, {socks5_methods, As1 ++ [none]});
 		true  -> ets:insert(Db, {socks5_methods, As1})
 	    end,
@@ -1013,9 +1061,9 @@ handle_call(Request, _From, State) ->
 	    ets:insert(Db, {socks5_noproxy, As++[{{A,B,C,D},{MA,MB,MC,MD}}]}),
 	    {reply, ok, State};
 
-	{del_socks_noproxy, {A,B,C,D}} when ?ip(A,B,C,D) ->
+	{del_socks_noproxy, {A,B,C,D}=IP} when ?ip(A,B,C,D) ->
 	    [{_,As}] = ets:lookup(Db, socks5_noproxy),
-	    ets:insert(Db, {socks5_noproxy, keydelete({A,B,C,D},1,As)}),
+	    ets:insert(Db, {socks5_noproxy, lists_keydelete(IP, 1, As)}),
 	    {reply, ok, State};
 
 	{set_tcp_module, Mod} when is_atom(Mod) ->
@@ -1027,7 +1075,7 @@ handle_call(Request, _From, State) ->
 	    {reply, ok, State};
 
 	{set_sctp_module, Fam} when is_atom(Fam) ->
-	    ets:insert(Db, {sctp_module, Fam}),
+	    ets:insert(Db, {sctp_module, Fam}), %% check/load module ?
 	    {reply, ok, State};
 
 	{set_cache_size, Size} when is_integer(Size), Size >= 0 ->
@@ -1041,7 +1089,8 @@ handle_call(Request, _From, State) ->
 	    {reply, ok, State#state{cache_timer = init_timer()}};
 
 	clear_hosts ->
-	    ets:match_delete(State#state.hosts, '_'),
+	    ets:delete_all_objects(State#state.hosts_byname),
+	    ets:delete_all_objects(State#state.hosts_byaddr),
 	    {reply, ok, State};
 
 	clear_cache ->
@@ -1052,6 +1101,9 @@ handle_call(Request, _From, State) ->
 	    reset_db(Db),
 	    stop_timer(State#state.cache_timer),
 	    {reply, ok, State#state{cache_timer = init_timer()}};
+
+	{add_rc_list, List} ->
+	    handle_rc_list(List, From, State);
 
 	stop ->
 	    {stop, normal, ok, State};
@@ -1095,6 +1147,157 @@ terminate(_Reason, State) ->
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
+
+handle_set_file(Option, Fname, TagTm, TagInfo, ParseFun, From,
+		#state{db=Db}=State) ->
+    case res_check_option(Option, Fname) of
+	true when Fname =:= "" ->
+	    ets:insert(Db, {res_optname(Option), Fname}),
+	    ets:delete(Db, TagInfo),
+	    ets:delete(Db, TagTm),
+	    handle_set_file(ParseFun, <<>>, From, State);
+	true ->
+	    File = filename:flatten(Fname),
+	    ets:insert(Db, {res_optname(Option), File}),
+	    Bin =
+		case erl_prim_loader:read_file_info(File) of
+		    {ok, Finfo0} ->
+			Finfo = Finfo0#file_info{access = undefined,
+						 atime = undefined},
+			ets:insert(Db, {TagInfo, Finfo}),
+			ets:insert(Db, {TagTm, times()}),
+			case erl_prim_loader:get_file(File) of
+			    {ok, B, _} -> B;
+			    _ -> <<>>
+			end;
+		    _ -> <<>>
+		end,
+	    handle_set_file(ParseFun, Bin, From, State);
+	false -> {reply,error,State}
+    end.
+
+handle_set_file(ParseFun, Bin, From, State) ->
+    case ParseFun(Bin) of
+	error -> {reply,error,State};
+	Opts ->
+	    handle_rc_list(Opts, From, State)
+    end.
+
+do_add_host(Byname, Byaddr, Names, Type, IP) ->
+    do_del_host(Byname, Byaddr, IP),
+    NIPs = [{tolower(N),Type,IP} || N <- Names],
+    ets:insert(Byname, NIPs),
+    ets:insert(Byaddr, NIPs),
+    ok.
+
+do_del_host(Byname, Byaddr, IP) ->
+    [ets:delete_object(Byname, NIP) || NIP <- ets:lookup(Byaddr, IP)],
+    ets:delete(Byaddr, IP),
+    ok.
+
+%% Loop over .inetrc option list and call handle_call/3 for each
+%%
+handle_rc_list([], _From, State) ->
+    {reply, ok, State};
+handle_rc_list([Opt|Opts], From, State) ->
+    case rc_opt_req(Opt) of
+	undefined ->
+	    {reply, {error,{badopt,Opt}}, State};
+	Req ->
+	    case handle_calls(Req, From, State) of
+		{reply, ok, NewState} ->
+		    handle_rc_list(Opts, From, NewState);
+		Result -> Result
+	    end
+    end;
+handle_rc_list(_, _From, State) ->
+    {reply, error, State}.
+
+handle_calls([], _From, State) ->
+    {reply, ok, State};
+handle_calls([Req|Reqs], From, State) ->
+    case handle_call(Req, From, State) of
+	{reply, ok, NewState} ->
+	    handle_calls(Reqs, From, NewState);
+	{reply, _, NewState} ->
+	    {reply, error, NewState}
+	    %% {noreply,_} is currently not returned by handle_call/3
+    end;
+handle_calls(Req, From, State) ->
+    handle_call(Req, From, State).
+
+%% Translate .inetrc option into gen_server request
+%%
+rc_opt_req({nameserver, Ns}) ->
+    {listop,nameservers,add,{Ns,?NAMESERVER_PORT}};
+rc_opt_req({nameserver, Ns, Port}) ->
+    {listop,nameservers,add,{Ns,Port}};
+rc_opt_req({alt_nameserver, Ns}) ->
+    {listop,alt_nameservers,add,{Ns,?NAMESERVER_PORT}};
+rc_opt_req({alt_nameserver, Ns, Port}) ->
+    {listop,alt_nameservers,add,{Ns,Port}};
+rc_opt_req({socks5_noproxy, IP, Mask}) ->
+    {add_socks_noproxy, {IP, Mask}};
+rc_opt_req({search, Ds}) when is_list(Ds) ->
+    try	[{listop,search,add,D} || D <- Ds]
+    catch error:_ -> undefined
+    end;
+rc_opt_req({host, IP, Aliases}) -> {add_host, IP, Aliases};
+rc_opt_req({load_hosts_file, _}=Req) -> Req;
+rc_opt_req({lookup, Ls}) ->
+    try {res_set, lookup, translate_lookup(Ls)}
+    catch error:_ -> undefined
+    end;
+rc_opt_req({Name,Arg}) ->
+    case rc_reqname(Name) of
+	undefined ->
+	    case is_res_set(Name) of
+		true -> {res_set,Name,Arg};
+		false -> undefined
+	    end;
+	Req -> {Req, Arg}
+    end;
+rc_opt_req(del_ns) ->
+    {listdel,nameservers};
+rc_opt_req(del_alt_ns) ->
+    {listdel,alt_nameservers};
+rc_opt_req(clear_ns) ->
+    [{listdel,nameservers},{listdel,alt_nameservers}];
+rc_opt_req(clear_search) ->
+    {listdel,search};
+rc_opt_req(Opt) when is_atom(Opt) ->
+    case is_reqname(Opt) of
+	true -> Opt;
+	false -> undefined
+    end;
+rc_opt_req(_) -> undefined.
+%%
+rc_reqname(socks5_server) -> set_socks_server;
+rc_reqname(socks5_port) -> set_socks_port;
+rc_reqname(socks5_methods) -> set_socks_methods;
+rc_reqname(cache_refresh) -> set_cache_refresh;
+rc_reqname(cache_size) -> set_cache_size;
+rc_reqname(udp) -> set_udp_module;
+rc_reqname(sctp) -> set_sctp_module;
+rc_reqname(tcp) -> set_tcp_module;
+rc_reqname(_) -> undefined.
+%%
+is_res_set(domain) -> true;
+is_res_set(lookup) -> true;
+is_res_set(timeout) -> true;
+is_res_set(retry) -> true;
+is_res_set(inet6) -> true;
+is_res_set(usevc) -> true;
+is_res_set(edns) -> true;
+is_res_set(udp_payload_size) -> true;
+is_res_set(resolv_conf) -> true;
+is_res_set(hosts_file) -> true;
+is_res_set(_) -> false.
+%%
+is_reqname(reset) -> true;
+is_reqname(clear_cache) -> true;
+is_reqname(clear_hosts) -> true;
+is_reqname(_) -> false.
 
 %% Add a resource record to the cache if there are space left.
 %% If the cache is full this function first deletes old entries,
@@ -1159,13 +1362,13 @@ lower_rr(RR) ->
     end.
 
 %%
-%% Map upper-case to lower-case 
+%% Map upper-case to lower-case
 %% NOTE: this code is in kernel and we don't want to relay
 %% to much on stdlib
 %%
-tolower([C|Cs]) when C >= $A, C =< $Z -> [(C-$A)+$a | tolower(Cs)];
-tolower([C|Cs]) -> [C | tolower(Cs)];
-tolower([]) -> [].
+tolower([]) -> [];
+tolower([C|Cs]) when C >= $A, C =< $Z -> [(C-$A)+$a|tolower(Cs)];
+tolower([C|Cs]) -> [C|tolower(Cs)].
 
 dn_ip6_int(A,B,C,D,E,F,G,H) ->
     dnib(H) ++ dnib(G) ++ dnib(F) ++ dnib(E) ++ 
@@ -1300,3 +1503,23 @@ delete_older(Domain, CacheDb, TM, N, M) ->
 	  end,
     M1 = lists:foldl(Fun, M, ets:lookup(CacheDb, Domain)),
     delete_older(Next, CacheDb, TM, N, M1).
+
+
+%% as lists:delete/2, but delete all exact matches
+%%
+lists_delete(_, []) -> [];
+lists_delete(E, [E|Es]) ->
+    lists_delete(E, Es);
+lists_delete(E, [X|Es]) ->
+    [X|lists_delete(E, Es)].
+
+%% as '--'/2 aka lists:subtract/2 but delete all exact matches
+lists_subtract(As0, Bs) ->
+    lists:foldl(fun (E, As) -> lists_delete(E, As) end, As0, Bs).
+
+%% as lists:keydelete/3, but delete all _exact_ key matches
+lists_keydelete(_, _, []) -> [];
+lists_keydelete(K, N, [T|Ts]) when element(N, T) =:= K ->
+    lists_keydelete(K, N, Ts);
+lists_keydelete(K, N, [X|Ts]) ->
+    [X|lists_keydelete(K, N, Ts)].

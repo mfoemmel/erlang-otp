@@ -1,30 +1,32 @@
-%%% The contents of this file are subject to the Erlang Public License,
-%%% Version 1.0, (the "License"); you may not use this file except in
-%%% compliance with the License. You may obtain a copy of the License at
-%%% http://www.erlang.org/license/EPL1_0.txt
-%%%
-%%% Software distributed under the License is distributed on an "AS IS"
-%%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-%%% the License for the specific language governing rights and limitations
-%%% under the License.
-%%%
-%%% The Original Code is xmerl-0.13
-%%%
-%%% The Initial Developer of the Original Code is Ericsson Telecom
-%%% AB. Portions created by Ericsson are Copyright (C), 1998, Ericsson
-%%% Telecom AB. All Rights Reserved.
-%%%
-%%% Contributor(s):
-%%%    <michael.remond@IDEALX.com>: suggested #xmlDocument{}
-%%%
-%%%----------------------------------------------------------------------
-%%% #0.    BASIC INFORMATION
-%%%----------------------------------------------------------------------
-%%% File:       xmerl.hrl
-%%% Author       : Ulf Wiger <ulf.wiger@ericsson.com>
-%%% Date         : 00-09-22
-%%% Description  : Record and macro definitions for xmerl
-%%%----------------------------------------------------------------------
+%% 
+%% %CopyrightBegin%
+%% 
+%% Copyright Ericsson AB 2004-2009. All Rights Reserved.
+%% 
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% %CopyrightEnd%
+%%
+%% Contributor(s):
+%%    <michael.remond@IDEALX.com>: suggested #xmlDocument{}
+%%
+%%----------------------------------------------------------------------
+%% #0.    BASIC INFORMATION
+%%----------------------------------------------------------------------
+%% File:       xmerl.hrl
+%% Author       : Ulf Wiger <ulf.wiger@ericsson.com>
+%% Date         : 00-09-22
+%% Description  : Record and macro definitions for xmerl
+%%----------------------------------------------------------------------
 
 
 
@@ -200,21 +202,11 @@
 
 %% useful scanner macros
 %% ---------------------
-% -define(debug,1).
-
--ifdef(debug).
--define(dbg(Fmt, Args), ok=io:format("~p: " ++ Fmt, [?LINE|Args])).
--define(DBG, ok=io:format("<<~p:~p>>~n", [?MODULE, ?LINE])).
--else.
--define(dbg(Fmt, Args), no_debug).
--define(DBG, no_debug).
--endif.
 
 -define(space, 32).
 -define(cr,    13).
 -define(lf,    10).
 -define(tab,   9).
-
 %% whitespace consists of 'space', 'carriage return', 'line feed' or 'tab'
 -define(whitespace(H), H==?space ; H==?cr ; H==?lf ; H==?tab).
 

@@ -150,7 +150,7 @@ split_ip4addr_text([H | T], Acc) ->
 ensure_ip6addr([colon,colon|T]) ->
     [H1|T1] = lists:reverse(T),
     case do_ensure_ip6addr(T1, true, [ensure_hex4_or_ip4addr(H1)], 1) of
-	{true, A} when length(A) == 16 ->
+	{true, A} when (length(A) =:= 16) ->
 	    A;
 	{true, B} when length(B) < 16 ->
 	    lists:duplicate(16 - length(B), 0) ++ B;
@@ -161,7 +161,7 @@ ensure_ip6addr(L) ->
     case lists:reverse(L) of
 	[colon, colon| T] ->
 	    case do_ensure_ip6addr(T, true, [], 1) of
-		{true, A} when length(A) == 16 ->
+		{true, A} when (length(A) =:= 16) ->
 		    A;
 		{true, B} when length(B) < 16 ->
 		    B ++ lists:duplicate(16 - length(B), 0);
@@ -170,7 +170,7 @@ ensure_ip6addr(L) ->
 	    end;
 	[H|L1] -> % A (last element) could be an ip4 address
 	    case do_ensure_ip6addr(L1,false,[ensure_hex4_or_ip4addr(H)],1) of
-		{false, A} when length(A) == 16 -> 
+		{false, A} when (length(A) =:= 16) -> 
 		    A;
 		%% allow a pad even if the address is full (i.e. 16)
 		{true, B} when length(B) =< 17 -> 
@@ -218,7 +218,7 @@ ensure_hex4_or_ip4addr({TokenTag, Line, Addr} = V) ->
 ensure_hex4({_TokenTag, Line, Hex4}) 
   when length(Hex4) =< 4, length(Hex4) > 0 ->
     case (catch do_ensure_hex4(Hex4)) of
-	IL when list(IL), length(IL) == 2 ->
+	IL when is_list(IL) andalso (length(IL) =:= 2) ->
 	    IL;
 	Error ->
 	    return_error(Line, {bad_hex4, Hex4, Error})
@@ -446,7 +446,7 @@ do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
 	    PropParms = [#'IndAudPropertyParm'{name = Val}],
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms},
 	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	{pkgdName, Val} when list(Desc#'IndAudLocalControlDescriptor'.propertyParms) ->
+	{pkgdName, Val} when is_list(Desc#'IndAudLocalControlDescriptor'.propertyParms) ->
 	    PropParms = Desc#'IndAudLocalControlDescriptor'.propertyParms,
 	    PropParms2 = [#'IndAudPropertyParm'{name = Val} | PropParms],
 	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms2},
@@ -547,7 +547,7 @@ ensure_indAudTerminationStateParm(Token) ->
 
 merge_auditDescriptor([]) ->
     #'AuditDescriptor'{};
-merge_auditDescriptor(Tokens) when list(Tokens) ->
+merge_auditDescriptor(Tokens) when is_list(Tokens) ->
     case lists:keysearch(terminationAudit, 1, Tokens) of
 	{value, {terminationAudit, TA}} ->
 	    case lists:keydelete(terminationAudit, 1, Tokens) of
@@ -582,8 +582,9 @@ merge_ServiceChangeParm([], _SCP, Required) ->
     exit({missing_required_serviceChangeParm, Required});
 
 merge_ServiceChangeParm([{address, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE,
-       SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE ->
+  when ((SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE) 
+	andalso 
+	(SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE)) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeAddress = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{address, Val}|_Parms], SCP0, _Req) 
@@ -592,8 +593,8 @@ merge_ServiceChangeParm([{address, Val}|_Parms], SCP0, _Req)
     exit({not_both_address_mgcid_serviceChangeParm, Val, MgcId});
 
 merge_ServiceChangeParm([{mgc_id, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeMgcId == asn1_NOVALUE,
-       SCP0#'ServiceChangeParm'.serviceChangeAddress == asn1_NOVALUE ->
+  when ((SCP0#'ServiceChangeParm'.serviceChangeMgcId =:= asn1_NOVALUE) andalso 
+       (SCP0#'ServiceChangeParm'.serviceChangeAddress =:= asn1_NOVALUE)) ->
     SCP = SCP0#'ServiceChangeParm'{serviceChangeMgcId = Val},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{mgc_id, Val}|_Parms], SCP0, _Req) 
@@ -640,26 +641,28 @@ merge_ServiceChangeParm([{extension, _Val}|Parms], SCP0, Req) ->
 
 %% OTP-5353.
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE, atom(Val) ->
+  when ((SCP0#'ServiceChangeParm'.serviceChangeInfo =:= asn1_NOVALUE)
+	andalso is_atom(Val)) ->
     SCI = #'AuditDescriptor'{auditToken = [Val]},
     SCP = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when SCP0#'ServiceChangeParm'.serviceChangeInfo == asn1_NOVALUE,tuple(Val) ->
+  when ((SCP0#'ServiceChangeParm'.serviceChangeInfo =:= asn1_NOVALUE)
+	andalso is_tuple(Val)) ->
     SCI = #'AuditDescriptor'{auditPropertyToken = [Val]},
     SCP = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor'),
-       atom(Val) ->
+  when (is_record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor')
+	andalso is_atom(Val)) ->
     SCI0 = SCP0#'ServiceChangeParm'.serviceChangeInfo,
     L    = SCI0#'AuditDescriptor'.auditToken,
     SCI  = SCI0#'AuditDescriptor'{auditToken = [Val|L]},
     SCP  = SCP0#'ServiceChangeParm'{serviceChangeInfo = SCI},
     merge_ServiceChangeParm(Parms, SCP, Req);
 merge_ServiceChangeParm([{audit_item, Val}|Parms], SCP0, Req) 
-  when record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor'),
-       tuple(Val) ->
+  when (is_record(SCP0#'ServiceChangeParm'.serviceChangeInfo, 'AuditDescriptor') 
+       andalso is_tuple(Val)) ->
     SCI0 = SCP0#'ServiceChangeParm'.serviceChangeInfo,
     L    = SCI0#'AuditDescriptor'.auditPropertyToken,
     SCI  = SCI0#'AuditDescriptor'{auditPropertyToken = [Val|L]},
@@ -974,12 +977,12 @@ do_merge_eventParameters([H | T], StreamId, EPL, RA, HasA) ->
             do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
         {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
             do_merge_eventParameters(T, NewStreamId, EPL, RA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
         _ ->
             return_error(0, {bad_eventParameter, H})
@@ -1016,12 +1019,12 @@ do_merge_secondEventParameters([H | T], StreamId, EPL, SRA, HasA) ->
             do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
         {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
             do_merge_secondEventParameters(T, NewStreamId, EPL, SRA, HasA);
-        {other, PP} when record(PP, 'PropertyParm') ->
+        {other, PP} when is_record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
             do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
-        {other, EP} when record(EP, 'EventParameter') ->
+        {other, EP} when is_record(EP, 'EventParameter') ->
             do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
         _ ->
             return_error(0, {bad_secondEventParameter, H})
@@ -1121,7 +1124,7 @@ merge_action_requests(CtxId, Items) ->
 
 do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, CmdReq, TopReq, [H | T]) ->
     case H of
-        _ when record(H, 'CommandRequest') ->
+        _ when is_record(H, 'CommandRequest') ->
             do_merge_action_requests(CtxId, CtxReq, CtxAuditReq, [H | CmdReq], TopReq, T);
 
         {priority, Int} when CtxReq#'ContextRequest'.priority == asn1_NOVALUE ->
@@ -1223,9 +1226,9 @@ do_merge_action_reply([], CtxReq, TopReq, CmdList) ->
                    commandReply = lists:reverse(CmdList)}.
 
 strip_contextRequest(R, TopReq)
-  when R#'ContextRequest'.priority    == asn1_NOVALUE,
-       R#'ContextRequest'.emergency   == asn1_NOVALUE,
-       TopReq == [] ->
+  when ((R#'ContextRequest'.priority =:= asn1_NOVALUE) andalso 
+	(R#'ContextRequest'.emergency =:= asn1_NOVALUE) andalso 
+	(TopReq =:= [])) ->
     asn1_NOVALUE;
 strip_contextRequest(R, []) ->
     R#'ContextRequest'{topologyReq = asn1_NOVALUE};
@@ -1234,9 +1237,9 @@ strip_contextRequest(R, TopReq) ->
 
 
 strip_contextAttrAuditRequest(R)
-  when R#'ContextAttrAuditRequest'.priority  == asn1_NOVALUE,
-       R#'ContextAttrAuditRequest'.emergency == asn1_NOVALUE,
-       R#'ContextAttrAuditRequest'.topology  == asn1_NOVALUE ->
+  when ((R#'ContextAttrAuditRequest'.priority  =:= asn1_NOVALUE) andalso 
+	(R#'ContextAttrAuditRequest'.emergency =:= asn1_NOVALUE) andalso 
+	(R#'ContextAttrAuditRequest'.topology  =:= asn1_NOVALUE)) ->
     asn1_NOVALUE;
 strip_contextAttrAuditRequest(R) ->
     R.
@@ -1565,7 +1568,7 @@ ensure_uint(Val, Min, Max, Line) ->
 	    if
 		is_integer(Max) andalso (Val =< Max) ->
 		    Val;
-		Max == infinity ->
+		Max =:= infinity ->
 		    Val;
 		true ->
 		    return_error(Line, {too_large_integer, Val, Max})

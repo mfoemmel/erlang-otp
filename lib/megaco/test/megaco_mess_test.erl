@@ -1942,7 +1942,7 @@ single_trans_req_and_reply(doc) ->
      "reply (discard ack). "
      "The MGC is a megaco instance (megaco event sequence) and the "
      "MG is emulated (tcp event sequence)"];
-single_trans_req_and_reply(Config) when list(Config) ->
+single_trans_req_and_reply(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        strar),
@@ -2451,7 +2451,7 @@ single_trans_req_and_reply_sendopts(doc) ->
      "reply with handle_ack and a reply_timer in sendoptions. "
      "The MGC is a megaco instance (megaco event sequence) and the "
      "MG is emulated (tcp event sequence)"];
-single_trans_req_and_reply_sendopts(Config) when list(Config) ->
+single_trans_req_and_reply_sendopts(Config) when is_list(Config) ->
     %% <CONDITIONAL-SKIP>
     Skippable = [{unix, [darwin, linux]}],
     Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
@@ -4852,7 +4852,7 @@ trans_req_and_reply_and_req(doc) ->
      "then receive the same reply again after the timeout. "
      "The MGC is a megaco instance (megaco event sequence) and the "
      "MG is emulated (tcp event sequence)"];
-trans_req_and_reply_and_req(Config) when list(Config) ->
+trans_req_and_reply_and_req(Config) when is_list(Config) ->
     %% <CONDITIONAL-SKIP>
     Skippable = [{unix, [darwin, linux]}],
     Condition = fun() -> ?OS_BASED_SKIP(Skippable) end,
@@ -7010,7 +7010,7 @@ otp_4359_analyze_result(RH, [{M,ignore,_}|T]) ->
     otp_4359_analyze_result(RH,T).
 
 otp_4359_analyze_encoded_message(RH, ExpErrorCode, M) 
-  when is_record(RH, megaco_receive_handle), binary(M) ->
+  when is_record(RH, megaco_receive_handle) andalso is_binary(M) ->
     #megaco_receive_handle{encoding_mod    = Mod,
 			   encoding_config = Conf} = RH,
     case (catch Mod:decode_message(Conf, M)) of
@@ -8825,7 +8825,7 @@ otp_6276(suite) ->
     [];
 otp_6276(doc) ->
     "OTP-6276: Cancel when receiving reply raise condition";
-otp_6276(Config) when list(Config) ->
+otp_6276(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_6276),
@@ -9480,7 +9480,7 @@ otp_6276(suite) ->
     [];
 otp_6276(doc) ->
     "OTP-6276";
-otp_6276(Config) when list(Config) ->
+otp_6276(Config) when is_list(Config) ->
 
     ?SKIP("included only if compiled with USE_MEGACO_TEST_CODE=true").
 
@@ -11908,7 +11908,7 @@ otp_7189(suite) ->
     [];
 otp_7189(doc) ->
     "...";
-otp_7189(Config) when list(Config) ->
+otp_7189(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_7189),
@@ -12897,9 +12897,9 @@ cre_transReq(TransId, ARs) when is_list(ARs) ->
     #'TransactionRequest'{transactionId = TransId,
 			  actions       = ARs}.
 
-cre_transResult(ED) when record(ED, 'ErrorDescriptor') ->
+cre_transResult(ED) when is_record(ED, 'ErrorDescriptor') ->
     {transactionError, ED};
-cre_transResult([AR|_] = ARs) when record(AR, 'ActionReply') ->
+cre_transResult([AR|_] = ARs) when is_record(AR, 'ActionReply') ->
     {actionReplies, ARs}.
 
 cre_transReply(TransId, Res) ->
@@ -12950,7 +12950,7 @@ cre_actionReply(CtxId, CmdRep) ->
     #'ActionReply'{contextId    = CtxId,
                    commandReply = CmdRep}.
 
-cre_serviceChangeProf(Name, Ver) when is_list(Name), integer(Ver) ->
+cre_serviceChangeProf(Name, Ver) when is_list(Name) andalso is_integer(Ver) ->
     #'ServiceChangeProfile'{profileName = Name, 
                             version     = Ver}.
 

@@ -113,9 +113,9 @@ tickets(Case) ->
     display_result(Res),
     Res.
 
-tickets(Cases, Config) when list(Cases) ->     
+tickets(Cases, Config) when is_list(Cases) ->     
     [tickets(Case, Config) || Case <- Cases];
-tickets(Mod, Config) when atom(Mod) ->
+tickets(Mod, Config) when is_atom(Mod) ->
     Res = tickets(Mod, tickets, Config),
     Res;
 tickets(Bad, _Config) ->
@@ -143,7 +143,7 @@ tickets(Mod, Func, Config) ->
 
         {req, _, {conf, Init, Cases, Finish}} ->
 	    case (catch Mod:Init(Config)) of
-		Conf when list(Conf) ->
+		Conf when is_list(Conf) ->
 		    io:format("Expand: ~p:~p ...~n", [Mod, Func]),
 		    Map = fun({M,_}) when is_atom(M) -> 
 				  tickets(M, tickets, Config);
@@ -342,7 +342,7 @@ wait_for_evaluator(Pid, Mod, Fun, Config, Errors, AccTime) ->
     TestCase = {?MODULE, Mod, Fun},
     Label = lists:concat(["TEST CASE: ", Fun]),
     receive
-	{done, Pid, ok, Time} when Errors == [] ->
+	{done, Pid, ok, Time} when Errors =:= [] ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors, Time};
@@ -350,7 +350,7 @@ wait_for_evaluator(Pid, Mod, Fun, Config, Errors, AccTime) ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config]),
 	    {failed, {Mod, Fun}, Errors, Time};
-	{done, Pid, {ok, _}, Time} when Errors == [] ->
+	{done, Pid, {ok, _}, Time} when Errors =:= [] ->
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors, Time};
@@ -664,7 +664,7 @@ init_per_testcase(_Case, Config) ->
 	    io:format("init_per_testcase -> "
 		      "already registered to ~p~n", [Pid]),
 	    ok;
-	OtherPid when pid(OtherPid) ->
+	OtherPid when is_pid(OtherPid) ->
 	    io:format("init_per_testcase -> "
 		      "already registered to other ~p (~p)~n", [OtherPid,Pid]),
 	    exit({already_registered, {megaco_global_logger, OtherPid, Pid}})
@@ -677,7 +677,7 @@ fin_per_testcase(_Case, Config) ->
 	undefined ->
 	    io:format("fin_per_testcase -> already un-registered~n", []),
 	    ok;
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    global:unregister_name(megaco_global_logger),
 	    ok
     end,
@@ -696,7 +696,7 @@ set_kill_timer(Config) ->
 		case lookup_config(tc_timeout, Config) of
 		    [] ->
 			timer:minutes(5);
-		    ConfigTime when integer(ConfigTime) ->
+		    ConfigTime when is_integer(ConfigTime) ->
 			ConfigTime
 		end,
 	    Dog = 
@@ -773,7 +773,7 @@ do_prepare_test_case([], Nodes, _Config, _File, _Line) ->
 pick_n_nodes(all, AllNodes, _File, _Line) ->
     AllNodes;
 pick_n_nodes(N, AllNodes, _File, _Line) 
-  when integer(N), length(AllNodes) >= N ->
+  when is_integer(N) andalso (length(AllNodes) >= N) ->
     AllNodes -- lists:nthtail(N, AllNodes);
 pick_n_nodes(N, AllNodes, File, Line) ->
     fatal_skip({too_few_nodes, N, AllNodes}, File, Line).
@@ -815,7 +815,7 @@ start_nodes([Node | Nodes], File, Line) ->
 	pang ->
 	    [Name, Host] = node_to_name_and_host(Node),
 	    case slave:start_link(Host, Name) of
-		{ok, NewNode} when NewNode == Node ->
+		{ok, NewNode} when NewNode =:= Node ->
 		    Path = code:get_path(),
 		    {ok, Cwd} = file:get_cwd(),
 		    true = rpc:call(Node, code, set_path, [Path]),

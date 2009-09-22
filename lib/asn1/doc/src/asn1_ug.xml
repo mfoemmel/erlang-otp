@@ -108,6 +108,44 @@
         <url href="http://www.erlang.org/download/erlang-book-part1.pdf">PDF</url> format.
         </p>
     </section>
+
+    <section>
+      <title>Capability</title>
+      <p>This application covers all features of ASN.1 up to the 1997
+      edition of the specification. In the 2002 edition some new
+      extensions came up of which there are support only for some of
+      them. ECN (Cncoding Control Notation) and XML notation are still
+      unsupported. Though, the other features of 2002 edition are
+      fully or partly supported as shown below:</p>
+      <list type="bulleted">
+	<item>
+	  <p>Decimal notation (e.g., "1.5e3") for REAL values. The
+	  NR1, NR2 and NR3 formats as explained in ISO6093 are
+	  supported.</p>
+	</item>
+	<item>
+	  <p>The RELATIVE-OID type for relative object identifiers are
+	  fully supported.</p>
+	</item>
+	<item>
+	  <p>The subtype constraint (CONTAINING/ENCODED BY) to
+	  constrain the content of an octet string or a bit string is
+	  parsed when compiling, but no further action is taken. This
+	  constraint is not a PER-visible constraint.</p>
+	</item>
+	<item>
+	  <p>The subtype constraint by regular expressions (PATTERN) for character string types is parsed when compiling, but no further action is taken. This constraint is not a PER-visible constraint.</p>
+	</item>
+	<item>
+	  <p>Multiple-line comments as in C, <c>/* ... */</c>, are
+	  supported.</p>
+	</item>
+      </list>
+      <p>It should also be added here that the encoding formats
+      supported are <em>BER</em>, <em>DER</em>, <em>PER aligned
+      basic</em> variant and <em>PER unaligned basic</em> variant.</p>
+    </section>
+
   </section>
 
   <section>

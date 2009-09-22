@@ -36,10 +36,11 @@
 #  define zstrerror(errnum) ""
 #endif
 
-#include "zutil.h"
+#include "gzio_zutil.h"
+#include "erl_zlib.h"
 #include "gzio.h"
 
-struct internal_state {int dummy;}; /* for buggy compilers */
+/********struct internal_state {int dummy;}; / * for buggy compilers */
 
 #define Z_BUFSIZE 4096
 
@@ -126,9 +127,7 @@ local gzFile gz_open (path, mode)
     s = (gz_stream *)ALLOC(sizeof(gz_stream));
     if (!s) return Z_NULL;
 
-    s->stream.zalloc = (alloc_func)0;
-    s->stream.zfree = (free_func)0;
-    s->stream.opaque = (voidpf)0;
+    erl_zlib_alloc_init(&s->stream);
     s->stream.next_in = s->inbuf = Z_NULL;
     s->stream.next_out = s->outbuf = Z_NULL;
     s->stream.avail_in = s->stream.avail_out = 0;
@@ -717,9 +716,7 @@ erts_gzinflate_buffer(char* start, uLong size)
 
     zstr.next_in = (unsigned char*) start;
     zstr.avail_in = size;
-    zstr.zalloc = (alloc_func)0;
-    zstr.zfree = (free_func)0;
-    zstr.opaque = (voidpf)0;
+    erl_zlib_alloc_init(&zstr);
     size *= 2;
     if ((bin = driver_alloc_binary(size)) == NULL) {
 	return NULL;
@@ -778,9 +775,7 @@ erts_gzdeflate_buffer(char* start, uLong size)
     int comprLen = size + (size/1000) + 1 + 12; /* see zlib.h */
 
     crc = crc32(0L, Z_NULL, 0);
-    c_stream.zalloc = (alloc_func)0;
-    c_stream.zfree = (free_func)0;
-    c_stream.opaque = (voidpf)0;
+    erl_zlib_alloc_init(&c_stream);
 
     if (deflateInit2(&c_stream, Z_DEFAULT_COMPRESSION,
 		     Z_DEFLATED, -MAX_WBITS, DEF_MEM_LEVEL, 0) != Z_OK)

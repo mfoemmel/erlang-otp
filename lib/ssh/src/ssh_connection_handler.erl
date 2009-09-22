@@ -16,9 +16,7 @@
 %% 
 %% %CopyrightEnd%
 %%
-
 %%
-
 %%----------------------------------------------------------------------
 %% Purpose: Handles the setup of an ssh connection, e.i. both the
 %% setup SSH Transport Layer Protocol (RFC 4253) and Authentication
@@ -369,8 +367,19 @@ userauth(#ssh_msg_userauth_failure{},
 		manager = Pid} = State) ->
     case ssh_auth:userauth_request_msg(Ssh0) of
 	{disconnect, Event, {Msg, _}} ->
-	    send_msg(Msg, State),
-	    ssh_connection_manager:event(Pid, Event),
+	    try 
+		send_msg(Msg, State),
+		ssh_connection_manager:event(Pid, Event)
+	    catch
+		exit:{noproc, _Reason} ->
+		    Report = io_lib:format("Connection Manager terminated: ~p~n",
+					   [Pid]),
+		    error_logger:info_report(Report);
+		  exit:Exit ->
+		    Report = io_lib:format("Connection Manager returned:~n~p~n~p~n",
+					   [Msg, Exit]),
+		    error_logger:info_report(Report)
+	    end,
 	    {stop, normal, State};
 	{Msg, Ssh} ->	  
 	    send_msg(Msg, State),
@@ -427,7 +436,7 @@ handle_event({send, Data}, StateName, #state{ssh_params = Ssh0} = State) ->
 
 handle_event(#ssh_msg_disconnect{} = Msg, _StateName, 
 	     #state{manager = Pid} = State) ->
-    ssh_connection_manager:event(Pid, Msg),
+    (catch ssh_connection_manager:event(Pid, Msg)),
     {stop, normal, State};
 
 handle_event(#ssh_msg_ignore{}, StateName, State) ->
@@ -571,7 +580,8 @@ handle_info({CloseTag, _Socket}, _StateName,
 %%--------------------------------------------------------------------
 terminate(normal, _, #state{transport_cb = Transport,
 			    socket = Socket}) ->
-    Transport:close(Socket);
+    (catch Transport:close(Socket)),
+    ok;
 
 terminate(shutdown, _, State) ->
     DisconnectMsg = 
@@ -785,7 +795,7 @@ handle_ssh_packet(Length, StateName, #state{decoded_data_buffer = DecData0,
 					%% Important to be set for
 					%% next_packet
 					decoded_data_buffer = <<>>}, EncData);
-	    false ->
+	false ->
 	    DisconnectMsg = 
 		#ssh_msg_disconnect{code = ?SSH_DISCONNECT_PROTOCOL_ERROR,
 				    description = "Bad mac",
@@ -796,9 +806,19 @@ handle_ssh_packet(Length, StateName, #state{decoded_data_buffer = DecData0,
 handle_disconnect(#ssh_msg_disconnect{} = Msg, 
 		  #state{ssh_params = Ssh0, manager = Pid} = State) ->
     {SshPacket, Ssh} = ssh_transport:ssh_packet(Msg, Ssh0),
-    send_msg(SshPacket, State),
-    ssh_connection_manager:event(Pid, Msg),
-    %%ok = ssh_connection_manager:delivered(Pid),
+    try 
+ 	send_msg(SshPacket, State),
+ 	ssh_connection_manager:event(Pid, Msg)
+    catch
+	exit:{noproc, _Reason} ->
+	    Report = io_lib:format("~p Connection Manager terminated: ~p~n",
+				   [self(), Pid]),
+	    error_logger:info_report(Report);
+	exit:Exit ->
+	    Report = io_lib:format("Connection Manager returned:~n~p~n~p~n",
+				   [Msg, Exit]),
+	    error_logger:info_report(Report)
+    end,
     {stop, normal, State#state{ssh_params = Ssh}}.
 
 counterpart_versions(NumVsn, StrVsn, #ssh{role = server} = Ssh) ->

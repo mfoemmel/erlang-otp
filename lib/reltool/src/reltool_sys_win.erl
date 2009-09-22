@@ -19,7 +19,7 @@
 -module(reltool_sys_win).
 
 %% Public
--export([start/1, set_app/2, open_app/2]).
+-export([start_link/1, get_server/1, set_app/2, open_app/2]).
 
 %% Internal
 -export([init/1, loop/1]).
@@ -36,7 +36,7 @@
 
 -record(state, 
         {parent_pid,
-         xref_pid,
+         server_pid,
          app_wins,
          sys,
          common,
@@ -66,11 +66,14 @@
 -define(APP_GRAPH_ITEM, 301).
 -define(MOD_GRAPH_ITEM, 302).
 -define(LOAD_CONFIG_ITEM, 303).
--define(SAVE_CONFIG_ITEM, 304).
--define(UNDO_CONFIG_ITEM, 305).
--define(RESET_CONFIG_ITEM, 306).
--define(GEN_REL_FILES_ITEM, 307).
--define(GEN_TARGET_ITEM, 308).
+-define(SAVE_CONFIG_NODEF_NODER_ITEM, 304).
+-define(SAVE_CONFIG_NODEF_DER_ITEM, 305).
+-define(SAVE_CONFIG_DEF_NODER_ITEM, 306).
+-define(SAVE_CONFIG_DEF_DER_ITEM, 307).
+-define(UNDO_CONFIG_ITEM, 308).
+-define(RESET_CONFIG_ITEM, 309).
+-define(GEN_REL_FILES_ITEM, 310).
+-define(GEN_TARGET_ITEM, 311).
 
 -define(APP_PAGE, "Applications").
 -define(LIB_PAGE, "Libraries").
@@ -96,35 +99,20 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Client
 
-start(Opts) ->
+start_link(Opts) ->
     proc_lib:start_link(?MODULE, init, [[{parent, self()} | Opts]], infinity, []).
 
+get_server(Pid) ->
+    reltool_utils:call(Pid, get_server).
+
 set_app(Pid, App) ->
-    call(Pid, {set_app, App}).
+    reltool_utils:call(Pid, {set_app, App}).
 
 open_app(Pid, AppName) ->
-    call(Pid, {open_app, AppName}).
-
-call(Name, Msg) when is_atom(Name) ->
-    call(whereis(Name), Msg);
-call(Pid, Msg) when is_pid(Pid) ->
-    Ref = erlang:monitor(process, Pid),
-    %% io:format("Send~p: ~p\n", [self(), Msg]),
-    Pid ! {self(), Ref, Msg},
-    receive
-        {Ref, Reply} ->
-            %% io:format("Rec~p: ~p\n", [self(), Reply]),
-            erlang:demonitor(Ref, [flush]),
-            Reply;
-        {'DOWN', Ref, _, _, Reason} ->
-            {error, Reason}
-    end.
+    reltool_utils:call(Pid, {open_app, AppName}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Server
-
-reply(Pid, Ref, Msg) ->
-    Pid ! {Ref, Msg}.
 
 init(Options) ->
     try
@@ -135,11 +123,11 @@ init(Options) ->
     end.
 
 do_init([{parent, Parent} | Options]) ->
-    case reltool_server:start(Options) of
-        {ok, XrefPid, C, Sys} ->
+    case reltool_server:start_link(Options) of
+        {ok, ServerPid, C, Sys} ->
 	    process_flag(trap_exit, C#common.trap_exit),
             S = #state{parent_pid = Parent,
-                       xref_pid = XrefPid,
+                       server_pid = ServerPid,
                        common = C,
                        config_file = filename:absname("config.reltool"),
                        target_dir = filename:absname("reltool_target_dir"),
@@ -151,23 +139,43 @@ do_init([{parent, Parent} | Options]) ->
             S2 = create_window(S),
 
             %% wx_misc:beginBusyCursor(),
-            {ok, Sys2}  = reltool_server:get_sys(XrefPid),
-	    S3 = S2#state{sys = Sys2},
-            S5 = wx:batch(fun() ->
-				  Title = atom_to_list(?APPLICATION),
-				  wxFrame:setTitle(S3#state.frame, Title),
-				  %% wxFrame:setMinSize(Frame, {?WIN_WIDTH, ?WIN_HEIGHT}),
-				  wxStatusBar:setStatusText(S3#state.status_bar, "Done."),
-				  S4 = redraw_apps(S3),
-				  redraw_libs(S4)
-			  end),
-            %% wx_misc:endBusyCursor(),
-            %% wxFrame:destroy(Frame),
-            proc_lib:init_ack(S#state.parent_pid, {ok, self()}),
-            loop(S5);
-        {error, Reason} ->
-            io:format("~p(~p): <ERROR> ~p\n", [?MODULE, ?LINE, Reason]),
-            exit(Reason)
+	    case reltool_server:get_status(ServerPid) of
+		{ok, Warnings} ->
+		    exit_dialog(Warnings),
+		    {ok, Sys2}  = reltool_server:get_sys(ServerPid),
+		    S3 = S2#state{sys = Sys2},
+		    S5 = wx:batch(fun() ->
+					  Title = atom_to_list(?APPLICATION),
+					  wxFrame:setTitle(S3#state.frame, Title),
+					  %% wxFrame:setMinSize(Frame, {?WIN_WIDTH, ?WIN_HEIGHT}),
+					  wxStatusBar:setStatusText(S3#state.status_bar, "Done."),
+					  S4 = redraw_apps(S3),
+					  redraw_libs(S4)
+				  end),
+		    %% wx_misc:endBusyCursor(),
+		    %% wxFrame:destroy(Frame),
+		    proc_lib:init_ack(S#state.parent_pid, {ok, self()}),
+		    loop(S5);
+		{error, Reason} ->
+		    io:format("~p(~p): <ERROR> ~p\n", [?MODULE, ?LINE, Reason]),
+		    exit(Reason)
+	    end;
+	{error, Reason} ->
+	    io:format("~p(~p): <ERROR> ~p\n", [?MODULE, ?LINE, Reason]),
+	    exit(Reason)
+    end.
+
+exit_dialog([]) ->
+    ok;
+exit_dialog(Warnings) ->
+    Question = "Do you want to continue despite these warnings?",
+    Details = lists:flatten([[W, $\n] || W <- Warnings]),
+    case question_dialog(Question, Details) of
+        ?wxID_OK ->
+	    ok;
+        ?wxID_CANCEL  ->
+	    io:format("~p(~p): <ERROR> ~s\n", [?MODULE, ?LINE, Details]),
+	    exit(Details)
     end.
 
 loop(S) ->
@@ -205,14 +213,17 @@ loop(S) ->
         #wx{} = Wx ->
             S2 = handle_event(S, Wx),
             ?MODULE:loop(S2);
-        {ReplyTo, Ref, {set_app,  NewApp}} ->
+        {call, ReplyTo, Ref, get_server} ->
+            reltool_utils:reply(ReplyTo, Ref, {ok, S#state.server_pid}),
+            ?MODULE:loop(S);
+        {call, ReplyTo, Ref, {set_app,  NewApp}} ->
             {ok, AnalysedApp, S2} = do_set_app(S, NewApp),
-            reply(ReplyTo, Ref, {ok, AnalysedApp}),
+            reltool_utils:reply(ReplyTo, Ref, {ok, AnalysedApp}),
             ?MODULE:loop(S2);
-        {ReplyTo, Ref, {open_app, AppName}} ->
+        {call, ReplyTo, Ref, {open_app, AppName}} ->
             S2 = do_open_app(S, AppName),
 	    {value, #app_win{pid = AppPid}} = lists:keysearch(AppName, #app_win.name, S2#state.app_wins),
-            reply(ReplyTo, Ref, {ok, AppPid}),
+            reltool_utils:reply(ReplyTo, Ref, {ok, AppPid}),
             ?MODULE:loop(S2);
         {'EXIT', Pid, Reason} when Pid =:= S#state.parent_pid ->
             [reltool_fgraph_win:stop(FW#fgraph_win.pid, Reason) || FW <- S#state.fgraph_wins],
@@ -301,7 +312,13 @@ create_menubar(Frame) ->
     wxMenu:append(File, ?RESET_CONFIG_ITEM, "Reset configuration to default" ),
     wxMenu:append(File, ?UNDO_CONFIG_ITEM, "Undo configuration (toggle)" ),
     wxMenu:append(File, ?LOAD_CONFIG_ITEM, "Load configuration" ),
-    wxMenu:append(File, ?SAVE_CONFIG_ITEM, "Save configuration" ),
+    Save = wxMenu:new(),
+    wxMenu:append(Save, ?SAVE_CONFIG_NODEF_NODER_ITEM, "Save explicit configuration  (neither defaults nor derivates)"),
+    wxMenu:append(Save, ?SAVE_CONFIG_DEF_NODER_ITEM  , "Save configuration defaults  (defaults only)"),
+    wxMenu:append(Save, ?SAVE_CONFIG_NODEF_DER_ITEM,   "Save configuration derivates (derivates only))"),
+    wxMenu:append(Save, ?SAVE_CONFIG_DEF_DER_ITEM,     "Save extended configuration  (both defaults and derivates)"),
+
+    wxMenu:append(File, ?wxID_ANY, "Save configuration", Save),
     wxMenu:appendSeparator(File),
     wxMenu:append(File, ?GEN_REL_FILES_ITEM, "Generate rel, script and boot files" ),
     wxMenu:append(File, ?GEN_TARGET_ITEM, "Generate target system" ),
@@ -452,7 +469,7 @@ redraw_libs(#state{lib_tree = Tree, sys = Sys} = S) ->
     wxTreeCtrl:deleteAllItems(Tree),
 
     Top = wxTreeCtrl:addRoot(Tree, "Sources", []),
-    {ok, Erts} = reltool_server:get_app(S#state.xref_pid, erts),
+    {ok, Erts} = reltool_server:get_app(S#state.server_pid, erts),
     append_root(Tree, Top, Sys#sys.root_dir, Erts),
 
     LibItem = wxTreeCtrl:appendItem(Tree, Top, "Library directories", []),
@@ -612,11 +629,11 @@ do_open_app(S, AppBase) when is_list(AppBase) ->
     do_open_app(S, AppName);
 do_open_app(S, '') ->
     S;
-do_open_app(#state{xref_pid = Xref, common = C, app_wins = AppWins} = S, AppName) when is_atom(AppName) ->
+do_open_app(#state{server_pid = ServerPid, common = C, app_wins = AppWins} = S, AppName) when is_atom(AppName) ->
     case lists:keysearch(AppName, #app_win.name, AppWins) of
         false ->
             WxEnv = wx:get_env(),
-            {ok, Pid} = reltool_app_win:start(WxEnv, Xref, C, AppName),
+            {ok, Pid} = reltool_app_win:start_link(WxEnv, ServerPid, C, AppName),
             AW = #app_win{name = AppName, pid = Pid},
             S#state{app_wins = [AW | AppWins]};
         {value, AW} ->
@@ -698,8 +715,14 @@ handle_event(S, #wx{id = Id, obj= ObjRef, userData = UserData, event = Event} = 
             undo_config(S);
         #wxCommand{type = command_menu_selected} when Id =:= ?LOAD_CONFIG_ITEM ->
             load_config(S);
-        #wxCommand{type = command_menu_selected} when Id =:= ?SAVE_CONFIG_ITEM ->
-            save_config(S);
+        #wxCommand{type = command_menu_selected} when Id =:= ?SAVE_CONFIG_NODEF_NODER_ITEM ->
+            save_config(S, false, false);
+        #wxCommand{type = command_menu_selected} when Id =:= ?SAVE_CONFIG_NODEF_DER_ITEM ->
+            save_config(S, false, true);
+        #wxCommand{type = command_menu_selected} when Id =:= ?SAVE_CONFIG_DEF_NODER_ITEM ->
+            save_config(S, true, false);
+        #wxCommand{type = command_menu_selected} when Id =:= ?SAVE_CONFIG_DEF_DER_ITEM ->
+            save_config(S, true, true);
         #wxCommand{type = command_menu_selected} when Id =:= ?GEN_REL_FILES_ITEM ->
             gen_rel_files(S);
         #wxCommand{type = command_menu_selected} when Id =:= ?GEN_TARGET_ITEM ->
@@ -723,8 +746,8 @@ handle_event(S, #wx{id = Id, obj= ObjRef, userData = UserData, event = Event} = 
 				     AboutStr,
 				     [{style, ?wxOK bor ?wxICON_INFORMATION}, 
 				      {caption, "About Reltool"}]),
-	    wxDialog:showModal(MD),
-	    wxDialog:destroy(MD),
+	    wxMessageDialog:showModal(MD),
+	    wxMessageDialog:destroy(MD),
             S;
         #wxMenu{type = menu_close} ->
             S#state{popup_menu = undefined};
@@ -924,9 +947,9 @@ handle_app_event(S, Event, ObjRef, UserData) ->
                         [?MODULE, self(), ObjRef, UserData, Event]),
     S.
 
-handle_app_button(#state{xref_pid = Xref, app_wins = AppWins} = S, Items, Action) ->
+handle_app_button(#state{server_pid = ServerPid, app_wins = AppWins} = S, Items, Action) ->
     NewApps = [move_app(S, Item, Action) || Item <- Items],
-    case reltool_server:set_apps(Xref, NewApps) of
+    case reltool_server:set_apps(ServerPid, NewApps) of
 	{ok, []} ->
 	    ok;
 	{ok, Warnings} ->
@@ -938,14 +961,14 @@ handle_app_button(#state{xref_pid = Xref, app_wins = AppWins} = S, Items, Action
     [ok = reltool_app_win:refresh(AW#app_win.pid) || AW <- AppWins],
     redraw_apps(S).
 
-do_set_sys(#state{sys = Sys, xref_pid = Xref, status_bar = Bar} = S) ->
+do_set_sys(#state{sys = Sys, server_pid = ServerPid, status_bar = Bar} = S) ->
     wxStatusBar:setStatusText(Bar, "Processing libraries..."),
-    Status = reltool_server:set_sys(Xref, Sys),
+    Status = reltool_server:set_sys(ServerPid, Sys),
     check_and_refresh(S, Status).
 
 move_app(S, {_ItemNo, AppBase}, Action) ->
     {AppName, _Vsn} = reltool_utils:split_app_name(AppBase), 
-    {ok, OldApp} = reltool_server:get_app(S#state.xref_pid, AppName),
+    {ok, OldApp} = reltool_server:get_app(S#state.server_pid, AppName),
     AppCond = 
         case Action of
             whitelist_add ->
@@ -967,8 +990,8 @@ move_app(S, {_ItemNo, AppBase}, Action) ->
         end,
     OldApp#app{incl_cond = AppCond}.
 
-do_set_app(#state{xref_pid = Xref, app_wins = AppWins} = S, NewApp) ->
-    {ok, AnalysedApp, Warnings} = reltool_server:set_app(Xref, NewApp),
+do_set_app(#state{server_pid = ServerPid, app_wins = AppWins} = S, NewApp) ->
+    {ok, AnalysedApp, Warnings} = reltool_server:set_app(ServerPid, NewApp),
     [ok = reltool_app_win:refresh(AW#app_win.pid) || AW <- AppWins],
     S2 = redraw_apps(S),
     case Warnings of
@@ -980,15 +1003,15 @@ do_set_app(#state{xref_pid = Xref, app_wins = AppWins} = S, NewApp) ->
     end,
     {ok, AnalysedApp, S2}.
 
-redraw_apps(#state{xref_pid = Xref,
+redraw_apps(#state{server_pid = ServerPid,
                    source = SourceCtrl,
                    whitelist = WhiteCtrl,
                    blacklist = BlackCtrl,
                    derived = DerivedCtrl} = S) ->
-    {ok, SourceApps} = reltool_server:get_apps(Xref, source),
-    {ok, WhiteApps} = reltool_server:get_apps(Xref, whitelist),
-    {ok, BlackApps} = reltool_server:get_apps(Xref, blacklist),
-    {ok, DerivedApps} = reltool_server:get_apps(Xref, derived),
+    {ok, SourceApps} = reltool_server:get_apps(ServerPid, source),
+    {ok, WhiteApps} = reltool_server:get_apps(ServerPid, whitelist),
+    {ok, BlackApps} = reltool_server:get_apps(ServerPid, blacklist),
+    {ok, DerivedApps} = reltool_server:get_apps(ServerPid, derived),
 
     BadApps = fun(#app{used_by_apps = UsedBy} = A) when UsedBy =/= [] ->
                       A#app{status = missing};
@@ -1039,8 +1062,8 @@ do_redraw_apps(ListCtrl, Apps, OkImage, ErrImage) ->
     N.
 
 update_app_graph(S) ->
-    {ok, WhiteApps} = reltool_server:get_apps(S#state.xref_pid, whitelist),
-    {ok, DerivedApps} = reltool_server:get_apps(S#state.xref_pid, derived),
+    {ok, WhiteApps} = reltool_server:get_apps(S#state.server_pid, whitelist),
+    {ok, DerivedApps} = reltool_server:get_apps(S#state.server_pid, derived),
 
     WhiteNames = [A#app.name || A <- WhiteApps],
     DerivedNames = [A#app.name || A <- DerivedApps],
@@ -1062,8 +1085,8 @@ update_app_graph(S) ->
     create_fgraph_window(S, Title, Nodes, Links).
 
 update_mod_graph(S) ->
-    {ok, WhiteApps} = reltool_server:get_apps(S#state.xref_pid, whitelist),
-    {ok, DerivedApps} = reltool_server:get_apps(S#state.xref_pid, derived),
+    {ok, WhiteApps} = reltool_server:get_apps(S#state.server_pid, whitelist),
+    {ok, DerivedApps} = reltool_server:get_apps(S#state.server_pid, derived),
     WhiteMods = lists:usort([M || A <- WhiteApps, M <- A#app.mods, M#mod.is_included =:= true]),
     DerivedMods = lists:usort([M || A <- DerivedApps, M <- A#app.mods, M#mod.is_included =:= true]),
 
@@ -1108,12 +1131,12 @@ create_fgraph_window(S, Title, Nodes, Links) ->
 
 reset_config(#state{status_bar = Bar} = S) ->
     wxStatusBar:setStatusText(Bar, "Processing libraries..."),
-    Status = reltool_server:reset_config(S#state.xref_pid),
+    Status = reltool_server:reset_config(S#state.server_pid),
     check_and_refresh(S, Status).
 
 undo_config(#state{status_bar = Bar} = S) ->
     wxStatusBar:setStatusText(Bar, "Processing libraries..."),
-    ok = reltool_server:undo_config(S#state.xref_pid),
+    ok = reltool_server:undo_config(S#state.server_pid),
     refresh(S).
 
 load_config(#state{status_bar = Bar, config_file = OldFile} = S) ->
@@ -1121,17 +1144,17 @@ load_config(#state{status_bar = Bar, config_file = OldFile} = S) ->
     case select_file(S#state.frame, "Select a file to load the configuration from", OldFile, Style) of
         {ok, NewFile} ->
             wxStatusBar:setStatusText(Bar, "Processing libraries..."),
-            Status = reltool_server:load_config(S#state.xref_pid, NewFile),
+            Status = reltool_server:load_config(S#state.server_pid, NewFile),
             check_and_refresh(S#state{config_file = NewFile}, Status);
         cancel ->
             S
     end.
 
-save_config(#state{config_file = OldFile} = S) ->
+save_config(#state{config_file = OldFile} = S, InclDefaults, InclDerivates) ->
     Style = ?wxFD_SAVE bor ?wxFD_OVERWRITE_PROMPT, 
     case select_file(S#state.frame, "Select a file to save the configuration to", OldFile, Style) of
         {ok, NewFile} ->
-            Status = reltool_server:save_config(S#state.xref_pid, NewFile),
+            Status = reltool_server:save_config(S#state.server_pid, NewFile, InclDefaults, InclDerivates),
             check_and_refresh(S#state{config_file = NewFile}, Status);
         cancel ->
             S
@@ -1141,7 +1164,7 @@ gen_rel_files(#state{target_dir = OldDir} = S) ->
     Style = ?wxFD_SAVE bor ?wxFD_OVERWRITE_PROMPT, 
     case select_dir(S#state.frame, "Select a directory to generate rel, script and boot files to", OldDir, Style) of
         {ok, NewDir} ->
-            Status = reltool_server:gen_rel_files(S#state.xref_pid, NewDir),
+            Status = reltool_server:gen_rel_files(S#state.server_pid, NewDir),
             check_and_refresh(S, Status);
         cancel ->
             S
@@ -1151,7 +1174,7 @@ gen_target(#state{target_dir = OldDir} = S) ->
     Style = ?wxFD_SAVE bor ?wxFD_OVERWRITE_PROMPT, 
     case select_dir(S#state.frame, "Select a directory to generate a target system to", OldDir, Style) of
         {ok, NewDir} ->
-            Status = reltool_server:gen_target(S#state.xref_pid, NewDir),
+            Status = reltool_server:gen_target(S#state.server_pid, NewDir),
             check_and_refresh(S#state{target_dir = NewDir}, Status);
         cancel ->
             S
@@ -1188,11 +1211,8 @@ check_and_refresh(S, Status) ->
     case Status of
         ok ->
             true;
-        {ok, []} ->
-            true;
         {ok, Warnings} ->
-            Q = lists:flatten([[W, $\n] || W <- Warnings]),
-            undo_dialog(S, "Do you want to perform the update despite these warnings?\n\n" ++ Q);
+            undo_dialog(S, Warnings);
         {error, Reason} when is_list(Reason) ->
             display_message(Reason, ?wxICON_ERROR),
 	    false;
@@ -1204,23 +1224,51 @@ check_and_refresh(S, Status) ->
     refresh(S).
 
 refresh(S) ->
-    {ok, Sys} = reltool_server:get_sys(S#state.xref_pid),
+    {ok, Sys} = reltool_server:get_sys(S#state.server_pid),
     [ok = reltool_app_win:refresh(AW#app_win.pid) || AW <- S#state.app_wins],
     S2 = S#state{sys = Sys},
     S3 = redraw_libs(S2),
     redraw_apps(S3).
     
-undo_dialog(S, Question) ->
-    Dialog = wxMessageDialog:new(wx:null(),
-                                 Question,
-                                 [{style, ?wxYES_NO bor ?wxICON_ERROR}]),
-    Answer = wxMessageDialog:showModal(Dialog),
-    wxMessageDialog:destroy(Dialog),
-    case Answer of
-        ?wxID_YES ->
+question_dialog(Question, Details) ->
+    %% Parent = S#state.frame,
+    Parent = wx:typeCast(wx:null(), wxWindow),
+    %% [{style, ?wxYES_NO bor ?wxICON_ERROR bor ?wx}]),
+    DialogStyle = ?wxRESIZE_BORDER bor ?wxCAPTION bor ?wxSYSTEM_MENU bor
+	?wxMINIMIZE_BOX bor ?wxMAXIMIZE_BOX bor ?wxCLOSE_BOX,
+    Dialog = wxDialog:new(Parent, ?wxID_ANY, "Undo dialog", [{style, DialogStyle}]),
+    Color = wxWindow:getBackgroundColour(Dialog),
+    TextStyle = ?wxTE_READONLY bor ?wxTE_MULTILINE bor ?wxHSCROLL,
+    Text1 = wxTextCtrl:new(Dialog, ?wxID_ANY, [{style, ?wxTE_READONLY bor ?wxBORDER_NONE}]),
+    wxWindow:setBackgroundColour(Text1, Color),
+    wxTextCtrl:appendText(Text1, Question),
+    Text2 = wxTextCtrl:new(Dialog, ?wxID_ANY, [{size, {600, 400}}, {style, TextStyle}]),
+    wxWindow:setBackgroundColour(Text2, Color),
+    wxTextCtrl:appendText(Text2, Details),
+    %% wxDialog:setAffirmativeId(Dialog, ?wxID_YES),
+    %% wxDialog:setEscapeId(Dialog, ?wxID_NO),
+    Sizer = wxBoxSizer:new(?wxVERTICAL),
+    wxSizer:add(Sizer, Text1, [{border, 2}, {flag, ?wxEXPAND}]),
+    wxSizer:add(Sizer, Text2, [{border, 2}, {flag, ?wxEXPAND}, {proportion, 1}]),
+    ButtSizer = wxDialog:createStdDialogButtonSizer(Dialog, ?wxOK bor ?wxCANCEL),
+    wxSizer:add(Sizer, ButtSizer, [{border, 2}, {flag, ?wxEXPAND}]),
+    wxPanel:setSizer(Dialog, Sizer),
+    wxSizer:fit(Sizer, Dialog),
+    wxSizer:setSizeHints(Sizer, Dialog),
+    Answer = wxDialog:showModal(Dialog),
+    wxDialog:destroy(Dialog),
+    Answer.
+
+undo_dialog(_S, []) ->
+    true;
+undo_dialog(S, Warnings) ->
+    Question = "Do you want to perform the update despite these warnings?",
+    Details = lists:flatten([[W, $\n] || W <- Warnings]),
+    case question_dialog(Question, Details) of
+        ?wxID_OK ->
             true;
-        ?wxID_NO  ->
-            reltool_server:undo_config(S#state.xref_pid),
+        ?wxID_CANCEL  ->
+            reltool_server:undo_config(S#state.server_pid),
             false
     end.
 

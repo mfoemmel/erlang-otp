@@ -109,9 +109,12 @@ encrypt_private(PlainText, Key, Options)  ->
     pubkey_crypto:encrypt_private(PlainText, Key, Padding).
 
 %%--------------------------------------------------------------------
-%% Function: pem_to_der(File) ->
-%%           pem_to_der(File, Password) -> {ok, [Entry]} | {error, Reason}
+%% Function: pem_to_der(CertSource) ->
+%%           pem_to_der(CertSource, Password) -> {ok, [Entry]} |
+%%                                               {error, Reason}
 %%
+%%      CertSource = File | CertData
+%%      CertData = binary()
 %%	File = path()
 %%	Password = string()
 %%	Entry = {entry_type(), der_bin(), ChipherInfo}
@@ -120,17 +123,19 @@ encrypt_private(PlainText, Key, Options)  ->
 %%	entry_type() = cert | cert_req | rsa_private_key | dsa_private_key
 %%      dh_params
 %%
-%% Description: Read and decode PEM file and returns entries as asn1
-%% der encoded entities. Currently supported entry types are
-%% certificates, certificate requests, rsa private keys and dsa
-%% private keys. In the case of a key entry ChipherInfo will be
+%% Description: decode PEM binary data or a PEM file and return
+%% entries as asn1 der encoded entities. Currently supported entry
+%% types are certificates, certificate requests, rsa private keys and
+%% dsa private keys. In the case of a key entry ChipherInfo will be
 %% used by decode_private_key/2 if the key is protected by a password.
 %%--------------------------------------------------------------------
-pem_to_der(File) ->
-    pubkey_pem:read_file(File).
+pem_to_der(CertSource) ->
+    pem_to_der(CertSource, no_passwd).
 
-pem_to_der(File, Password) ->
-    pubkey_pem:read_file(File, Password).
+pem_to_der(File, Password) when is_list(File) ->
+    pubkey_pem:read_file(File, Password);
+pem_to_der(PemBin, Password) when is_binary(PemBin) ->
+    pubkey_pem:decode(PemBin, Password).
 
 %%--------------------------------------------------------------------
 %% Function: pkix_decode_cert(BerCert, Type) -> {ok, Cert} | {error, Reason}

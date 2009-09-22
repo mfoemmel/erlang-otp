@@ -47,8 +47,8 @@
 -include("hipe_icode_type.hrl").
 -include("../flow/cfg.hrl").
 
--type args_fun()  :: fun((mfa(), cfg()) -> [erl_type()]).
--type call_fun()  :: fun((mfa(), [_]) -> erl_type()).
+-type args_fun()  :: fun((mfa(), cfg()) -> [erl_types:erl_type()]).
+-type call_fun()  :: fun((mfa(), [_]) -> erl_types:erl_type()).
 -type final_fun() :: fun((mfa(), [_]) -> 'ok').
 -type data()	  :: {mfa(), args_fun(), call_fun(), final_fun()}.
 
@@ -102,8 +102,8 @@
 -record(state, {info_map  = gb_trees:empty() :: gb_tree(),
 		cfg                          :: cfg(),
 		liveness  = gb_trees:empty() :: gb_tree(),
-		arg_types                    :: [erl_type()],
-		ret_type  = [t_none()]       :: [erl_type()],
+		arg_types                    :: [erl_types:erl_type()],
+		ret_type  = [t_none()]       :: [erl_types:erl_type()],
 		lookupfun                    :: call_fun(),
 		resultaction                 :: final_fun()}).
 
@@ -367,8 +367,6 @@ call_always_fails(#icode_call{} = I, Info) ->
     {erlang, exit, 1} -> false;
     {erlang, error, 1} -> false;
     {erlang, error, 2} -> false;
-    {erlang, fault, 1} -> false;
-    {erlang, fault, 2} -> false;
     {erlang, throw, 1} -> false;
     {erlang, hibernate, 3} -> false;
     Fun ->
@@ -424,10 +422,11 @@ do_if(I, Info) ->
 	  case hipe_icode:if_op(I) of
 	    '=:='->
 	      case t_is_none(Inf) of
-		true -> [{FalseLab, Info}];
-		false -> [{TrueLab, enter(Arg1, Inf, 
-					  enter(Arg2, Inf, Info))}, 
-			  {FalseLab, Info}]
+		true ->
+		  [{FalseLab, Info}];
+		false ->
+		  [{TrueLab, enter(Arg1, Inf, enter(Arg2, Inf, Info))}, 
+		   {FalseLab, Info}]
 	      end;
 	    '=/=' ->
 	      case t_is_none(Inf) of
@@ -1194,7 +1193,8 @@ handle_call_and_enter(I) ->
 	    NewI ->
 	      pos_transform_arith(NewI)
 	  end;
-	false -> I
+	false ->
+	  I
       end
   end.
 
@@ -1797,10 +1797,7 @@ info_is_equal(Info1, Info2) ->
   compare(gb_trees:to_list(Info1), gb_trees:to_list(Info2)).
 
 compare([{Var, Type1}|Left1], [{Var, Type2}|Left2]) ->
-  case t_is_equal(Type1, Type2) of
-    true -> compare(Left1, Left2);
-    false -> false
-  end;
+  t_is_equal(Type1, Type2) andalso compare(Left1, Left2);
 compare([], []) ->
   true;
 compare(_, _) ->
@@ -1863,15 +1860,10 @@ butlast([_]) ->
 butlast([H|T]) ->
   [H|butlast(T)].
 
--spec any_is_none([erl_type()]) -> bool().
+-spec any_is_none([erl_types:erl_type()]) -> boolean().
 
-any_is_none([H|T]) ->
-  case t_is_none(H) of
-    true -> true;
-    false -> any_is_none(T)
-  end;
-any_is_none([]) ->
-  false.
+any_is_none(Types) ->
+  lists:any(fun (T) -> t_is_none(T) end, Types).
 
 is_var_or_reg(X) ->
   hipe_icode:is_var(X) orelse hipe_icode:is_reg(X).
@@ -1938,7 +1930,7 @@ state__ret_type_update(#state{ret_type = RT} = State, NewType) when
   TotType = lists:zipwith(fun erl_types:t_sup/2, RT, NewType),
   State#state{ret_type = TotType};
 state__ret_type_update(#state{ret_type = RT} = State, NewType) ->
-  state__ret_type_update(State, lists:duplicate(length(RT), NewType)). 
+  state__ret_type_update(State, [NewType || _ <- RT]). 
 
 state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info) ->
   LiveIn = hipe_icode_ssa:ssa_liveness__livein(Liveness, Label),
@@ -2098,7 +2090,6 @@ unannotate_instr(I) ->
      true -> hipe_icode:subst(Subst, I)
   end.
 
-
 %% _________________________________________________________________
 %%
 %% Find the types of the arguments to a call
@@ -2184,14 +2175,15 @@ add_fun_to_arg_type(T) ->
 %% Icode Coordinator Callbacks
 %%=====================================================================
 
--spec replace_nones([erl_type()] | erl_type()) -> [erl_type()].
+-spec replace_nones([erl_types:erl_type()] | erl_types:erl_type()) ->
+        [erl_types:erl_type()].
 
 replace_nones(Types) when is_list(Types) ->
   [replace_none(T) || T <- Types];
 replace_nones(Type) ->
   [replace_none(Type)].
 
--spec replace_none(erl_type()) -> erl_type().
+-spec replace_none(erl_types:erl_type()) -> erl_types:erl_type().
 
 replace_none(Type) ->
   case erl_types:t_is_none(Type) of
@@ -2201,7 +2193,8 @@ replace_none(Type) ->
       Type
   end.
 
--spec update__info([erl_type()], [erl_type()]) -> {bool(), [erl_type()]}.
+-spec update__info([erl_types:erl_type()], [erl_types:erl_type()]) ->
+        {boolean(), [erl_types:erl_type()]}.
 
 update__info(NewTypes, OldTypes) ->
   SupFun =
@@ -2211,22 +2204,22 @@ update__info(NewTypes, OldTypes) ->
   Change = lists:zipwith(EqFun, ResTypes, OldTypes),
   {lists:all(fun(X) -> X end, Change), ResTypes}.
  
--spec new__info([erl_type()]) -> [erl_type()].
+-spec new__info([erl_types:erl_type()]) -> [erl_types:erl_type()].
 
 new__info(NewTypes) ->
   [erl_types:t_limit(T, ?TYPE_DEPTH) || T <- NewTypes].
 
--spec return__info(erl_type()) -> erl_type().
+-spec return__info(erl_types:erl_type()) -> erl_types:erl_type().
 
 return__info(Types) ->
   Types.
 
--spec return_none() -> [erl_type(),...].
+-spec return_none() -> [erl_types:erl_type(),...].
 
 return_none() ->
   [erl_types:t_none()].
 
--spec return_none_args(cfg(), mfa()) -> [erl_type()].
+-spec return_none_args(cfg(), mfa()) -> [erl_types:erl_type()].
 
 return_none_args(Cfg, {_M,_F,A}) ->
   NoArgs = 
@@ -2236,7 +2229,7 @@ return_none_args(Cfg, {_M,_F,A}) ->
     end,
   lists:duplicate(NoArgs, erl_types:t_none()).
 
--spec return_any_args(cfg(), mfa()) -> [erl_type()].
+-spec return_any_args(cfg(), mfa()) -> [erl_types:erl_type()].
 
 return_any_args(Cfg, {_M,_F,A}) ->
   NoArgs = 

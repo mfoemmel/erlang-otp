@@ -48,14 +48,16 @@
 	 handle_info/2,
 	 terminate/2]).
 	 
--import(gen_server, [call/2]).
-
 %% User interface 
 
 %% Start up using the .hosts.erlang file
-start(Name) ->    
+
+-spec start(atom()) -> [node()].
+start(Name) ->
     start(Name,[]).
-start(Name,Args) when is_atom(Name) ->
+
+-spec start(atom(), string()) -> [node()].
+start(Name, Args) when is_atom(Name) ->
     gen_server:start({global, pool_master}, pool, [], []),
     Hosts = net_adm:host_file(),
     Nodes = start_nodes(Hosts, Name, Args),
@@ -65,13 +67,30 @@ start(Name,Args) when is_atom(Name) ->
 %%
 %% Interface functions ...
 %%
-get_nodes() ->          get_elements(2,get_nodes_and_load()).
-attach(Node) ->         call({global, pool_master}, {attach, Node}).
-get_nodes_and_load() -> call({global, pool_master},get_nodes).
-get_node() ->           call({global, pool_master},get_node).
-pspawn(M,F,A) ->        call({global, pool_master}, 
-			     {spawn, group_leader(), M,F,A}).
-pspawn_link(M,F,A) ->   P = pspawn(M,F,A),link(P), P.
+-spec get_nodes() -> [node()].
+get_nodes() ->
+    get_elements(2, get_nodes_and_load()).
+
+-spec attach(node()) -> 'already_attached' | 'attached'.
+attach(Node) ->
+    gen_server:call({global, pool_master}, {attach, Node}).
+
+get_nodes_and_load() ->
+    gen_server:call({global, pool_master}, get_nodes).
+
+-spec get_node() -> node().
+get_node() ->
+    gen_server:call({global, pool_master}, get_node).
+
+-spec pspawn(module(), atom(), [term()]) -> pid().
+pspawn(M, F, A) ->
+    gen_server:call({global, pool_master}, {spawn, group_leader(), M, F, A}).
+
+-spec pspawn_link(module(), atom(), [term()]) -> pid().
+pspawn_link(M, F, A) ->
+    P = pspawn(M, F, A),
+    link(P),
+    P.
 
 start_nodes([], _, _) -> [];
 start_nodes([Host|Tail], Name, Args) -> 
@@ -83,14 +102,16 @@ start_nodes([Host|Tail], Name, Args) ->
 	    [Node | start_nodes(Tail, Name, Args)]
     end.
 
-stop() -> call({global, pool_master}, stop).
+-spec stop() -> 'stopped'.
+stop() ->
+    gen_server:call({global, pool_master}, stop).
 
 get_elements(_Pos,[]) -> [];
 get_elements(Pos,[E|T]) -> [element(Pos,E) | get_elements(Pos,T)].
 
 stop_em([]) -> stopped;
 stop_em([N|Tail]) ->
-    rpc:cast(N,erlang,halt,[]),
+    rpc:cast(N, erlang, halt, []),
     stop_em(Tail).
 
 init([]) ->
@@ -100,25 +121,21 @@ init([]) ->
 
 handle_call(get_nodes, _From, Nodes)->
     {reply, Nodes, Nodes};
-
 handle_call(get_node, _From, [{Load,N}|Tail]) ->
     {reply, N, Tail++[{Load+1, N}]};
-
 handle_call({attach, Node}, _From, Nodes) ->
-    case lists:keysearch(Node,2,Nodes) of
-	{value,_} ->
+    case lists:keymember(Node, 2, Nodes) of
+	true ->
 	    {reply, already_attached, Nodes};
 	false ->
 	    erlang:monitor_node(Node, true),
 	    spawn_link(Node, pool, statistic_collector, []),
 	    {reply, attached, Nodes++[{999999,Node}]}
     end;
-
-handle_call({spawn,Gl, M, F, A}, _From, Nodes) ->
+handle_call({spawn, Gl, M, F, A}, _From, Nodes) ->
     [{Load,N}|Tail] = Nodes,
     Pid = spawn(N, pool, do_spawn, [Gl, M, F, A]),
     {reply, Pid, Tail++[{Load+1, N}]};
-
 handle_call(stop, _From, Nodes) ->
     %% clean up in terminate/2
     {stop, normal, stopped, Nodes}.
@@ -127,12 +144,10 @@ handle_cast(_, Nodes) ->
     {noreply, Nodes}.
 
 handle_info({Node,load,Load}, Nodes) ->
-    Nodes2 = insert_node({Load,Node},Nodes),
+    Nodes2 = insert_node({Load,Node}, Nodes),
     {noreply, Nodes2};
-
 handle_info({nodedown, Node}, Nodes) ->
-    {noreply, lists:keydelete(Node,2,Nodes)};
-
+    {noreply, lists:keydelete(Node, 2, Nodes)};
 handle_info(_, Nodes) ->  %% The EXIT signals etc.etc
     {noreply, Nodes}.
 
@@ -141,9 +156,10 @@ terminate(_Reason, Nodes) ->
     stop_em(N),
     ok.
 
+-spec do_spawn(pid(), module(), atom(), [term()]) -> term().
 do_spawn(Gl, M, F, A) ->
-    group_leader(Gl,self()),
-    apply(M,F,A).
+    group_leader(Gl, self()),
+    apply(M, F, A).
 
 insert_node({Load,Node},[{L,Node}|Tail]) when Load > L ->
     %% We have a raised load here
@@ -158,16 +174,15 @@ insert_node(X,[]) ->          % Can't happen
     error_logger:error_msg("Pool_master: Bad node list X=~w\n", [X]),
     exit(crash).
 
-
 pure_insert({Load,Node},[]) ->
     [{Load,Node}];
 pure_insert({Load,Node},[{L,N}|Tail]) when Load < L ->
-    [{Load,Node} , {L,N} | Tail];
+    [{Load,Node}, {L,N} | Tail];
 pure_insert(L,[H|T]) -> [H|pure_insert(L,T)].
 
-%% Really should not meassure the contributions from
+%% Really should not measure the contributions from
 %% the back ground processes here .... which we do :-(
-%% We don';t have to monitor the master, since we're slaves anyway
+%% We don't have to monitor the master, since we're slaves anyway
 
 statistic_collector() ->
     statistic_collector(5).
@@ -179,25 +194,19 @@ statistic_collector(I) ->
 	undefined ->
 	    statistic_collector(I-1);
 	M ->
-	    stat_loop(M,999999)
+	    stat_loop(M, 999999)
     end.
 
 %% Do not tell the master about our load if it has not  changed
 
-stat_loop(M,Old) ->
+stat_loop(M, Old) ->
     sleep(2000),
     case statistics(run_queue) of
 	Old ->
-	    stat_loop(M,Old);
+	    stat_loop(M, Old);
 	NewLoad ->
-	    M ! {node(),load,NewLoad}, %% async 
-	    stat_loop(M,NewLoad)
+	    M ! {node(), load, NewLoad}, %% async 
+	    stat_loop(M, NewLoad)
     end.
 
 sleep(I) -> receive after I -> ok end.
-
-    
-    
-
-
-

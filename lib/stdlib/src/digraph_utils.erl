@@ -35,30 +35,52 @@
 	 preorder/1, postorder/1]).
 
 %%
+%%  A convenient type alias
+%%
+
+-type vertices() :: [digraph:vertex()].
+
+%%
 %%  Exported functions
 %%
 
+-spec components(digraph()) -> vertices().
+
 components(G) ->
     forest(G, fun inout/3).
-    
+
+-spec strong_components(digraph()) -> vertices().
+
 strong_components(G) ->
     forest(G, fun in/3, revpostorder(G)).
+
+-spec cyclic_strong_components(digraph()) -> vertices().
 
 cyclic_strong_components(G) ->
     remove_singletons(strong_components(G), G, []).
 
+-spec reachable(vertices(), digraph()) -> vertices().
+
 reachable(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun out/3, Vs, first)).
-    
+
+-spec reachable_neighbours(vertices(), digraph()) -> vertices().
+
 reachable_neighbours(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun out/3, Vs, not_first)).
-    
+
+-spec reaching(vertices(), digraph()) -> vertices().
+
 reaching(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun in/3, Vs, first)).
-    
+
+-spec reaching_neighbours(vertices(), digraph()) -> vertices().
+
 reaching_neighbours(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun in/3, Vs, not_first)).
-    
+
+-spec topsort(digraph()) -> vertices() | 'false'.
+
 topsort(G) ->
     L = revpostorder(G),
     case length(forest(G, fun in/3, L)) =:= length(digraph:vertices(G)) of
@@ -66,12 +88,13 @@ topsort(G) ->
 	false -> false
     end.
 
+-spec is_acyclic(digraph()) -> boolean().
+
 is_acyclic(G) ->
-    case loop_vertices(G) of
-	[] -> topsort(G) =/= false;
-	_  -> false
-    end.
-    
+    loop_vertices(G) =:= [] andalso topsort(G) =/= false.
+
+-spec arborescence_root(digraph()) -> 'no' | {'yes', digraph:vertex()}.
+
 arborescence_root(G) ->
     case digraph:no_edges(G) =:= digraph:no_vertices(G) - 1 of
         true ->
@@ -91,15 +114,23 @@ arborescence_root(G) ->
             no
     end.
 
+-spec is_arborescence(digraph()) -> boolean().
+
 is_arborescence(G) ->
     arborescence_root(G) =/= no.
+
+-spec is_tree(digraph()) -> boolean().
 
 is_tree(G) ->
     (digraph:no_edges(G) =:= digraph:no_vertices(G) - 1)
     andalso (length(components(G)) =:= 1).
 
+-spec loop_vertices(digraph()) -> vertices().
+
 loop_vertices(G) ->
     [V || V <- digraph:vertices(G), is_reflexive_vertex(V, G)].
+
+-spec subgraph(digraph(), vertices()) -> digraph().
 
 subgraph(G, Vs) ->
     try
@@ -109,6 +140,11 @@ subgraph(G, Vs) ->
 	    erlang:error(badarg)
     end.
 
+-type option() :: {'type', 'inherit' | [digraph:d_type()]}
+                | {'keep_labels', boolean()}.
+
+-spec subgraph(digraph(), vertices(), [option()]) -> digraph().
+
 subgraph(G, Vs, Opts) ->
     try
 	subgraph_opts(G, Vs, Opts)
@@ -116,6 +152,8 @@ subgraph(G, Vs, Opts) ->
 	throw:badarg ->
 	    erlang:error(badarg)
     end.
+
+-spec condensation(digraph()) -> digraph().
 
 condensation(G) ->
     SCs = strong_components(G),
@@ -137,9 +175,13 @@ condensation(G) ->
     ets:delete(V2I),
     ets:delete(I2C),
     SCG.
-			   
+
+-spec preorder(digraph()) -> vertices().
+
 preorder(G) ->
     lists:reverse(revpreorder(G)).
+
+-spec postorder(digraph()) -> vertices().
 
 postorder(G) ->
     lists:reverse(revpostorder(G)).

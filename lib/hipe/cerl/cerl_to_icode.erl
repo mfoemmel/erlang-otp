@@ -103,7 +103,7 @@
 
 %% Record definitions
 
--record(ctxt, {final = false :: bool(),
+-record(ctxt, {final = false :: boolean(),
 	       effect = false,
 	       fail = [],		% [] or fail-to label
 	       class = expr,		% expr | guard
@@ -956,18 +956,7 @@ expr_primop_1(?PRIMOP_GOTO_LABEL, 1, [A], _, _Ts, _Ctxt, _Env, S) ->
 expr_primop_1(?PRIMOP_REDUCTION_TEST, 0, [], _, _Ts, Ctxt, _Env, S) ->
     primop_reduction_test(Ctxt, S);
 expr_primop_1(Name, Arity, As, E, Ts, Ctxt, Env, S) ->
-    Bool = case is_bool_op(Name, Arity) of
-	       true ->
-		   true;
-	       false ->
-		   case is_comp_op(Name, Arity) of
-		       true ->
-			   true;
-		       false ->
-			   is_type_test(Name, Arity)
-		   end
-	   end,
-    case Bool of
+    case is_pure_op_aux(Name, Arity) of
 	true ->
 	    boolean_expr(E, Ts, Ctxt, Env, S);
 	false ->
@@ -1446,12 +1435,8 @@ is_binary_switch1([C|Cs], N) ->
 		true ->
 		    is_binary_switch1(Cs, N + 1);
 		false -> 
-		    if Cs =:= [], N > 0 ->
-			    %% The final clause may be a catch-all.
-			    cerl:type(P) =:= var;
-		       true ->
-			    false
-		    end
+		    %% The final clause may be a catch-all.
+		    Cs =:= [] andalso N > 0 andalso cerl:type(P) =:= var
 	    end;
 	_ ->
 	    false
@@ -1477,12 +1462,8 @@ is_switch([C | Cs], F, N) ->
 		true ->
 		    is_switch(Cs, F, N + 1);
 		false ->
-		    if Cs =:= [], N > 1 ->
-			    %% The final clause may be a catch-all.
-			    cerl:type(P) =:= var;
-		       true ->
-			    false
-		    end
+		    %% The final clause may be a catch-all.
+		    Cs =:= [] andalso N > 1 andalso cerl:type(P) =:= var
 	    end;
 	false -> false
     end;
@@ -2340,11 +2321,7 @@ function_check(_, _) ->
 %% safe versions, such as '+'/2 -> add_integer/2.
 
 is_safe_op(N, A) ->
-    case is_comp_op(N, A) of
-	true -> true;
-	false ->
-	    is_type_test(N, A)
-    end.
+    is_comp_op(N, A) orelse is_type_test(N, A).
 
 is_pure_op(?PRIMOP_ELEMENT, 2) -> true;
 is_pure_op(?PRIMOP_MAKE_FUN, 6) -> true;
@@ -2367,20 +2344,15 @@ is_pure_op(?PRIMOP_THROW, 1) -> true;
 is_pure_op(?PRIMOP_ERROR, 1) -> true;
 is_pure_op(?PRIMOP_ERROR, 2) -> true;
 is_pure_op(?PRIMOP_RETHROW, 2) -> true;
-is_pure_op(N, A) ->
-    case is_bool_op(N, A) of
-	true -> true;
-	false ->
-	    case is_comp_op(N, A) of
-		true -> true;
-		false -> is_type_test(N, A)
-	    end
-    end.
+is_pure_op(N, A) -> is_pure_op_aux(N, A).
+
+is_pure_op_aux(N, A) ->
+    is_bool_op(N, A) orelse is_comp_op(N, A) orelse is_type_test(N, A).
 
 translate_flags(Flags, Align) ->
     translate_flags1(cerl:concrete(Flags), Align).
 
-translate_flags1([A|Rest],Align) ->
+translate_flags1([A|Rest], Align) ->
     case A of
 	signed ->
 	    4 + translate_flags1(Rest, Align);

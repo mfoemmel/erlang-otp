@@ -191,6 +191,7 @@
          pretty_otp7671_msg03/1,
          pretty_otp7671_msg04/1,
          pretty_otp7671_msg05/1,
+         pretty_otp8114_msg01/1,
 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -278,7 +279,7 @@ expand([Case|Cases], Acc) ->
     case (catch apply(?MODULE,Case,[suite])) of
 	[] ->
 	    expand(Cases, [Case|Acc]);
-	C when list(C) ->
+	C when is_list(C) ->
 	    expand(Cases, [expand(C, [])|Acc]);
 	_ ->
 	    expand(Cases, [Case|Acc])
@@ -563,7 +564,8 @@ pretty_tickets(suite) ->
      pretty_otp7671_msg02,
      pretty_otp7671_msg03,
      pretty_otp7671_msg04,
-     pretty_otp7671_msg05
+     pretty_otp7671_msg05,
+     pretty_otp8114_msg01
     ].
 
 
@@ -605,7 +607,7 @@ flex_pretty_tickets_cases() ->
 
 pretty_test_msgs(suite) ->
     [];
-pretty_test_msgs(Config) when list(Config) ->
+pretty_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
    	msgs1a(text) ++ 
@@ -636,7 +638,7 @@ flex_pretty_finish(Config) ->
     
 flex_pretty_test_msgs(suite) ->
     [];
-flex_pretty_test_msgs(Config) when list(Config) ->
+flex_pretty_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(text) ++ 
@@ -655,7 +657,7 @@ flex_pretty_test_msgs(Config) when list(Config) ->
 
 compact_test_msgs(suite) ->
     [];
-compact_test_msgs(Config) when list(Config) ->
+compact_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(text) ++ 
@@ -681,7 +683,7 @@ flex_compact_finish(Config) ->
 
 flex_compact_test_msgs(suite) ->
     [];
-flex_compact_test_msgs(Config) when list(Config) ->
+flex_compact_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(text) ++ 
@@ -698,14 +700,14 @@ flex_compact_test_msgs(Config) when list(Config) ->
 
 flex_compact_dm_timers1(suite) ->
     [];
-flex_compact_dm_timers1(Config) when list(Config) ->
+flex_compact_dm_timers1(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("1", "2", "3"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers1 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -717,14 +719,14 @@ flex_compact_dm_timers1(Config) when list(Config) ->
 
 flex_compact_dm_timers2(suite) ->
     [];
-flex_compact_dm_timers2(Config) when list(Config) ->
+flex_compact_dm_timers2(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("02", "03", "04"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers2 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -736,14 +738,14 @@ flex_compact_dm_timers2(Config) when list(Config) ->
 
 flex_compact_dm_timers3(suite) ->
     [];
-flex_compact_dm_timers3(Config) when list(Config) ->
+flex_compact_dm_timers3(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("1", "02", "31"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers3 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -755,14 +757,14 @@ flex_compact_dm_timers3(Config) when list(Config) ->
 
 flex_compact_dm_timers4(suite) ->
     [];
-flex_compact_dm_timers4(Config) when list(Config) ->
+flex_compact_dm_timers4(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("10", "21", "99"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers4 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -774,14 +776,14 @@ flex_compact_dm_timers4(Config) when list(Config) ->
 
 flex_compact_dm_timers5(suite) ->
     [];
-flex_compact_dm_timers5(Config) when list(Config) ->
+flex_compact_dm_timers5(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("99", "23", "11"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers5 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -793,14 +795,14 @@ flex_compact_dm_timers5(Config) when list(Config) ->
 
 flex_compact_dm_timers6(suite) ->
     [];
-flex_compact_dm_timers6(Config) when list(Config) ->
+flex_compact_dm_timers6(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("77", "09", "1"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers6 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -812,14 +814,14 @@ flex_compact_dm_timers6(Config) when list(Config) ->
 
 flex_compact_dm_timers7(suite) ->
     [];
-flex_compact_dm_timers7(Config) when list(Config) ->
+flex_compact_dm_timers7(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("77", "09", "1", "99"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers7 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -831,14 +833,14 @@ flex_compact_dm_timers7(Config) when list(Config) ->
 
 flex_compact_dm_timers8(suite) ->
     [];
-flex_compact_dm_timers8(Config) when list(Config) ->
+flex_compact_dm_timers8(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     M = build_dm_timers_message("01", "09", "01", "02"),
     B = list_to_binary(M),
     Conf = flex_scanner_conf(Config), 
     case decode_message(megaco_compact_text_encoder, false, 
 			[?EC_V3,Conf], B) of
-	{ok, M1} when record(M1,'MegacoMessage') ->
+	{ok, M1} when is_record(M1,'MegacoMessage') ->
 	    t("flex_compact_dm_timers8 -> "
 	      "~n   M:  ~s"
 	      "~n   M1: ~p", [M, M1]),
@@ -872,13 +874,13 @@ verify_dm_timers(TMRs, #'MegacoMessage'{mess = Mess}) ->
 	    exit({invalid_timer_values, {TMRs, TMRs1}})
     end.
 
-get_dm_timers({transactions, T}) when list(T) ->
+get_dm_timers({transactions, T}) when is_list(T) ->
     get_dm_timers1(T);
 get_dm_timers(Other) ->
     {error, {invalid_transactions, Other}}.
 
 get_dm_timers1([{transactionRequest,T}|Ts]) 
-  when record(T,'TransactionRequest') ->
+  when is_record(T,'TransactionRequest') ->
     case get_dm_timers2(T) of
 	{ok, Timers} ->
 	    Timers;
@@ -891,11 +893,11 @@ get_dm_timers1([]) ->
     {error, {no_timers, 'TransactionRequest'}}.
 
 
-get_dm_timers2(#'TransactionRequest'{actions = Actions}) when list(Actions) ->
+get_dm_timers2(#'TransactionRequest'{actions = Actions}) when is_list(Actions) ->
     get_dm_timers3(Actions).
 
 
-get_dm_timers3([#'ActionRequest'{commandRequests = Cmds}|Ars]) when list(Cmds) ->
+get_dm_timers3([#'ActionRequest'{commandRequests = Cmds}|Ars]) when is_list(Cmds) ->
     case get_dm_timers4(Cmds) of
 	{ok, Timers} ->
 	    {ok, Timers};
@@ -951,7 +953,7 @@ get_dm_timers6([]) ->
 
 bin_test_msgs(suite) ->
     [];
-bin_test_msgs(Config) when list(Config) ->
+bin_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(binary) ++ 
@@ -968,7 +970,7 @@ bin_test_msgs(Config) when list(Config) ->
 
 ber_test_msgs(suite) ->
     [];
-ber_test_msgs(Config) when list(Config) ->
+ber_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(binary) ++ 
@@ -985,7 +987,7 @@ ber_test_msgs(Config) when list(Config) ->
 
 ber_bin_test_msgs(suite) ->
     [];
-ber_bin_test_msgs(Config) when list(Config) ->
+ber_bin_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(binary) ++ 
@@ -1001,7 +1003,7 @@ ber_bin_test_msgs(Config) when list(Config) ->
 
 per_test_msgs(suite) ->
     [];
-per_test_msgs(Config) when list(Config) ->
+per_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(binary) ++ 
@@ -1017,7 +1019,7 @@ per_test_msgs(Config) when list(Config) ->
 
 per_bin_test_msgs(suite) ->
     [];
-per_bin_test_msgs(Config) when list(Config) ->
+per_bin_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(binary) ++ 
@@ -1033,7 +1035,7 @@ per_bin_test_msgs(Config) when list(Config) ->
 
 erl_dist_m_test_msgs(suite) ->
     [];
-erl_dist_m_test_msgs(Config) when list(Config) ->
+erl_dist_m_test_msgs(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     Msgs = 
 	msgs1a(erlang) ++ 
@@ -1058,7 +1060,7 @@ erl_dist_m_test_msgs(Config) when list(Config) ->
 %% Observe that this decode SHALL fail
 compact_otp4011_msg1(suite) ->
     [];
-compact_otp4011_msg1(Config) when list(Config) ->
+compact_otp4011_msg1(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("compact_otp4011_msg1 -> entry", []),
@@ -1074,7 +1076,7 @@ compact_otp4011_msg1(Config) when list(Config) ->
 %% Observe that this decode SHALL fail
 compact_otp4011_msg2(suite) ->
     [];
-compact_otp4011_msg2(Config) when list(Config) ->
+compact_otp4011_msg2(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("compact_otp4011_msg2 -> entry", []),
@@ -1091,7 +1093,7 @@ compact_otp4011_msg2(Config) when list(Config) ->
 
 compact_otp4011_msg3(suite) ->
     [];
-compact_otp4011_msg3(Config) when list(Config) ->
+compact_otp4011_msg3(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("compact_otp4011_msg3 -> entry", []),
@@ -1124,9 +1126,9 @@ compact_otp4011_chk1(R1) ->
     end.
 	    
 compact_otp4011_chk2({0, ParserMod, {ParserFunc, [A, B]}}) 
-  when (ParserMod  == megaco_text_parser_v3) and
-       (ParserFunc == do_merge_control_streamParms) and
-       is_list(A) and
+  when (ParserMod  =:= megaco_text_parser_v3) andalso
+       (ParserFunc =:= do_merge_control_streamParms) andalso
+       is_list(A) andalso
        is_record(B, 'LocalControlDescriptor') ->
     SM = B#'LocalControlDescriptor'.streamMode, 
     case lists:keysearch(mode, 1, A) of
@@ -1146,7 +1148,7 @@ compact_otp4011_chk2(Bad) ->
 %% MEGCAO instead of the correct MEGACO.
 compact_otp4013_msg1(suite) ->
     [];
-compact_otp4013_msg1(Config) when list(Config) ->
+compact_otp4013_msg1(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("compact_otp4013_msg1 -> entry", []),
@@ -1193,7 +1195,7 @@ compact_otp4013_chk1(Reason) ->
 %% 
 compact_otp4085_msg1(suite) ->
     [];
-compact_otp4085_msg1(Config) when list(Config) ->
+compact_otp4085_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4085_msg1 -> entry", []),
@@ -1247,7 +1249,7 @@ compact_otp4085_1_chk1(Reason) ->
 %% compact_otp4085_msg1 is actually ok when you add '}' at the end.
 compact_otp4085_msg2(suite) ->
     [];
-compact_otp4085_msg2(Config) when list(Config) ->
+compact_otp4085_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4085_msg1 -> entry", []),
@@ -1288,7 +1290,7 @@ compact_otp4085_erroneous_msg() ->
 %% 
 compact_otp4280_msg1(suite) ->
     [];
-compact_otp4280_msg1(Config) when list(Config) ->
+compact_otp4280_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4280_msg1 -> entry", []),
@@ -1327,7 +1329,7 @@ compact_otp4280_msg() ->
 %% 
 compact_otp4299_msg1(suite) ->
     [];
-compact_otp4299_msg1(Config) when list(Config) ->
+compact_otp4299_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4299_msg1 -> entry", []),
@@ -1373,7 +1375,7 @@ compact_otp4299_msg() ->
 
 compact_otp4359_msg1(suite) ->
     [];
-compact_otp4359_msg1(Config) when list(Config) ->
+compact_otp4359_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4359_msg1 -> entry", []),
@@ -1424,7 +1426,7 @@ compact_otp4359_chk(#'MegacoMessage'{mess = Mess}) ->
 %% 
 compact_otp4920_msg0(suite) ->
     [];
-compact_otp4920_msg0(Config) when list(Config) ->
+compact_otp4920_msg0(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg0 -> entry", []),
@@ -1436,7 +1438,7 @@ compact_otp4920_msg0(Config) when list(Config) ->
 
 compact_otp4920_msg1(suite) ->
     [];
-compact_otp4920_msg1(Config) when list(Config) ->
+compact_otp4920_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg1 -> entry", []),
@@ -1448,7 +1450,7 @@ compact_otp4920_msg1(Config) when list(Config) ->
 
 compact_otp4920_msg2(suite) ->
     [];
-compact_otp4920_msg2(Config) when list(Config) ->
+compact_otp4920_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg2 -> entry", []),
@@ -1460,7 +1462,7 @@ compact_otp4920_msg2(Config) when list(Config) ->
 
 compact_otp4920_msg3(suite) ->
     [];
-compact_otp4920_msg3(Config) when list(Config) ->
+compact_otp4920_msg3(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg3 -> entry", []),
@@ -1472,7 +1474,7 @@ compact_otp4920_msg3(Config) when list(Config) ->
 
 compact_otp4920_msg4(suite) ->
     [];
-compact_otp4920_msg4(Config) when list(Config) ->
+compact_otp4920_msg4(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg4 -> entry", []),
@@ -1484,7 +1486,7 @@ compact_otp4920_msg4(Config) when list(Config) ->
 
 compact_otp4920_msg5(suite) ->
     [];
-compact_otp4920_msg5(Config) when list(Config) ->
+compact_otp4920_msg5(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg5 -> entry", []),
@@ -1496,7 +1498,7 @@ compact_otp4920_msg5(Config) when list(Config) ->
 
 compact_otp4920_msg6(suite) ->
     [];
-compact_otp4920_msg6(Config) when list(Config) ->
+compact_otp4920_msg6(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg6 -> entry", []),
@@ -1508,7 +1510,7 @@ compact_otp4920_msg6(Config) when list(Config) ->
 
 compact_otp4920_msg7(suite) ->
     [];
-compact_otp4920_msg7(Config) when list(Config) ->
+compact_otp4920_msg7(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg7 -> entry", []),
@@ -1520,7 +1522,7 @@ compact_otp4920_msg7(Config) when list(Config) ->
 
 compact_otp4920_msg8(suite) ->
     [];
-compact_otp4920_msg8(Config) when list(Config) ->
+compact_otp4920_msg8(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg8 -> entry", []),
@@ -1532,7 +1534,7 @@ compact_otp4920_msg8(Config) when list(Config) ->
 
 compact_otp4920_msg9(suite) ->
     [];
-compact_otp4920_msg9(Config) when list(Config) ->
+compact_otp4920_msg9(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg9 -> entry", []),
@@ -1544,7 +1546,7 @@ compact_otp4920_msg9(Config) when list(Config) ->
 
 compact_otp4920_msg10(suite) ->
     [];
-compact_otp4920_msg10(Config) when list(Config) ->
+compact_otp4920_msg10(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg10 -> entry", []),
@@ -1556,7 +1558,7 @@ compact_otp4920_msg10(Config) when list(Config) ->
 
 compact_otp4920_msg11(suite) ->
     [];
-compact_otp4920_msg11(Config) when list(Config) ->
+compact_otp4920_msg11(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg11 -> entry", []),
@@ -1568,7 +1570,7 @@ compact_otp4920_msg11(Config) when list(Config) ->
 
 compact_otp4920_msg12(suite) ->
     [];
-compact_otp4920_msg12(Config) when list(Config) ->
+compact_otp4920_msg12(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg12 -> entry", []),
@@ -1581,7 +1583,7 @@ compact_otp4920_msg12(Config) when list(Config) ->
 %% Duplicate padding
 compact_otp4920_msg20(suite) ->
     [];
-compact_otp4920_msg20(Config) when list(Config) ->
+compact_otp4920_msg20(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg20 -> entry", []),
@@ -1594,7 +1596,7 @@ compact_otp4920_msg20(Config) when list(Config) ->
 %% Length
 compact_otp4920_msg21(suite) ->
     [];
-compact_otp4920_msg21(Config) when list(Config) ->
+compact_otp4920_msg21(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg21 -> entry", []),
@@ -1607,7 +1609,7 @@ compact_otp4920_msg21(Config) when list(Config) ->
 %% Length
 compact_otp4920_msg22(suite) ->
     [];
-compact_otp4920_msg22(Config) when list(Config) ->
+compact_otp4920_msg22(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg22 -> entry", []),
@@ -1620,7 +1622,7 @@ compact_otp4920_msg22(Config) when list(Config) ->
 %% Length
 compact_otp4920_msg23(suite) ->
     [];
-compact_otp4920_msg23(Config) when list(Config) ->
+compact_otp4920_msg23(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg23 -> entry", []),
@@ -1633,7 +1635,7 @@ compact_otp4920_msg23(Config) when list(Config) ->
 %% Length
 compact_otp4920_msg24(suite) ->
     [];
-compact_otp4920_msg24(Config) when list(Config) ->
+compact_otp4920_msg24(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg24 -> entry", []),
@@ -1646,7 +1648,7 @@ compact_otp4920_msg24(Config) when list(Config) ->
 %% Length
 compact_otp4920_msg25(suite) ->
     [];
-compact_otp4920_msg25(Config) when list(Config) ->
+compact_otp4920_msg25(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp4920_msg25 -> entry", []),
@@ -1782,7 +1784,7 @@ compact_otp4920_msg25() ->
 
 compact_otp5186_msg01(suite) ->
     [];
-compact_otp5186_msg01(Config) when list(Config) ->
+compact_otp5186_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5186_msg01 -> entry", []),
@@ -1794,7 +1796,7 @@ compact_otp5186_msg01(Config) when list(Config) ->
 
 compact_otp5186_msg02(suite) ->
     [];
-compact_otp5186_msg02(Config) when list(Config) ->
+compact_otp5186_msg02(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5186_msg02 -> entry", []),
@@ -1806,7 +1808,7 @@ compact_otp5186_msg02(Config) when list(Config) ->
 
 compact_otp5186_msg03(suite) ->
     [];
-compact_otp5186_msg03(Config) when list(Config) ->
+compact_otp5186_msg03(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5186_msg03 -> entry", []),
@@ -1819,7 +1821,7 @@ compact_otp5186_msg03(Config) when list(Config) ->
 
 compact_otp5186_msg04(suite) ->
     [];
-compact_otp5186_msg04(Config) when list(Config) ->
+compact_otp5186_msg04(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5186_msg04 -> entry", []),
@@ -1832,7 +1834,7 @@ compact_otp5186_msg04(Config) when list(Config) ->
 
 compact_otp5186_msg05(suite) ->
     [];
-compact_otp5186_msg05(Config) when list(Config) ->
+compact_otp5186_msg05(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5186_msg05 -> entry", []),
@@ -1845,7 +1847,7 @@ compact_otp5186_msg05(Config) when list(Config) ->
 
 compact_otp5186_msg06(suite) ->
     [];
-compact_otp5186_msg06(Config) when list(Config) ->
+compact_otp5186_msg06(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5186_msg06 -> entry", []),
@@ -1997,7 +1999,7 @@ compact_otp5186_msg06() ->
 
 compact_otp5793_msg01(suite) ->
     [];
-compact_otp5793_msg01(Config) when list(Config) ->
+compact_otp5793_msg01(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("compact_otp5793_msg01 -> entry", []),
@@ -2012,7 +2014,7 @@ compact_otp5793_msg01(Config) when list(Config) ->
 
 compact_otp5836_msg01(suite) ->
     [];
-compact_otp5836_msg01(Config) when list(Config) ->
+compact_otp5836_msg01(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("compact_otp5836_msg01 -> entry", []),
@@ -2057,7 +2059,7 @@ compact_otp5836_msg1() ->
 
 compact_otp5993_msg01(suite) ->
     [];
-compact_otp5993_msg01(Config) when list(Config) ->
+compact_otp5993_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5993_msg01 -> entry", []),
@@ -2078,7 +2080,7 @@ compact_otp5993_msg01() ->
 
 compact_otp5993_msg02(suite) ->
     [];
-compact_otp5993_msg02(Config) when list(Config) ->
+compact_otp5993_msg02(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5993_msg02 -> entry", []),
@@ -2100,7 +2102,7 @@ compact_otp5993_msg02() ->
 
 compact_otp5993_msg03(suite) ->
     [];
-compact_otp5993_msg03(Config) when list(Config) ->
+compact_otp5993_msg03(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp5993_msg03 -> entry", []),
@@ -2151,7 +2153,7 @@ compact_otp5993_msg(MD) when is_record(MD, 'MuxDescriptor') ->
 
 compact_otp6017_msg01(suite) ->
     [];
-compact_otp6017_msg01(Config) when list(Config) ->
+compact_otp6017_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp6017_msg01 -> entry", []),
@@ -2163,7 +2165,7 @@ compact_otp6017_msg01(Config) when list(Config) ->
 
 compact_otp6017_msg02(suite) ->
     [];
-compact_otp6017_msg02(Config) when list(Config) ->
+compact_otp6017_msg02(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp6017_msg02 -> entry", []),
@@ -2175,7 +2177,7 @@ compact_otp6017_msg02(Config) when list(Config) ->
 
 compact_otp6017_msg03(suite) ->
     [];
-compact_otp6017_msg03(Config) when list(Config) ->
+compact_otp6017_msg03(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("compact_otp6017_msg03 -> entry", []),
@@ -2225,7 +2227,7 @@ compact_otp6017_msg(CID) when is_integer(CID) ->
 
 flex_compact_otp4299_msg1(suite) ->
     [];
-flex_compact_otp4299_msg1(Config) when list(Config) ->
+flex_compact_otp4299_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp4299_msg1 -> entry", []),
@@ -2240,7 +2242,7 @@ flex_compact_otp4299_msg1(Config) when list(Config) ->
 
 flex_compact_otp7431_msg01(suite) ->
     [];
-flex_compact_otp7431_msg01(Config) when list(Config) ->
+flex_compact_otp7431_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg01 -> entry", []),
@@ -2249,7 +2251,7 @@ flex_compact_otp7431_msg01(Config) when list(Config) ->
 
 flex_compact_otp7431_msg02(suite) ->
     [];
-flex_compact_otp7431_msg02(Config) when list(Config) ->
+flex_compact_otp7431_msg02(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg02 -> entry", []),
@@ -2258,7 +2260,7 @@ flex_compact_otp7431_msg02(Config) when list(Config) ->
 
 flex_compact_otp7431_msg03(suite) ->
     [];
-flex_compact_otp7431_msg03(Config) when list(Config) ->
+flex_compact_otp7431_msg03(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg03 -> entry", []),
@@ -2267,7 +2269,7 @@ flex_compact_otp7431_msg03(Config) when list(Config) ->
 
 flex_compact_otp7431_msg04(suite) ->
     [];
-flex_compact_otp7431_msg04(Config) when list(Config) ->
+flex_compact_otp7431_msg04(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg04 -> entry", []),
@@ -2276,7 +2278,7 @@ flex_compact_otp7431_msg04(Config) when list(Config) ->
 
 flex_compact_otp7431_msg05(suite) ->
     [];
-flex_compact_otp7431_msg05(Config) when list(Config) ->
+flex_compact_otp7431_msg05(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg05 -> entry", []),
@@ -2285,7 +2287,7 @@ flex_compact_otp7431_msg05(Config) when list(Config) ->
 
 flex_compact_otp7431_msg06(suite) ->
     [];
-flex_compact_otp7431_msg06(Config) when list(Config) ->
+flex_compact_otp7431_msg06(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg06 -> entry", []),
@@ -2294,7 +2296,7 @@ flex_compact_otp7431_msg06(Config) when list(Config) ->
 
 flex_compact_otp7431_msg07(suite) ->
     [];
-flex_compact_otp7431_msg07(Config) when list(Config) ->
+flex_compact_otp7431_msg07(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_comppact_otp7431_msg07 -> entry", []),
@@ -2387,7 +2389,7 @@ v}
 
 pretty_otp4632_msg1(suite) ->
     [];
-pretty_otp4632_msg1(Config) when list(Config) ->
+pretty_otp4632_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4632_msg1 -> entry", []),
@@ -2402,7 +2404,7 @@ pretty_otp4632_msg1() ->
 
 pretty_otp4632_msg2(suite) ->
     [];
-pretty_otp4632_msg2(Config) when list(Config) ->
+pretty_otp4632_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4632_msg2 -> entry", []),
@@ -2418,7 +2420,7 @@ pretty_otp4632_msg2() ->
 
 pretty_otp4632_msg3(suite) ->
     [];
-pretty_otp4632_msg3(Config) when list(Config) ->
+pretty_otp4632_msg3(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4632_msg3 -> entry", []),
@@ -2435,7 +2437,7 @@ pretty_otp4632_msg3() ->
 
 pretty_otp4632_msg4(suite) ->
     [];
-pretty_otp4632_msg4(Config) when list(Config) ->
+pretty_otp4632_msg4(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4632_msg4 -> entry", []),
@@ -2476,7 +2478,7 @@ pretty_otp4632_msg4_chk([_H1|Rest1], [_H2|Rest2]) ->
 %% 
 pretty_otp4710_msg1(suite) ->
     [];
-pretty_otp4710_msg1(Config) when list(Config) ->
+pretty_otp4710_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4710_msg1 -> entry", []),
@@ -2492,7 +2494,7 @@ pretty_otp4710_msg1() ->
 
 pretty_otp4710_msg2(suite) ->
     [];
-pretty_otp4710_msg2(Config) when list(Config) ->
+pretty_otp4710_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4710_msg2 -> entry", []),
@@ -2538,7 +2540,7 @@ pretty_otp4710_msg2_chk_ah([C|R], Acc) ->
 %% 
 pretty_otp4945_msg1(suite) ->
     [];
-pretty_otp4945_msg1(Config) when list(Config) ->
+pretty_otp4945_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4945_msg1 -> entry", []),
@@ -2572,7 +2574,7 @@ pretty_otp4945_msg1_chk(R) when is_list(R) ->
 
 pretty_otp4945_msg2(suite) ->
     [];
-pretty_otp4945_msg2(Config) when list(Config) ->
+pretty_otp4945_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4945_msg2 -> entry", []),
@@ -2606,7 +2608,7 @@ pretty_otp4945_msg2_chk(R) when is_list(R) ->
 
 pretty_otp4945_msg3(suite) ->
     [];
-pretty_otp4945_msg3(Config) when list(Config) ->
+pretty_otp4945_msg3(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4945_msg3 -> entry", []),
@@ -2639,7 +2641,7 @@ pretty_otp4945_msg3_chk(R) when is_list(R) ->
     
 pretty_otp4945_msg4(suite) ->
     [];
-pretty_otp4945_msg4(Config) when list(Config) ->
+pretty_otp4945_msg4(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4945_msg4 -> entry", []),
@@ -2666,7 +2668,7 @@ pretty_otp4945_msg4() ->
 
 pretty_otp4945_msg5(suite) ->
     [];
-pretty_otp4945_msg5(Config) when list(Config) ->
+pretty_otp4945_msg5(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4945_msg5 -> entry", []),
@@ -2703,7 +2705,7 @@ pretty_otp4945_msg5_chk(R) when is_list(R) ->
 
 pretty_otp4945_msg6(suite) ->
     [];
-pretty_otp4945_msg6(Config) when list(Config) ->
+pretty_otp4945_msg6(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4945_msg6 -> entry", []),
@@ -2754,7 +2756,7 @@ pretty_otp4945_chk(Reason, _ExpMissing) ->
 %% 
 pretty_otp4949_msg1(suite) ->
     [];
-pretty_otp4949_msg1(Config) when list(Config) ->
+pretty_otp4949_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4949_msg1 -> entry", []),
@@ -2779,7 +2781,7 @@ pretty_otp4949_msg1() ->
 
 pretty_otp4949_msg2(suite) ->
     [];
-pretty_otp4949_msg2(Config) when list(Config) ->
+pretty_otp4949_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4949_msg2 -> entry", []),
@@ -2814,7 +2816,7 @@ pretty_otp4949_msg2_chk(R) when is_list(R) ->
 
 pretty_otp4949_msg3(suite) ->
     [];
-pretty_otp4949_msg3(Config) when list(Config) ->
+pretty_otp4949_msg3(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp4949_msg3 -> entry", []),
@@ -2851,7 +2853,7 @@ pretty_otp4949_msg3_chk(R) when is_list(R) ->
 %% 
 pretty_otp5042_msg1(suite) ->
     [];
-pretty_otp5042_msg1(Config) when list(Config) ->
+pretty_otp5042_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5042_msg1 -> entry", []),
@@ -2876,7 +2878,7 @@ h245bh/h245msgin { Stream =  1
 %% 
 pretty_otp5068_msg1(suite) ->
     [];
-pretty_otp5068_msg1(Config) when list(Config) ->
+pretty_otp5068_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5068_msg1 -> entry", []),
@@ -2936,7 +2938,7 @@ pretty_otp5068_msg1() ->
 %% 
 pretty_otp5085_msg1(suite) ->
     [];
-pretty_otp5085_msg1(Config) when list(Config) ->
+pretty_otp5085_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg1 -> entry", []),
@@ -2976,7 +2978,7 @@ pretty_otp5085_msg1() ->
 
 pretty_otp5085_msg2(suite) ->
     [];
-pretty_otp5085_msg2(Config) when list(Config) ->
+pretty_otp5085_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg2 -> entry", []),
@@ -3016,7 +3018,7 @@ pretty_otp5085_msg2() ->
 
 pretty_otp5085_msg3(suite) ->
     [];
-pretty_otp5085_msg3(Config) when list(Config) ->
+pretty_otp5085_msg3(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg3 -> entry", []),
@@ -3056,7 +3058,7 @@ pretty_otp5085_msg3() ->
 
 pretty_otp5085_msg4(suite) ->
     [];
-pretty_otp5085_msg4(Config) when list(Config) ->
+pretty_otp5085_msg4(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg4 -> entry", []),
@@ -3097,7 +3099,7 @@ pretty_otp5085_msg4() ->
 
 pretty_otp5085_msg5(suite) ->
     [];
-pretty_otp5085_msg5(Config) when list(Config) ->
+pretty_otp5085_msg5(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg5 -> entry", []),
@@ -3138,7 +3140,7 @@ pretty_otp5085_msg5() ->
 
 pretty_otp5085_msg6(suite) ->
     [];
-pretty_otp5085_msg6(Config) when list(Config) ->
+pretty_otp5085_msg6(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg6 -> entry", []),
@@ -3179,7 +3181,7 @@ pretty_otp5085_msg6() ->
 
 pretty_otp5085_msg7(suite) ->
     [];
-pretty_otp5085_msg7(Config) when list(Config) ->
+pretty_otp5085_msg7(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg7 -> entry", []),
@@ -3219,7 +3221,7 @@ pretty_otp5085_msg7() ->
 
 pretty_otp5085_msg8(suite) ->
     [];
-pretty_otp5085_msg8(Config) when list(Config) ->
+pretty_otp5085_msg8(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5085_msg8 -> entry", []),
@@ -3276,7 +3278,7 @@ pretty_otp5085_msg8() ->
 %% 
 pretty_otp5600_msg1(suite) ->
     [];
-pretty_otp5600_msg1(Config) when list(Config) ->
+pretty_otp5600_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5600_msg1 -> entry", []),
@@ -3325,7 +3327,7 @@ pretty_otp5600_msg1() ->
 
 pretty_otp5600_msg2(suite) ->
     [];
-pretty_otp5600_msg2(Config) when list(Config) ->
+pretty_otp5600_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5600_msg2 -> entry", []),
@@ -3378,7 +3380,7 @@ pretty_otp5600_msg2() ->
 %% 
 pretty_otp5601_msg1(suite) ->
     [];
-pretty_otp5601_msg1(Config) when list(Config) ->
+pretty_otp5601_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5601_msg1 -> entry", []),
@@ -3431,7 +3433,7 @@ pretty_otp5601_msg1() ->
 %% 
 pretty_otp5793_msg01(suite) ->
     [];
-pretty_otp5793_msg01(Config) when list(Config) ->
+pretty_otp5793_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5793_msg01 -> entry", []),
@@ -3492,7 +3494,7 @@ pretty_otp5793_msg1() ->
 %% 
 pretty_otp5803_msg01(suite) ->
     [];
-pretty_otp5803_msg01(Config) when list(Config) ->
+pretty_otp5803_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5803_msg01 -> entry", []),
@@ -3545,7 +3547,7 @@ pretty_otp5803_msg1() ->
 
 pretty_otp5803_msg02(suite) ->
     [];
-pretty_otp5803_msg02(Config) when list(Config) ->
+pretty_otp5803_msg02(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5803_msg02 -> entry", []),
@@ -3597,7 +3599,7 @@ pretty_otp5803_msg2() ->
 %% 
 pretty_otp5805_msg01(suite) ->
     [];
-pretty_otp5805_msg01(Config) when list(Config) ->
+pretty_otp5805_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5805_msg01 -> entry", []),
@@ -3622,7 +3624,7 @@ Transaction=1{
 %% 
 pretty_otp5836_msg01(suite) ->
     [];
-pretty_otp5836_msg01(Config) when list(Config) ->
+pretty_otp5836_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("pretty_otp5836_msg01 -> entry", []),
@@ -4014,6 +4016,94 @@ cmp_otp7671_msg05(#'MegacoMessage'{authHeader = asn1_NOVALUE,
     ok.
     
 
+%% --------------------------------------------------------------
+%%
+
+
+pretty_otp8114_msg01(suite) ->
+    [];
+pretty_otp8114_msg01(Config) when is_list(Config) ->
+    put(severity, trc),
+    put(dbg,      true),
+    d("pretty_otp8114_msg01 -> entry", []),
+    ok = otp8114( pretty_otp8114_msg01(), megaco_pretty_text_encoder, ?EC),
+    erase(dbg),
+    erase(severity),
+    ok.
+
+pretty_otp8114_msg01() ->
+    "MEGACO/" ?VERSION_STR  " [10.10.10.10]:1234\nTransaction = 1 {\n\tContext =\n1 {\n\t\tModify = ip/1/1/1 {\n\t\t\tMedia {\n\t\t\t\tStream = 1\n{\n\t\t\t\t\t\tLocalControl {\n\t\t\t\t\t\tMode =\nSendReceive\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t},\n\t\t\tEvents = 1\n{\n\t\t\t\tadid/ipstop\n{\n\t\t\t\t\tdt=30,\n\t\t\t\t\tdir=\"BOTH\"\n\t\t\t\t},\n\t\t\t\tg/cause\n\n\t\t\t}\n\t\t}\n\t}\n}".
+
+
+otp8114(InitialMessage, Codec, Conf) ->
+    Decode = fun(M) -> Codec:decode_message(Conf, M) end,
+    Encode = fun(B) -> Codec:encode_message(Conf, B) end,
+    InitialData = InitialMessage, 
+    Instructions = 
+	[
+	 %% List to binary
+	 megaco_codec_test_lib:expect_instruction(
+	   "Convert (initial) message to a binary", 
+	   fun(Msg) when is_list(Msg) ->
+		   %% io:format("~s~n", [Msg]),
+		   {ok, list_to_binary(Msg)};
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Bin}, _Msg) when is_binary(Bin) ->
+		   {ok, Bin};
+	      (Bad, _Msg) ->
+		   {error, {failed_to_binary, Bad}}
+	   end),
+	 
+	 %% Initial decode
+	 megaco_codec_test_lib:expect_instruction(
+	   "Decode (initial) message",
+	   fun(Bin) when is_binary(Bin) ->
+		   (catch Decode(Bin));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, _Bin) when is_record(Msg, 'MegacoMessage') ->
+		   %% io:format("~p~n", [Msg]),
+		   {ok, Msg};
+	      (Bad, _) ->
+		   {error, {initial_decode_failed, Bad}}
+	   end),
+
+	 %% Encode
+	 megaco_codec_test_lib:expect_instruction(
+	   "Encode message",
+	   fun(Msg) when is_record(Msg, 'MegacoMessage') ->
+		   (catch Encode(Msg));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Bin}, _Msg) when is_binary(Bin) ->
+		   %% io:format("~s~n", [binary_to_list(Bin)]),
+		   {ok, Bin};
+	      (Bad, _) ->
+		   {error, {encode_failed, Bad}}
+	   end),
+	 
+	 %% Decode
+	 megaco_codec_test_lib:expect_instruction(
+	   "(final) Decode message",
+	   fun(Bin) when is_binary(Bin) ->
+		   (catch Decode(Bin));
+	      (Bad) ->
+		   {error, {invalid_data, Bad}}
+	   end,
+	   fun({ok, Msg}, _Bin) when is_record(Msg, 'MegacoMessage') ->
+		   %% io:format("~p~n", [Msg]),
+		   {ok, Msg};
+	      (Bad, _) ->
+		   {error, {decode_failed, Bad}}
+	   end)
+	],
+    megaco_codec_test_lib:expect_exec(Instructions, InitialData).
+
+
 %% ==============================================================
 %%
 %% F l e x   P r e t t y   T e s t c a s e s
@@ -4021,7 +4111,7 @@ cmp_otp7671_msg05(#'MegacoMessage'{authHeader = asn1_NOVALUE,
 
 flex_pretty_otp5042_msg1(suite) ->
     [];
-flex_pretty_otp5042_msg1(Config) when list(Config) ->
+flex_pretty_otp5042_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5042_msg1 -> entry", []),
@@ -4036,7 +4126,7 @@ flex_pretty_otp5042_msg1(Config) when list(Config) ->
 %% 
 flex_pretty_otp5085_msg1(suite) ->
     [];
-flex_pretty_otp5085_msg1(Config) when list(Config) ->
+flex_pretty_otp5085_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg1 -> entry", []),
@@ -4049,7 +4139,7 @@ flex_pretty_otp5085_msg1(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg2(suite) ->
     [];
-flex_pretty_otp5085_msg2(Config) when list(Config) ->
+flex_pretty_otp5085_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg2 -> entry", []),
@@ -4062,7 +4152,7 @@ flex_pretty_otp5085_msg2(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg3(suite) ->
     [];
-flex_pretty_otp5085_msg3(Config) when list(Config) ->
+flex_pretty_otp5085_msg3(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg3 -> entry", []),
@@ -4075,7 +4165,7 @@ flex_pretty_otp5085_msg3(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg4(suite) ->
     [];
-flex_pretty_otp5085_msg4(Config) when list(Config) ->
+flex_pretty_otp5085_msg4(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg4 -> entry", []),
@@ -4088,7 +4178,7 @@ flex_pretty_otp5085_msg4(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg5(suite) ->
     [];
-flex_pretty_otp5085_msg5(Config) when list(Config) ->
+flex_pretty_otp5085_msg5(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg5 -> entry", []),
@@ -4101,7 +4191,7 @@ flex_pretty_otp5085_msg5(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg6(suite) ->
     [];
-flex_pretty_otp5085_msg6(Config) when list(Config) ->
+flex_pretty_otp5085_msg6(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg6 -> entry", []),
@@ -4114,7 +4204,7 @@ flex_pretty_otp5085_msg6(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg7(suite) ->
     [];
-flex_pretty_otp5085_msg7(Config) when list(Config) ->
+flex_pretty_otp5085_msg7(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg7 -> entry", []),
@@ -4127,7 +4217,7 @@ flex_pretty_otp5085_msg7(Config) when list(Config) ->
 
 flex_pretty_otp5085_msg8(suite) ->
     [];
-flex_pretty_otp5085_msg8(Config) when list(Config) ->
+flex_pretty_otp5085_msg8(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5085_msg8 -> entry", []),
@@ -4143,7 +4233,7 @@ flex_pretty_otp5085_msg8(Config) when list(Config) ->
 %% 
 flex_pretty_otp5600_msg1(suite) ->
     [];
-flex_pretty_otp5600_msg1(Config) when list(Config) ->
+flex_pretty_otp5600_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5600_msg1 -> entry", []),
@@ -4156,7 +4246,7 @@ flex_pretty_otp5600_msg1(Config) when list(Config) ->
 
 flex_pretty_otp5600_msg2(suite) ->
     [];
-flex_pretty_otp5600_msg2(Config) when list(Config) ->
+flex_pretty_otp5600_msg2(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5600_msg2 -> entry", []),
@@ -4172,7 +4262,7 @@ flex_pretty_otp5600_msg2(Config) when list(Config) ->
 %% 
 flex_pretty_otp5601_msg1(suite) ->
     [];
-flex_pretty_otp5601_msg1(Config) when list(Config) ->
+flex_pretty_otp5601_msg1(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5601_msg1 -> entry", []),
@@ -4188,7 +4278,7 @@ flex_pretty_otp5601_msg1(Config) when list(Config) ->
 %% 
 flex_pretty_otp5793_msg01(suite) ->
     [];
-flex_pretty_otp5793_msg01(Config) when list(Config) ->
+flex_pretty_otp5793_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5793_msg01 -> entry", []),
@@ -4204,7 +4294,7 @@ flex_pretty_otp5793_msg01(Config) when list(Config) ->
 %% 
 flex_pretty_otp5803_msg01(suite) ->
     [];
-flex_pretty_otp5803_msg01(Config) when list(Config) ->
+flex_pretty_otp5803_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5803_msg01 -> entry", []),
@@ -4217,7 +4307,7 @@ flex_pretty_otp5803_msg01(Config) when list(Config) ->
 
 flex_pretty_otp5803_msg02(suite) ->
     [];
-flex_pretty_otp5803_msg02(Config) when list(Config) ->
+flex_pretty_otp5803_msg02(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5803_msg02 -> entry", []),
@@ -4233,7 +4323,7 @@ flex_pretty_otp5803_msg02(Config) when list(Config) ->
 %% 
 flex_pretty_otp5805_msg01(suite) ->
     [];
-flex_pretty_otp5805_msg01(Config) when list(Config) ->
+flex_pretty_otp5805_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5805_msg01 -> entry", []),
@@ -4249,7 +4339,7 @@ flex_pretty_otp5805_msg01(Config) when list(Config) ->
 %% 
 flex_pretty_otp5836_msg01(suite) ->
     [];
-flex_pretty_otp5836_msg01(Config) when list(Config) ->
+flex_pretty_otp5836_msg01(Config) when is_list(Config) ->
     %% put(severity,trc),
     %% put(dbg,true),
     d("flex_pretty_otp5836_msg01 -> entry", []),
@@ -4263,7 +4353,7 @@ flex_pretty_otp5836_msg01(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg01(suite) ->
     [];
-flex_pretty_otp7431_msg01(Config) when list(Config) ->
+flex_pretty_otp7431_msg01(Config) when is_list(Config) ->
     d("flex_pretty_otp7431_msg01 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
@@ -4271,7 +4361,7 @@ flex_pretty_otp7431_msg01(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg02(suite) ->
     [];
-flex_pretty_otp7431_msg02(Config) when list(Config) ->
+flex_pretty_otp7431_msg02(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("flex_pretty_otp7431_msg02 -> entry", []),
@@ -4281,7 +4371,7 @@ flex_pretty_otp7431_msg02(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg03(suite) ->
     [];
-flex_pretty_otp7431_msg03(Config) when list(Config) ->
+flex_pretty_otp7431_msg03(Config) when is_list(Config) ->
     %%     put(severity,trc),
     %%     put(dbg,true),
     d("flex_pretty_otp7431_msg03 -> entry", []),
@@ -4291,7 +4381,7 @@ flex_pretty_otp7431_msg03(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg04(suite) ->
     [];
-flex_pretty_otp7431_msg04(Config) when list(Config) ->
+flex_pretty_otp7431_msg04(Config) when is_list(Config) ->
     d("flex_pretty_otp7431_msg04 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
@@ -4299,7 +4389,7 @@ flex_pretty_otp7431_msg04(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg05(suite) ->
     [];
-flex_pretty_otp7431_msg05(Config) when list(Config) ->
+flex_pretty_otp7431_msg05(Config) when is_list(Config) ->
     d("flex_pretty_otp7431_msg05 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
@@ -4307,7 +4397,7 @@ flex_pretty_otp7431_msg05(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg06(suite) ->
     [];
-flex_pretty_otp7431_msg06(Config) when list(Config) ->
+flex_pretty_otp7431_msg06(Config) when is_list(Config) ->
     d("flex_pretty_otp7431_msg06 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
@@ -4315,7 +4405,7 @@ flex_pretty_otp7431_msg06(Config) when list(Config) ->
 
 flex_pretty_otp7431_msg07(suite) ->
     [];
-flex_pretty_otp7431_msg07(Config) when list(Config) ->
+flex_pretty_otp7431_msg07(Config) when is_list(Config) ->
     d("flex_pretty_otp7431_msg07 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     Conf = flex_scanner_conf(Config),
@@ -4586,9 +4676,9 @@ msgs3525(_) ->
 msgs3_name(N) ->
     list_to_atom("rfc3525_" ++ atom_to_list(N)).
 
-rfc3525_decode(M) when list(M) ->
+rfc3525_decode(M) when is_list(M) ->
     rfc3525_decode(list_to_binary(M));
-rfc3525_decode(M) when binary(M) ->
+rfc3525_decode(M) when is_binary(M) ->
     case (catch decode_message(megaco_pretty_text_encoder, false, ?EC, M)) of
 	{ok, Msg} ->
 	    Msg;
@@ -4856,7 +4946,7 @@ msg_reply(Mid, TransId, ContextId, CmdReply) ->
     Actions = [Action], 
     msg_reply(Mid, TransId, Actions).
 
-msg_ack(Mid, [Range|_] = Ranges) when tuple(Range) ->
+msg_ack(Mid, [Range|_] = Ranges) when is_tuple(Range) ->
     msg_ack(Mid, [Ranges]);
 
 msg_ack(Mid, Ranges) ->
@@ -4957,7 +5047,7 @@ msg3(Mid) ->
 
 msg4() ->
     msg4(?MG1_MID_NO_PORT, "901 mg col boot").
-msg4(Mid, Reason) when list(Reason) ->
+msg4(Mid, Reason) when is_list(Reason) ->
     Address = {portNumber, ?DEFAULT_PORT},
     Profile = cre_SvcChProf("resgw",1),
     Parm    = cre_SvcChParm(restart,Address,[Reason],Profile),
@@ -5462,7 +5552,7 @@ msg30d() ->
     
 msg40() ->
     msg40(?MG1_MID_NO_PORT, "901 mg col boot").
-msg40(Mid, Reason) when list(Reason) ->
+msg40(Mid, Reason) when is_list(Reason) ->
     Address = {portNumber, ?DEFAULT_PORT},
     Profile = cre_SvcChProf("resgw",1),
     Parm    = cre_SvcChParm(restart,Address,[Reason],Profile),
@@ -7581,7 +7671,7 @@ rfc3525_msgs_test(Codec, Config, Ver) ->
 			   %% io:format("d", []),
 			   io:format("decoded:~n~p~n", [M2]),
 			   case (catch Codec:encode_message(Config, Ver, M2)) of
-			       {ok, Bin2} when binary(Bin2) ->
+			       {ok, Bin2} when is_binary(Bin2) ->
 				   %% io:format("e~n", []),
 				   io:format("encode: ~n~s~n", [erlang:binary_to_list(Bin2)]),
 				   {N,ok};
@@ -7986,7 +8076,7 @@ cre_IndAudTermStateDesc(PP, EBC, SS, SSS) ->
     ?MSG_LIB:cre_IndAudTerminationStateDescriptor(PP, EBC, SS, SSS).
 
 cre_IndAudEvsDesc(RID, PN) 
-  when integer(RID) ->
+  when is_integer(RID) ->
     ?MSG_LIB:cre_IndAudEventsDescriptor(RID, PN).
 
 cre_IndAudEvBufDesc(EN, SID) ->
@@ -8127,7 +8217,7 @@ cre_DigitMapValue(Body, Start, Short, Long) ->
     ?MSG_LIB:cre_DigitMapValue(Start, Short, Long, Body).
 
 %% Media related
-cre_MediaDesc(SD) when record(SD, 'StreamDescriptor') ->
+cre_MediaDesc(SD) when is_record(SD, 'StreamDescriptor') ->
     cre_MediaDesc([SD]);
 cre_MediaDesc(SDs) ->
     ?MSG_LIB:cre_MediaDescriptor(SDs).

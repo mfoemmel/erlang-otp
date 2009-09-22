@@ -86,7 +86,7 @@ plain(suite) ->
     [];
 plain(doc) ->
     ["Test case for the basic statistics counter handling. "];
-plain(Config) when list(Config) ->
+plain(Config) when is_list(Config) ->
     io:format("create test table 1~n", []),
     Tab1 = megaco_test_cnt1,
     megaco_stats:init(Tab1),
@@ -188,7 +188,7 @@ connect(suite) ->
     [];
 connect(doc) ->
     [];
-connect(Config) when list(Config) ->
+connect(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("connect -> starting"),
@@ -275,7 +275,7 @@ traffic(suite) ->
     [];
 traffic(doc) ->
     [];
-traffic(Config) when list(Config) ->
+traffic(Config) when is_list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     i("traffic -> starting"),
@@ -415,7 +415,7 @@ traffic(Config) when list(Config) ->
 
 
 traffic_verify_mgc_stats(Pid, Out, In) 
-  when pid(Pid), integer(Out), integer(In) ->
+  when is_pid(Pid) andalso is_integer(Out) andalso is_integer(In) ->
     d("traffic_verify_mgc_stats -> entry with"
       "~n   Out:   ~p"
       "~n   In:    ~p", [Out, In]),
@@ -423,7 +423,7 @@ traffic_verify_mgc_stats(Pid, Out, In)
     d("traffic_verify_mgc_stats -> stats (2) for Mgc: ~n~p~n", [Stats]),
     traffic_verify_mgc_stats(Stats, Out, In);
     
-traffic_verify_mgc_stats(Stats, Out, In) when list(Stats) ->
+traffic_verify_mgc_stats(Stats, Out, In) when is_list(Stats) ->
     d("traffic_verify_mgc_stats -> checking stats"),
     Gen   = traffic_verify_get_stats(gen, Stats),
     Trans = traffic_verify_get_stats(trans, Stats),
@@ -463,7 +463,7 @@ traffic_verify_mgc_stats_trans(Mod, [{Handle,Counters}|Stats], Out, In) ->
     
 
 traffic_verify_mg_stats(MgConf, Out, In) 
-  when integer(Out), integer(In) ->
+  when is_integer(Out) andalso is_integer(In) ->
     d("traffic_verify_mg_stats -> entry with"
       "~n   Out:   ~p"
       "~n   In:    ~p", [Out, In]),
@@ -806,7 +806,7 @@ mgc_close_conn(CH, Reason) ->
 	SendMod    -> exit(Pid, Reason)
     end.
     
-get_trans_stats(P, SendMod) when pid(P) ->
+get_trans_stats(P, SendMod) when is_pid(P) ->
     case (catch SendMod:get_stats()) of
 	{ok, Stats} ->
 	    {SendMod, Stats};
@@ -891,7 +891,7 @@ mgc_tcp_create_listen(_Sup, _Opts, N, N, InitialReason) ->
     d("failed creating mgc tcp listen socket after ~p tries: ~p", 
       [N, InitialReason]),
     throw({error, {failed_starting_tcp_listen, InitialReason}});
-mgc_tcp_create_listen(Sup, Opts, MaxN, N, InitialReason) 
+mgc_tcp_create_listen(Sup, Opts, MaxN, N, _InitialReason) 
   when is_integer(N) andalso is_integer(MaxN) andalso (MaxN > N) ->
     d("try create mgc tcp listen socket [~w]", [N]),
     case megaco_tcp:listen(Sup, Opts) of
@@ -1161,7 +1161,7 @@ mg_reset_stats(CH) ->
 		      "own connection ~p: ~p. "
 		      "~nexiting...", [CH, Reason]),
 	    exit({invalid_connection, CH, Reason});
-	SendMod when atom(SendMod) ->
+	SendMod when is_atom(SendMod) ->
 	    SendMod:reset_stats()
     end.
 
@@ -1343,14 +1343,14 @@ mg_handle_request({handle_trans_reply, CH, _PV, _AR, _RD},
     {ok, S#mg{conn_handle = CH, state = connected}};
 mg_handle_request({handle_trans_reply, _CH, _PV, {error, ED}, RD}, 
 		  #mg{parent = Pid, load_counter = 0} = S) 
-  when record(ED, 'ErrorDescriptor'), 
-       record(RD, 'ObservedEventsDescriptor') ->
+  when is_record(ED, 'ErrorDescriptor') andalso 
+       is_record(RD, 'ObservedEventsDescriptor') ->
     Pid ! {load_complete, self()},
     {ok, S};
 mg_handle_request({handle_trans_reply, _CH, _PV, {error, ED}, RD}, 
 		  #mg{load_counter = N} = S) 
-  when record(ED, 'ErrorDescriptor'), 
-       record(RD, 'ObservedEventsDescriptor') ->
+  when is_record(ED, 'ErrorDescriptor') andalso 
+       is_record(RD, 'ObservedEventsDescriptor') ->
     apply_load_timer(),
     {ok, S#mg{load_counter = N-1}};
 
@@ -1542,7 +1542,7 @@ get_encoding_config(RI, EM) ->
     case text_codec(EM) of
 	true ->
 	    case megaco:system_info(text_config) of
-		[Conf] when list(Conf) ->
+		[Conf] when is_list(Conf) ->
 		    Conf;
 		_ ->
 		    []

@@ -50,6 +50,7 @@ static void wxe_process_died(ErlDrvData drv_data, ErlDrvMonitor *monitor);
 int wxe_debug;
 
 wxe_data * wxe_master;
+char * erl_wx_privdir;
 
 /*
 ** The driver struct
@@ -100,9 +101,10 @@ static ErlDrvData
 wxe_driver_start(ErlDrvPort port, char *buff)
 {      
    wxe_data *data;
+
    data = (wxe_data *) malloc(sizeof(wxe_data));
    wxe_debug = 0;
-   
+  
    if (data == NULL) {
       fprintf(stderr, " Couldn't alloc mem\r\n");
       return(ERL_DRV_ERROR_GENERAL);  /* ENOMEM */      
@@ -112,6 +114,11 @@ wxe_driver_start(ErlDrvPort port, char *buff)
       data->bin = NULL; 
       data->port = port;
       if(WXE_DRV_PORT == 0) {
+	 for(; *buff != 32; buff++); 
+	 buff++; 
+	 erl_wx_privdir = malloc(strlen(buff));
+	 strcpy(erl_wx_privdir, buff);
+	 
 	 WXE_DRV_PORT = port;
 	 wxe_master = data;
 	 if(!(start_native_gui(data) == 1))

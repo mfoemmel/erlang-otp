@@ -75,9 +75,9 @@ partition(_Mib, [], Vars, Subs, Tabs) ->
 %     VarBind#varbind{variabletype = 'BITS',
 % 		    value = snmp_pdus:octet_str_to_bits(V)};
 fix_bits(VarBind, #me{asn1_type=A})
-  when A#asn1_type.bertype == 'BITS',
-       VarBind#varbind.variabletype == 'OCTET STRING',
-       list(VarBind#varbind.value) ->
+  when ((A#asn1_type.bertype =:= 'BITS') andalso 
+	(VarBind#varbind.variabletype =:= 'OCTET STRING') andalso 
+	is_list(VarBind#varbind.value)) ->
     VarBind#varbind{variabletype = 'BITS',
  		    value = snmp_pdus:octet_str_to_bits(VarBind#varbind.value)};
 fix_bits(Vb,_me) -> Vb.

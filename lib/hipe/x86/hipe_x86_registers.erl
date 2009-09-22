@@ -201,8 +201,7 @@ is_arg(R) ->
     end.
 
 args(Arity) when is_integer(Arity), Arity >= 0 ->
-    Max = ?X86_NR_ARG_REGS,
-    N = if Arity > Max -> Max; true -> Arity end,
+    N = erlang:min(Arity, ?X86_NR_ARG_REGS),
     args(N-1, []).
 
 args(I, Rest) when I < 0 -> Rest;

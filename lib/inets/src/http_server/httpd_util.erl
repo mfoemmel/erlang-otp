@@ -18,7 +18,7 @@
 %%
 %%
 -module(httpd_util).
--export([ip_address/1, lookup/2, lookup/3, multi_lookup/2,
+-export([ip_address/2, lookup/2, lookup/3, multi_lookup/2,
 	 lookup_mime/2, lookup_mime/3, lookup_mime_default/2,
 	 lookup_mime_default/3, reason_phrase/1, message/3, rfc1123_date/0,
 	 rfc1123_date/1, day/1, month/1, decode_hex/1,
@@ -35,11 +35,14 @@
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
 
-ip_address({_,_,_,_} = Address) ->
+ip_address({_,_,_,_} = Address, _IpFamily) ->
     {ok, Address};
-ip_address({_,_,_,_,_,_,_,_} = Address) ->
+ip_address({_,_,_,_,_,_,_,_} = Address, _IpFamily) ->
     {ok, Address};
-ip_address(Host) ->
+ip_address(Host, IpFamily) 
+  when ((IpFamily =:= inet) orelse (IpFamily =:= inet6)) ->
+    inet:getaddr(Host, IpFamily);
+ip_address(Host, inet6fb4 = _IpFamily) ->
     Inet = case gen_tcp:listen(0, [inet6]) of
 	       {ok, Dummyport} ->
 		   gen_tcp:close(Dummyport),
@@ -48,6 +51,7 @@ ip_address(Host) ->
 		   inet
 	   end,
     inet:getaddr(Host, Inet).
+
 
 %% lookup
 
@@ -689,10 +693,12 @@ mime_types_validate([]) ->
 mime_types_validate(MimeFile) ->
     mime_type_validate(MimeFile).
 
-valid_options(Debug,AcceptTimeout,ConfigFile) ->
+
+valid_options(Debug, AcceptTimeout, Config) ->
     valid_debug(Debug),
     valid_accept_timeout(AcceptTimeout),
-    valid_config_file(ConfigFile).
+    valid_config(Config).
+
 valid_debug([]) ->
     ok;
 valid_debug(disable) ->
@@ -700,7 +706,8 @@ valid_debug(disable) ->
 valid_debug(L) when is_list(L) ->
     valid_debug2(L);
 valid_debug(D) ->
-    throw({error,{bad_debug_option,D}}).
+    throw({error, {bad_debug_option,D}}).
+
 valid_debug2([{all_functions,L}|Rest]) when is_list(L) ->
     try modules_validate(L) of
 	ok ->
@@ -719,12 +726,15 @@ valid_debug2([H|_T]) ->
     throw({error,{bad_debug_option,H}});
 valid_debug2([]) ->
     ok.
+
 valid_accept_timeout(I) when is_integer(I) ->
     ok;
 valid_accept_timeout(A) ->
     throw({error,{bad_debug_option,A}}).
-valid_config_file(_) ->
+
+valid_config(_) ->
     ok.
+
 
 %%----------------------------------------------------------------------
 %% Enable debugging, 

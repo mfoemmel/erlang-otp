@@ -46,8 +46,10 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Linux/Suse x86	    9.4, 10.1
     Linux/Suse x86_64	    10.0, 10.1, 11.0
     FreeBSD x86             7.1
-    Mac OS X/Intel          10.4.11 (Tiger), 10.5.6 (Leopard)
+    Mac OS X/Intel          10.4.11 (Tiger), 10.5.8 (Leopard)
     Windows		    XP SP3, 2003, Vista
+
+We have also done some testing on Mac OS 10.6.0 (Snow Leopard).
 
 
 Versions known *not* to work
@@ -151,12 +153,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R13A.tar.gz | tar xf -
-  1)    zcat otp_src_R13A.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R13B02.tar.gz | tar xf -
+  1)    zcat otp_src_R13B02.tar.gz | tar xf -
 
 Now cd into the base directory
 
-  2)    cd otp_src_R13A
+  2)    cd otp_src_R13B02
 
 On some platforms Perl may behave strangely if certain locales are set,
 so optionally you may need to set the LANG variable:
@@ -388,9 +390,6 @@ Mac OS X (Darwin)
 
 We test Mac OS X 10.4.11 (Tiger) and Mac OS X 10.5.x (Leopard)
 in our daily builds (but only on Intel processors).
-
-Building on Mac OS X 10.3.x (Panther) might also work, but has
-not been tested by us.
 
 Make sure that the command "hostname" returns a valid fully qualified
 host name (this is configured in "/etc/hostconfig").

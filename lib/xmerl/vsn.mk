@@ -1,8 +1,33 @@
-# next version to use 2.0.1 | 2.1
+#
+# %CopyrightBegin%
+# 
+# Copyright Ericsson AB 2003-2009. All Rights Reserved.
+# 
+# The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved online at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# %CopyrightEnd%
+#
 
-XMERL_VSN = 1.2
+XMERL_VSN = 1.2.1
 
-TICKETS	= OTP-6635
+TICKETS	= \
+	OTP-8084 \
+	OTP-8153 \
+	OTP-8156 
+
+TICKETS_1.2.1 = \
+	OTP-8084 \
+	OTP-8153 \
+	OTP-8156
 
 TICKETS_1.2 = \
 	OTP-6635

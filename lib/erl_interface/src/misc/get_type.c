@@ -130,11 +130,11 @@ int ei_get_type_internal(const char *buf, const int *index,
     break;
     
   case ERL_SMALL_BIG_EXT:
-    *len = (get8(s)+1)/2; /* big arity */
+    *len = get8(s); /* #digit_bytes */
     break;
 
   case ERL_LARGE_BIG_EXT:
-    *len = (get32be(s)+1)/2; /* big arity */
+    *len = get32be(s); /* #digit_bytes */
     break;
 
   default:

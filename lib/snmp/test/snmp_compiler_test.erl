@@ -68,7 +68,7 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(_Case, Config) when list(Config) ->
+init_per_testcase(_Case, Config) when is_list(Config) ->
     Dir = ?config(priv_dir, Config),
     DataDir = ?config(data_dir, Config),
     [_|RL] = lists:reverse(filename:split(DataDir)),
@@ -77,7 +77,7 @@ init_per_testcase(_Case, Config) when list(Config) ->
     ?line ok = file:make_dir(CompDir),
     [{comp_dir, CompDir},{mib_dir, MibDir}|Config].
 
-fin_per_testcase(_Case, Config) when list(Config) ->
+fin_per_testcase(_Case, Config) when is_list(Config) ->
     CompDir = ?config(comp_dir, Config),
     ?line ok = ?DEL_DIR(CompDir),
     lists:keydelete(comp_dir, 1, Config).
@@ -107,7 +107,7 @@ tickets(suite) ->
 %%======================================================================
 
 description(suite) -> [];
-description(Config) when list(Config) ->
+description(Config) when is_list(Config) ->
     put(tname,desc),
     p("starting with Config: ~p~n", [Config]),
 
@@ -140,7 +140,7 @@ description(Config) when list(Config) ->
 
 
 oid_conflicts(suite) -> [];
-oid_conflicts(Config) when list(Config) ->
+oid_conflicts(Config) when is_list(Config) ->
     put(tname,oid_conflicts),
     p("starting with Config: ~p~n", [Config]),
 
@@ -154,13 +154,13 @@ oid_conflicts(Config) when list(Config) ->
 
 imports(suite) ->
     [];
-imports(Config) when list(Config) ->
+imports(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
 module_identity(suite) ->
     [];
-module_identity(Config) when list(Config) ->
+module_identity(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 

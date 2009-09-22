@@ -196,7 +196,7 @@ reg_name(Reg) ->
       hipe_amd64_registers:reg_name(Reg)
   end.
 
-%% @spec is_precoloured(rtl_arg()) -> bool()
+%% @spec is_precoloured(rtl_arg()) -> boolean()
 %%
 %% @doc  Succeeds if Arg is mapped to a precoloured register in the target.
 %%
@@ -205,12 +205,8 @@ is_precoloured(Arg) ->
     true ->
       is_precolored_regnum(hipe_rtl:reg_index(Arg));
     false ->
-      case hipe_rtl:is_var(Arg) of
-	true ->
-	  is_precolored_regnum(hipe_rtl:var_index(Arg));
-	false ->
-	  false
-      end
+      hipe_rtl:is_var(Arg) andalso
+	is_precolored_regnum(hipe_rtl:var_index(Arg))
   end.
 
 is_precolored_regnum(RegNum) ->

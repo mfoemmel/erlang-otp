@@ -18,7 +18,7 @@
 
 -module(ex_radioBox).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 -export([start/1, init/1, terminate/2,  code_change/3,
 	 handle_info/2, handle_call/3, handle_event/2]).
@@ -38,12 +38,14 @@ start(Config) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init(Config) ->
         wx:batch(fun() -> do_init(Config) end).
+
 do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxPanel:new(Parent, []),
 
     %% Setup sizers
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
+    Sizer = wxBoxSizer:new(?wxHORIZONTAL),
 
     Choices = ["Item " ++ integer_to_list(Int) || Int <- lists:seq(1,12)],
     RadioBox = wxRadioBox:new(Panel, 1, "wxRadioBox Horizontal",
@@ -59,7 +61,6 @@ do_init(Config) ->
     CheckSizer = create_checkboxes(Panel),
 
     %% Add to sizers
-    Sizer = wxBoxSizer:new(?wxHORIZONTAL),
     wxSizer:add(Sizer, RadioButtonSizer),
     wxSizer:addSpacer(Sizer, 20),
     wxSizer:add(Sizer, CheckSizer),
@@ -73,15 +74,6 @@ do_init(Config) ->
 		   radio_box = RadioBox}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config,"Got Call ~p\n",[Msg]),
-    {reply, {error, nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{event = #wxCommand{type = command_radiobox_selected,
 				    cmdString = Item}},
@@ -104,10 +96,17 @@ handle_event(#wx{obj  = RadioButton,
 	     State = #state{}) ->
     Label = wxRadioButton:getLabel(RadioButton),
     demo:format(State#state.config,"wxRadioButton selected ~p\n",[Label]),
-    {noreply, State};
-handle_event(Ev = #wx{}, State = #state{}) ->
-    demo:format(State#state.config,"Got Event ~p\n",[Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config,"Got Call ~p\n",[Msg]),
+    {reply, {error, nyi}, State}.
+
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

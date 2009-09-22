@@ -119,7 +119,7 @@ eval_alu(Op, Arg1, Arg2) ->
 %% there are cases where we can evaluate a subset of the bits, but can
 %% not do a full eval-alub call (eg. a + 0 gives no carry)
 %%
--spec eval_cond_bits(atom(), bool(), bool(), bool(), bool()) -> bool().
+-spec eval_cond_bits(atom(), boolean(), boolean(), boolean(), boolean()) -> boolean().
 
 eval_cond_bits(Cond, N, Z, V, C) ->
   case Cond of

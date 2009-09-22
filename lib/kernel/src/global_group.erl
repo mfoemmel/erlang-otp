@@ -48,15 +48,23 @@
 -export([get_own_nodes/0, get_own_nodes_with_errors/0]).
 -export([publish_on_nodes/0]).
 
-
 -export([config_scan/1, config_scan/2]).
-
 
 %% Internal exports
 -export([sync_init/4]).
 
 
 -define(cc_vsn, 2).
+
+%%%====================================================================================
+
+-type publish_type() :: 'hidden' | 'normal'.
+-type sync_state()   :: 'no_conf' | 'synced'.
+
+-type group_name()  :: atom().
+-type group_tuple() :: {group_name(), [node()]}
+                     | {group_name(), publish_type(), [node()]}.
+
 
 %%%====================================================================================
 %%% The state of the global_group process
@@ -71,19 +79,29 @@
 %%% node_name =   Own node 
 %%% monitor =     List of Pids requesting nodeup/nodedown
 %%%====================================================================================
--record(state, {sync_state = no_conf, connect_all, group_name = [], 
-		nodes = [], no_contact = [], sync_error = [], other_grps = [], 
-		node_name = node(), monitor = [],
-		publish_type = normal, group_publish_type = normal}).
 
+-record(state, {sync_state = no_conf        :: sync_state(),
+		connect_all                 :: boolean(),
+		group_name = []             :: group_name() | [],
+		nodes = []                  :: [node()],
+		no_contact = []             :: [node()],
+		sync_error = [],
+		other_grps = [], 
+		node_name = node()          :: node(),
+		monitor = [],
+		publish_type = normal       :: publish_type(),
+		group_publish_type = normal :: publish_type()}).
 
 
 %%%====================================================================================
 %%% External exported
 %%%====================================================================================
+
+-spec global_groups() -> {group_name(), [group_name()]} | 'undefined'.
 global_groups() ->
     request(global_groups).
 
+-spec monitor_nodes(boolean()) -> 'ok'.
 monitor_nodes(Flag) -> 
     case Flag of
 	true -> request({monitor_nodes, Flag});
@@ -91,21 +109,30 @@ monitor_nodes(Flag) ->
 	_ -> {error, not_boolean}
     end.
 
+-spec own_nodes() -> [node()].
 own_nodes() ->
     request(own_nodes).
 
+-type name()  :: atom().
+-type where() :: {'node', node()} | {'group', group_name()}.
+
+-spec registered_names(where()) -> [name()].
 registered_names(Arg) ->
     request({registered_names, Arg}).
 
+-spec send(name(), term()) -> pid() | {'badarg', {name(), term()}}.
 send(Name, Msg) ->
     request({send, Name, Msg}).
 
+-spec send(where(), name(), term()) -> pid() | {'badarg', {name(), term()}}.
 send(Group, Name, Msg) ->
     request({send, Group, Name, Msg}).
 
+-spec whereis_name(name()) -> pid() | 'undefined'.
 whereis_name(Name) ->
     request({whereis_name, Name}).
 
+-spec whereis_name(where(), name()) -> pid() | 'undefined'.
 whereis_name(Group, Name) ->
     request({whereis_name, Group, Name}).
 
@@ -118,6 +145,7 @@ global_groups_added(NewPara) ->
 global_groups_removed(NewPara) ->
     request({global_groups_removed, NewPara}).
 
+-spec sync() -> 'ok'.
 sync() ->
     request(sync).
 
@@ -127,8 +155,16 @@ ng_add_check(Node, OthersNG) ->
 ng_add_check(Node, PubType, OthersNG) ->
     request({ng_add_check, Node, PubType, OthersNG}).
 
+-type info_item() :: {'state', sync_state()}
+                   | {'own_group_name', group_name()}
+                   | {'own_group_nodes', [node()]}
+                   | {'synched_nodes', [node()]}
+                   | {'sync_error', [node()]}
+                   | {'no_contact', [node()]}
+                   | {'other_groups', [group_tuple()]}
+                   | {'monitoring', [pid()]}.
 
-
+-spec info() -> [info_item()].
 info() ->
     request(info, 3000).
 
@@ -346,7 +382,6 @@ handle_call({registered_names, {node, Node}}, From, S) ->
 
 
 
-
 %%%====================================================================================
 %%% send(Name, Msg) -> Pid | {badarg, {Name, Msg}}
 %%% send({node, Node}, Name, Msg) -> Pid | {badarg, {Name, Msg}}
@@ -486,7 +521,6 @@ handle_call({global_groups_changed, NewPara}, _From, S) ->
 		   other_grps = NewOther,
 		   group_publish_type = PubTpGrp},
     {reply, ok, NewS};
-
 
 
 %%%====================================================================================

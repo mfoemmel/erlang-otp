@@ -186,7 +186,7 @@ static Eterm ms_delete_all_buff[8]; /* To compare with for deletion
 */
 
 static void fix_table_locked(Process* p, DbTable* tb);
-static void unfix_table_locked(Process* p,  DbTable* tb);
+static void unfix_table_locked(Process* p,  DbTable* tb, db_lock_kind_t* kind);
 static void set_heir(Process* me, DbTable* tb, Eterm heir, Eterm heir_data);
 static void free_heir_data(DbTable*);
 static void free_fixations_locked(DbTable *tb);
@@ -579,7 +579,7 @@ BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
     }
     else if (BIF_ARG_2 == am_false) {
 	if (IS_FIXED(tb)) {
-	    unfix_table_locked(BIF_P, tb);
+	    unfix_table_locked(BIF_P, tb, &kind);
 	}
     }
     else {
@@ -1628,38 +1628,62 @@ BIF_RETTYPE ets_setopts_2(BIF_ALIST_2)
     DbTable* tb = NULL;
     Eterm* tp;
     Eterm opt;
-    Eterm heir_data;
+    Eterm heir = THE_NON_VALUE;
+    Eterm heir_data = THE_NON_VALUE;
+    Uint32 protection = 0;
+    Eterm fakelist[2];
+    Eterm tail;
 
-    if (is_list(BIF_ARG_2)) {
-	if (CDR(list_val(BIF_ARG_2)) != NIL) {
+    for (tail = is_tuple(BIF_ARG_2) ? CONS(fakelist, BIF_ARG_2, NIL) : BIF_ARG_2;	
+	  is_list(tail);
+	  tail = CDR(list_val(tail))) {
+
+	opt = CAR(list_val(tail));
+	if (!is_tuple(opt) || (tp = tuple_val(opt), arityval(tp[0]) < 2)) { 
 	    goto badarg;
 	}
-	opt = CAR(list_val(BIF_ARG_2));
-    } else {
-	opt = BIF_ARG_2;
+
+	switch (tp[1]) {
+	case am_heir:
+	    if (heir != THE_NON_VALUE) goto badarg;
+	    heir = tp[2];
+	    if (arityval(tp[0]) == 2 && heir == am_none) {
+		heir_data = am_undefined;
+	    } 
+	    else if (arityval(tp[0]) == 3 && is_internal_pid(heir)) {
+		heir_data = tp[3];
+	    }
+	    else goto badarg;
+	    break;
+
+	case am_protection:
+	    if (arityval(tp[0]) != 2 || protection != 0) goto badarg; 
+	    switch (tp[2]) {
+	    case am_private: protection = DB_PRIVATE; break;
+	    case am_protected: protection = DB_PROTECTED; break;
+	    case am_public: protection = DB_PUBLIC; break;
+	    default: goto badarg;
+	    }
+	    break;
+
+	default: goto badarg;
+	}
     }
 
-    if (!is_tuple(opt)) {
-	goto badarg;
-    }
-    tp = tuple_val(opt);
-
-
-    if (arityval(tp[0]) == 3 && tp[1] == am_heir && is_internal_pid(tp[2])) {
-	heir_data = tp[3];
-    }
-    else if (arityval(tp[0]) == 2 && tp[1] == am_heir && tp[2] == am_none) {
-	heir_data = am_undefined;
-    }
-    else goto badarg;
-
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WRITE)) == NULL
+    if (tail != NIL
+	|| (tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WRITE)) == NULL
 	|| tb->common.owner != BIF_P->id) {
 	goto badarg;
     }
 
-    free_heir_data(tb);
-    set_heir(BIF_P, tb, tp[2], heir_data);
+    if (heir_data != THE_NON_VALUE) {
+	free_heir_data(tb);
+	set_heir(BIF_P, tb, heir, heir_data);
+    }
+    if (protection) {
+	tb->common.status &= ~(DB_PRIVATE|DB_PROTECTED|DB_PUBLIC);
+	tb->common.status |= protection;
+    }
 
     db_unlock (tb,LCK_WRITE);
     BIF_RET(am_true);
@@ -1765,23 +1789,24 @@ static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1)
     int cret;
     Eterm ret;
     Eterm *tptr;
+    db_lock_kind_t kind = LCK_WRITE_REC;
     
     CHECK_TABLES();
     ASSERT(is_tuple(a1));
     tptr = tuple_val(a1);
     ASSERT(arityval(*tptr) >= 1);
     
-    if ((tb = db_get_table(p, tptr[1], DB_WRITE, LCK_WRITE_REC)) == NULL) {
+    if ((tb = db_get_table(p, tptr[1], DB_WRITE, kind)) == NULL) {
 	BIF_ERROR(p,BADARG);
     }
 
     cret = tb->common.meth->db_select_delete_continue(p,tb,a1,&ret);
 
     if(!DID_TRAP(p,ret) && ITERATION_SAFETY(p,tb) != ITER_SAFE) {  
-	unfix_table_locked(p, tb);
+	unfix_table_locked(p, tb, &kind);
     }
 
-    db_unlock(tb, LCK_WRITE_REC);
+    db_unlock(tb, kind);
 
     switch (cret) {
     case DB_ERROR_NONE:      
@@ -2015,13 +2040,14 @@ static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1)
     int cret;
     Eterm ret;
     Eterm *tptr;
+    db_lock_kind_t kind = LCK_READ;
 
     CHECK_TABLES();
 
     tptr = tuple_val(a1);
     ASSERT(arityval(*tptr) >= 1)
 
-    if ((tb = db_get_table(p, tptr[1], DB_READ, LCK_READ)) == NULL) {
+    if ((tb = db_get_table(p, tptr[1], DB_READ, kind)) == NULL) {
 	BIF_ERROR(p, BADARG);
     }
 
@@ -2029,9 +2055,9 @@ static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1)
 					       &ret);
 
     if (!DID_TRAP(p,ret) && ITERATION_SAFETY(p,tb) != ITER_SAFE) {
-	unfix_table_locked(p, tb);
+	unfix_table_locked(p, tb, &kind);
     }
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, kind);
 
     switch (cret) {
     case DB_ERROR_NONE:
@@ -2169,21 +2195,22 @@ static BIF_RETTYPE ets_select_count_1(Process *p, Eterm a1)
     int cret;
     Eterm ret;
     Eterm *tptr;
+    db_lock_kind_t kind = LCK_READ;
 
     CHECK_TABLES();
 
     tptr = tuple_val(a1);
     ASSERT(arityval(*tptr) >= 1)
-    if ((tb = db_get_table(p, tptr[1], DB_READ, LCK_READ)) == NULL) {
+    if ((tb = db_get_table(p, tptr[1], DB_READ, kind)) == NULL) {
 	BIF_ERROR(p, BADARG);
     }
 
     cret = tb->common.meth->db_select_count_continue(p, tb, a1, &ret);
 
     if (!DID_TRAP(p,ret) && ITERATION_SAFETY(p,tb) != ITER_SAFE) {
-	unfix_table_locked(p, tb);
+	unfix_table_locked(p, tb, &kind);
     }
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, kind);
 
     switch (cret) {
     case DB_ERROR_NONE:
@@ -3174,9 +3201,10 @@ static void fix_table_locked(Process* p, DbTable* tb)
     db_meta_unlock(meta_pid_to_fixed_tab, LCK_WRITE_REC);
 }
 
-/*  SMP note: hash table need to be at least LCK_WRITE_REC locked
-              tree need only to be LCK_READ */
-static void unfix_table_locked(Process* p,  DbTable* tb)
+/* SMP note: May re-lock table 
+*/
+static void unfix_table_locked(Process* p,  DbTable* tb,
+			       db_lock_kind_t* kind_p)
 {
     DbFixation** pp;
 
@@ -3211,7 +3239,17 @@ static void unfix_table_locked(Process* p,  DbTable* tb)
 #endif
 unlocked:
 
-    if (!IS_FIXED(tb) && IS_HASH_TABLE(tb->common.status)) {
+    if (!IS_FIXED(tb) && IS_HASH_TABLE(tb->common.status)
+	&& erts_smp_atomic_read(&tb->hash.fixdel) != (long)NULL) {
+#ifdef ERTS_SMP
+	if (*kind_p == LCK_READ && tb->common.is_thread_safe) {
+	    /* Must have write lock while purging pseudo-deleted (OTP-8166) */
+	    erts_smp_rwmtx_runlock(&tb->common.rwlock);
+	    erts_smp_rwmtx_rwlock(&tb->common.rwlock);
+	    *kind_p = LCK_WRITE;
+	    if (tb->common.status & DB_DELETE) return;
+	}
+#endif
 	db_unfix_table_hash(&(tb->hash));
     }
 }
@@ -3442,10 +3480,37 @@ static Eterm table_info(Process* p, DbTable* tb, Eterm What)
 #ifdef ERTS_SMP
 	erts_smp_mtx_unlock(&tb->common.fixlock);
 #endif
-    } else if (What == am_atom_put("buckets",7)) {
-	ret = make_small(erts_smp_atomic_read(IS_HASH_TABLE(tb->common.status)
-					      ? &tb->hash.nactive
-					      : &tb->common.nitems));
+    } else if (What == am_atom_put("stats",5)) {
+	if (IS_HASH_TABLE(tb->common.status)) {
+	    FloatDef f;
+	    DbHashStats stats;
+	    Eterm avg, std_dev_real, std_dev_exp;
+	    Eterm* hp;
+
+	    db_calc_stats_hash(&tb->hash, &stats);
+	    hp = HAlloc(p, 1 + 6 + FLOAT_SIZE_OBJECT*3);
+	    f.fd = stats.avg_chain_len;
+	    avg = make_float(hp);
+	    PUT_DOUBLE(f, hp);
+	    hp += FLOAT_SIZE_OBJECT;
+
+	    f.fd = stats.std_dev_chain_len;
+	    std_dev_real = make_float(hp);
+	    PUT_DOUBLE(f, hp);
+	    hp += FLOAT_SIZE_OBJECT;
+	    
+	    f.fd = stats.std_dev_expected;
+	    std_dev_exp = make_float(hp);
+	    PUT_DOUBLE(f, hp);
+	    hp += FLOAT_SIZE_OBJECT;
+	    ret = TUPLE6(hp, make_small(erts_smp_atomic_read(&tb->hash.nactive)),
+			 avg, std_dev_real, std_dev_exp,
+			 make_small(stats.min_chain_len),
+			 make_small(stats.max_chain_len));
+	}
+	else {
+	    ret = am_false;
+	}
     }
     return ret;
 }

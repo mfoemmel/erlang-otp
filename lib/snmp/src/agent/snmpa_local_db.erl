@@ -40,7 +40,8 @@
          table_get_element/3, table_get_elements/4,
 	 table_set_elements/3, table_set_status/7,
          table_next/2,
-	 table_max_col/2]).
+	 table_max_col/2,
+	 table_get/1]).
 
 -export([get_elements/2]).
 
@@ -88,10 +89,10 @@
 %%% Opt = {auto_repair, false | true | true_verbose} |
 %%%       {verbosity,silence | log | debug}
 %%%-----------------------------------------------------------------
-start_link(Prio, DbDir, Opts) when list(Opts) ->
+start_link(Prio, DbDir, Opts) when is_list(Opts) ->
     start_link(Prio, DbDir, terminate, Opts).
 
-start_link(Prio, DbDir, DbInitError, Opts) when list(Opts) ->
+start_link(Prio, DbDir, DbInitError, Opts) when is_list(Opts) ->
     ?d("start_link -> entry with"
 	"~n   Prio:        ~p"
 	"~n   DbDir:       ~p"
@@ -312,6 +313,24 @@ match(Name, Pattern) ->
     call({match, Name, volatile, Pattern}).
 
 
+table_get(Table) ->
+    table_get(Table, [], []).
+
+table_get(Table, Idx, Acc) ->
+    case table_next(Table, Idx) of
+	endOfTable ->
+            lists:reverse(Acc);
+	NextIdx ->
+	    case table_get_row(Table, NextIdx) of
+		undefined ->
+		    {error, {failed_get_row, NextIdx, lists:reverse(Acc)}};
+		Row ->
+		    NewAcc = [{NextIdx, Row}|Acc],
+		    table_get(Table, NextIdx, NewAcc)
+	    end
+    end.
+
+
 %%-----------------------------------------------------------------
 %% Implements the variable functions.
 %%-----------------------------------------------------------------
@@ -443,7 +462,7 @@ handle_call({table_next, Name, Db, Indexes}, _From, State) ->
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      {value, {_Row, _Prev, Next}} -> 
 		  if 
-		      Next == first -> endOfTable;
+		      Next =:= first -> endOfTable;
 		      true -> Next
 		  end;
 	      undefined -> 
@@ -722,7 +741,7 @@ handle_create_row(Db, Name, Indexes, Row, State) ->
 	{{Name, Next}, {NRow, NPrev, NNext}} ->
 	    {value, {PRow, PPrev, _PNext}} = lookup(Db, {Name, NPrev}, State),
 	    if 
-		Next == NPrev ->
+		Next =:= NPrev ->
 		    % Insert before first
 		    insert(Db, {Name, NPrev}, {PRow, Indexes, Indexes}, State);
 		true ->
@@ -805,7 +824,7 @@ table_loop2(Db, Name, Indexes, Cur, State) ->
     if
 	Cur > Indexes ->
 	    {{Name, Cur}, {Row, Prev, Next}};
-	Cur == Indexes ->
+	Cur =:= Indexes ->
 	    {same_row, {Prev, Next}};
 	true ->
 	    table_loop2(Db, Name, Indexes, Next, State)
@@ -820,16 +839,16 @@ table_max_col(Db, Name, Col, Max, Indexes, State) ->
     case lookup(Db, {Name, Indexes}, State) of
 	{value, {Row, _Prev, Next}} -> 
 	    if 
-		Next == first -> 
+		Next =:= first -> 
 		    if 
-			integer(element(Col, Row)),
-			element(Col, Row) > Max -> 
+			is_integer(element(Col, Row)) andalso 
+			(element(Col, Row) > Max) -> 
 			    element(Col, Row);
 			true ->
 			    Max
 		    end;
-		integer(element(Col, Row)),
-		element(Col, Row) > Max -> 
+		is_integer(element(Col, Row)) andalso 
+		(element(Col, Row) > Max) -> 
 		    table_max_col(Db,Name, Col,element(Col, Row),Next, State);
 		true -> 
 		    table_max_col(Db, Name, Col, Max, Next, State)

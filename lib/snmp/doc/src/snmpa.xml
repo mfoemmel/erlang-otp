@@ -588,6 +588,7 @@ notification_delivery_info() = #snmpa_notification_delivery_info{}
         <marker id="me_of"></marker>
       </desc>
     </func>
+
     <func>
       <name>me_of(Oid) -> {ok, Me} | {error, Reason}</name>
       <name>me_of(Agent, Oid) -> {ok, Me} | {error, Reason}</name>
@@ -604,9 +605,140 @@ notification_delivery_info() = #snmpa_notification_delivery_info{}
           &lt;Oid for var&gt;.0 and if it is a table, Oid must be 
           &lt;table&gt;.&lt;entry&gt;.&lt;col&gt;.&lt;any&gt;</p>
 
+        <marker id="invalidate_mibs_cache"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>invalidate_mibs_cache() -> void()</name>
+      <name>invalidate_mibs_cache(Agent) -> void()</name>
+      <fsummary>Invalidate the mib server cache</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+      </type>
+      <desc>
+        <p>Invalidate the mib server cache. </p>
+        <p>The entire contents of the cache will be deleted. </p>
+
+        <marker id="enable_mibs_cache"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>enable_mibs_cache() -> void()</name>
+      <name>enable_mibs_cache(Agent) -> void()</name>
+      <fsummary>Enable the mib server cache</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+      </type>
+      <desc>
+        <p>Enable the mib server cache. </p>
+
+        <marker id="disable_mibs_cache"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>disable_mibs_cache() -> void()</name>
+      <name>disable_mibs_cache(Agent) -> void()</name>
+      <fsummary>Disable the mib server cache</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+      </type>
+      <desc>
+        <p>Disable the mib server cache. </p>
+
+        <marker id="gc_mibs_cache"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>gc_mibs_cache() -> {ok, NumElementsGCed} | {error, Reason}</name>
+      <name>gc_mibs_cache(Agent) -> {ok, NumElementsGCed} | {error, Reason}</name>
+      <name>gc_mibs_cache(Age) -> {ok, NumElementsGCed} | {error, Reason}</name>
+      <name>gc_mibs_cache(Agent, Age) -> {ok, NumElementsGCed} | {error, Reason}</name>
+      <name>gc_mibs_cache(Age, GcLimit) -> {ok, NumElementsGCed} | {error, Reason}</name>
+      <name>gc_mibs_cache(Agent, Age, GcLimit) -> {ok, NumElementsGCed} | {error, Reason}</name>
+      <fsummary>Perform mib server cache gc</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+        <v>Age = integer() > 0</v>
+        <v>GcLimit = integer() > 0 | infinity</v>
+        <v>NumElementsGCed = integer() >= 0</v>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+        <p>Perform mib server cache gc. </p>
+        <p>Manually performs a mib server cache gc. 
+          This can be done regardless of the value of the 
+          <c>autogc</c> option. 
+          The <c>NumElementsGCed</c> value indicates how many 
+          elements where actually removed from the cache. </p>
+
+        <marker id="enable_mibs_cache_autogc"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>enable_mibs_cache_autogc() -> void()</name>
+      <name>enable_mibs_cache_autogc(Agent) -> void()</name>
+      <fsummary>Enable automatic gc of the mib server cache</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+      </type>
+      <desc>
+        <p>Enable automatic gc of the mib server cache. </p>
+
+        <marker id="disable_mibs_cache_autogc"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>disable_mibs_cache_autogc() -> void()</name>
+      <name>disable_mibs_cache_autogc(Agent) -> void()</name>
+      <fsummary>Disable automatic gc of the mib server cache</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+      </type>
+      <desc>
+        <p>Disable automatic gc of the mib server cache. </p>
+
+        <marker id="update_mibs_cache_age"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>update_mibs_cache_age(NewAge) -> ok | {error, Reason}</name>
+      <name>update_mibs_cache_age(Agent, NewAge) -> ok | {error, Reason}</name>
+      <fsummary>Change the mib server cache age property</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+        <v>NewAge = integer() > 0</v>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+        <p>Change the mib server cache <c>age</c> property. </p>
+
+        <marker id="update_mibs_cache_gclimit"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>update_mibs_cache_gclimit(NewGcLimit) -> ok | {error, Reason}</name>
+      <name>update_mibs_cache_gclimit(Agent, NewGCLimit) -> ok | {error, Reason}</name>
+      <fsummary>Change the mib server cache gclimit property</fsummary>
+      <type>
+        <v>Agent = pid() | atom()</v>
+        <v>NewGcLimit = integer() > 0 | infinity</v>
+        <v>Reason = term()</v>
+      </type>
+      <desc>
+        <p>Change the mib server cache <c>gclimit</c> property. </p>
+
         <marker id="register_notification_filter"></marker>
       </desc>
     </func>
+
 
     <func>
       <name>register_notification_filter(Id, Mod, Data) -> ok | {error, Reason}</name>
@@ -984,12 +1116,13 @@ snmp_agent:register_subagent(SA1,[1,2,3], SA2).
     </func>
 
     <func>
-      <name>discovery(TargetName, Notification) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
-      <name>discovery(TargetName, Notification, Varbinds) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
-      <name>discovery(TargetName, Notification, DiscoHandler) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
-      <name>discovery(TargetName, Notification, ContextName, Varbinds) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
-      <name>discovery(TargetName, Notification, Varbinds, DiscoHandler) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
-      <name>discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler) -> ok | {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification) -> {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, Varbinds) -> {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, DiscoHandler) -> {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, ContextName, Varbinds) -> {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, Varbinds, DiscoHandler) -> {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler) -> {ok, ManagerEngineID} | {error, Reason}</name>
+      <name>discovery(TargetName, Notification, ContextName, Varbinds, DiscoHandler, ExtraInfo) -> {ok, ManagerEngineID} | {error, Reason}</name>
       <fsummary>Initiate the discovery process with a manager</fsummary>
       <type>
         <v>TargetName = string()</v>
@@ -998,6 +1131,7 @@ snmp_agent:register_subagent(SA1,[1,2,3], SA2).
         <v>Varbinds = varbinds()</v>
         <v>varbinds() = [varbind()]</v>
         <v>DiscoHandler = snmpa_discovery_handler()</v>
+        <v>ExtraInfo = term()</v>
         <v>snmpa_discovery_handler() = Module implementing the snmpa_discovery_handler behaviour</v>
         <v>ManagerEngineID = string()</v>
         <v>varbind() = {Variable, Value} | {Column, RowIndex, Value} | {OID, Value}</v>
@@ -1020,11 +1154,8 @@ snmp_agent:register_subagent(SA1,[1,2,3], SA2).
           <seealso marker="snmpa_discovery_handler">discovery handler</seealso>
           for more info. </p>
 
-        <p>In case the 
-          <seealso marker="snmpa_discovery_handler#stage1_finish">stage1_finish</seealso> 
-          function returns <c>ignore</c> then the <c>discovery</c> will
-          return <c>{ok, ManagerEngineID}</c> for a successfull discovery.
-          eitherwise <c>ok</c> is returned. </p>
+        <p>The <c>ExtraInfo</c> argument is passed on to the callback functions
+          of the <c>DiscoHandler</c>. </p>
 
         <note><p>If we are not at security-level <c>noAuthNoPriv</c>,
           this could be complicated, since the agent will then continue 

@@ -31,7 +31,14 @@
 	 register_subagent/3, unregister_subagent/2, info/1, info/2, 
 	 verbosity/2, dump/1, dump/2,
 	 backup/2,
-	 invalidate_cache/1]).
+	 invalidate_cache/1, 
+	 gc_cache/1, gc_cache/2, gc_cache/3,
+	 enable_cache/1, disable_cache/1,
+	 enable_cache_autogc/1, disable_cache_autogc/1, 
+	 update_cache_gclimit/2, 
+	 update_cache_age/2,
+	 which_cache_size/1
+	]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -44,9 +51,16 @@
 -include("snmp_debug.hrl").
 
 
--define(SERVER,   ?MODULE).
--define(NO_CACHE, no_mibs_cache).
--define(DEFAULT_CACHE_USAGE, true).
+-define(SERVER,                ?MODULE).
+-define(NO_CACHE,              no_mibs_cache).
+-define(DEFAULT_CACHE_USAGE,   true).
+-define(CACHE_GC_TICKTIME,     timer:minutes(1)).
+-define(DEFAULT_CACHE_AUTOGC,  false).
+-define(DEFAULT_CACHE_GCLIMIT, 100).
+-define(DEFAULT_CACHE_AGE,     timer:minutes(10)).
+-define(CACHE_GC_TRIGGER,      cache_gc_trigger).
+
+
 
 -ifdef(snmp_debug).
 -define(GS_START_LINK(Prio, Mibs, Opts),
@@ -65,7 +79,8 @@
 %%       meo  - mib entry override
 %%       teo  - trap (notification) entry override
 %%-----------------------------------------------------------------
--record(state, {data, meo, teo, backup, cache}).
+-record(state, {data, meo, teo, backup, 
+		cache, cache_tmr, cache_autogc, cache_gclimit, cache_age}).
 
 
 
@@ -81,7 +96,7 @@ start_link(Prio, Mibs, Opts) ->
     ?d("start_link -> entry with"
 	"~n   Prio: ~p"
 	"~n   Mibs: ~p"
-	"~n   Opts: ~p",[Prio, Mibs, Opts]),
+	"~n   Opts: ~p", [Prio, Mibs, Opts]),
     ?GS_START_LINK(Prio, Mibs, Opts).
 
 verbosity(MibServer, Verbosity) -> 
@@ -92,6 +107,44 @@ stop(MibServer) ->
 
 invalidate_cache(MibServer) ->
     call(MibServer, invalidate_cache).
+
+gc_cache(MibServer) ->
+    call(MibServer, gc_cache).
+
+gc_cache(MibServer, Age) ->
+    call(MibServer, {gc_cache, Age}).
+
+gc_cache(MibServer, Age, GcLimit) ->
+    call(MibServer, {gc_cache, Age, GcLimit}).
+
+which_cache_size(MibServer) ->
+    call(MibServer, cache_size).
+
+enable_cache(MibServer) ->
+    update_cache_opts(MibServer, cache, true).
+disable_cache(MibServer) ->
+    update_cache_opts(MibServer, cache, false).
+
+enable_cache_autogc(MibServer) ->
+    update_cache_opts(MibServer, autogc, true).
+disable_cache_autogc(MibServer) ->
+    update_cache_opts(MibServer, autogc, false).
+
+update_cache_gclimit(MibServer, GcLimit) 
+  when ((is_integer(GcLimit) andalso (GcLimit > 0)) orelse 
+	(GcLimit =:= infinity)) ->
+    update_cache_opts(MibServer, gclimit, GcLimit);
+update_cache_gclimit(_, BadLimit) ->
+    {error, {bad_gclimit, BadLimit}}.
+
+update_cache_age(MibServer, Age) 
+  when is_integer(Age) andalso (Age > 0) ->
+    update_cache_opts(MibServer, age, Age);
+update_cache_age(_, BadAge) ->
+    {error, {bad_age, BadAge}}.
+
+update_cache_opts(MibServer, Key, Value) ->
+    call(MibServer, {update_cache_opts, Key, Value}).
 
 
 %%-----------------------------------------------------------------
@@ -173,10 +226,10 @@ info(MibServer, Type) ->
 dump(MibServer) ->
     call(MibServer, dump).
 
-dump(MibServer, File) when list(File) ->
+dump(MibServer, File) when is_list(File) ->
     call(MibServer, {dump, File}).
 
-backup(MibServer, BackupDir) when list(BackupDir) ->
+backup(MibServer, BackupDir) when is_list(BackupDir) ->
     call(MibServer, {backup, BackupDir}).
 
 
@@ -188,7 +241,7 @@ init([Prio, Mibs, Opts]) ->
     ?d("init -> entry with"
 	"~n   Prio: ~p"
 	"~n   Mibs: ~p"
-	"~n   Opts: ~p",[Prio, Mibs, Opts]),
+	"~n   Opts: ~p", [Prio, Mibs, Opts]),
     case (catch do_init(Prio, Mibs, Opts)) of
 	{ok, State} ->
 	    {ok, State};
@@ -204,9 +257,35 @@ do_init(Prio, Mibs, Opts) ->
     process_flag(priority, Prio),
     process_flag(trap_exit, true),
     put(sname,ms),
-    put(verbosity,?vvalidate(get_verbosity(Opts))),
+    put(verbosity, ?vvalidate(get_verbosity(Opts))),
     ?vlog("starting",[]),
-    Cache      = maybe_create_cache(Opts), 
+
+    %% Extract the cache options
+    {Cache, CacheOptions} = 
+	case get_opt(cache, Opts, ?DEFAULT_CACHE_USAGE) of
+	    true ->
+		{new_cache(), []};
+	    false ->
+		{?NO_CACHE, []};
+	    CacheOpts when is_list(CacheOpts) ->
+		{new_cache(), CacheOpts};
+	    Bad ->
+		throw({error, {bad_option, {cache, Bad}}})
+	end,
+    CacheAutoGC  = get_cacheopt_autogc(Cache,  CacheOptions), 
+    CacheGcLimit = get_cacheopt_gclimit(Cache, CacheOptions), 
+    CacheAge     = get_cacheopt_age(Cache,     CacheOptions), 
+    
+    %% Maybe start the cache gc timer
+    CacheGcTimer = 
+	if 
+	    ((Cache =/= ?NO_CACHE) andalso 
+	     (CacheAutoGC =:= true)) ->
+		start_cache_gc_timer();
+	    true ->
+		undefined
+	end,
+
     MeOverride = get_me_override(Opts),
     TeOverride = get_te_override(Opts),
     MibStorage = get_mib_storage(Opts),
@@ -218,10 +297,14 @@ do_init(Prio, Mibs, Opts) ->
 	    ?vdebug("started",[]),
 	    snmpa_mib_data:sync(Data2),
 	    ?vdebug("mib data synced",[]),
-	    {ok, #state{data  = Data2, 
-			teo   = TeOverride, 
-			meo   = MeOverride,
-			cache = Cache}};
+	    {ok, #state{data          = Data2, 
+			teo           = TeOverride, 
+			meo           = MeOverride,
+			cache         = Cache, 
+			cache_tmr     = CacheGcTimer, 
+			cache_autogc  = CacheAutoGC,
+			cache_gclimit = CacheGcLimit,
+			cache_age     = CacheAge}};
 	{'aborted at', Mib, _NewData, Reason} ->
 	    ?vinfo("failed loading mib ~p: ~p",[Mib,Reason]),
 	    {error, {Mib, Reason}}
@@ -249,7 +332,7 @@ mib_operations(Operation, [Mib|Mibs], Data0, MeOverride, TeOverride, Force) ->
     mib_operations(Operation, Mibs, Data, MeOverride, TeOverride, Force).
 
 mib_operation(Operation, Mib, Data0, MeOverride, TeOverride, Force) 
-  when list(Mib) ->
+  when is_list(Mib) ->
     ?vtrace("mib operation on mib ~p", [Mib]),
     case apply(snmpa_mib_data, Operation, [Data0,Mib,MeOverride,TeOverride]) of
 	{error, 'already loaded'} when (Operation =:= load_mib) andalso  
@@ -280,23 +363,56 @@ handle_call(invalidate_cache, _From, #state{cache = Cache} = State) ->
     NewCache = maybe_invalidate_cache(Cache),
     {reply, ignore, State#state{cache = NewCache}};
 
+handle_call(cache_size, _From, #state{cache = Cache} = State) ->
+    ?vlog("cache_size", []), 
+    Reply = maybe_cache_size(Cache),
+    {reply, Reply, State};
+
+handle_call(gc_cache, _From, 
+	    #state{cache         = Cache, 
+		   cache_age     = Age, 
+		   cache_gclimit = GcLimit} = State) ->
+    ?vlog("gc_cache", []), 
+    Result = maybe_gc_cache(Cache, Age, GcLimit),
+    {reply, Result, State};
+
+handle_call({gc_cache, Age}, _From, 
+	    #state{cache         = Cache, 
+		   cache_gclimit = GcLimit} = State) ->
+    ?vlog("gc_cache with Age = ~p", [Age]), 
+    Result = maybe_gc_cache(Cache, Age, GcLimit),
+    {reply, Result, State};
+
+handle_call({gc_cache, Age, GcLimit}, _From, 
+	    #state{cache = Cache} = State) ->
+    ?vlog("gc_cache with Age = ~p and GcLimut = ~p", [Age, GcLimit]), 
+    Result = maybe_gc_cache(Cache, Age, GcLimit),
+    {reply, Result, State};
+
+handle_call({update_cache_opts, Key, Value}, _From, State) ->
+    ?vlog("update_cache_opts: ~p -> ~p", [Key, Value]), 
+    {Result, NewState} = handle_update_cache_opts(Key, Value, State),
+    {reply, Result, NewState};
+
 handle_call({lookup, Oid}, _From, 
 	    #state{data = Data, cache = Cache} = State) ->
     ?vlog("lookup ~p", [Oid]), 
     Key = {lookup, Oid}, 
-    Reply = case maybe_cache_lookup(Cache, Key) of
-		?NO_CACHE ->
-		    snmpa_mib_data:lookup(Data, Oid);
-		[] ->
-		    Rep = snmpa_mib_data:lookup(Data, Oid),
-		    ets:insert(Cache, {Key, Rep}),
-		    Rep;
-		[{Key, Rep}] ->
-		    ?vdebug("lookup -> found in cache", []), 
-		    Rep
-	    end,
-    ?vdebug("lookup -> Reply: ~p",[Reply]),    
-    {reply, Reply, State};
+    {Reply, NewState} = 
+	case maybe_cache_lookup(Cache, Key) of
+	    ?NO_CACHE ->
+		{snmpa_mib_data:lookup(Data, Oid), State};
+	    [] ->
+		Rep = snmpa_mib_data:lookup(Data, Oid),
+		ets:insert(Cache, {Key, Rep, timestamp()}),
+		{Rep, maybe_start_cache_gc_timer(State)};
+	    [{Key, Rep, _}] ->
+		?vdebug("lookup -> found in cache", []), 
+		ets:update_element(Cache, Key, {3, timestamp()}),
+		{Rep, State}
+	end,
+    ?vdebug("lookup -> Reply: ~p", [Reply]), 
+    {reply, Reply, NewState};
 
 handle_call({which_mib, Oid}, _From, #state{data = Data} = State) ->
     ?vlog("which_mib ~p",[Oid]),    
@@ -306,21 +422,23 @@ handle_call({which_mib, Oid}, _From, #state{data = Data} = State) ->
 
 handle_call({next, Oid, MibView}, _From, 
 	    #state{data = Data, cache = Cache} = State) ->
-    ?vlog("next ~p [~p]",[Oid,MibView]), 
+    ?vlog("next ~p [~p]", [Oid, MibView]), 
     Key = {next, Oid, MibView},
-    Reply = case maybe_cache_lookup(Cache, Key) of
-		?NO_CACHE ->
-		    snmpa_mib_data:next(Data, Oid, MibView);
-		[] ->    
-		    Rep = snmpa_mib_data:next(Data, Oid, MibView),
-		    ets:insert(Cache, {Key, Rep}),
-		    Rep;
-		[{Key, Rep}] ->
-		    ?vdebug("lookup -> found in cache", []), 
-		    Rep
-	    end,
-    ?vdebug("next -> Reply: ~p",[Reply]), 
-    {reply, Reply, State};
+    {Reply, NewState} = 
+	case maybe_cache_lookup(Cache, Key) of
+	    ?NO_CACHE ->
+		{snmpa_mib_data:next(Data, Oid, MibView), State};
+	    [] ->    
+		Rep = snmpa_mib_data:next(Data, Oid, MibView),
+		ets:insert(Cache, {Key, Rep, timestamp()}),
+		{Rep, maybe_start_cache_gc_timer(State)};
+	    [{Key, Rep, _}] ->
+		?vdebug("lookup -> found in cache", []), 
+		ets:update_element(Cache, Key, {3, timestamp()}),
+		{Rep, State}
+	end,
+    ?vdebug("next -> Reply: ~p", [Reply]), 
+    {reply, Reply, NewState};
 
 handle_call({load_mibs, Mibs}, _From, 
 	    #state{data  = Data, 
@@ -476,6 +594,7 @@ handle_cast(Msg, State) ->
     warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
     
+
 handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
     ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
     gen_server:reply(From, {error, Reason}),
@@ -491,6 +610,20 @@ handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
 	  "~n   Reply: ~p", [Reply]),
     gen_server:reply(From, Reply),
     {noreply, S#state{backup = undefined}};
+
+handle_info(?CACHE_GC_TRIGGER, #state{cache         = Cache, 
+				      cache_age     = Age, 
+				      cache_gclimit = GcLimit, 
+				      cache_autogc  = true} = S) 
+  when (Cache =/= ?NO_CACHE) ->
+    ?vlog("cache gc trigger event", []),
+    maybe_gc_cache(Cache, Age, GcLimit), 
+    Tmr = start_cache_gc_timer(),
+    {noreply, S#state{cache_tmr = Tmr}};
+
+handle_info(?CACHE_GC_TRIGGER, S) ->
+    ?vlog("out-of-date cache gc trigger event - ignore", []),
+    {noreply, S#state{cache_tmr = undefined}};
 
 handle_info(Info, State) ->
     warning_msg("received unknown info: ~n~p", [Info]),
@@ -508,19 +641,19 @@ terminate(_Reason, #state{data = Data}) ->
 
 %% downgrade
 %% 
-code_change({down, _Vsn}, S1, downgrade_to_pre_4_12) ->
-    #state{data = Data, meo = MEO, teo = TEO, backup = B, cache = Cache} = S1, 
-    del_cache(Cache), 
-    S2 = {state, Data, MEO, TEO, B},
-    {ok, S2};
+%% code_change({down, _Vsn}, S1, downgrade_to_pre_4_12) ->
+%%     #state{data = Data, meo = MEO, teo = TEO, backup = B, cache = Cache} = S1, 
+%%     del_cache(Cache), 
+%%     S2 = {state, Data, MEO, TEO, B},
+%%     {ok, S2};
 
-%% upgrade
-%% 
-code_change(_Vsn, S1, upgrade_from_pre_4_12) ->
-    {state, Data, MEO, TEO, B} = S1,
-    Cache = new_cache(), 
-    S2 = #state{data = Data, meo = MEO, teo = TEO, backup = B, cache = Cache},
-    {ok, S2};
+%% %% upgrade
+%% %% 
+%% code_change(_Vsn, S1, upgrade_from_pre_4_12) ->
+%%     {state, Data, MEO, TEO, B} = S1,
+%%     Cache = new_cache(), 
+%%     S2 = #state{data = Data, meo = MEO, teo = TEO, backup = B, cache = Cache},
+%%     {ok, S2};
 
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
@@ -531,33 +664,172 @@ code_change(_Vsn, State, _Extra) ->
 %%-----------------------------------------------------------------
 
 get_verbosity(Options) ->
-    snmp_misc:get_option(verbosity, Options, ?default_verbosity).
+    get_opt(verbosity, Options, ?default_verbosity).
 
 get_me_override(Options) ->
-    snmp_misc:get_option(mibentry_override, Options, false).
+    get_opt(mibentry_override, Options, false).
 
 get_te_override(Options) ->
-    snmp_misc:get_option(trapentry_override, Options, false).
+    get_opt(trapentry_override, Options, false).
 
 get_mib_storage(Options) ->
-    snmp_misc:get_option(mib_storage, Options, ets).
+    get_opt(mib_storage, Options, ets).
+
+get_cacheopt_autogc(Cache, CacheOpts) ->
+    IsValid = fun(AutoGC) when ((AutoGC =:= true) orelse 
+				(AutoGC =:= false)) ->
+		      true;
+		 (_) ->
+		      false
+	      end,
+    get_cacheopt(Cache, autogc, CacheOpts, 
+		 false, ?DEFAULT_CACHE_AUTOGC, 
+		 IsValid).
+
+get_cacheopt_gclimit(Cache, CacheOpts) ->
+    IsValid = fun(Limit) when ((is_integer(Limit) andalso (Limit > 0)) orelse 
+			       (Limit =:= infinity)) ->
+		      true;
+		 (_) ->
+		      false
+	      end,
+    get_cacheopt(Cache, gclimit, CacheOpts, 
+		 infinity, ?DEFAULT_CACHE_GCLIMIT, 
+		 IsValid).
+
+get_cacheopt_age(Cache, CacheOpts) ->
+    IsValid = fun(Age) when is_integer(Age) andalso (Age > 0) ->
+		      true;
+		 (_) ->
+		      false
+	      end,
+    get_cacheopt(Cache, age, CacheOpts, 
+		 ?DEFAULT_CACHE_AGE, ?DEFAULT_CACHE_AGE, 
+		 IsValid).
+
+get_cacheopt(?NO_CACHE, _, _, NoCacheVal, _, _) ->
+    NoCacheVal;
+get_cacheopt(_, Key, Opts, _, Default, IsValid) ->
+    Val = get_opt(Key, Opts, Default),
+    case IsValid(Val) of
+	true ->
+	    Val;
+	false ->
+	    throw({error, {bad_option, {Key, Val}}})
+    end.
 
 
 %% ----------------------------------------------------------------
 
-maybe_create_cache(Options) when is_list(Options) ->
-    case snmp_misc:get_option(cache, Options, ?DEFAULT_CACHE_USAGE) of
-	true ->
-	    new_cache();
-	_ ->
-	    ?NO_CACHE
-    end.
+handle_update_cache_opts(cache, true = _Value, 
+			 #state{cache = ?NO_CACHE} = State) ->
+    {ok, State#state{cache = new_cache()}};
+handle_update_cache_opts(cache, true = _Value, State) ->
+    {ok, State};
+
+handle_update_cache_opts(cache, false = _Value,
+			 #state{cache = ?NO_CACHE} = State) ->
+    {ok, State};
+handle_update_cache_opts(cache, false = _Value,
+			 #state{cache     = Cache,
+				cache_tmr = Tmr} = State) ->
+    maybe_stop_cache_gc_timer(Tmr),
+    del_cache(Cache),
+    {ok, State#state{cache = ?NO_CACHE, cache_tmr = undefined}};
+
+handle_update_cache_opts(autogc, true = _Value, 
+			 #state{cache_autogc = true} = State) ->
+    {ok, State};
+handle_update_cache_opts(autogc, true = Value, State) ->
+    {ok, maybe_start_cache_gc_timer(State#state{cache_autogc = Value})};
+handle_update_cache_opts(autogc, false = _Value, 
+			 #state{cache_autogc = false} = State) ->
+    {ok, State};
+handle_update_cache_opts(autogc, false = Value, 
+			 #state{cache_tmr = Tmr} = State) ->
+    maybe_stop_cache_gc_timer(Tmr),
+    {ok, State#state{cache_autogc = Value, cache_tmr = undefined}};
+
+handle_update_cache_opts(age, Age, State) ->
+    {ok, State#state{cache_age = Age}};
+
+handle_update_cache_opts(gclimit, GcLimit, State) ->
+    {ok, State#state{cache_gclimit = GcLimit}};
+
+handle_update_cache_opts(BadKey, Value, State) ->
+    {{error, {bad_cache_opt, BadKey, Value}}, State}.
+
+
+maybe_stop_cache_gc_timer(undefined) ->
+    ok;
+maybe_stop_cache_gc_timer(Tmr) ->
+    erlang:cancel_timer(Tmr).
+
+
+maybe_start_cache_gc_timer(#state{cache        = Cache, 
+				  cache_autogc = true,
+				  cache_tmr    = undefined} = State) 
+  when (Cache =/= ?NO_CACHE) ->
+    Tmr = start_cache_gc_timer(), 
+    State#state{cache_tmr = Tmr};
+maybe_start_cache_gc_timer(State) ->
+    State.
+
+start_cache_gc_timer() ->
+    erlang:send_after(?CACHE_GC_TICKTIME, self(), ?CACHE_GC_TRIGGER).
+
+
+%% ----------------------------------------------------------------
+
+maybe_gc_cache(?NO_CACHE, _Age) ->
+    ?vtrace("cache not enabled", []),
+    ok;
+maybe_gc_cache(Cache, Age) ->
+    MatchSpec = gc_cache_matchspec(Age), 
+    Keys = ets:select(Cache, MatchSpec),
+    do_gc_cache(Cache, Keys),
+    {ok, length(Keys)}.
+
+maybe_gc_cache(?NO_CACHE, _Age, _GcLimit) ->
+    ok;
+maybe_gc_cache(Cache, Age, infinity = _GcLimit) ->
+    maybe_gc_cache(Cache, Age);
+maybe_gc_cache(Cache, Age, GcLimit) ->
+    MatchSpec = gc_cache_matchspec(Age), 
+    Keys = 
+	case ets:select(Cache, MatchSpec, GcLimit) of
+	    {Match, _Cont} ->
+		Match;
+	    '$end_of_table' ->
+		[]
+	end,
+    do_gc_cache(Cache, Keys),
+    {ok, length(Keys)}.
+
+gc_cache_matchspec(Age) ->
+    Oldest    = timestamp() - Age,
+    MatchHead = {'$1', '_', '$2'}, 
+    Guard     = [{'<', '$2', Oldest}], 
+    MatchFunc = {MatchHead, Guard, ['$1']},
+    MatchSpec = [MatchFunc],
+    MatchSpec.
+
+do_gc_cache(_, []) ->
+    ok;
+do_gc_cache(Cache, [Key|Keys]) ->
+    ets:delete(Cache, Key),
+    do_gc_cache(Cache, Keys).
 
 maybe_invalidate_cache(?NO_CACHE) ->
     ?NO_CACHE;
 maybe_invalidate_cache(Cache) ->
     del_cache(Cache),
     new_cache().
+
+maybe_cache_size(?NO_CACHE) ->
+    {error, not_enabled};
+maybe_cache_size(Cache) ->
+    {ok, ets:info(Cache, size)}.
 
 new_cache() ->
     ets:new(snmpa_mib_cache, [set, protected, {keypos, 1}]).
@@ -581,6 +853,15 @@ size_cache(Cache) ->
 	_ ->
 	    undefined
     end.
+
+timestamp() ->
+    snmp_misc:now(ms).
+
+
+%% ----------------------------------------------------------------
+
+get_opt(Key, Options, Default) ->
+    snmp_misc:get_option(Key, Options, Default).
 
 
 %% ----------------------------------------------------------------

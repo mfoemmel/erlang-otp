@@ -58,12 +58,12 @@ init(Rtl) ->
   CFG = info_update(CFG0, hipe_rtl:rtl_info(Rtl)),
   take_bbs(Code, CFG).
 
-%% @spec is_comment(hipe_rtl:rtl_instruction()) -> bool()
+%% @spec is_comment(hipe_rtl:rtl_instruction()) -> boolean()
 %% @doc  Succeeds if Instr has no effect.
 is_comment(Instr) ->
   hipe_rtl:is_comment(Instr).
 
-%% @spec is_goto(hipe_rtl:rtl_instruction()) -> bool()
+%% @spec is_goto(hipe_rtl:rtl_instruction()) -> boolean()
 %% @doc  Succeeds if Instr is just a jump (no side-effects).
 is_goto(Instr) ->
   hipe_rtl:is_goto(Instr).

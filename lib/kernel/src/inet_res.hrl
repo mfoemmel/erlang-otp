@@ -22,6 +22,7 @@
 
 -define(RES_TIMEOUT, 2000).      %% milli second between retries 
 -define(RES_RETRY,   3).         %% number of retry
+-define(RES_FILE_UPDATE_TM, 5).  %% seconds between file_info
 
 -define(CACHE_LIMIT, 100).          %% number of cached dns_rr
 -define(CACHE_REFRESH, 60*60*1000). %% refresh interval

@@ -103,7 +103,8 @@
 -export([start/3, start/4,
 	 start_link/3, start_link/4,
 	 call/2, call/3,
-	 reply/2
+	 reply/2,
+	 get_pid/1
 	]).
 
 -export([behaviour_info/1]).
@@ -201,7 +202,13 @@ call(Ref = #wx_ref{state=Pid}, Request, Timeout) when is_pid(Pid) ->
     catch _:Reason ->
 	    erlang:error({Reason, {?MODULE, call, [Ref, Request, Timeout]}})
     end.
-	    
+
+
+%% @spec(wxObject()) -> pid()
+%% @doc Get the pid of the object handle.
+get_pid(#wx_ref{state=Pid}) when is_pid(Pid) ->
+    Pid.
+
 %% -----------------------------------------------------------------
 %% Send a reply to the client.
 %% -----------------------------------------------------------------
@@ -385,7 +392,7 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Debug) ->
 	{stop, Reason, Reply, NState} ->
 	    {'EXIT', R} = 
 		(catch terminate(Reason, Name, Msg, Mod, NState, Debug)),
-	    reply(Name, From, Reply, NState, Debug),
+	    _ = reply(Name, From, Reply, NState, Debug),
 	    exit(R);
 	Other ->
 	    handle_common_reply(Other, Name, Msg, Mod, State, Debug)
@@ -411,7 +418,9 @@ handle_no_reply({noreply, NState, Time1}, Parent, Name, _Msg, Mod, _State, Debug
     loop(Parent, Name, NState, Mod, Time1, Debug1);
 handle_no_reply(Reply, _Parent, Name, Msg, Mod, State, Debug) ->
     handle_common_reply(Reply, Name, Msg, Mod, State,Debug).
+
 %% @hidden
+-spec handle_common_reply(_, _, _, _, _, _) -> no_return().
 handle_common_reply(Reply, Name, Msg, Mod, State, Debug) ->
     case Reply of
 	{stop, Reason, NState} ->
@@ -421,6 +430,7 @@ handle_common_reply(Reply, Name, Msg, Mod, State, Debug) ->
 	_ ->
 	    terminate({bad_return_value, Reply}, Name, Msg, Mod, State, Debug)
     end.
+
 %% @hidden
 reply(Name, {To, Tag}, Reply, State, Debug) ->
     reply({To, Tag}, Reply),
@@ -434,11 +444,12 @@ reply(Name, {To, Tag}, Reply, State, Debug) ->
 %% @hidden
 system_continue(Parent, Debug, [Name, State, Mod, Time]) ->
     loop(Parent, Name, State, Mod, Time, Debug).
-%% @hidden
--spec(system_terminate/4 :: (_, _, _, [_]) -> no_return()).
 
+%% @hidden
+-spec system_terminate(_, _, _, [_]) -> no_return().
 system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time]) ->
     terminate(Reason, Name, [], Mod, State, Debug).
+
 %% @hidden
 system_code_change([Name, State, Mod, Time], _Module, OldVsn, Extra) ->
     case catch Mod:code_change(OldVsn, State, Extra) of

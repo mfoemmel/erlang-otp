@@ -90,8 +90,10 @@ compiler_runner(List) ->
 compile1(['@cwd', Cwd|Rest]) ->
     CwdL = atom_to_list(Cwd),
     compile1(Rest, CwdL, #options{outdir=CwdL, cwd=CwdL});
-compile1(Other) ->
-    throw({error, {bad_input, Other}}).
+compile1(Args) ->
+    %% From R13B02, the @cwd argument is optional.
+    {ok, Cwd} = file:get_cwd(),
+    compile1(Args, Cwd, #options{outdir=Cwd, cwd=Cwd}).
 
 %% Parses all options.
 

@@ -542,7 +542,7 @@ finalize(_, DomData, _, _, _) ->
 %% Notes     : Relies on lists:any to return false when the a list is empty
 %%>----------------------------------------------------------------------<     
 
--spec domTree_dominates(cfg_lbl(), cfg_lbl(), #domTree{}) -> bool().
+-spec domTree_dominates(cfg_lbl(), cfg_lbl(), #domTree{}) -> boolean().
 
 domTree_dominates(Node1, Node1, _DomTree) ->
   true;

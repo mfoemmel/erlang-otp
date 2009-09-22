@@ -84,61 +84,61 @@ binary(suite) ->
 
 pretty(suite) ->
     [];
-pretty(Config) when list(Config) ->
+pretty(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     pretty_text().
 
 compact(suite) ->
     [];
-compact(Config) when list(Config) ->
+compact(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     compact_text().
 
 pretty_flex(suite) ->
     [];
-pretty_flex(Config) when list(Config) ->
+pretty_flex(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     pretty_flex().
 
 compact_flex(suite) ->
     [];
-compact_flex(Config) when list(Config) ->
+compact_flex(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     compact_flex().
 
 bin(suite) ->
     [];
-bin(Config) when list(Config) ->
+bin(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     bin().
 
 ber(suite) ->
     [];
-ber(Config) when list(Config) ->
+ber(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     asn1_ber().
 
 ber_bin(suite) ->
     [];
-ber_bin(Config) when list(Config) ->
+ber_bin(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     asn1_ber_bin().
 
 per(suite) ->
     [];
-per(Config) when list(Config) ->
+per(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     asn1_per().
 
 standard_erl(suite) ->
     [];
-standard_erl(Config) when list(Config) ->
+standard_erl(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     standard_erl().
 
 compressed_erl(suite) ->
     [];
-compressed_erl(Config) when list(Config) ->
+compressed_erl(Config) when is_list(Config) ->
     ?ACQUIRE_NODES(1, Config),
     compressed_erl().
 
@@ -179,7 +179,7 @@ names() ->
 %% -define(A5555, ["11110000"]).
 %% -define(A5556, ["11111111"]).
 
-request(Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
+request(Mid, TransId, ContextId, CmdReq) when is_list(CmdReq) ->
     Actions = [#'ActionRequest'{contextId = ContextId,
                                 commandRequests = CmdReq}],
     Req = {transactions,
@@ -190,7 +190,7 @@ request(Mid, TransId, ContextId, CmdReq) when list(CmdReq) ->
                                        mId = Mid,
                                        messageBody = Req}}.
 
-reply(Mid, TransId, ContextId, CmdReply) when list(CmdReply) ->
+reply(Mid, TransId, ContextId, CmdReply) when is_list(CmdReply) ->
     Actions = [#'ActionReply'{contextId = ContextId,
                               commandReply = CmdReply}],
     Req = {transactions,
@@ -1305,7 +1305,7 @@ encode(Slogan, DecodedMsg, {Mod, Opt, _Opt2} = _Encoder) ->
     Main = "==================================================",
     Sub  = "--------------------------------------------------",
     case catch Mod:encode_message(Opt, DecodedMsg) of
-        {ok, EncodedMsg} when binary(EncodedMsg) ->
+        {ok, EncodedMsg} when is_binary(EncodedMsg) ->
             Sz = size(EncodedMsg),
             ok = io:format("~w ~s ~w bytes~n",
                            [Slogan, Main, Sz]),
@@ -1313,7 +1313,7 @@ encode(Slogan, DecodedMsg, {Mod, Opt, _Opt2} = _Encoder) ->
             case catch Mod:decode_message(Opt, EncodedMsg) of
                 {ok, ReDecodedMsg} ->
                     fmt(Slogan, DecodedMsg, ReDecodedMsg);
-                {error, {Line, _, Reason}} when integer(Line)->
+                {error, {Line, _, Reason}} when is_integer(Line)->
                     ?ERROR([{Slogan, Line, decode_failed}, {error,  Reason}, {encoded, EncodedMsg}, DecodedMsg]),
                     io:format("~n~w <ERROR> #~w: ~w~n",
                               [Slogan, Line, Reason]);
@@ -1352,7 +1352,7 @@ fmt_diff(Slogan, Old, New, OldRest, NewRest, Common) ->
 compute_res(All) ->
     compute_res(All, [], 0).
 
-compute_res([H | T], Bad, Sum) when integer(H) ->
+compute_res([H | T], Bad, Sum) when is_integer(H) ->
     compute_res(T, Bad, Sum + H);
 compute_res([H | T], Bad, Sum) ->
     compute_res(T, [H | Bad], Sum);
@@ -1380,7 +1380,7 @@ msg_sizes(DecodedMsg, Encoders) ->
 
 abs_msg_size(DecodedMsg, {Mod, Opt, _Opt2} = Encoder) ->
     case catch Mod:encode_message(Opt, DecodedMsg) of
-        {ok, EncodedMsg} when binary(EncodedMsg) ->
+        {ok, EncodedMsg} when is_binary(EncodedMsg) ->
 	    {Encoder, size(EncodedMsg)};
         Error ->
             {Encoder, {bad_encoder, Error}}
@@ -1714,7 +1714,7 @@ stat(Encoders, Stat) ->
 		case catch lists:sum(List) of
 		    {'EXIT', _} ->
 			{E, bad, List};
-		    Sum when integer(Sum) ->
+		    Sum when is_integer(Sum) ->
 			N   = length(List),
 			{E, [{min, Min}, {avg, Sum div N}, {max, Max}]}
 		end
@@ -1739,7 +1739,7 @@ gnuplot_data([{Mod, _Opt, _Opt2} = E | Encoders], Dir, Stat, Pos, Names, Arrows)
                    {value, {_, Sz}} = lists:keysearch(E, 1, List),
                    ActualSz =
                        if
-                           integer(Sz) ->
+                           is_integer(Sz) ->
                                Sz;
                            true        ->
                                ok = io:format("<ERROR> ~p(~p) -> ~p~n",

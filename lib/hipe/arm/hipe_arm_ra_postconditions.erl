@@ -19,8 +19,9 @@
 %%
 
 -module(hipe_arm_ra_postconditions).
--export([check_and_rewrite/3]).
--export([check_and_rewrite2/3]).
+
+-export([check_and_rewrite/3, check_and_rewrite2/3]).
+
 -include("hipe_arm.hrl").
 
 check_and_rewrite(Defun, Coloring, Allocator) ->
@@ -250,9 +251,7 @@ fix_dst_common(Dst, TempMap, RegOpt) ->
   case temp_is_spilled(Dst, TempMap) of
     true ->
       NewDst = clone(Dst, RegOpt),
-      {[hipe_arm:mk_pseudo_move(Dst, NewDst)],
-       NewDst,
-       true};
+      {[hipe_arm:mk_pseudo_move(Dst, NewDst)], NewDst, true};
     _ ->
       {[], Dst, false}
   end.
@@ -265,10 +264,7 @@ temp_is_spilled(Temp, TempMap) ->
   case hipe_arm:temp_is_allocatable(Temp) of
     true ->
       Reg = hipe_arm:temp_reg(Temp),
-      case tuple_size(TempMap) > Reg of
-	true -> hipe_temp_map:is_spilled(Reg, TempMap);
-	false -> false
-      end;
+      tuple_size(TempMap) > Reg andalso hipe_temp_map:is_spilled(Reg, TempMap);
     false -> true
   end.
 

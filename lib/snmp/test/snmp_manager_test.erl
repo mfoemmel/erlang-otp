@@ -146,7 +146,7 @@
 %% External functions
 %%======================================================================
 
-init_per_testcase(Case, Config) when list(Config) ->
+init_per_testcase(Case, Config) when is_list(Config) ->
     io:format(user, "~n~n*** INIT ~w:~w ***~n~n", [?MODULE,Case]),
     init_per_testcase2(Case, Config).
 
@@ -460,7 +460,7 @@ otp8015(suite) ->
 %%======================================================================
 
 simple_start_and_stop1(suite) -> [];
-simple_start_and_stop1(Config) when list(Config) ->
+simple_start_and_stop1(Config) when is_list(Config) ->
     %% ?SKIP(not_yet_implemented),
     process_flag(trap_exit, true),
     put(tname,ssas1),
@@ -493,7 +493,7 @@ simple_start_and_stop1(Config) when list(Config) ->
 %%======================================================================
 
 simple_start_and_stop2(suite) -> [];
-simple_start_and_stop2(Config) when list(Config) ->
+simple_start_and_stop2(Config) when is_list(Config) ->
     %% ?SKIP(not_yet_implemented),
     process_flag(trap_exit, true),
     put(tname,ssas2),
@@ -541,7 +541,7 @@ simple_start_and_stop2(Config) when list(Config) ->
 %%======================================================================
 
 simple_start_and_monitor_crash1(suite) -> [];
-simple_start_and_monitor_crash1(Config) when list(Config) ->
+simple_start_and_monitor_crash1(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,ssamc1),
     p("starting with Config: ~n~p", [Config]),
@@ -594,7 +594,7 @@ simple_start_and_monitor_crash1(Config) when list(Config) ->
 %%======================================================================
 
 simple_start_and_monitor_crash2(suite) -> [];
-simple_start_and_monitor_crash2(Config) when list(Config) ->
+simple_start_and_monitor_crash2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,ssamc2),
     p("starting with Config: ~n~p", [Config]),
@@ -686,7 +686,7 @@ simulate_crash(NumKills, _) ->
 %%======================================================================
 
 notify_started01(suite) -> [];
-notify_started01(Config) when list(Config) ->
+notify_started01(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,ns01),
     p("starting with Config: ~n~p", [Config]),
@@ -774,7 +774,7 @@ snmpm_starter(Opts, To) ->
 %%======================================================================
 
 notify_started02(suite) -> [];
-notify_started02(Config) when list(Config) ->
+notify_started02(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,ns02),
     p("starting with Config: ~n~p", [Config]),
@@ -877,7 +877,7 @@ ns02_loop2(Opts, N) ->
 %%======================================================================
 
 info(suite) -> [];
-info(Config) when list(Config) ->
+info(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,info),
     p("starting with Config: ~n~p", [Config]),
@@ -910,7 +910,7 @@ info(Config) when list(Config) ->
     p("end"),
     ok.
 
-verify_info(Info) when list(Info) ->
+verify_info(Info) when is_list(Info) ->
     Keys = [{server,     [process_memory, db_memory]},
 	    {config,     [process_memory, db_memory]},
 	    {net_if,     [process_memory, port_info]},
@@ -922,7 +922,7 @@ verify_info(BadInfo) ->
 
 verify_info([], _) ->
     ok;
-verify_info([Key|Keys], Info) when atom(Key) ->
+verify_info([Key|Keys], Info) when is_atom(Key) ->
     case lists:keymember(Key, 1, Info) of
 	true ->
 	    verify_info(Keys, Info);
@@ -946,7 +946,7 @@ verify_info([{Key, SubKeys}|Keys], Info) ->
 %%======================================================================
 
 register_user1(suite) -> [];
-register_user1(Config) when list(Config) ->
+register_user1(Config) when is_list(Config) ->
     %% ?SKIP(not_yet_implemented).
     process_flag(trap_exit, true),
     put(tname,ru1),
@@ -2306,7 +2306,7 @@ async_s_exec2(Node, TargetName, VAVs) ->
 simple_sync_get_bulk1(doc) -> ["Simple (sync) get_bulk-request - "
 			       "Old style (Addr & Port)"];
 simple_sync_get_bulk1(suite) -> [];
-simple_sync_get_bulk1(Config) when list(Config) ->
+simple_sync_get_bulk1(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname, ssgb1),
     p("starting with Config: ~p~n", [Config]),
@@ -2477,7 +2477,7 @@ check_ssgb_vbs([R|_], [E|_]) ->
 simple_sync_get_bulk2(doc) -> ["Simple (sync) get_bulk-request - "
 			       "New style (TargetName)"];
 simple_sync_get_bulk2(suite) -> [];
-simple_sync_get_bulk2(Config) when list(Config) ->
+simple_sync_get_bulk2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname, ssgb2),
     p("starting with Config: ~p~n", [Config]),
@@ -2612,7 +2612,7 @@ do_simple_get_bulk2(N, Node, TargetName, NonRep, MaxRep, Oids, Verify) ->
 simple_async_get_bulk1(doc) -> ["Simple (async) get_bulk-request - "
 				"Old style (Addr & Port)"];
 simple_async_get_bulk1(suite) -> [];
-simple_async_get_bulk1(Config) when list(Config) ->
+simple_async_get_bulk1(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname, sagb1),
     p("starting with Config: ~p~n", [Config]),
@@ -3086,7 +3086,7 @@ misc_async1(Config) when is_list(Config) ->
 misc_async2(doc) -> ["Misc (async) request(s) - "
 		     "New style (TargetName)"];
 misc_async2(suite) -> [];
-misc_async2(Config) when list(Config) ->
+misc_async2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname, ms2),
     p("starting with Config: ~p~n", [Config]),
@@ -3272,7 +3272,7 @@ misc_async2(Config) when list(Config) ->
 %%======================================================================
 
 discovery(suite) -> [];
-discovery(Config) when list(Config) ->
+discovery(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
 
@@ -3335,7 +3335,7 @@ verify_trap(Trap, [{Id, Verifier}|Verifiers]) ->
 %%======================================================================
 
 trap1(suite) -> [];
-trap1(Config) when list(Config) ->
+trap1(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,t1),
     p("starting with Config: ~p~n", [Config]),
@@ -3486,7 +3486,7 @@ trap1(Config) when list(Config) ->
 %%======================================================================
 
 trap2(suite) -> [];
-trap2(Config) when list(Config) ->
+trap2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,t2),
     p("starting with Config: ~p~n", [Config]),
@@ -3677,7 +3677,7 @@ trap2(Config) when list(Config) ->
 %%======================================================================
 
 inform1(suite) -> [];
-inform1(Config) when list(Config) ->
+inform1(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,i1),
     p("starting with Config: ~p~n", [Config]),
@@ -3717,7 +3717,7 @@ inform1(Config) when list(Config) ->
 		    {async_event, From, {inform, Pid, Inform}} ->
 			p("received inform"),
 			case Inform of
-			    {noError, 0, VBs} when list(VBs) ->
+			    {noError, 0, VBs} when is_list(VBs) ->
 				case (catch validate_testTrapv22_vbs(MgrNode, 
 								     VBs)) of
 				    ok ->
@@ -3754,7 +3754,7 @@ inform1(Config) when list(Config) ->
 		    {async_event, From, {inform, Pid, Inform}} ->
 			p("received inform"),
 			case Inform of
-			    {noError, 0, VBs} when list(VBs) ->
+			    {noError, 0, VBs} when is_list(VBs) ->
 				case (catch validate_testTrapv22_vbs(MgrNode, 
 								     VBs)) of
 				    ok ->
@@ -3802,7 +3802,7 @@ inform1(Config) when list(Config) ->
 %%======================================================================
 
 inform2(suite) -> [];
-inform2(Config) when list(Config) ->
+inform2(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,i2),
     p("starting with Config: ~p~n", [Config]),
@@ -3899,7 +3899,7 @@ inform2(Config) when list(Config) ->
 		    {async_event, From, {inform, Pid, Inform}} ->
 			p("received inform"),
 			case Inform of
-			    {noError, 0, VBs} when list(VBs) ->
+			    {noError, 0, VBs} when is_list(VBs) ->
 				case (catch validate_testTrapv22_vbs(MgrNode, 
 								     VBs)) of
 				    ok ->
@@ -3972,7 +3972,7 @@ inform2(Config) when list(Config) ->
 %%======================================================================
 
 inform3(suite) -> [];
-inform3(Config) when list(Config) ->
+inform3(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,i3),
     p("starting with Config: ~p~n", [Config]),
@@ -4030,7 +4030,7 @@ inform3(Config) when list(Config) ->
 		    {async_event, From, {inform, Pid, Inform}} ->
 			p("received inform"),
 			case Inform of
-			    {noError, 0, VBs} when list(VBs) ->
+			    {noError, 0, VBs} when is_list(VBs) ->
 				case (catch validate_testTrapv22_vbs(MgrNode, 
 								     VBs)) of
 				    ok ->
@@ -4106,7 +4106,7 @@ inform3(Config) when list(Config) ->
 %%======================================================================
 
 inform4(suite) -> [];
-inform4(Config) when list(Config) ->
+inform4(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname,i4),
     p("starting with Config: ~p~n", [Config]),
@@ -4144,7 +4144,7 @@ inform4(Config) when list(Config) ->
 		    {async_event, From, {inform, Pid, Inform}} ->
 			p("received inform"),
 			case Inform of
-			    {noError, 0, VBs} when list(VBs) ->
+			    {noError, 0, VBs} when is_list(VBs) ->
 				case (catch validate_testTrapv22_vbs(MgrNode, 
 								     VBs)) of
 				    ok ->
@@ -4224,7 +4224,7 @@ inform4(Config) when list(Config) ->
 %% Test: ts:run(snmp, snmp_manager_test, inform_swarm, [batch]).
 
 inform_swarm(suite) -> [];
-inform_swarm(Config) when list(Config) ->
+inform_swarm(Config) when is_list(Config) ->
     process_flag(trap_exit, true),
     put(tname, is),
     p("starting with Config: ~p~n", [Config]),
@@ -4345,7 +4345,7 @@ inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, Timeout) ->
 	{async_event, From, {inform, Pid, Inform}} ->
 	    p("received inform"),
 	    case Inform of
-		{noError, 0, VBs} when list(VBs) ->
+		{noError, 0, VBs} when is_list(VBs) ->
 		    Pid ! {handle_inform_response, From}, 
 		    inform_swarm_collector(N, SentAckCnt, RecvCnt+1, RespCnt, 
 					   Timeout);
@@ -4384,7 +4384,7 @@ inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, Timeout) ->
 %%======================================================================
 
 report(suite) -> [];
-report(Config) when list(Config) ->
+report(Config) when is_list(Config) ->
     ?SKIP(not_yet_implemented).
 
     
@@ -4517,7 +4517,7 @@ purify_oids(Node, [{Oid, Val}|Oids]) ->
 
 purify_oid(Node, Oid) ->
     case mgr_user_purify_oid(Node, Oid) of
-	Oid2 when list(Oid2) ->
+	Oid2 when is_list(Oid2) ->
 	    Oid2;
 	{error, _} = Error ->
 	    throw(Error)
@@ -4689,24 +4689,24 @@ fin_crypto(Node) ->
 
 %% -- Misc application wrapper functions --
 
-load_app(Node, App) when Node == node(), atom(App) ->
+load_app(Node, App) when (Node =:= node()) andalso is_atom(App) ->
     application:load(App);
-load_app(Node, App) when atom(App) ->
+load_app(Node, App) when is_atom(App) ->
     rcall(Node, application, load, [App]).
     
-start_app(Node, App) when Node == node(), atom(App) ->
+start_app(Node, App) when (Node =:= node()) andalso is_atom(App) ->
     application:start(App);
 start_app(Node, App) ->
     rcall(Node, application, start, [App]).
 
-stop_app(Node, App) when Node == node(), atom(App)  ->
+stop_app(Node, App) when (Node =:= node()) andalso is_atom(App)  ->
     application:stop(App);
-stop_app(Node, App) when atom(App) ->
+stop_app(Node, App) when is_atom(App) ->
     rcall(Node, application, stop, [App]).
 
-set_app_env(Node, App, Key, Val) when Node == node(), atom(App) ->
+set_app_env(Node, App, Key, Val) when (Node =:= node()) andalso is_atom(App) ->
     application:set_env(App, Key, Val);
-set_app_env(Node, App, Key, Val) when atom(App) ->
+set_app_env(Node, App, Key, Val) when is_atom(App) ->
     rcall(Node, application, set_env, [App, Key, Val]).
 
 
@@ -4728,7 +4728,7 @@ mgr_sys_info(Node) ->
 %% mgr_register_user(Node, Id, Data) ->
 %%     mgr_register_user(Node, Id, ?MODULE, Data).
 
-mgr_register_user(Node, Id, Mod, Data) when atom(Mod) ->
+mgr_register_user(Node, Id, Mod, Data) when is_atom(Mod) ->
     rcall(Node, snmpm, register_user, [Id, Mod, Data]).
 
 mgr_unregister_user(Node, Id) ->

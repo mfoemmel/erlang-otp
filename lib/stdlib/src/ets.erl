@@ -53,7 +53,7 @@
 -type table_info() :: {'name', atom()}
 		    | {'type', type()}
 		    | {'protection', protection()}
-		    | {'named_table', bool()}
+		    | {'named_table', boolean()}
 		    | {'keypos', non_neg_integer()}
 		    | {'size', non_neg_integer()}
 		    | {'extended_info', [ext_info()]}
@@ -325,8 +325,8 @@ do_filter(Tab, Key, F, A, Ack) ->
 
 -record(filetab_options,
 	{
-	  object_count = false :: bool(),
-	  md5sum       = false :: bool()      
+	  object_count = false :: boolean(),
+	  md5sum       = false :: boolean()     
 	 }).
 
 -type fname()      :: string() | atom().
@@ -493,10 +493,10 @@ parse_ft_info_options(_,Malformed) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Read a dumped file from disk and create a corresponding table
 %% Opts := [Opt]
-%% Opt := {verify,bool()}
+%% Opt := {verify,boolean()}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--type f2t_option() :: {'verify', bool()}.
+-type f2t_option() :: {'verify', boolean()}.
 
 -spec file2tab(fname()) -> {'ok', tab()} | {'error', term()}.
 

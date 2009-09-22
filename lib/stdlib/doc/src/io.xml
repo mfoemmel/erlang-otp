@@ -237,7 +237,7 @@ charlist() = [unicode_char() | unicode_binary() | charlist()]
           </item>
           <tag><c>{echo, bool()}</c></tag>
 	  <item>
-	  <p>Denotes if the terminal shpould echo input. Only supported for the standard shell I/O-server (group.erl)</p>
+	  <p>Denotes if the terminal should echo input. Only supported for the standard shell I/O-server (group.erl)</p>
 	  </item>
           <tag><c>{expand_fun, fun()}</c></tag>
           <item>

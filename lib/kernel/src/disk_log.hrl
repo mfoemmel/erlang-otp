@@ -68,7 +68,7 @@
                           | 'format' | 'size' | 'distributed' | 'notify'
                           | 'head' | 'head_func' | 'mode'.
 -type dlog_options()     :: [{dlog_optattr(), any()}].
--type dlog_repair()      :: 'truncate' | bool().
+-type dlog_repair()      :: 'truncate' | boolean().
 -type dlog_size()        :: 'infinity' | pos_integer()
                           | {pos_integer(), pos_integer()}.
 -type dlog_status()      :: 'ok' | {'blocked', 'false' | [_]}. %QueueLogRecords
@@ -90,7 +90,7 @@
 	      linkto = self()     :: 'none' | pid(),
 	      head = none,
 	      mode = read_write   :: dlog_mode(),
-	      notify = false      :: bool(),
+	      notify = false      :: boolean(),
 	      options = []        :: dlog_options()}).
 
 -record(cache,                %% Cache for logged terms (per file descriptor).
@@ -106,7 +106,7 @@
 	).
 
 -record(handle,				%% For a wrap log.
-	{filename :: string(),		%% Same as log.filename
+	{filename :: file:filename(),	%% Same as log.filename
 	 maxB     :: pos_integer(),	%% Max size of the files.
 	 maxF     :: pos_integer() | {pos_integer(),pos_integer()},
 				%% When pos_integer(), maximum number of files.
@@ -119,7 +119,7 @@
 	 curB     :: non_neg_integer(),	%% Number of bytes on current file.
 	 curF     :: integer(), 	%% Current file number.
 	 cur_fdc  :: #cache{}, 	 	%% Current file descriptor.
-	 cur_name :: string(),		%% Current file name for error reports.
+	 cur_name :: file:filename(),	%% Current file name for error reports.
 	 cur_cnt  :: non_neg_integer(),	%% Number of items on current file,
 					%% header inclusive.
 	 acc_cnt  :: non_neg_integer(),	%% acc_cnt+cur_cnt is number of items
@@ -139,8 +139,8 @@
 	 name              :: dlog_name(), %% the key leading to this structure
 	 blocked_by = none :: 'none' | pid(),	   %% pid of blocker
 	 users = 0         :: non_neg_integer(),   %% non-linked users
-	 filename          :: string(),		   %% real name of the file
-	 owners = []       :: [{pid(), bool()}],   %% [{pid, notify}]
+	 filename          :: file:filename(),	   %% real name of the file
+	 owners = []       :: [{pid(), boolean()}],%% [{pid, notify}]
 	 type = halt	   :: dlog_type(),
 	 format = internal :: dlog_format(),
 	 format_type	   :: dlog_format_type(),

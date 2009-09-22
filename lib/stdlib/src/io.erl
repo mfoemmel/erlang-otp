@@ -32,6 +32,17 @@
 	 parse_erl_form/1,parse_erl_form/2,parse_erl_form/3]).
 -export([request/1,request/2,requests/1,requests/2]).
 
+
+%%-------------------------------------------------------------------------
+
+-type device() :: atom() | pid().
+-type prompt() :: atom() | string().
+
+%% XXX: Some uses of line() in this file may need to read erl_scan:location()
+-type line()   :: pos_integer().
+
+%%-------------------------------------------------------------------------
+
 %%
 %% User interface.
 %%
@@ -65,51 +76,74 @@ o_request(Io, Request, Func) ->
 	    Other
     end.
 
-% Put chars takes mixed *unicode* list from R13 onwards.
+%% Put chars takes mixed *unicode* list from R13 onwards.
+-spec put_chars(iodata()) -> 'ok'.
+
 put_chars(Chars) ->
     put_chars(default_output(), Chars).
+
+-spec put_chars(device(), iodata()) -> 'ok'.
 
 put_chars(Io, Chars) ->
     o_request(Io, {put_chars,unicode,Chars}, put_chars).
 
 -spec nl() -> 'ok'.
+
 nl() ->
     nl(default_output()).
+
+-spec nl(device()) -> 'ok'.
 
 nl(Io) ->
 %    o_request(Io, {put_chars,io_lib:nl()}).
     o_request(Io, nl, nl).
 
+-spec columns() -> {'ok', pos_integer()} | {'error', 'enotsup'}.
+
 columns() ->
     columns(default_output()).
+
+-spec columns(device()) -> {'ok', pos_integer()} | {'error', 'enotsup'}.
+
 columns(Io) ->
-    case request(Io,{get_geometry,columns}) of
+    case request(Io, {get_geometry,columns}) of
 	N  when is_integer(N), N > 0 ->
 	    {ok,N};
 	_ ->
 	    {error,enotsup}
     end.
 	    
+-spec rows() -> {'ok', pos_integer()} | {'error', 'enotsup'}.
+
 rows() ->
     rows(default_output()).
+
+-spec rows(device()) -> {'ok', pos_integer()} | {'error', 'enotsup'}.
+
 rows(Io) ->
     case request(Io,{get_geometry,rows}) of
 	N  when is_integer(N), N > 0 ->
 	    {ok,N};
 	_ ->
 	    {error,enotsup}
-    end.
-	    
+    end.    
 
+-spec get_chars(prompt(), non_neg_integer()) -> iodata() | 'eof'.
 
 get_chars(Prompt, N) ->
     get_chars(default_input(), Prompt, N).
 
+-spec get_chars(device(), prompt(), non_neg_integer()) -> iodata() | 'eof'.
+
 get_chars(Io, Prompt, N) when is_integer(N), N >= 0 ->
     request(Io, {get_chars,unicode,Prompt,N}).
 
+-spec get_line(prompt()) -> iodata() | 'eof' | {'error', term()}.
+
 get_line(Prompt) ->
     get_line(default_input(), Prompt).
+
+-spec get_line(device(), prompt()) -> iodata() | 'eof' | {'error', term()}.
 
 get_line(Io, Prompt) ->
     request(Io, {get_line,unicode,Prompt}).
@@ -120,31 +154,59 @@ get_password() ->
 get_password(Io) ->
     request(Io, {get_password,unicode}).
 
+-type encoding()   :: 'latin1' | 'unicode' | 'utf8' | 'utf16' | 'utf32'
+                    | {'utf16', 'big' | 'little'} | {'utf32','big' | 'little'}.
+-type expand_fun() :: fun((term()) -> {'yes'|'no', string(), [string(), ...]}).
+-type opt_pair()   :: {'binary', boolean()}
+                    | {'echo', boolean()}
+                    | {'expand_fun', expand_fun()}
+                    | {'encoding', encoding()}.
+
+-spec getopts() -> [opt_pair()].
+
 getopts() ->
     getopts(default_input()).
+
+-spec getopts(device()) -> [opt_pair()].
 
 getopts(Io) ->
     request(Io, getopts).
 
+-type setopt() :: 'binary' | 'list' | opt_pair().
+
+-spec setopts([setopt()]) -> 'ok' | {'error', term()}.
+
 setopts(Opts) ->
     setopts(default_input(), Opts).
+
+-spec setopts(device(), [setopt()]) -> 'ok' | {'error', term()}.
 
 setopts(Io, Opts) ->
     request(Io, {setopts, Opts}).
 
 %% Writing and reading Erlang terms.
 
+-spec write(term()) -> 'ok'.
+
 write(Term) ->
     write(default_output(), Term).
+
+-spec write(device(), term()) -> 'ok'.
 
 write(Io, Term) ->
     o_request(Io, {write,Term}, write).
 
 
+-spec read(prompt()) -> 
+    {'ok', term()} | 'eof' | {'error', erl_scan:error_info()}.
+
 % Read does not use get_until as erl_scan does not work with unicode
 % XXX:PaN fixme?
 read(Prompt) ->
     read(default_input(), Prompt).
+
+-spec read(device(), prompt()) ->
+    {'ok', term()} | 'eof' | {'error', erl_scan:error_info()}.
 
 read(Io, Prompt) ->
     case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[1]}) of
@@ -160,6 +222,10 @@ read(Io, Prompt) ->
 	    Other
     end.
 
+-spec read(device(), prompt(), line()) ->
+    {'ok', term(), line()} | {'eof', line()} |
+    {'error', erl_scan:error_info(), line()}.
+
 read(Io, Prompt, StartLine) when is_integer(StartLine) ->
     case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[StartLine]}) of
 	{ok,Toks,EndLine} ->
@@ -167,10 +233,10 @@ read(Io, Prompt, StartLine) when is_integer(StartLine) ->
                 {ok,Term} -> {ok,Term,EndLine};
                 {error,ErrorInfo} -> {error,ErrorInfo,EndLine}
             end;
-	{error,E,EndLine} ->
-	    {error,E,EndLine};
-	{eof,EndLine} ->
-	    {eof,EndLine};
+	{error,_E,_EndLine} = Error ->
+	    Error;
+	{eof,_EndLine} = Eof ->
+	    Eof;
 	Other ->
 	    Other
     end.
@@ -182,17 +248,30 @@ conv_reason(_, terminated) -> terminated;
 conv_reason(_, {no_translation,_,_}) -> no_translation;
 conv_reason(_, _Reason) -> badarg.
 
+-type format() :: atom() | string() | binary().
+
+-spec fwrite(format()) -> 'ok'.
+
 fwrite(Format) ->
     format(Format).
+
+-spec fwrite(format(), [term()]) -> 'ok'.
 
 fwrite(Format, Args) ->
     format(Format, Args).
 
+-spec fwrite(device(), format(), [term()]) -> 'ok'.
+
 fwrite(Io, Format, Args) ->
     format(Io, Format, Args).
 
+-spec fread(prompt(), format()) -> {'ok', [term()]} | 'eof' | {'error',term()}.
+
 fread(Prompt, Format) ->
     fread(default_input(), Prompt, Format).
+
+-spec fread(device(), prompt(), format()) -> 
+    {'ok', [term()]} | 'eof' | {'error',term()}.
 
 fread(Io, Prompt, Format) ->
     case request(Io, {fread,Prompt,Format}) of
@@ -202,42 +281,72 @@ fread(Io, Prompt, Format) ->
 	    Other
     end.
 
+-spec format(format()) -> 'ok'.
+
 format(Format) ->
     format(Format, []).
 
+-spec format(format(), [term()]) -> 'ok'.
+
 format(Format, Args) ->
     format(default_output(), Format, Args).
+
+-spec format(device(), format(), [term()]) -> 'ok'.
 
 format(Io, Format, Args) ->
     o_request(Io, {format,Format,Args}, format).
 
 %% Scanning Erlang code.
 
+-spec scan_erl_exprs(prompt()) -> erl_scan:tokens_result().
+ 
 scan_erl_exprs(Prompt) ->
     scan_erl_exprs(default_input(), Prompt, 1).
+
+-spec scan_erl_exprs(device(), prompt()) -> erl_scan:tokens_result().
 
 scan_erl_exprs(Io, Prompt) ->
     scan_erl_exprs(Io, Prompt, 1).
 
+-spec scan_erl_exprs(device(), prompt(), line()) -> erl_scan:tokens_result().
+
 scan_erl_exprs(Io, Prompt, Pos0) ->
     request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}).
+
+-spec scan_erl_form(prompt()) -> erl_scan:tokens_result().
 
 scan_erl_form(Prompt) ->
     scan_erl_form(default_input(), Prompt, 1).
 
+-spec scan_erl_form(device(), prompt()) -> erl_scan:tokens_result().
+
 scan_erl_form(Io, Prompt) ->
     scan_erl_form(Io, Prompt, 1).
+
+-spec scan_erl_form(device(), prompt(), line()) -> erl_scan:tokens_result().
 
 scan_erl_form(Io, Prompt, Pos0) ->
     request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}).
 
 %% Parsing Erlang code.
 
+-type erl_parse_expr_list() :: [_]. %% XXX: should be imported from erl_parse
+
+-type parse_ret() :: {'ok', erl_parse_expr_list(), line()}
+                   | {'eof', line()}
+                   | {'error', erl_scan:error_info(), line()}.
+
+-spec parse_erl_exprs(prompt()) -> parse_ret().
+
 parse_erl_exprs(Prompt) ->
     parse_erl_exprs(default_input(), Prompt, 1).
 
+-spec parse_erl_exprs(device(), prompt()) -> parse_ret().
+
 parse_erl_exprs(Io, Prompt) ->
     parse_erl_exprs(Io, Prompt, 1).
+
+-spec parse_erl_exprs(device(), prompt(), line()) -> parse_ret().
 
 parse_erl_exprs(Io, Prompt, Pos0) ->
     case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}) of
@@ -250,11 +359,23 @@ parse_erl_exprs(Io, Prompt, Pos0) ->
 	    Other
     end.
 
+-type erl_parse_absform() :: _. %% XXX: should be imported from erl_parse
+
+-type parse_form_ret() :: {'ok', erl_parse_absform(), line()}
+                        | {'eof', line()}
+                        | {'error', erl_scan:error_info(), line()}.
+
+-spec parse_erl_form(prompt()) -> parse_form_ret().
+
 parse_erl_form(Prompt) ->
     parse_erl_form(default_input(), Prompt, 1).
 
+-spec parse_erl_form(device(), prompt()) -> parse_form_ret().
+
 parse_erl_form(Io, Prompt) ->
     parse_erl_form(Io, Prompt, 1).
+
+-spec parse_erl_form(device(), prompt(), line()) -> parse_form_ret().
 
 parse_erl_form(Io, Prompt, Pos0) ->
     case request(Io, {get_until,unicode,Prompt,erl_scan,tokens,[Pos0]}) of
@@ -284,16 +405,15 @@ request(Name, Request) when is_atom(Name) ->
 	    request(Pid, Request)
     end.
 
-execute_request(Pid,{Convert,Converted}) ->
-    Mref = erlang:monitor(process,Pid),
+execute_request(Pid, {Convert,Converted}) ->
+    Mref = erlang:monitor(process, Pid),
     Pid ! {io_request,self(),Pid,Converted},
     if
 	Convert ->
-	    convert_binaries(wait_io_mon_reply(Pid,Mref));
+	    convert_binaries(wait_io_mon_reply(Pid, Mref));
 	true ->
-	    wait_io_mon_reply(Pid,Mref)
+	    wait_io_mon_reply(Pid, Mref)
     end.
-    
 
 requests(Requests) ->				%Requests as atomic action
     requests(default_output(), Requests).
@@ -311,7 +431,7 @@ requests(Name, Requests) when is_atom(Name) ->
 	    requests(Pid, Requests)
     end.
 
-
+
 default_input() ->
     group_leader().
 
@@ -320,7 +440,7 @@ default_output() ->
 
 wait_io_mon_reply(From, Mref) ->
     receive
-	{io_reply,From,Reply} ->
+	{io_reply, From, Reply} ->
 	    erlang:demonitor(Mref),
 	    receive 
 		{'DOWN', Mref, _, _, _} -> true
@@ -342,7 +462,6 @@ wait_io_mon_reply(From, Mref) ->
     end.
 
 
-    
 %% io_requests(Requests)
 %%  Transform requests into correct i/o server messages. Only handle the
 %%  one we KNOW must be changed, others, including incorrect ones, are
@@ -401,6 +520,7 @@ bc_req(Pid,{Op,Enc},MaybeConvert) ->
 	false ->
 	    {MaybeConvert,Op}
     end.
+
 io_request(Pid, {write,Term}) ->
     bc_req(Pid,{put_chars,unicode,io_lib,write,[Term]},false);
 io_request(Pid, {format,Format,Args}) ->

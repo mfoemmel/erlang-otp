@@ -32,28 +32,26 @@
 -export([start/1]).
 
 -include("dialyzer.hrl").
--include_lib("kernel/include/file.hrl").
-
--type io_device() :: pid().	% XXX: This should be imported from 'file'
+-include_lib("kernel/include/file.hrl").  % needed for #file_info{}
 
 -record(cl_state,
-	{backend_pid                            :: pid(),
-	 erlang_mode     = false                :: bool(),
-	 external_calls  = []                   :: [mfa()],
-	 legal_warnings  = ordsets:new()        :: [dial_warn_tag()],
-	 mod_deps        = dict:new()           :: dict(),
-	 output          = standard_io		:: 'standard_io' | io_device(),
-	 output_format   = formatted            :: 'raw' | 'formatted',
-	 output_plt      = none                 :: 'none' | filename(),
-	 plt_info        = none                 :: 'none' | {md5(), dict()},
-	 report_mode     = normal               :: rep_mode(),
+	{backend_pid                      :: pid(),
+	 erlang_mode     = false          :: boolean(),
+	 external_calls  = []             :: [mfa()],
+	 legal_warnings  = ordsets:new()  :: [dial_warn_tag()],
+	 mod_deps        = dict:new()     :: dict(),
+	 output          = standard_io	  :: io:device(),
+	 output_format   = formatted      :: 'raw' | 'formatted',
+	 output_plt      = none           :: 'none' | file:filename(),
+	 plt_info        = none           :: 'none' | dialyzer_plt:plt_info(),
+	 report_mode     = normal         :: rep_mode(),
 	 return_status= ?RET_NOTHING_SUSPICIOUS	:: dial_ret(),
-	 stored_warnings = []                   :: [dial_warning()]
+	 stored_warnings = []             :: [dial_warning()]
 	}).
 
 %%--------------------------------------------------------------------
 
--spec start(#options{}) -> dial_ret() | {dial_ret(),[dial_warning()]}.
+-spec start(#options{}) -> {dial_ret(), [dial_warning()]}.
 
 start(#options{analysis_type = AnalysisType} = Options) ->
   process_flag(trap_exit, true),
@@ -161,7 +159,7 @@ plt_common(Opts, RemoveFiles, AddFiles) ->
 	quiet -> ok;
 	_ -> io:put_chars(" yes\n")
       end,
-      ?RET_NOTHING_SUSPICIOUS;
+      {?RET_NOTHING_SUSPICIOUS, []};
     {old_version, Md5} ->
       PltInfo = {Md5, dict:new()},
       Files = [F || {F, _} <- Md5],
@@ -176,7 +174,7 @@ plt_common(Opts, RemoveFiles, AddFiles) ->
 	  %% Only removed stuff. Just write the PLT.
 	  dialyzer_plt:to_file(Opts#options.output_plt, Plt, ModDeps, 
 			       {Md5, ModDeps}),
-	  ?RET_NOTHING_SUSPICIOUS;
+	  {?RET_NOTHING_SUSPICIOUS, []};
 	false ->
 	  do_analysis(AnalFiles, Opts, Plt, {Md5, ModDeps1})
       end;
@@ -438,7 +436,7 @@ expand_dependent_modules_1([], Included, _ModDeps) ->
 
 -define(MIN_FILES_FOR_NATIVE_COMPILE, 20).
 
--spec hipe_compile([filename()], #options{}) -> 'ok'.
+-spec hipe_compile([file:filename()], #options{}) -> 'ok'.
 
 hipe_compile(Files, #options{erlang_mode = ErlangMode} = Options) ->
   case (length(Files) < ?MIN_FILES_FOR_NATIVE_COMPILE) orelse ErlangMode of
@@ -604,7 +602,7 @@ return_value(State = #cl_state{erlang_mode = ErlangMode,
       print_warnings(State),
       print_ext_calls(State),
       maybe_close_output_file(State),
-      RetValue;
+      {RetValue, []};
     true -> 
       {RetValue, process_warnings(StoredWarnings)}
   end.

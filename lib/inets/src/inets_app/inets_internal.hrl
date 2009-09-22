@@ -18,6 +18,24 @@
 %%
 %%
 
+-ifndef(inets_internal_hrl).
+-define(inets_internal_hrl, true).
+
+%% Various trace macros
+
+-define(report(Severity, Label, Service, Content), 
+	inets:report_event(Severity, Label, Service, 
+			   [{module, ?MODULE}, {line, ?LINE} | Content])).
+-define(report_important(Label, Service, Content), 
+	?report(20, Label, Service, Content)).
+-define(report_verbose(Label, Service, Content),   
+	?report(40, Label, Service, Content)).
+-define(report_debug(Label, Service, Content),     
+	?report(60, Label, Service, Content)).
+-define(report_trace(Label, Service, Content),     
+	?report(80, Label, Service, Content)).
+
+
 -define(CR, $\r).
 -define(LF, $\n).
 -define(CRLF, [$\r,$\n]).
@@ -27,3 +45,5 @@
 -define(RIGHT_PAREN, $)).
 -define(WHITE_SPACE, $ ).
 -define(DOUBLE_QUOTE, $"). 
+
+-endif. % -ifdef(inets_internal_hrl).

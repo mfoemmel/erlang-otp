@@ -43,6 +43,8 @@
 #define ERTS_RUNQ_CALL_CHECK_BALANCE_REDS \
   (ERTS_RUNQ_CHECK_BALANCE_REDS_PER_SCHED/2)
 
+#define ERTS_PROC_MIN_CONTEXT_SWITCH_REDS_COST (CONTEXT_REDS/10)
+
 #define ERTS_SCHED_SLEEP_SPINCOUNT 10000
 
 #define ERTS_WAKEUP_OTHER_LIMIT (100*CONTEXT_REDS/2)
@@ -50,6 +52,10 @@
 #define ERTS_WAKEUP_OTHER_FIXED_INC (CONTEXT_REDS/10)
 
 #define ERTS_MAX_CPU_TOPOLOGY_ID ((int) 0xffff)
+
+#if 0 || defined(DEBUG)
+#define ERTS_FAKE_SCHED_BIND_PRINT_SORTED_CPU_DATA
+#endif
 
 #if defined(DEBUG) && 0
 #define HARDDEBUG
@@ -99,7 +105,7 @@ Uint erts_no_schedulers;
 Uint erts_max_processes = ERTS_DEFAULT_MAX_PROCESSES;
 Uint erts_process_tab_index_mask;
 
-static int processor_node_topology_enabled;
+int erts_sched_thread_suggested_stack_size = -1;
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
 ErtsLcPSDLocks erts_psd_required_locks[ERTS_PSD_SIZE];
@@ -139,6 +145,7 @@ static struct {
 	int reds;
 	int max_len;
     } prev_rise;
+    Uint n;
 } balance_info;
 
 #define ERTS_BLNCE_SAVE_RISE(ACTIVE, MAX_LEN, REDS)	\
@@ -171,6 +178,7 @@ static ErtsCpuBindData *scheduler2cpu_map;
 erts_smp_rwmtx_t erts_cpu_bind_rwmtx;
 
 typedef enum {
+    ERTS_CPU_BIND_SPREAD,
     ERTS_CPU_BIND_PROCESSOR_SPREAD,
     ERTS_CPU_BIND_THREAD_SPREAD,
     ERTS_CPU_BIND_THREAD_NO_NODE_PROCESSOR_SPREAD,
@@ -327,13 +335,13 @@ static void exec_misc_ops(ErtsRunQueue *);
 static void print_function_from_pc(int to, void *to_arg, Eterm* x);
 static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
 			      int yreg);
-static void make_cpudata_id_seq(erts_cpu_topology_t *cpudata, int size);
 #ifdef ERTS_SMP
 static void handle_pending_exiters(ErtsProcList *);
 
 static void cpu_bind_order_sort(erts_cpu_topology_t *cpudata,
 				int size,
-				ErtsCpuBindOrder current);
+				ErtsCpuBindOrder bind_order,
+				int mk_seq);
 static void signal_schedulers_bind_change(erts_cpu_topology_t *cpudata, int size);
 
 #endif
@@ -2018,12 +2026,27 @@ erts_fprintf(stderr, "--------------------------------\n");
 	erts_smp_runq_unlock(rq);
     }
 
+    balance_info.n++;
     erts_smp_mtx_unlock(&balance_info.update_mtx);
 
     erts_smp_runq_lock(c_rq);
 }
 
 #endif /* #ifdef ERTS_SMP */
+
+Uint
+erts_debug_nbalance(void)
+{
+#ifdef ERTS_SMP
+    Uint n;
+    erts_smp_mtx_lock(&balance_info.update_mtx);
+    n = balance_info.n;
+    erts_smp_mtx_unlock(&balance_info.update_mtx);
+    return n;
+#else
+    return 0;
+#endif
+}
 
 void
 erts_early_init_scheduling(void)
@@ -2207,6 +2230,7 @@ erts_init_scheduling(int mrq, int no_schedulers, int no_schedulers_online)
     balance_info.prev_rise.active_runqs = 0;
     balance_info.prev_rise.max_len = 0;
     balance_info.prev_rise.reds = 0;
+    balance_info.n = 0;
 
     if (no_schedulers_online < no_schedulers) {
 	if (erts_common_run_queue) {
@@ -2737,62 +2761,68 @@ erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int all)
 	    res = 1;
 	}
 	else {
-	    schdlr_sspnd.changing = ERTS_SCHED_CHANGING_MULTI_SCHED;
 	    p->flags |= F_HAVE_BLCKD_MSCHED;
 	    if (plocks) {
 		have_unlocked_plocks = 1;
 		erts_smp_proc_unlock(p, plocks);
 	    }
-	    if (p->scheduler_data->no == 1) {
-		res = ERTS_SCHDLR_SSPND_DONE_MSCHED_BLOCKED;
-		schdlr_sspnd.msb.wait_active = 1;
-	    }
-	    else {
-		/*
-		 * Yield! Current process needs to migrate
-		 * before bif returns.
-		 */
-		res = ERTS_SCHDLR_SSPND_YIELD_DONE_MSCHED_BLOCKED;
-		schdlr_sspnd.msb.wait_active = 2;
-	    }
-	    
 	    erts_smp_atomic_set(&schdlr_sspnd.msb.ongoing, 1);
-	    if (erts_common_run_queue) {
-		for (ix = 1; ix < schdlr_sspnd.online; ix++)
-		    erts_smp_atomic_set(&ERTS_SCHEDULER_IX(ix)->suspended, 1);
-		wake_all_schedulers();
+	    if (schdlr_sspnd.online == 1) {
+		res = ERTS_SCHDLR_SSPND_DONE_MSCHED_BLOCKED;
+		ASSERT(erts_smp_atomic_read(&schdlr_sspnd.active) == 1);
+		ASSERT(p->scheduler_data->no == 1);
 	    }
 	    else {
-		erts_smp_mtx_unlock(&schdlr_sspnd.mtx);
-		erts_smp_mtx_lock(&balance_info.update_mtx);
-		erts_smp_atomic_set(&balance_info.used_runqs, 1);
-		for (ix = 0; ix < schdlr_sspnd.online; ix++) {
-		    ErtsRunQueue *rq = ERTS_RUNQ_IX(ix);
-		    erts_smp_runq_lock(rq);
-		    ERTS_RUNQ_RESET_MIGRATION_PATHS(rq, 0x7);
-		    erts_smp_runq_unlock(rq);
+		schdlr_sspnd.changing = ERTS_SCHED_CHANGING_MULTI_SCHED;
+		if (p->scheduler_data->no == 1) {
+		    res = ERTS_SCHDLR_SSPND_DONE_MSCHED_BLOCKED;
+		    schdlr_sspnd.msb.wait_active = 1;
 		}
-		/*
-		 * Evacuate all activities in all other run queues
-		 * into the first run queue. Note order is important,
-		 * online run queues has to be evacuated last.
-		 */
-		for (ix = erts_no_run_queues-1; ix >= 1; ix--)
-		    evacuate_run_queue(ERTS_RUNQ_IX(ix), ERTS_RUNQ_IX(0));
-		erts_smp_mtx_unlock(&balance_info.update_mtx);
-		erts_smp_mtx_lock(&schdlr_sspnd.mtx);
+		else {
+		    /*
+		     * Yield! Current process needs to migrate
+		     * before bif returns.
+		     */
+		    res = ERTS_SCHDLR_SSPND_YIELD_DONE_MSCHED_BLOCKED;
+		    schdlr_sspnd.msb.wait_active = 2;
+		}
+		if (erts_common_run_queue) {
+		    for (ix = 1; ix < schdlr_sspnd.online; ix++)
+			erts_smp_atomic_set(&ERTS_SCHEDULER_IX(ix)->suspended, 1);
+		    wake_all_schedulers();
+		}
+		else {
+		    erts_smp_mtx_unlock(&schdlr_sspnd.mtx);
+		    erts_smp_mtx_lock(&balance_info.update_mtx);
+		    erts_smp_atomic_set(&balance_info.used_runqs, 1);
+		    for (ix = 0; ix < schdlr_sspnd.online; ix++) {
+			ErtsRunQueue *rq = ERTS_RUNQ_IX(ix);
+			erts_smp_runq_lock(rq);
+			ERTS_RUNQ_RESET_MIGRATION_PATHS(rq, 0x7);
+			erts_smp_runq_unlock(rq);
+		    }
+		    /*
+		     * Evacuate all activities in all other run queues
+		     * into the first run queue. Note order is important,
+		     * online run queues has to be evacuated last.
+		     */
+		    for (ix = erts_no_run_queues-1; ix >= 1; ix--)
+			evacuate_run_queue(ERTS_RUNQ_IX(ix), ERTS_RUNQ_IX(0));
+		    erts_smp_mtx_unlock(&balance_info.update_mtx);
+		    erts_smp_mtx_lock(&schdlr_sspnd.mtx);
+		}
+		erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
+					susp_sched_prep_block,
+					susp_sched_resume_block,
+					NULL);
+		while (erts_smp_atomic_read(&schdlr_sspnd.active)
+		       != schdlr_sspnd.msb.wait_active)
+		    erts_smp_cnd_wait(&schdlr_sspnd.cnd, &schdlr_sspnd.mtx);
+		erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
+				      susp_sched_prep_block,
+				      susp_sched_resume_block,
+				      NULL);
 	    }
-	    erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
-				    susp_sched_prep_block,
-				    susp_sched_resume_block,
-				    NULL);
-	    while (erts_smp_atomic_read(&schdlr_sspnd.active)
-		   != schdlr_sspnd.msb.wait_active)
-		erts_smp_cnd_wait(&schdlr_sspnd.cnd, &schdlr_sspnd.mtx);
-	    erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
-				  susp_sched_prep_block,
-				  susp_sched_resume_block,
-				  NULL);
 	    plp = proclist_create(p);
 	    plp->next = schdlr_sspnd.msb.procs;
 	    schdlr_sspnd.msb.procs = plp;
@@ -3029,6 +3059,7 @@ erts_start_schedulers(void)
     ethr_thr_opts opts = ETHR_THR_OPTS_DEFAULT_INITER;
 
     opts.detached = 1;
+    opts.suggested_stack_size = erts_sched_thread_suggested_stack_size;
 
     if (wanted < 1)
 	wanted = 1;
@@ -3083,7 +3114,7 @@ int_cmp(const void *vx, const void *vy)
 }
 
 static int
-cpu_processor_spread_order_cmp(const void *vx, const void *vy)
+cpu_spread_order_cmp(const void *vx, const void *vy)
 {
     erts_cpu_topology_t *x = (erts_cpu_topology_t *) vx;
     erts_cpu_topology_t *y = (erts_cpu_topology_t *) vy;
@@ -3098,6 +3129,25 @@ cpu_processor_spread_order_cmp(const void *vx, const void *vy)
 	return x->processor - y->processor;
     if (x->node != y->node)
 	return x->node - y->node;
+    return 0;
+}
+
+static int
+cpu_processor_spread_order_cmp(const void *vx, const void *vy)
+{
+    erts_cpu_topology_t *x = (erts_cpu_topology_t *) vx;
+    erts_cpu_topology_t *y = (erts_cpu_topology_t *) vy;
+
+    if (x->thread != y->thread)
+	return x->thread - y->thread;
+    if (x->processor_node != y->processor_node)
+	return x->processor_node - y->processor_node;
+    if (x->core != y->core)
+	return x->core - y->core;
+    if (x->node != y->node)
+	return x->node - y->node;
+    if (x->processor != y->processor)
+	return x->processor - y->processor;
     return 0;
 }
 
@@ -3130,8 +3180,6 @@ cpu_thread_no_node_processor_spread_order_cmp(const void *vx, const void *vy)
 	return x->thread - y->thread;
     if (x->node != y->node)
 	return x->node - y->node;
-    if (x->processor_node != y->processor_node)
-	return x->processor_node - y->processor_node;
     if (x->core != y->core)
 	return x->core - y->core;
     if (x->processor != y->processor)
@@ -3147,8 +3195,6 @@ cpu_no_node_processor_spread_order_cmp(const void *vx, const void *vy)
 
     if (x->node != y->node)
 	return x->node - y->node;
-    if (x->processor_node != y->processor_node)
-	return x->processor_node - y->processor_node;
     if (x->thread != y->thread)
 	return x->thread - y->thread;
     if (x->core != y->core)
@@ -3166,8 +3212,6 @@ cpu_no_node_thread_spread_order_cmp(const void *vx, const void *vy)
 
     if (x->node != y->node)
 	return x->node - y->node;
-    if (x->processor_node != y->processor_node)
-	return x->processor_node - y->processor_node;
     if (x->thread != y->thread)
 	return x->thread - y->thread;
     if (x->processor != y->processor)
@@ -3196,14 +3240,100 @@ cpu_no_spread_order_cmp(const void *vx, const void *vy)
     return 0;
 }
 
+static ERTS_INLINE void
+make_cpudata_id_seq(erts_cpu_topology_t *cpudata, int size, int no_node)
+{
+    int ix;
+    int node = -1;
+    int processor = -1;
+    int processor_node = -1;
+    int processor_node_node = -1;
+    int core = -1;
+    int thread = -1;
+    int old_node = -1;
+    int old_processor = -1;
+    int old_processor_node = -1;
+    int old_core = -1;
+    int old_thread = -1;
+
+    for (ix = 0; ix < size; ix++) {
+	if (!no_node || cpudata[ix].node >= 0) {
+	    if (old_node == cpudata[ix].node)
+		cpudata[ix].node = node;
+	    else {
+		old_node = cpudata[ix].node;
+		old_processor = processor = -1;
+		if (!no_node)
+		    old_processor_node = processor_node = -1;
+		old_core = core = -1;
+		old_thread = thread = -1;
+		if (no_node || cpudata[ix].node >= 0)
+		    cpudata[ix].node = ++node;
+	    }
+	}
+	if (old_processor == cpudata[ix].processor)
+	    cpudata[ix].processor = processor;
+	else {
+	    old_processor = cpudata[ix].processor;
+	    if (!no_node)
+		processor_node_node = old_processor_node = processor_node = -1;
+	    old_core = core = -1;
+	    old_thread = thread = -1;
+	    cpudata[ix].processor = ++processor;
+	}
+	if (no_node && cpudata[ix].processor_node < 0)
+	    old_processor_node = -1;
+	else {
+	    if (old_processor_node == cpudata[ix].processor_node) {
+		if (no_node)
+		    cpudata[ix].node = cpudata[ix].processor_node = node;
+		else {
+		    if (processor_node_node >= 0)
+			cpudata[ix].node = processor_node_node;
+		    cpudata[ix].processor_node = processor_node;
+		}
+	    }
+	    else {
+		old_processor_node = cpudata[ix].processor_node;
+		old_core = core = -1;
+		old_thread = thread = -1;
+		if (no_node)
+		    cpudata[ix].node = cpudata[ix].processor_node = ++node;
+		else {
+		    cpudata[ix].node = processor_node_node = ++node;
+		    cpudata[ix].processor_node = ++processor_node;
+		}
+	    }
+	}
+	if (!no_node && cpudata[ix].processor_node < 0)
+	    cpudata[ix].processor_node = 0;
+	if (old_core == cpudata[ix].core)
+	    cpudata[ix].core = core;
+	else {
+	    old_core = cpudata[ix].core;
+	    old_thread = thread = -1;
+	    cpudata[ix].core = ++core;
+	}
+	if (old_thread == cpudata[ix].thread)
+	    cpudata[ix].thread = thread;
+	else
+	    old_thread = cpudata[ix].thread = ++thread;
+    }
+}
+
 static void
 cpu_bind_order_sort(erts_cpu_topology_t *cpudata,
 		    int size,
-		    ErtsCpuBindOrder current)
+		    ErtsCpuBindOrder bind_order,
+		    int mk_seq)
 {
-    if (current != cpu_bind_order && size > 1) {
+    if (size > 1) {
+	int no_node = 0;
 	int (*cmp_func)(const void *, const void *);
-	switch (cpu_bind_order) {
+	switch (bind_order) {
+	case ERTS_CPU_BIND_SPREAD:
+	    cmp_func = cpu_spread_order_cmp;
+	    break;
 	case ERTS_CPU_BIND_PROCESSOR_SPREAD:
 	    cmp_func = cpu_processor_spread_order_cmp;
 	    break;
@@ -3211,12 +3341,15 @@ cpu_bind_order_sort(erts_cpu_topology_t *cpudata,
 	    cmp_func = cpu_thread_spread_order_cmp;
 	    break;
 	case ERTS_CPU_BIND_THREAD_NO_NODE_PROCESSOR_SPREAD:
+	    no_node = 1;
 	    cmp_func = cpu_thread_no_node_processor_spread_order_cmp;
 	    break;
 	case ERTS_CPU_BIND_NO_NODE_PROCESSOR_SPREAD:
+	    no_node = 1;
 	    cmp_func = cpu_no_node_processor_spread_order_cmp;
 	    break;
 	case ERTS_CPU_BIND_NO_NODE_THREAD_SPREAD:
+	    no_node = 1;
 	    cmp_func = cpu_no_node_thread_spread_order_cmp;
 	    break;
 	case ERTS_CPU_BIND_NO_SPREAD:
@@ -3230,8 +3363,30 @@ cpu_bind_order_sort(erts_cpu_topology_t *cpudata,
 	    break;
 	}
 
+	if (mk_seq)
+	    make_cpudata_id_seq(cpudata, size, no_node);
+
 	qsort(cpudata, size, sizeof(erts_cpu_topology_t), cmp_func);
     }
+}
+
+static int
+processor_order_cmp(const void *vx, const void *vy)
+{
+    erts_cpu_topology_t *x = (erts_cpu_topology_t *) vx;
+    erts_cpu_topology_t *y = (erts_cpu_topology_t *) vy;
+
+    if (x->processor != y->processor)
+	return x->processor - y->processor;
+    if (x->node != y->node)
+	return x->node - y->node;
+    if (x->processor_node != y->processor_node)
+	return x->processor_node - y->processor_node;
+    if (x->core != y->core)
+	return x->core - y->core;
+    if (x->thread != y->thread)
+	return x->thread - y->thread;
+    return 0;
 }
 
 static void
@@ -3287,7 +3442,8 @@ signal_schedulers_bind_change(erts_cpu_topology_t *cpudata, int size)
     int cpu_ix;
 
     if (cpu_bind_order != ERTS_CPU_BIND_NONE) {
-	cpu_bind_order_sort(cpudata, size, ERTS_CPU_BIND_NO_SPREAD);
+
+	cpu_bind_order_sort(cpudata, size, cpu_bind_order, 1);
 
 	for (cpu_ix = 0; cpu_ix < size && cpu_ix < erts_no_schedulers; cpu_ix++)
 	    if (erts_is_cpu_available(erts_cpuinfo, cpudata[cpu_ix].logical))
@@ -3316,12 +3472,6 @@ signal_schedulers_bind_change(erts_cpu_topology_t *cpudata, int size)
 #endif
 }
 
-void
-erts_init_enable_processor_node_topology(void)
-{
-    processor_node_topology_enabled = 1;
-}
-
 int
 erts_init_scheduler_bind_type(char *how)
 {
@@ -3331,7 +3481,9 @@ erts_init_scheduler_bind_type(char *how)
     if (!system_cpudata && !user_cpudata)
 	return ERTS_INIT_SCHED_BIND_TYPE_ERROR_NO_CPU_TOPOLOGY;
 
-    if (sys_strcmp(how, "ps") == 0)
+    if (sys_strcmp(how, "s") == 0)
+	cpu_bind_order = ERTS_CPU_BIND_SPREAD;
+    else if (sys_strcmp(how, "ps") == 0)
 	cpu_bind_order = ERTS_CPU_BIND_PROCESSOR_SPREAD;
     else if (sys_strcmp(how, "ts") == 0)
 	cpu_bind_order = ERTS_CPU_BIND_THREAD_SPREAD;
@@ -3408,7 +3560,7 @@ get_cput_value_or_range(int *v, int *vr, char **str)
     long l;
     char *c = *str;
     errno = 0;
-    if (!isdigit(*c))
+    if (!isdigit((unsigned char)*c))
 	return ERTS_INIT_CPU_TOPOLOGY_INVALID_ID;
     l = strtol(c, &c, 10);
     if (errno != 0 || l < 0 || ERTS_MAX_CPU_TOPOLOGY_ID < l)
@@ -3416,7 +3568,7 @@ get_cput_value_or_range(int *v, int *vr, char **str)
     *v = (int) l;
     if (*c == '-') {
 	c++;
-	if (!isdigit(*c))
+	if (!isdigit((unsigned char)*c))
 	    return ERTS_INIT_CPU_TOPOLOGY_INVALID_ID_RANGE;
 	l = strtol(c, &c, 10);
 	if (errno != 0 || l < 0 || ERTS_MAX_CPU_TOPOLOGY_ID < l)
@@ -3528,8 +3680,7 @@ get_cput_entry(ErtsCpuTopEntry *cput, char **str)
 	    break;
 	case 'n':
 	case 'N':
-	    if (!processor_node_topology_enabled
-		|| h <= ERTS_TOPOLOGY_PROCESSOR) {
+	    if (h <= ERTS_TOPOLOGY_PROCESSOR) {
 	    do_node:
 		if (h <= ERTS_TOPOLOGY_NODE)
 		    return ERTS_INIT_CPU_TOPOLOGY_INVALID_HIERARCHY;
@@ -3590,31 +3741,66 @@ get_cput_entry(ErtsCpuTopEntry *cput, char **str)
 }
 
 static int
-verify_numa_nodes(erts_cpu_topology_t *cpudata, int size)
+verify_topology(erts_cpu_topology_t *cpudata, int size)
 {
-
     if (size > 0) {
-	int node = cpudata[0].node;
-	int processor = cpudata[0].processor;
-	int no_nodes = cpudata[0].node < 0 && cpudata[0].processor_node < 0;
-	int i;
+	int *logical;
+	int node, processor, no_nodes, i;
 
+	/* Verify logical ids */
+	logical = erts_alloc(ERTS_ALC_T_TMP, sizeof(int)*size);
+
+	for (i = 0; i < user_cpudata_size; i++)
+	    logical[i] = user_cpudata[i].logical;
+
+	qsort(logical, user_cpudata_size, sizeof(int), int_cmp);
+	for (i = 0; i < user_cpudata_size-1; i++) {
+	    if (logical[i] == logical[i+1]) {
+		erts_free(ERTS_ALC_T_TMP, logical);
+		return ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_LIDS;
+	    }
+	}
+
+	erts_free(ERTS_ALC_T_TMP, logical);
+
+	qsort(cpudata, size, sizeof(erts_cpu_topology_t), processor_order_cmp);
+
+	/* Verify unique entities */
+
+	for (i = 1; i < user_cpudata_size; i++) {
+	    if (user_cpudata[i-1].processor == user_cpudata[i].processor
+		&& user_cpudata[i-1].node == user_cpudata[i].node
+		&& (user_cpudata[i-1].processor_node
+		    == user_cpudata[i].processor_node)
+		&& user_cpudata[i-1].core == user_cpudata[i].core
+		&& user_cpudata[i-1].thread == user_cpudata[i].thread) {
+		return ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_ENTITIES;
+	    }
+	}
+
+	/* Verify numa nodes */
+	node = cpudata[0].node;
+	processor = cpudata[0].processor;
+	no_nodes = cpudata[0].node < 0 && cpudata[0].processor_node < 0;
 	for (i = 1; i < size; i++) {
 	    if (no_nodes) {
 		if (cpudata[i].node >= 0 || cpudata[i].processor_node >= 0)
-		    return 0;
+		    return ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES;
 	    }
 	    else {
 		if (cpudata[i].processor == processor && cpudata[i].node != node)
-		    return 0;
-		if (node < 0 && cpudata[i].processor_node < 0)
-		    return 0;
+		    return ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES;
 		node = cpudata[i].node;
 		processor = cpudata[i].processor;
+		if (node >= 0 && cpudata[i].processor_node >= 0)
+		    return ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES;
+		if (node < 0 && cpudata[i].processor_node < 0)
+		    return ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES;
 	    }
 	}
     }
-    return 1;
+
+    return ERTS_INIT_CPU_TOPOLOGY_OK;
 }
 
 int
@@ -3622,7 +3808,6 @@ erts_init_cpu_topology(char *topology_str)
 {
     ErtsCpuTopEntry cput;
     int need_size;
-    int *logical;
     char *c;
     int ix;
     int error = ERTS_INIT_CPU_TOPOLOGY_OK;
@@ -3694,57 +3879,11 @@ erts_init_cpu_topology(char *topology_str)
 				     * user_cpudata_size));
     }
 
-    /*
-     * Verify that we got unique logical cpu identifiers
-     */
-
-    logical = erts_alloc(ERTS_ALC_T_TMP,
-			 sizeof(int)*user_cpudata_size);
-
-    for (ix = 0; ix < user_cpudata_size; ix++)
-	logical[ix] = user_cpudata[ix].logical;
-
-    qsort(logical, user_cpudata_size, sizeof(int), int_cmp);
-    for (ix = 0; ix < user_cpudata_size-1; ix++) {
-	if (logical[ix] == logical[ix+1]) {
-	    erts_free(ERTS_ALC_T_TMP, logical);
-	    error = ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_LIDS;
-	    goto fail;
-	}
+    error = verify_topology(user_cpudata, user_cpudata_size);
+    if (error == ERTS_INIT_CPU_TOPOLOGY_OK) {
+	destroy_cpu_top_entry(&cput);
+	return ERTS_INIT_CPU_TOPOLOGY_OK;
     }
-
-    erts_free(ERTS_ALC_T_TMP, logical);
-
-    qsort(user_cpudata,
-	  user_cpudata_size,
-	  sizeof(erts_cpu_topology_t),
-	  cpu_no_spread_order_cmp);
-    /*
-     * Verify that each logical cpu identifier addresses
-     * an unique entity.
-     */
-
-    for (ix = 1; ix < user_cpudata_size; ix++) {
-	if (user_cpudata[ix-1].node == user_cpudata[ix].node
-	    && user_cpudata[ix-1].processor == user_cpudata[ix].processor
-	    && user_cpudata[ix-1].processor_node == user_cpudata[ix].processor_node
-	    && user_cpudata[ix-1].core == user_cpudata[ix].core
-	    && user_cpudata[ix-1].thread == user_cpudata[ix].thread) {
-	    error = ERTS_INIT_CPU_TOPOLOGY_NOT_UNIQUE_ENTITIES;
-	    goto fail;
-	}
-    }
-
-    if (!verify_numa_nodes(user_cpudata, user_cpudata_size)) {
-	error = ERTS_INIT_CPU_TOPOLOGY_INVALID_NODES;
-	goto fail;
-    }
-
-    make_cpudata_id_seq(user_cpudata, user_cpudata_size);
-
-    destroy_cpu_top_entry(&cput);
-
-    return ERTS_INIT_CPU_TOPOLOGY_OK;
 
  fail:
     if (user_cpudata)
@@ -3752,159 +3891,6 @@ erts_init_cpu_topology(char *topology_str)
     user_cpudata_size = 0;
     destroy_cpu_top_entry(&cput);
     return error;
-}
-
-#define ERTS_INIT_PARSE_TOPOLOGY_STATE {-1,0,-1,0,0}
-
-static int
-parse_topology_term(int state[],
-		    int prev_depth,
-		    erts_cpu_topology_t **topology,
-		    int *size,
-		    int *cpu_ix,
-		    Eterm term)
-{
-    int depth;
-    Eterm* tp;
-    int arity;
-
-    if (is_small(term)) {
-	Sint cpu_id = signed_val(term);
-	erts_cpu_topology_t *cpu_entry;
-
-	if (cpu_id < 0 || MAX_SMALL < cpu_id)
-	    return 0;
-
-	if (*size <= *cpu_ix) {
-	    *size += 100;
-	    *topology = erts_realloc(ERTS_ALC_T_TMP,
-				     *topology,
-				     (sizeof(erts_cpu_topology_t)
-				      * (*size)));
-	}
-
-	cpu_entry = &(*topology)[(*cpu_ix)++];
-	
-	cpu_entry->logical = cpu_id;
-	cpu_entry->node = state[ERTS_TOPOLOGY_NODE];
-	cpu_entry->processor = state[ERTS_TOPOLOGY_PROCESSOR];
-	cpu_entry->processor_node = state[ERTS_TOPOLOGY_PROCESSOR_NODE];
-	cpu_entry->core = state[ERTS_TOPOLOGY_CORE];
-	cpu_entry->thread = state[ERTS_TOPOLOGY_THREAD];
-
-	return 1;
-    }
-    else if (is_tuple(term)) {
-	int ix, id;
-	int new_state[ERTS_TOPOLOGY_MAX_DEPTH] = ERTS_INIT_PARSE_TOPOLOGY_STATE;
-
-	tp = tuple_val(term);
-	arity = arityval(tp[0]);
-	if (arity < 2)
-	    return 0;
-
-	if (ERTS_IS_ATOM_STR("node", tp[1])) {
-	    if (!processor_node_topology_enabled
-		|| prev_depth < ERTS_TOPOLOGY_NODE)
-		depth = ERTS_TOPOLOGY_NODE;
-	    else {
-		depth = ERTS_TOPOLOGY_PROCESSOR_NODE;
-		new_state[ERTS_TOPOLOGY_NODE] = state[ERTS_TOPOLOGY_NODE];
-		new_state[ERTS_TOPOLOGY_PROCESSOR] = state[ERTS_TOPOLOGY_PROCESSOR];
-	    }
-	}
-	else if (ERTS_IS_ATOM_STR("processor", tp[1])) {
-	    depth = ERTS_TOPOLOGY_PROCESSOR;
-	    new_state[ERTS_TOPOLOGY_NODE] = state[ERTS_TOPOLOGY_NODE];
-	}
-	else if (ERTS_IS_ATOM_STR("core", tp[1])) {
-	    depth = ERTS_TOPOLOGY_CORE;
-	    new_state[ERTS_TOPOLOGY_NODE] = state[ERTS_TOPOLOGY_NODE];
-	    new_state[ERTS_TOPOLOGY_PROCESSOR] = state[ERTS_TOPOLOGY_PROCESSOR];
-	    new_state[ERTS_TOPOLOGY_PROCESSOR_NODE] = state[ERTS_TOPOLOGY_PROCESSOR_NODE];
-	}
-	else if (ERTS_IS_ATOM_STR("thread", tp[1])) {
-	    depth = ERTS_TOPOLOGY_THREAD;
-	    new_state[ERTS_TOPOLOGY_NODE] = state[ERTS_TOPOLOGY_NODE];
-	    new_state[ERTS_TOPOLOGY_PROCESSOR] = state[ERTS_TOPOLOGY_PROCESSOR];
-	    new_state[ERTS_TOPOLOGY_PROCESSOR_NODE] = state[ERTS_TOPOLOGY_PROCESSOR_NODE];
-	    new_state[ERTS_TOPOLOGY_CORE] = state[ERTS_TOPOLOGY_CORE];
-	}
-	else
-	    return 0;
-
-	if (prev_depth >= depth)
-	    return 0;
-
-	for (ix = 2, id = 0; ix <= arity; ix++, id++) {
-	    new_state[depth] = id;
-	    if (!parse_topology_term(new_state, depth, topology, size, cpu_ix, tp[ix]))
-		return 0;
-	}
-	return 1;
-    }
-
-    return 0;
-}
-
-static void
-make_cpudata_id_seq(erts_cpu_topology_t *cpudata, int size)
-{
-    int ix;
-    int node = -1;
-    int processor = -1;
-    int core = -1;
-    int thread = -1;
-    int old_node = -1;
-    int old_processor = -1;
-    int old_processor_node = -1;
-    int old_core = -1;
-    int old_thread = -1;
-
-    for (ix = 0; ix < size; ix++) {
-	if (cpudata[ix].node >= 0) {
-	    if (old_node == cpudata[ix].node)
-		cpudata[ix].node = node;
-	    else {
-		old_node = cpudata[ix].node;
-		old_processor = processor = -1;
-		old_core = core = -1;
-		old_thread = thread = -1;
-		cpudata[ix].node = ++node;
-	    }
-	}
-	if (old_processor == cpudata[ix].processor)
-	    cpudata[ix].processor = processor;
-	else {
-	    old_processor = cpudata[ix].processor;
-	    old_core = core = -1;
-	    old_thread = thread = -1;
-	    cpudata[ix].processor = ++processor;
-	}
-	if (cpudata[ix].processor_node < 0)
-	    old_processor_node = -1;
-	else {
-	    if (old_processor_node == cpudata[ix].processor_node)
-		cpudata[ix].processor_node = node;
-	    else {
-		old_processor_node = cpudata[ix].processor_node;
-		old_core = core = -1;
-		old_thread = thread = -1;
-		cpudata[ix].processor_node = ++node;
-	    }
-	}
-	if (old_core == cpudata[ix].core)
-	    cpudata[ix].core = core;
-	else {
-	    old_core = cpudata[ix].core;
-	    old_thread = thread = -1;
-	    cpudata[ix].core = ++core;
-	}
-	if (old_thread == cpudata[ix].thread)
-	    cpudata[ix].thread = thread;
-	else
-	    old_thread = cpudata[ix].thread = ++thread;
-    }
 }
 
 #define ERTS_GET_CPU_TOPOLOGY_ERROR		-1
@@ -3918,7 +3904,7 @@ Eterm
 erts_set_cpu_topology(Process *c_p, Eterm term)
 {
     erts_cpu_topology_t *cpudata = NULL;
-    int cpudata_size;
+    int cpudata_size = 0;
     Eterm res;
 
     erts_smp_rwmtx_rwlock(&erts_cpu_bind_rwmtx);
@@ -3938,17 +3924,15 @@ erts_set_cpu_topology(Process *c_p, Eterm term)
 	    sys_memcpy((void *) cpudata,
 		       (void *) system_cpudata,
 		       sizeof(erts_cpu_topology_t)*cpudata_size);
-	    make_cpudata_id_seq(cpudata, cpudata_size);
 	}
     }
-    else if (is_not_tuple(term)) {
+    else if (is_not_list(term)) {
     error:
 	res = THE_NON_VALUE;
 	goto done;
     }
     else {
-	int *logical;
-	int state[ERTS_TOPOLOGY_MAX_DEPTH] = ERTS_INIT_PARSE_TOPOLOGY_STATE;
+	Eterm list = term;
 	int ix = 0;
 
 	cpudata_size = 100;
@@ -3956,30 +3940,69 @@ erts_set_cpu_topology(Process *c_p, Eterm term)
 			     (sizeof(erts_cpu_topology_t)
 			      * cpudata_size));
 
-	if (!parse_topology_term(state,
-				 -1,
-				 &cpudata,
-				 &cpudata_size,
-				 &ix,
-				 term))
-	    goto error;
-
-	cpudata_size = ix;
-	logical = erts_alloc(ERTS_ALC_T_TMP,
-			     sizeof(int)*cpudata_size);
-
-	for (ix = 0; ix < cpudata_size; ix++)
-	    logical[ix] = cpudata[ix].logical;
-
-	qsort(logical, cpudata_size, sizeof(int), int_cmp);
-	for (ix = 0; ix < cpudata_size-1; ix++) {
-	    if (logical[ix] == logical[ix+1]) {
-		erts_free(ERTS_ALC_T_TMP, logical);
+	while (is_list(list)) {
+	    Eterm *lp = list_val(list);
+	    Eterm cpu = CAR(lp);
+	    Eterm* tp;
+	    Sint id;
+		
+	    if (is_not_tuple(cpu))
 		goto error;
+
+	    tp = tuple_val(cpu);
+
+	    if (arityval(tp[0]) != 7 || tp[1] != am_cpu)
+		goto error;
+
+	    if (ix >= cpudata_size) {
+		cpudata_size += 100;
+		cpudata = erts_realloc(ERTS_ALC_T_TMP,
+				       cpudata,
+				       (sizeof(erts_cpu_topology_t)
+					* cpudata_size));
 	    }
+
+	    id = signed_val(tp[2]);
+	    if (id < -1 || ERTS_MAX_CPU_TOPOLOGY_ID < id)
+		goto error;
+	    cpudata[ix].node = (int) id;
+
+	    id = signed_val(tp[3]);
+	    if (id < -1 || ERTS_MAX_CPU_TOPOLOGY_ID < id)
+		goto error;
+	    cpudata[ix].processor = (int) id;
+
+	    id = signed_val(tp[4]);
+	    if (id < -1 || ERTS_MAX_CPU_TOPOLOGY_ID < id)
+		goto error;
+	    cpudata[ix].processor_node = (int) id;
+
+	    id = signed_val(tp[5]);
+	    if (id < -1 || ERTS_MAX_CPU_TOPOLOGY_ID < id)
+		goto error;
+	    cpudata[ix].core = (int) id;
+
+	    id = signed_val(tp[6]);
+	    if (id < -1 || ERTS_MAX_CPU_TOPOLOGY_ID < id)
+		goto error;
+	    cpudata[ix].thread = (int) id;
+
+	    id = signed_val(tp[7]);
+	    if (id < -1 || ERTS_MAX_CPU_TOPOLOGY_ID < id)
+		goto error;
+	    cpudata[ix].logical = (int) id;
+
+	    list = CDR(lp);
+	    ix++;
 	}
 
-	erts_free(ERTS_ALC_T_TMP, logical);
+	if (is_not_nil(list))
+	    goto error;
+	
+	cpudata_size = ix;
+
+	if (ERTS_INIT_CPU_TOPOLOGY_OK != verify_topology(cpudata, cpudata_size))
+	    goto error;
 
 	if (user_cpudata_size != cpudata_size) {
 	    if (user_cpudata)
@@ -4009,6 +4032,10 @@ static Eterm
 bound_schedulers_term(ErtsCpuBindOrder order)
 {
     switch (order) {
+    case ERTS_CPU_BIND_SPREAD: {
+	ERTS_DECL_AM(spread);
+	return AM_spread;
+    }
     case ERTS_CPU_BIND_PROCESSOR_SPREAD: {
 	ERTS_DECL_AM(processor_spread);
 	return AM_processor_spread;
@@ -4073,7 +4100,6 @@ create_tmp_cpu_topology_copy(erts_cpu_topology_t **cpudata, int *cpudata_size)
 	sys_memcpy((void *) *cpudata,
 		   (void *) system_cpudata,
 		   sizeof(erts_cpu_topology_t)*(*cpudata_size));
-	make_cpudata_id_seq(*cpudata, *cpudata_size);
     }
     else {
 	*cpudata = NULL;
@@ -4105,7 +4131,9 @@ erts_bind_schedulers(Process *c_p, Eterm how)
 
 	old_cpu_bind_order = cpu_bind_order;
 
-	if (ERTS_IS_ATOM_STR("processor_spread", how))
+	if (ERTS_IS_ATOM_STR("spread", how))
+	    cpu_bind_order = ERTS_CPU_BIND_SPREAD;
+	else if (ERTS_IS_ATOM_STR("processor_spread", how))
 	    cpu_bind_order = ERTS_CPU_BIND_PROCESSOR_SPREAD;
 	else if (ERTS_IS_ATOM_STR("thread_spread", how))
 	    cpu_bind_order = ERTS_CPU_BIND_THREAD_SPREAD;
@@ -4156,7 +4184,9 @@ erts_fake_scheduler_bindings(Process *p, Eterm how)
     int cpudata_size;
     Eterm res;
 
-    if (ERTS_IS_ATOM_STR("processor_spread", how))
+    if (ERTS_IS_ATOM_STR("spread", how))
+	fake_cpu_bind_order = ERTS_CPU_BIND_SPREAD;
+    else if (ERTS_IS_ATOM_STR("processor_spread", how))
 	fake_cpu_bind_order = ERTS_CPU_BIND_PROCESSOR_SPREAD;
     else if (ERTS_IS_ATOM_STR("thread_spread", how))
 	fake_cpu_bind_order = ERTS_CPU_BIND_THREAD_SPREAD;
@@ -4185,34 +4215,41 @@ erts_fake_scheduler_bindings(Process *p, Eterm how)
     else {
 	int i;
 	Eterm *hp;
-	int (*cmp_func)(const void *, const void *);
-	switch (fake_cpu_bind_order) {
-	case ERTS_CPU_BIND_PROCESSOR_SPREAD:
-	    cmp_func = cpu_processor_spread_order_cmp;
-	    break;
-	case ERTS_CPU_BIND_THREAD_SPREAD:
-	    cmp_func = cpu_thread_spread_order_cmp;
-	    break;
-	case ERTS_CPU_BIND_THREAD_NO_NODE_PROCESSOR_SPREAD:
-	    cmp_func = cpu_thread_no_node_processor_spread_order_cmp;
-	    break;
-	case ERTS_CPU_BIND_NO_NODE_PROCESSOR_SPREAD:
-	    cmp_func = cpu_no_node_processor_spread_order_cmp;
-	    break;
-	case ERTS_CPU_BIND_NO_NODE_THREAD_SPREAD:
-	    cmp_func = cpu_no_node_thread_spread_order_cmp;
-	    break;
-	case ERTS_CPU_BIND_NO_SPREAD:
-	    cmp_func = cpu_no_spread_order_cmp;
-	    break;
-	default:
-	    cmp_func = NULL;
-	    erl_exit(ERTS_ABORT_EXIT,
-		     "Bad cpu bind type: %d\n",
-		     (int) fake_cpu_bind_order);
-	    break;
+	
+	cpu_bind_order_sort(cpudata, cpudata_size, fake_cpu_bind_order, 1);
+
+#ifdef ERTS_FAKE_SCHED_BIND_PRINT_SORTED_CPU_DATA
+
+	erts_fprintf(stderr, "node:          ");
+	for (i = 0; i < cpudata_size; i++)
+	    erts_fprintf(stderr, " %2d", cpudata[i].node);
+	erts_fprintf(stderr, "\n");
+	erts_fprintf(stderr, "processor:     ");
+	for (i = 0; i < cpudata_size; i++)
+	    erts_fprintf(stderr, " %2d", cpudata[i].processor);
+	erts_fprintf(stderr, "\n");
+	if (fake_cpu_bind_order != ERTS_CPU_BIND_THREAD_NO_NODE_PROCESSOR_SPREAD
+	    && fake_cpu_bind_order != ERTS_CPU_BIND_NO_NODE_PROCESSOR_SPREAD
+	    && fake_cpu_bind_order != ERTS_CPU_BIND_NO_NODE_THREAD_SPREAD) {
+	    erts_fprintf(stderr, "processor_node:");
+	    for (i = 0; i < cpudata_size; i++)
+		erts_fprintf(stderr, " %2d", cpudata[i].processor_node);
+	    erts_fprintf(stderr, "\n");
 	}
-	qsort(cpudata, cpudata_size, sizeof(erts_cpu_topology_t), cmp_func);
+	erts_fprintf(stderr, "core:          ");
+	for (i = 0; i < cpudata_size; i++)
+	    erts_fprintf(stderr, " %2d", cpudata[i].core);
+	erts_fprintf(stderr, "\n");
+	erts_fprintf(stderr, "thread:        ");
+	for (i = 0; i < cpudata_size; i++)
+	    erts_fprintf(stderr, " %2d", cpudata[i].thread);
+	erts_fprintf(stderr, "\n");
+	erts_fprintf(stderr, "logical:       ");
+	for (i = 0; i < cpudata_size; i++)
+	    erts_fprintf(stderr, " %2d", cpudata[i].logical);
+	erts_fprintf(stderr, "\n");
+#endif
+
 	hp = HAlloc(p, cpudata_size+1);
 	ERTS_BIF_PREP_RET(res, make_tuple(hp));
 	*hp++ = make_arityval((Uint) cpudata_size);
@@ -4247,8 +4284,31 @@ static Eterm
 bld_topology_term(Eterm **hpp,
 		  Uint *hszp,
 		  erts_cpu_topology_t *cpudata,
-		  int size,
-		  int level);
+		  int size)
+{
+    Eterm res = NIL;
+    int i;
+
+    if (size == 0)
+	return am_undefined;
+
+    for (i = size-1; i >= 0; i--) {
+	res = erts_bld_cons(hpp,
+			    hszp,
+			    erts_bld_tuple(hpp,
+					   hszp,
+					   7,
+					   am_cpu,
+					   make_small(cpudata[i].node),
+					   make_small(cpudata[i].processor),
+					   make_small(cpudata[i].processor_node),
+					   make_small(cpudata[i].core),
+					   make_small(cpudata[i].thread),
+					   make_small(cpudata[i].logical)),
+			    res);
+    }
+    return res;
+}
 
 static Eterm
 get_cpu_topology_term(Process *c_p, int type)
@@ -4288,12 +4348,7 @@ get_cpu_topology_term(Process *c_p, int type)
 	    res = am_undefined;
 	else {
 	    size = user_cpudata_size;
-	    cpudata = erts_alloc(ERTS_ALC_T_TMP,
-				 (sizeof(erts_cpu_topology_t)
-				  * size));
-	    sys_memcpy((void *) cpudata,
-		       (void *) user_cpudata,
-		       sizeof(erts_cpu_topology_t)*size);
+	    cpudata = user_cpudata;
 	}
 	break;
     default:
@@ -4309,8 +4364,7 @@ get_cpu_topology_term(Process *c_p, int type)
     hsz = 0;
 
     bld_topology_term(NULL, &hsz,
-		      cpudata, size,
-		      ERTS_TOPOLOGY_NODE);
+		      cpudata, size);
 
     hp = HAlloc(c_p, hsz);
 
@@ -4319,12 +4373,12 @@ get_cpu_topology_term(Process *c_p, int type)
 #endif
 
     res = bld_topology_term(&hp, NULL,
-			    cpudata, size,
-			    ERTS_TOPOLOGY_NODE);
+			    cpudata, size);
 
     ASSERT(hp_end == hp);
 
-    erts_free(ERTS_ALC_T_TMP, cpudata);
+    if (cpudata && cpudata != system_cpudata && cpudata != user_cpudata)
+	erts_free(ERTS_ALC_T_TMP, cpudata);
 
     return res;
 }
@@ -4351,143 +4405,26 @@ erts_get_cpu_topology_term(Process *c_p, Eterm which)
     return res;
 }
 
-static Eterm
-bld_topology_tuple(Eterm **hpp,
-		   Uint *hszp,
-		   erts_cpu_topology_t *cpudata,
-		   int size,
-		   int level,
-		   int offset)
-{
-#undef ERTS_INT_VAL_OFFSET__
-#define ERTS_INT_VAL_OFFSET__(P, O) *((int *) (((char *) (P)) + offset))
-    char *level_name[] = {"node", "processor", "node", "core", "thread"};
-    int srix, ix;
-    Eterm *sub_res;
-    Eterm res;
-    Sint arity = 2;
-
-    for (ix = 1; ix < size; ix++) {
-	if (ERTS_INT_VAL_OFFSET__(&cpudata[ix-1], offset)
-	    != ERTS_INT_VAL_OFFSET__(&cpudata[ix], offset)) {
-	    arity++;
-	}
-    }
-
-    if (!hpp)
-	sub_res = NULL;
-    else {
-	sub_res = erts_alloc(ERTS_ALC_T_TMP,
-			     sizeof(Eterm)*arity);
-	srix = 0;
-	sub_res[srix++] = erts_bld_atom(hpp, hszp, level_name[level]);
-    }
-
-    ix = 0;
-    while (ix < size) {
-	int val = ERTS_INT_VAL_OFFSET__(&cpudata[ix], offset);
-	int eix;
-	Eterm sres;
-	for (eix = ix+1; eix < size; eix++) {
-	    int val2 = ERTS_INT_VAL_OFFSET__(&cpudata[eix], offset);
-	    if (val != val2)
-		break;
-	}
-	    
-	sres = bld_topology_term(hpp, hszp,
-				 &cpudata[ix], eix-ix,
-				 level+1);
-	if (hpp)
-	    sub_res[srix++] = sres;
-	ix = eix;
-    }
-
-    res = erts_bld_tuplev(hpp, hszp, arity, sub_res);
-    if (hpp)
-	erts_free(ERTS_ALC_T_TMP, sub_res);
-    return res;
-
-#undef ERTS_INT_VAL_OFFSET__
-}
-
-static Eterm
-bld_topology_term(Eterm **hpp,
-		  Uint *hszp,
-		  erts_cpu_topology_t *cpudata,
-		  int size,
-		  int level)
-{
-#undef ERTS_FIELD_OFFS__
-#define ERTS_FIELD_OFFS__(F) ((int) offsetof(erts_cpu_topology_t, F))
-    ASSERT(size > 0);
-    switch (level) {
-    case ERTS_TOPOLOGY_NODE:
-	if (cpudata[0].node != cpudata[size-1].node)
-	    return bld_topology_tuple(hpp, hszp,
-				      cpudata, size,
-				      ERTS_TOPOLOGY_NODE,
-				      ERTS_FIELD_OFFS__(node));
-	/* Fall through */
-    case ERTS_TOPOLOGY_PROCESSOR:
-	return bld_topology_tuple(hpp, hszp,
-				  cpudata, size,
-				  ERTS_TOPOLOGY_PROCESSOR,
-				  ERTS_FIELD_OFFS__(processor));
-    case ERTS_TOPOLOGY_PROCESSOR_NODE:
-	if (cpudata[0].processor_node >= 0) {
-	    return bld_topology_tuple(hpp, hszp,
-				      cpudata, size,
-				      ERTS_TOPOLOGY_PROCESSOR_NODE,
-				      ERTS_FIELD_OFFS__(processor_node));
-	}
-	/* Fall through */
-    case ERTS_TOPOLOGY_CORE:
-	if (cpudata[0].core != cpudata[size-1].core)
-	    return bld_topology_tuple(hpp, hszp,
-				      cpudata, size,
-				      ERTS_TOPOLOGY_CORE,
-				      ERTS_FIELD_OFFS__(core));
-	/* Fall through */
-    case ERTS_TOPOLOGY_THREAD:
-	if (cpudata[0].thread != cpudata[size-1].thread)
-	    return bld_topology_tuple(hpp, hszp,
-				      cpudata, size,
-				      ERTS_TOPOLOGY_THREAD,
-				      ERTS_FIELD_OFFS__(thread));
-	/* Fall through */
-    default:
-	ASSERT(size == 1);
-	return make_small(cpudata[0].logical);
-    }
-#undef ERTS_GET_FIELD_OFFS__
-}
-
 static void
 early_cpu_bind_init(void)
 {
-    cpu_bind_order = ERTS_CPU_BIND_NONE;
-
     user_cpudata = NULL;
     user_cpudata_size = 0;
-    processor_node_topology_enabled = 0;
 
-    system_cpudata_size = erts_get_cpu_configured(erts_cpuinfo);
+    system_cpudata_size = erts_get_cpu_topology_size(erts_cpuinfo);
     system_cpudata = erts_alloc(ERTS_ALC_T_CPUDATA,
 				(sizeof(erts_cpu_topology_t)
 				 * system_cpudata_size));
 
-    if (!erts_get_cpu_topology(erts_cpuinfo, system_cpudata)) {
+    cpu_bind_order = ERTS_CPU_BIND_NONE;
+
+    if (!erts_get_cpu_topology(erts_cpuinfo, system_cpudata)
+	|| ERTS_INIT_CPU_TOPOLOGY_OK != verify_topology(system_cpudata,
+							system_cpudata_size)) {
 	erts_free(ERTS_ALC_T_CPUDATA, system_cpudata);
 	system_cpudata = NULL;
 	system_cpudata_size = 0;
     }
-
-    ASSERT(verify_numa_nodes(system_cpudata, system_cpudata_size));
-
-    cpu_bind_order = ERTS_CPU_BIND_NO_SPREAD;
-    cpu_bind_order_sort(system_cpudata, system_cpudata_size, ERTS_CPU_BIND_NONE);
-    cpu_bind_order = ERTS_CPU_BIND_NONE;
-
 }
 
 static void
@@ -5756,6 +5693,30 @@ erts_set_process_priority(Process *p, Eterm new_value)
     return old_value;
 }
 
+#ifdef ERTS_SMP
+
+static ERTS_INLINE int
+prepare_for_sys_schedule(void)
+{
+    if (!erts_port_task_have_outstanding_io_tasks()
+	&& !erts_smp_atomic_xchg(&doing_sys_schedule, 1)) {
+	if (!erts_port_task_have_outstanding_io_tasks())
+	    return 1;
+	erts_smp_atomic_set(&doing_sys_schedule, 0);
+    }
+    return 0;
+}
+
+#else
+
+static ERTS_INLINE int
+prepare_for_sys_schedule(void)
+{
+    return !erts_port_task_have_outstanding_io_tasks();
+}
+
+#endif
+
 /* note that P_RUNNING is only set so that we don't try to remove
 ** running processes from the schedule queue if they exit - a running
 ** process not being in the schedule queue!! 
@@ -5790,7 +5751,8 @@ Process *schedule(Process *p, int calls)
     int context_reds;
     long fcalls;
     int input_reductions;
-    int actual_calls;
+    int actual_reds;
+    int reds;
 
     if (ERTS_USE_MODIFIED_TIMING()) {
 	context_reds = ERTS_MODIFIED_TIMING_CONTEXT_REDS;
@@ -5811,7 +5773,7 @@ Process *schedule(Process *p, int calls)
 	rq = erts_get_runq_current(esdp);
 	ASSERT(esdp);
 	fcalls = erts_smp_atomic_read(&function_calls);
-	actual_calls = 0;
+	actual_reds = reds = 0;
 	erts_smp_runq_lock(rq);
     } else {
 #ifdef ERTS_SMP
@@ -5823,15 +5785,17 @@ Process *schedule(Process *p, int calls)
 	esdp = erts_scheduler_data;
 	ASSERT(esdp->current_process == p);
 #endif
-	actual_calls = calls - esdp->virtual_reds;
+	reds = actual_reds = calls - esdp->virtual_reds;
+	if (reds < ERTS_PROC_MIN_CONTEXT_SWITCH_REDS_COST)
+	    reds = ERTS_PROC_MIN_CONTEXT_SWITCH_REDS_COST;
 	esdp->virtual_reds = 0;
 
-	fcalls = erts_smp_atomic_addtest(&function_calls, actual_calls);
+	fcalls = erts_smp_atomic_addtest(&function_calls, reds);
 	ASSERT(esdp && esdp == erts_get_scheduler_data());
 
 	rq = erts_get_runq_current(esdp);
 
-	p->reds += actual_calls;
+	p->reds += actual_reds;
 
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
 
@@ -5875,7 +5839,7 @@ Process *schedule(Process *p, int calls)
 #endif
 	erts_smp_runq_lock(rq);
 
-	ERTS_PROC_REDUCTIONS_EXECUTED(rq, p->prio, actual_calls);
+	ERTS_PROC_REDUCTIONS_EXECUTED(rq, p->prio, reds, actual_reds);
 
 	esdp->current_process = NULL;
 #ifdef ERTS_SMP
@@ -6016,8 +5980,7 @@ Process *schedule(Process *p, int calls)
 		}
 	    }
 
-	    if (!erts_port_task_have_outstanding_io_tasks()
-		&& !erts_smp_atomic_bor(&doing_sys_schedule, 1)) {
+	    if (prepare_for_sys_schedule()) {
 		erts_smp_atomic_set(&function_calls, 0);
 		fcalls = 0;
 		sched_sys_wait(esdp->no, rq);
@@ -6035,12 +5998,7 @@ Process *schedule(Process *p, int calls)
 	}
 	else
 #endif /* ERTS_SMP */
-	if (fcalls > input_reductions
-	    && !erts_port_task_have_outstanding_io_tasks()
-#ifdef ERTS_SMP
-	    && !erts_smp_atomic_bor(&doing_sys_schedule, 1)
-#endif
-	    ) {
+	if (fcalls > input_reductions && prepare_for_sys_schedule()) {
 	    int runnable;
 
 #ifdef ERTS_SMP
@@ -6268,7 +6226,7 @@ Process *schedule(Process *p, int calls)
 	ASSERT(p->status != P_SUSPENDED); /* Never run a suspended process */
 
         ACTIVATE(p);
-	actual_calls = context_reds;
+	reds = context_reds;
 
 	if (IS_TRACED(p)) {
 	    switch (p->status) {
@@ -6295,13 +6253,13 @@ Process *schedule(Process *p, int calls)
 #endif
 
 	if (((MBUF_SIZE(p) + MSO(p).overhead) * MBUF_GC_FACTOR) >= HEAP_SIZE(p)) {
-	    actual_calls -= erts_garbage_collect(p, 0, p->arg_reg, p->arity);
-	    if (actual_calls < 0) {
-		actual_calls = 1;
+	    reds -= erts_garbage_collect(p, 0, p->arg_reg, p->arity);
+	    if (reds < 0) {
+		reds = 1;
 	    }
 	}
 
-	p->fcalls = actual_calls;
+	p->fcalls = reds;
 	ASSERT(IS_ACTIVE(p));
 	ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
 	return p;
@@ -8116,7 +8074,7 @@ continue_exit_process(Process *p
      * cleanup.
      */
     if (p->reg) {
-	(void) erts_unregister_name(p, ERTS_PROC_LOCK_MAIN, NULL, p->reg->name);
+	(void) erts_unregister_name(p, ERTS_PROC_LOCK_MAIN, NULL, THE_NON_VALUE);
 	ASSERT(!p->reg);
     }
 

@@ -19,7 +19,7 @@
 
 %%
 %%----------------------------------------------------------------------
-%% Purpose: 
+%% Purpose: RFC 4566
 %%----------------------------------------------------------------------
 
 -module(megaco_sdp).
@@ -465,24 +465,24 @@ get_sdp_record_from_PropertyGroup(Type, PG)
     F = fun(R) -> not is_pg_record(Type, R) end,
     lists:filter(F, PG).
 
-is_pg_record(v, R) when record(R, megaco_sdp_v)        -> true;
-is_pg_record(c, R) when record(R, megaco_sdp_c)        -> true;
-is_pg_record(m, R) when record(R, megaco_sdp_m)        -> true;
-is_pg_record(o, R) when record(R, megaco_sdp_o)        -> true;
-is_pg_record(a, R) when record(R, megaco_sdp_a)        -> true;
-is_pg_record(a, R) when record(R, megaco_sdp_a_ptime)  -> true;
-is_pg_record(a, R) when record(R, megaco_sdp_a_rtpmap) -> true;
-is_pg_record(b, R) when record(R, megaco_sdp_b)        -> true;
-is_pg_record(t, R) when record(R, megaco_sdp_t)        -> true;
-is_pg_record(r, R) when record(R, megaco_sdp_r)        -> true;
-is_pg_record(z, R) when record(R, megaco_sdp_z)        -> true;
-is_pg_record(k, R) when record(R, megaco_sdp_k)        -> true;
-is_pg_record(s, R) when record(R, megaco_sdp_s)        -> true;
-is_pg_record(i, R) when record(R, megaco_sdp_i)        -> true;
-is_pg_record(u, R) when record(R, megaco_sdp_u)        -> true;
-is_pg_record(e, R) when record(R, megaco_sdp_e)        -> true;
-is_pg_record(p, R) when record(R, megaco_sdp_p)        -> true;
-is_pg_record(_, _)                                     -> false.
+is_pg_record(v, R) when is_record(R, megaco_sdp_v)        -> true;
+is_pg_record(c, R) when is_record(R, megaco_sdp_c)        -> true;
+is_pg_record(m, R) when is_record(R, megaco_sdp_m)        -> true;
+is_pg_record(o, R) when is_record(R, megaco_sdp_o)        -> true;
+is_pg_record(a, R) when is_record(R, megaco_sdp_a)        -> true;
+is_pg_record(a, R) when is_record(R, megaco_sdp_a_ptime)  -> true;
+is_pg_record(a, R) when is_record(R, megaco_sdp_a_rtpmap) -> true;
+is_pg_record(b, R) when is_record(R, megaco_sdp_b)        -> true;
+is_pg_record(t, R) when is_record(R, megaco_sdp_t)        -> true;
+is_pg_record(r, R) when is_record(R, megaco_sdp_r)        -> true;
+is_pg_record(z, R) when is_record(R, megaco_sdp_z)        -> true;
+is_pg_record(k, R) when is_record(R, megaco_sdp_k)        -> true;
+is_pg_record(s, R) when is_record(R, megaco_sdp_s)        -> true;
+is_pg_record(i, R) when is_record(R, megaco_sdp_i)        -> true;
+is_pg_record(u, R) when is_record(R, megaco_sdp_u)        -> true;
+is_pg_record(e, R) when is_record(R, megaco_sdp_e)        -> true;
+is_pg_record(p, R) when is_record(R, megaco_sdp_p)        -> true;
+is_pg_record(_, _)                                        -> false.
 
     
 %%======================================================================
@@ -1154,7 +1154,7 @@ decode_pp_attribute_value("tool", AttrValue) ->
 
 decode_pp_attribute_value("ptime", AttrValue) ->
     ?d("decode_pp_attribute -> ptime", []),
-    PacketTimeStr = AttrValue, 
+    PacketTimeStr = string:strip(AttrValue, both, $ ), 
     PacketTime = 
 	s2i(PacketTimeStr, invalid_ptime_packet_time), 
     ?d("decode_pp_attribute -> PacketTime: ~w", [PacketTime]),
@@ -1163,7 +1163,7 @@ decode_pp_attribute_value("ptime", AttrValue) ->
 
 decode_pp_attribute_value("maxptime", AttrValue) ->
     ?d("decode_pp_attribute -> maxptime", []),
-    MaxPacketTimeStr = AttrValue, 
+    MaxPacketTimeStr = string:strip(AttrValue, both, $ ), 
     MaxPacketTime = 
 	s2i(MaxPacketTimeStr, invalid_maxptime_maximum_packet_time), 
     ?d("decode_pp_attribute -> MaxPacketTime: ~w", [MaxPacketTime]),

@@ -18,7 +18,7 @@
 
 -module(ex_choices).
 
--behavoiur(wx_object).
+-behaviour(wx_object).
 
 -export([start/1, init/1, terminate/2,  code_change/3,
 	 handle_info/2, handle_call/3, handle_event/2]).
@@ -39,6 +39,7 @@ start(Config) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init(Config) ->
         wx:batch(fun() -> do_init(Config) end).
+
 do_init(Config) ->
     Parent = proplists:get_value(parent, Config),  
     Panel = wxScrolledWindow:new(Parent, []),
@@ -47,52 +48,53 @@ do_init(Config) ->
     MainSizer = wxBoxSizer:new(?wxVERTICAL),
     ListBoxSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
 				 [{label, "wxListBox"}]),
+
+    ChoiceSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
+				 [{label, "wxChoice"}]),
+    SpinSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
+				     [{label, "wxSpinCtrl"}]),
+    ComboSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
+				     [{label, "wxComboBox"}]),
     Sizer = wxBoxSizer:new(?wxHORIZONTAL),
-    Sizer2 = wxBoxSizer:new(?wxHORIZONTAL),
+    Sizer3  = wxBoxSizer:new(?wxHORIZONTAL),
 
     Choices = ["one","two","three",
 	       "four","five","six",
 	       "seven","eight","nine",
 	       "ten", "eleven", "twelve"],
 
-    %%================%%
-    %%     ListBox    %%
-    %%================%%
+    %% Create a wxListBox that uses multiple selection
     ListBox = wxListBox:new(Panel, 1, [{size, {-1,100}},
 				       {choices, ["Multiple selection"|Choices]},
 				       {style, ?wxLB_MULTIPLE}]),
+    wxListBox:setToolTip(ListBox, "A wxListBox with multiple selection"),
+
+    %% Create a wxListBox that uses single selection
     ListBox2 = wxListBox:new(Panel, 2, [{size, {-1,100}},
 					{choices, ["Single selection"|Choices]},
 					{style, ?wxLB_SINGLE}]),
+    wxListBox:setToolTip(ListBox2, "A wxListBox with single selection"),
 
-    %%================%%
-    %%     Choice     %%
-    %%================%%
-    Sizer3  = wxBoxSizer:new(?wxHORIZONTAL),
-    ChoiceSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				 [{label, "wxChoice"}]),
+    %% Create a wxChoice
     Choice = wxChoice:new(Panel, 4, [{choices, Choices}]),
-    wxChoice:connect(Choice,command_choice_selected),
-    %%================%%
-    %%    SpinCtrl    %%
-    %%================%%
-    SpinSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				     [{label, "wxSpinCtrl"}]),
+    wxChoice:setToolTip(Choice, "A wxChoice"),
+
+    %% Create a wxSpinCtrl with range between 0 and 100
     SpinCtrl = wxSpinCtrl:new(Panel, []),
     wxSpinCtrl:setRange(SpinCtrl, 0, 100),
-    wxChoice:connect(SpinCtrl,command_spinctrl_updated),
-    %%================%%
-    %%    ComboBox    %%
-    %%================%%
-    ComboSizer = wxStaticBoxSizer:new(?wxVERTICAL, Panel, 
-				     [{label, "wxComboBox"}]),
+    wxSpinCtrl:setToolTip(SpinCtrl, "A wxSpinCtrl with range from 0 to 100"),
+
+    %% Create a wxComboBox and set the value to "Default value"
     ComboBox = wxComboBox:new(Panel, 5, [{choices, Choices}]),
-    wxComboBox:setValue(ComboBox, "Default value"),
+    wxComboBox:setToolTip(ComboBox, "A wxComboBox"),
+
+
+    wxChoice:connect(Choice,command_choice_selected),
+    wxSpinCtrl:connect(SpinCtrl,command_spinctrl_updated),
     wxComboBox:connect(ComboBox, command_combobox_selected),
 
-    %%================%%
-    %%  Add to sizers %%
-    %%================%%
+
+    %% Add to sizers
     Options = [{border,4}, {flag, ?wxALL}],
     wxSizer:add(Sizer, ListBox, Options),
     wxSizer:add(Sizer, ListBox2, Options),
@@ -105,7 +107,6 @@ do_init(Config) ->
     wxSizer:add(ComboSizer, ComboBox, Options),
 
     wxSizer:add(ListBoxSizer, Sizer, Options),
-    wxSizer:add(ListBoxSizer, Sizer2, Options),
     wxSizer:add(MainSizer, ListBoxSizer, Options),
     wxSizer:add(MainSizer, Sizer3, Options),
     wxSizer:add(MainSizer, ComboSizer, Options),
@@ -116,15 +117,6 @@ do_init(Config) ->
 		   list_box = ListBox}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Callbacks handled as normal gen_server callbacks
-handle_info(Msg, State) ->
-    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
-    {noreply, State}.
-
-handle_call(Msg, _From, State) ->
-    demo:format(State#state.config,"Got Call ~p\n",[Msg]),
-    {reply, {error,nyi}, State}.
-
 %% Async Events are handled in handle_event as in handle_info
 handle_event(#wx{obj = ComboBox,
 		 event = #wxCommand{type = command_combobox_selected}},
@@ -145,6 +137,15 @@ handle_event(#wx{event = #wxSpin{type = command_spinctrl_updated,
 handle_event(Ev = #wx{}, State = #state{}) ->
     demo:format(State#state.config,"Got Event ~p\n",[Ev]),
     {noreply, State}.
+
+%% Callbacks handled as normal gen_server callbacks
+handle_info(Msg, State) ->
+    demo:format(State#state.config, "Got Info ~p\n",[Msg]),
+    {noreply, State}.
+
+handle_call(Msg, _From, State) ->
+    demo:format(State#state.config,"Got Call ~p\n",[Msg]),
+    {reply, {error,nyi}, State}.
 
 code_change(_, _, State) ->
     {stop, ignore, State}.

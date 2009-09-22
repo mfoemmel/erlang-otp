@@ -29,6 +29,108 @@
     <file>notes.xml</file>
   </header>
 
+
+ <section><title>Ssh 1.1.6</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            ssh_sftp:start_channel did not handle all possible return 
+            values from ssh_channel:start correctly.
+          </p>
+          <p>
+            Own Id: OTP-8176 Aux Id: </p>
+        </item>
+        <item>
+          <p>
+            SFTPD did not handle rename command (version 4) correctly.
+          </p>
+          <p>
+            Own Id: OTP-8175 Aux Id: seq11373</p>
+        </item>
+        <item>
+          <p>
+            If a connection manager already had been terminated it could cause a channel
+            to generate a crash report when it was about to stop.
+          </p>
+          <p>
+            Own Id: OTP-8174 Aux Id: seq11377</p>
+        </item>
+        <item>
+          <p>
+            Requests could result in badarg or badmatch EXIT messages in the connection 
+            manager if the channel no longer existed.</p>
+          <p>
+            Own Id: OTP-8173 Aux Id: seq11379</p>
+        </item>
+        <item>
+          <p>
+            ssh_transport:unpack/3 could cause a badarg error.</p>
+          <p>
+            Own Id: OTP-8162 Aux Id:</p>
+        </item>
+      </list>
+    </section>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            The encryption algorithm aes128-cbc is now supported.
+            Requires that crypto-1.6.1 is available.</p>
+          <p>
+            Own Id: OTP-8110 Aux Id:</p>
+        </item>
+      </list>
+    </section>
+
+ </section>
+
+
+ <section><title>Ssh 1.1.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            ssh_sftp:start_channel/3 did not handle timout correctly.</p>
+          <p>
+            Own Id: OTP-8159 Aux Id: seq11386</p>
+        </item>
+        <item>
+          <p>
+            If a progress message was not recieved after invoking ssh:connect/3
+            the call could hang for ever. A timeout option has also been added.</p>
+          <p>
+            Own Id: OTP-8160 Aux Id: seq11386</p>
+        </item>
+        <item>
+          <p>
+            A comma has been missing in the ssh.appup file since SSH-1.0.2.</p>
+          <p>
+            Own Id: OTP-8161 Aux Id:</p>
+        </item>
+      </list>
+    </section>
+
+ </section>
+
+ <section><title>Ssh 1.1.4</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            SSH sometimes caused a crash report at disconnect.</p>
+          <p>
+            Own Id: OTP-8071 Aux Id: seq11319</p>
+        </item>
+      </list>
+    </section>
+
+ </section>
+
  <section><title>Ssh 1.1.3</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>

@@ -68,10 +68,7 @@ translate(IcodeRecord = #icode{}, Options) ->
   %% Translate Icode instructions to RTL instructions
   ?opt_start_timer("Icode to nested RTL"),
   {Code, _VarMap1, ConstTab1} = 
-    translate_instrs(Icode,
-		     VarMap,
-		     ConstTab,
-		     Options),
+    translate_instrs(Icode, VarMap, ConstTab, Options),
   ?opt_stop_timer("Icode to nested RTL"),
   %% We build the code as list of lists of...
   %%  in order to avoid appends.

@@ -296,12 +296,12 @@ updateWKL(SdiNr, SDIS, SdiSpan, WKL) ->
     false -> [SdiNr|WKL]
   end.
 
--spec sdiSpanIsShort(#sdi_data{}, integer()) -> bool().
-sdiSpanIsShort(#sdi_data{si=#sdi_info{lb=LB,ub=UB}}, SdiSpan) ->
+-spec sdiSpanIsShort(#sdi_data{}, integer()) -> boolean().
+sdiSpanIsShort(#sdi_data{si = #sdi_info{lb = LB, ub = UB}}, SdiSpan) ->
   SdiSpan >= LB andalso SdiSpan =< UB.
 
 -spec sdiLongIncr(#sdi_data{}) -> byte().
-sdiLongIncr(#sdi_data{si=#sdi_info{incr=Incr}}) -> Incr.
+sdiLongIncr(#sdi_data{si = #sdi_info{incr = Incr}}) -> Incr.
 
 %%% "Now construct a table INCREMENT[0:n] by defining
 %%% INCREMENT[0] = 0 and INCREMENT[i] = INCREMENT[i-1]+LONG[i]

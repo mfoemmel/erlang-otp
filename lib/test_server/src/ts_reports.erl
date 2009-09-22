@@ -116,14 +116,28 @@ read_variables(Dir) ->
 	    erlang:error({bad_installation,file:format_error(Reason)}, [Dir])
     end.
 
-make_master_index(Platform, Dirname, {Succ, Fail, Skip}, Result) ->
+make_master_index(Platform, Dirname, {Succ, Fail, UserSkip,AutoSkip}, Result) ->
     Link = filename:join(filename:basename(Dirname), "index.html"),
+    FailStr =
+	if Fail > 0 ->  
+		["<FONT color=\"red\">",
+		 integer_to_list(Fail),"</FONT>"];
+	   true ->
+		integer_to_list(Fail)
+	end,
+    AutoSkipStr =
+	if AutoSkip > 0 ->
+		["<FONT color=\"brown\">",
+		 integer_to_list(AutoSkip),"</FONT>"];
+	   true -> integer_to_list(AutoSkip)
+	end,
     [Result,
      "<TR valign=top>\n",
      "<TD><A HREF=\"", Link, "\">", Platform, "</A></TD>", "\n",
      make_row(integer_to_list(Succ), false),
-     make_row(integer_to_list(Fail), false),
-     make_row(integer_to_list(Skip), false),
+     make_row(FailStr, false),
+     make_row(integer_to_list(UserSkip), false),
+     make_row(AutoSkipStr, false),
      "</TR>\n"].
 
 %% Make index page which points out individual test suites for a single platform.
@@ -161,7 +175,7 @@ make_index1(Dir, IndexName, Vars, IncludeLast) ->
 	    true  -> add_last_name(Logs0);
 	    false -> Logs0
 	end,
-    {ok, {Index0, Summary}} = make_index(Logs, header(Vars), 0, 0, 0, 0),
+    {ok, {Index0, Summary}} = make_index(Logs, header(Vars), 0, 0, 0, 0, 0),
     Index = [Index0|footer()],
     case ts_lib:force_write_file(IndexName, Index) of
 	ok ->
@@ -170,14 +184,14 @@ make_index1(Dir, IndexName, Vars, IncludeLast) ->
 	    error({index_write_error, Reason})
     end.
 
-make_index([Name|Rest], Result, TotSucc, TotFail, TotSkip, TotNotBuilt) ->
+make_index([Name|Rest], Result, TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt) ->
     case ts_lib:last_test(Name) of
 	false ->
 	    %% Silently skip.
-	    make_index(Rest, Result, TotSucc, TotFail, TotSkip, TotNotBuilt);
+	    make_index(Rest, Result, TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt);
 	Last ->
 	    case count_cases(Last) of
-		{Succ, Fail, Skip} ->
+		{Succ, Fail, USkip, ASkip} ->
 		    Cov = 
 			case file:read_file(filename:join(Last,?cover_total)) of
 			    {ok,Bin} -> 
@@ -190,22 +204,36 @@ make_index([Name|Rest], Result, TotSucc, TotFail, TotSkip, TotNotBuilt) ->
 		    JustTheName = rootname(basename(Name)),
 		    NotBuilt = not_built(JustTheName),
 		    NewResult = [Result, make_index1(JustTheName,
-						     Link, Succ, Fail, Skip, 
+						     Link, Succ, Fail, USkip, ASkip, 
 						     NotBuilt, Cov, false)],
 		    make_index(Rest, NewResult, TotSucc+Succ, TotFail+Fail, 
-			       TotSkip+Skip, TotNotBuilt+NotBuilt );
+			       UserSkip+USkip, AutoSkip+ASkip, TotNotBuilt+NotBuilt);
 		error ->
-		    make_index(Rest, Result, TotSucc, TotFail, TotSkip, 
+		    make_index(Rest, Result, TotSucc, TotFail, UserSkip, AutoSkip,
 			       TotNotBuilt)
 	    end
     end;
-make_index([], Result, TotSucc, TotFail, TotSkip, TotNotBuilt) ->
+make_index([], Result, TotSucc, TotFail, UserSkip, AutoSkip, TotNotBuilt) ->
     {ok, {[Result|make_index1("Total", no_link,
-			      TotSucc, TotFail, TotSkip, TotNotBuilt, "", true)],
-	  {TotSucc, TotFail, TotSkip}}}.
+			      TotSucc, TotFail, UserSkip, AutoSkip, 
+			      TotNotBuilt, "", true)],
+	  {TotSucc, TotFail, UserSkip, AutoSkip}}}.
 
-make_index1(SuiteName, Link, Success, Fail, Skipped, NotBuilt, Coverage, Bold) ->
+make_index1(SuiteName, Link, Success, Fail, UserSkip, AutoSkip, NotBuilt, Coverage, Bold) ->
     Name = test_suite_name(SuiteName),
+    FailStr =
+	if Fail > 0 ->  
+		["<FONT color=\"red\">",
+		 integer_to_list(Fail),"</FONT>"];
+	   true ->
+		integer_to_list(Fail)
+	end,
+    AutoSkipStr =
+	if AutoSkip > 0 ->
+		["<FONT color=\"brown\">",
+		 integer_to_list(AutoSkip),"</FONT>"];
+	   true -> integer_to_list(AutoSkip)
+	end,
     ["<TR valign=top>\n",
      "<TD>",
      case Link of
@@ -226,8 +254,9 @@ make_index1(SuiteName, Link, Success, Fail, Skipped, NotBuilt, Coverage, Bold) -
 	      "</TD>\n"]
      end,
      make_row(integer_to_list(Success), Bold),
-     make_row(integer_to_list(Fail), Bold),
-     make_row(integer_to_list(Skipped), Bold),
+     make_row(FailStr, Bold),
+     make_row(integer_to_list(UserSkip), Bold),
+     make_row(AutoSkipStr, Bold),
      make_row(integer_to_list(NotBuilt), Bold),
      make_row(Coverage, Bold),
      "</TR>\n"].
@@ -297,7 +326,8 @@ header(Vars) ->
      "<th><B>Family</B></th>\n",
      "<th>Successful</th>\n",
      "<th>Failed</th>\n",
-     "<th>Skipped</th>\n"
+     "<th>User Skipped</th>\n"
+     "<th>Auto Skipped</th>\n"
      "<th>Missing Suites</th>\n"
      "<th>Coverage</th>\n"
      "\n"].
@@ -374,7 +404,8 @@ master_header(Vars) ->
      "<th><b>Platform</b></th>\n",
      "<th>Successful</th>\n",
      "<th>Failed</th>\n",
-     "<th>Skipped</th>\n"
+     "<th>User Skipped</th>\n"
+     "<th>Auto Skipped</th>\n"
      "\n"].
 
 master_footer() ->
@@ -432,13 +463,15 @@ month(12) -> "Dec".
 count_cases(Dir) ->
     SumFile = filename:join(Dir, ?run_summary),
     case read_summary(SumFile, [summary]) of
+	{ok, [{Succ,Fail,Skip}]} ->
+	    {Succ,Fail,Skip,0};
 	{ok, [Summary]} ->
 	    Summary;
 	{error, _} ->
 	    LogFile = filename:join(Dir, ?suitelog_name),
 	    case file:read_file(LogFile) of
 		{ok, Bin} ->
-		    Summary = count_cases1(binary_to_list(Bin), {0, 0, 0}),
+		    Summary = count_cases1(binary_to_list(Bin), {0, 0, 0, 0}),
 		    write_summary(SumFile, Summary),
 		    Summary;
 		{error, _Reason} ->
@@ -470,15 +503,21 @@ read_summary(Name, Keys) ->
 	    {error, Reason}
     end.
 
-count_cases1("=failed" ++ Rest, {Success, _Fail, Skipped}) ->
+count_cases1("=failed" ++ Rest, {Success, _Fail, UserSkip,AutoSkip}) ->
     {NextLine, Count} = get_number(Rest),
-    count_cases1(NextLine, {Success, Count, Skipped});
-count_cases1("=successful" ++ Rest, {_Success, Fail, Skipped}) ->
+    count_cases1(NextLine, {Success, Count, UserSkip,AutoSkip});
+count_cases1("=successful" ++ Rest, {_Success, Fail, UserSkip,AutoSkip}) ->
     {NextLine, Count} = get_number(Rest),
-    count_cases1(NextLine, {Count, Fail, Skipped});
-count_cases1("=skipped" ++ Rest, {Success, Fail, _Skipped}) ->
+    count_cases1(NextLine, {Count, Fail, UserSkip,AutoSkip});
+count_cases1("=skipped" ++ Rest, {Success, Fail, _UserSkip,AutoSkip}) ->
     {NextLine, Count} = get_number(Rest),
-    count_cases1(NextLine, {Success, Fail, Count});
+    count_cases1(NextLine, {Success, Fail, Count,AutoSkip});
+count_cases1("=user_skipped" ++ Rest, {Success, Fail, _UserSkip,AutoSkip}) ->
+    {NextLine, Count} = get_number(Rest),
+    count_cases1(NextLine, {Success, Fail, Count,AutoSkip});
+count_cases1("=auto_skipped" ++ Rest, {Success, Fail, UserSkip,_AutoSkip}) ->
+    {NextLine, Count} = get_number(Rest),
+    count_cases1(NextLine, {Success, Fail, UserSkip,Count});
 count_cases1([], Counters) ->
     Counters;
 count_cases1(Other, Counters) ->

@@ -46,6 +46,7 @@ int ei_decode_ei_term(const char* buf, int* index, ei_term* term)
 	term->value.i_val = get32be(s);
 	break;
     case ERL_FLOAT_EXT:
+    	if (s[30]) return -1;
 	if (sscanf(s, "%lf", &f) != 1) return -1;
 	s += 31;
 	term->value.d_val = f;
@@ -82,6 +83,9 @@ int ei_decode_ei_term(const char* buf, int* index, ei_term* term)
 	/* finally the id integers */
 	for (i = 0; (i<term->value.ref.len) && (i<3); i++) {
 	    term->value.ref.n[i] = get32be(s);
+	}
+	if (term->value.ref.len > 3) {
+	    s += 4 * (term->value.ref.len - 3);
 	}
 	break;
     case ERL_PORT_EXT:

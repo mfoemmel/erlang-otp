@@ -81,6 +81,8 @@
     <p>Each snmp component has it's own set of configuration parameters, 
       even though some of the types are common to both components. </p>
 
+    <!-- Also in snmp_config.xml -->
+
     <pre>
       snmp_components_config() -> [snmp_component_config()]
       snmp_component_config() -> {agent, agent_options()} | {manager, manager_options()}
@@ -145,7 +147,8 @@
       <item>
         <p><c>agent_terminating_discovery_opt() = 
           {enable, boolean()} | 
-          {stage2, discovery | plain}</c></p>
+          {stage2, discovery | plain} | 
+          {trigger_username, string()}</c></p>
         <p>These are options effecting discovery <c>terminating</c> in this
           agent (i.e. initiated by a manager). </p>
         <p>The default values for the <c>terminating</c> 
@@ -153,6 +156,7 @@
         <list type="bulleted">
           <item>enable: <c>true</c></item>
           <item>stage2: <c>discovery</c></item>
+          <item>trigger_username: <c>""</c></item>
         </list>
       </item>
 
@@ -323,10 +327,45 @@
         <p>Default is <c>false</c>.</p>
       </item>
 
-      <tag><c><![CDATA[mibs_cache() = bool() <optional>]]></c></tag>
+      <tag><c><![CDATA[mibs_cache() = bool() | mibs_cache_opts() <optional>]]></c></tag>
       <item>
         <p>Shall the agent utilize the mib server lookup cache or not.</p>
-        <p>Default is <c>true</c>.</p>
+        <p>Default is <c>true</c> (in which case the <c>mibs_cache_opts()</c> 
+          default values apply).</p>
+      </item>
+
+      <tag><c><![CDATA[mibs_cache_opts() = [mibs_cache_opt()] <optional>]]></c></tag>
+      <item>
+        <p><c>mibs_cache_opt() = {autogc, mibs_cache_autogc()} | {gclimit, mibs_cache_gclimit()} | {age, mibs_cache_age()}</c></p>
+        <p>Defines options specific for the SNMP agent mib server cache. </p>
+        <p>For defaults see the options in <c>mibs_cache_opt()</c>.</p>
+      </item>
+
+      <tag><c><![CDATA[mibs_cache_autogc() = bool() <optional>]]></c></tag>
+      <item>
+        <p>Defines if the mib server shall perform cache gc automatically or 
+          leave it to the user (see 
+          <seealso marker="snmpa#gc_mibs_cache">gc_mibs_cache/0,1,2,3</seealso>). </p>
+        <p>Default is <c>false</c>.</p>
+      </item>
+
+      <tag><c><![CDATA[mibs_cache_age() = integer() > 0 <optional>]]></c></tag>
+      <item>
+        <p>Defines how old the entries in the cache will be allowed before 
+          they are GC'ed (assuming GC is performed). Each entry in the 
+          cache is "touched" whenever it is accessed. </p>
+        <p>The age is defined in milliseconds. </p>
+        <p>Default is <c>10 timutes</c>.</p>
+      </item>
+
+      <tag><c><![CDATA[mibs_cache_gclimit() = integer() > 0 | infinity <optional>]]></c></tag>
+      <item>
+        <p>When performing a GC, this is the max number of cache entries 
+          that will be deleted from the cache. </p>
+        <p>The reason for having this limit is that if the cache is 
+          large, the GC can potentially take a long time, during which 
+          the agent is locked. </p>
+        <p>Default is <c>100</c>.</p>
       </item>
 
       <tag><c><![CDATA[error_report_mod() = atom() <optional>]]></c></tag>

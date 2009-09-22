@@ -561,10 +561,7 @@ mk_temp2() ->
 %%% Check if an operand is a pseudo-Temp.
 
 src_is_pseudo(Src) ->
-  case hipe_ppc:is_temp(Src) of
-    true -> temp_is_pseudo(Src);
-    _ -> false
-  end.
+  hipe_ppc:is_temp(Src) andalso temp_is_pseudo(Src).
 
 temp_is_pseudo(Temp) ->
   not(hipe_ppc:temp_is_precoloured(Temp)).

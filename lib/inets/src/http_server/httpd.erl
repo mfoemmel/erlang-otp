@@ -357,24 +357,22 @@ foreach([KeyValue|Rest]) ->
 
 get_addr_and_port(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
-	{ok,ConfigList} ->
-	    Port = proplists:get_value(port,ConfigList,80),
-	    Address = 
-		case proplists:get_value(bind_address, ConfigList) of
-		    any  ->
-			any;
-		    Host -> 
-			{ok, Addr} = httpd_util:ip_address(Host),
-			Addr
-		end,
-	    {ok,Address,Port};
+	{ok, ConfigList} ->
+	    case httpd_conf:validate_properties(ConfigList) of
+		{ok, Config} ->
+		    Address = proplists:get_value(bind_address, Config, any), 
+		    Port    = proplists:get_value(port, Config, 80),
+		    {ok, Address, Port};
+		Error ->
+		    Error
+	    end;
 	Error ->
 	    Error
     end.
 
 
-make_name(Addr,Port) ->
-    httpd_util:make_name("httpd",Addr,Port).
+make_name(Addr, Port) ->
+    httpd_util:make_name("httpd", Addr, Port).
 
 
 %%%--------------------------------------------------------------
@@ -508,19 +506,17 @@ get_status(Addr,Port,Timeout) when is_integer(Port) ->
     end.
 
 do_reload_config(ConfigList, Mode) ->
-    Port = proplists:get_value(port,ConfigList,80),
-    Address = 
-	case proplists:get_value(bind_address, ConfigList) of
-	    any  ->
-		any;
-	    Host -> 
-		{ok, Addr} = httpd_util:ip_address(Host),
-		Addr
-	end,
-    NewConfig = proplists:delete(bind_address, ConfigList),
-    block(Address, Port, Mode),
-    reload([{bind_address, Address}  | NewConfig], Address, Port),
-    unblock(Address, Port).
+    case httpd_conf:validate_properties(ConfigList) of
+	{ok, Config} ->
+	    Address = proplists:get_value(bind_address, Config, any), 
+	    Port    = proplists:get_value(port, Config, 80),
+	    block(Address, Port, Mode),
+	    reload(Config, Address, Port),
+	    unblock(Address, Port);
+	Error ->
+	    Error
+    end.
+
 
 %%%--------------------------------------------------------------
 %%% Deprecated 

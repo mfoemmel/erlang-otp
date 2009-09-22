@@ -226,9 +226,9 @@ report_fatal(Format, Args, BinaryCore, CoreDumped) ->
     UseDir = mnesia_monitor:use_dir(),
     CoreDir = mnesia_monitor:get_env(core_dir),
     if
-	list(CoreDir),CoreDumped == false,binary(BinaryCore) ->	    
+	is_list(CoreDir),CoreDumped == false, is_binary(BinaryCore) ->	    
 	    core_file(CoreDir,BinaryCore,Format,Args);
-	(UseDir == true),CoreDumped == false,binary(BinaryCore) ->
+	(UseDir == true),CoreDumped == false, is_binary(BinaryCore) ->
 	    core_file(CoreDir,BinaryCore,Format,Args);
 	true ->
 	    report_error("(ignoring core) ** FATAL ** " ++ Format, Args)
@@ -241,7 +241,7 @@ core_file(CoreDir,BinaryCore,Format,Args) ->
 	     (I) -> ["_",I]
 	  end,
     List = lists:append([Fun(I) || I <- Integers]),
-    CoreFile = if list(CoreDir) ->
+    CoreFile = if is_list(CoreDir) ->
 		       filename:absname(lists:concat(["MnesiaCore.", node()] ++ List), 
 					CoreDir);
 		  true ->

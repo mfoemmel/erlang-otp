@@ -31,6 +31,21 @@
   </header>
   <p>This document describes the changes made to the EUnit application.</p>
 
+<section><title>Eunit 2.1.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Miscellaneous updates.</p>
+          <p>
+	    Own Id: OTP-8190</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Eunit 2.1.2</title>
 
     <section><title>Improvements and New Features</title>

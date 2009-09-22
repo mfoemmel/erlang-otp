@@ -95,13 +95,19 @@ start_channel(Cm, Opts) when is_pid(Cm) ->
     Timeout = proplists:get_value(timeout, Opts, infinity),
     case ssh_xfer:attach(Cm, []) of
 	{ok, ChannelId, Cm} -> 
-	    {ok, Pid} = ssh_channel:start(Cm, ChannelId, 
-					  ?MODULE, [Cm, ChannelId, Timeout]),
-	    case wait_for_version_negotiation(Pid, Timeout) of
-		ok ->
-		    {ok, Pid}; 
-		TimeOut ->
-		    TimeOut
+	    case ssh_channel:start(Cm, ChannelId, 
+				   ?MODULE, [Cm, ChannelId, Timeout]) of
+		{ok, Pid} ->
+		    case wait_for_version_negotiation(Pid, Timeout) of
+			ok ->
+			    {ok, Pid}; 
+			TimeOut ->
+			    TimeOut
+		    end;
+		{error, Reason} ->
+		    {error, Reason};
+		ignore ->
+		    {error, ignore}
 	    end;
 	Error ->
 	    Error
@@ -113,14 +119,20 @@ start_channel(Host, Port, Opts) ->
     Timeout = proplists:get_value(timeout, Opts, infinity),
     case ssh_xfer:connect(Host, Port, proplists:delete(timeout, Opts)) of
 	{ok, ChannelId, Cm} ->
-	    {ok, Pid} =  ssh_channel:start(Cm, ChannelId, ?MODULE, [Cm, 
-						       ChannelId, Timeout]),
-	       case wait_for_version_negotiation(Pid, Timeout) of
-		   ok ->
-		       {ok, Pid, Cm};
-		   TimeOut ->
-		       TimeOut
-	       end;
+	    case ssh_channel:start(Cm, ChannelId, ?MODULE, [Cm, 
+							    ChannelId, Timeout]) of
+		{ok, Pid} ->
+		    case wait_for_version_negotiation(Pid, Timeout) of
+			ok ->
+			    {ok, Pid, Cm};
+			TimeOut ->
+			    TimeOut
+		    end;
+		{error, Reason} ->
+		    {error, Reason};
+		ignore ->
+		    {error, ignore}
+	    end;
 	Error ->
 	    Error	    
     end.

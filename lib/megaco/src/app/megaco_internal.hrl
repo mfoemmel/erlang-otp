@@ -88,11 +88,12 @@
 	  auth_data,
 	  user_mod,
 	  user_args,
-	  reply_action,        % call | cast
-	  reply_data,          % term()
-	  threaded,            % boolean(), false
-	  strict_version,      % boolean(), true
-	  long_request_resend, % boolean(), false
+	  reply_action,          % call | cast
+	  reply_data,            % term()
+	  threaded,              % boolean(), false
+	  strict_version,        % boolean(), true
+	  long_request_resend,   % boolean(), false
+	  call_proxy_gc_timeout, % integer() > 0
 
 	  %% This flag is used when a connection is being cancelled.
 	  %% The purpuse is to avoid raise conditions with replies

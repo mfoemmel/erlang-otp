@@ -49,5 +49,7 @@
 -define(WXE_REGISTER_OBJECT,  7).  %% Used for object monitoring
 -define(WXE_CB_START,   8).  %% Used for event-callback start
 -define(WXE_DEBUG_DRIVER,  9).    %% Set debug
-
+%%-define(WXE_DEBUG_PING,  10).    %% debug ping (when using debugger it's needed)
+-define(WXE_BIN_INCR,   5001). %% Binary refc incr 
+-define(WXE_BIN_DECR,   5002). %% Binary refc decr
 -include("gen/wxe_funcs.hrl").

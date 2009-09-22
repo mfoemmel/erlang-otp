@@ -18,7 +18,7 @@
 %%
 {application, runtime_tools,
    [{description,  "RUNTIME_TOOLS version 1"},
-    {vsn,          "1.8"},
+    {vsn,          "1.8.1"},
     {modules,      [dbg,observer_backend,percept_profile,
 		    inviso_rt,inviso_rt_lib,inviso_rt_meta,
 		    inviso_as_lib,inviso_autostart,inviso_autostart_server,

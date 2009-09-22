@@ -21,14 +21,12 @@
 %% This module is used to set some initial information
 %% in each created process. 
 %% Then a process terminates the Reason is checked and
-%% an crash report is generated if the Reason was not 
-%% expected.
-%% 
+%% a crash report is generated if the Reason was not expected.
 
--export([spawn/1,spawn_link/1, spawn/2, spawn_link/2,
-         spawn/3,spawn_link/3,spawn/4,spawn_link/4,
+-export([spawn/1, spawn_link/1, spawn/2, spawn_link/2,
+         spawn/3, spawn_link/3, spawn/4, spawn_link/4,
          spawn_opt/2, spawn_opt/3, spawn_opt/4, spawn_opt/5,
-	 start/3, start/4, start/5, start_link/3, start_link/4,start_link/5,
+	 start/3, start/4, start/5, start_link/3, start_link/4, start_link/5,
 	 hibernate/3,
 	 init_ack/1, init_ack/2,
 	 init_p/3,init_p/5,format/1,initial_call/1,translate_initial_call/1]).
@@ -36,69 +34,103 @@
 %% Internal exports.
 -export([wake_up/3]).
 
+%%-----------------------------------------------------------------------------
+
+-type priority_level() :: 'high' | 'low' | 'max' | 'normal'.
+-type spawn_option()   :: 'link'
+                        | {'priority', priority_level()}
+                        | {'min_heap_size', non_neg_integer()}
+                        | {'fullsweep_after', non_neg_integer()}.
+
+-type dict_or_pid()    :: pid() | [_] | {integer(), integer(), integer()}.
+
+%%-----------------------------------------------------------------------------
+
+-spec spawn(function()) -> pid().
+
 spawn(F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn(proc_lib,init_p,[Parent,Ancestors,F]).
+    erlang:spawn(?MODULE, init_p, [Parent,Ancestors,F]).
+
+-spec spawn(atom(), atom(), [term()]) -> pid().
 
 spawn(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
+    erlang:spawn(?MODULE, init_p, [Parent,Ancestors,M,F,A]).
+
+-spec spawn_link(function()) -> pid().
 
 spawn_link(F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,F]).
+    erlang:spawn_link(?MODULE, init_p, [Parent,Ancestors,F]).
+
+-spec spawn_link(atom(), atom(), [term()]) -> pid().
 
 spawn_link(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
+    erlang:spawn_link(?MODULE, init_p, [Parent,Ancestors,M,F,A]).
+
+-spec spawn(node(), function()) -> pid().
 
 spawn(Node, F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,F]).
+    erlang:spawn(Node, ?MODULE, init_p, [Parent,Ancestors,F]).
 
-spawn(Node,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
+-spec spawn(node(), atom(), atom(), [term()]) -> pid().
+spawn(Node, M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
+    erlang:spawn(Node, ?MODULE, init_p, [Parent,Ancestors,M,F,A]).
 
-spawn_link(Node,F) when is_function(F) ->
+-spec spawn_link(node(), function()) -> pid().
+
+spawn_link(Node, F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,F]).
+    erlang:spawn_link(Node, ?MODULE, init_p, [Parent,Ancestors,F]).
 
-spawn_link(Node,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
+-spec spawn_link(node(), atom(), atom(), [term()]) -> pid().
+
+spawn_link(Node, M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
-    erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
+    erlang:spawn_link(Node, ?MODULE, init_p, [Parent,Ancestors,M,F,A]).
 
+-spec spawn_opt(function(), [spawn_option()]) -> pid().
 spawn_opt(F, Opts) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     check_for_monitor(Opts),
-    erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,F],Opts).
+    erlang:spawn_opt(?MODULE, init_p, [Parent,Ancestors,F],Opts).
+
+-spec spawn_opt(node(), function(), [spawn_option()]) -> pid().
 
 spawn_opt(Node, F, Opts) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     check_for_monitor(Opts),
-    erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,F],Opts).
+    erlang:spawn_opt(Node, ?MODULE, init_p, [Parent,Ancestors,F], Opts).
 
-spawn_opt(M,F,A,Opts) when is_atom(M), is_atom(F), is_list(A) ->
+-spec spawn_opt(atom(), atom(), [term()], [spawn_option()]) -> pid().
+
+spawn_opt(M, F, A, Opts) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     check_for_monitor(Opts),
-    erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
+    erlang:spawn_opt(?MODULE, init_p, [Parent,Ancestors,M,F,A], Opts).
 
-spawn_opt(Node,M,F,A,Opts) when is_atom(M), is_atom(F), is_list(A) ->
+-spec spawn_opt(node(), atom(), atom(), [term()], [spawn_option()]) -> pid().
+
+spawn_opt(Node, M, F, A, Opts) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     check_for_monitor(Opts),
-    erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
+    erlang:spawn_opt(Node, ?MODULE, init_p, [Parent,Ancestors,M,F,A], Opts).
 
 %% OTP-6345
 %% monitor spawn_opt option is currently not possible to use
@@ -110,8 +142,10 @@ check_for_monitor(SpawnOpts) ->
 	    false
     end.
 
-hibernate(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
-    erlang:hibernate(proc_lib, wake_up, [M,F,A]).
+-spec hibernate(module(), atom(), [term()]) -> no_return().
+
+hibernate(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
+    erlang:hibernate(?MODULE, wake_up, [M, F, A]).
 
 ensure_link(SpawnOpts) ->
     case lists:member(link, SpawnOpts) of
@@ -121,9 +155,10 @@ ensure_link(SpawnOpts) ->
 	    [link|SpawnOpts]
     end.
 
+-spec init_p(pid(), [pid()], function()) -> term().
 
-init_p(Parent,Ancestors,Fun) when is_function(Fun) ->
-    put('$ancestors',[Parent|Ancestors]),
+init_p(Parent, Ancestors, Fun) when is_function(Fun) ->
+    put('$ancestors', [Parent|Ancestors]),
     {module,Mod} = erlang:fun_info(Fun, module),
     {name,Name} = erlang:fun_info(Fun, name),
     {arity,Arity} = erlang:fun_info(Fun, arity),
@@ -135,7 +170,9 @@ init_p(Parent,Ancestors,Fun) when is_function(Fun) ->
 	    exit_p(Class, Reason)
     end.
 
-init_p(Parent,Ancestors,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
+-spec init_p(pid(), [pid()], atom(), atom(), [term()]) -> term().
+
+init_p(Parent, Ancestors, M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
     put('$ancestors', [Parent|Ancestors]),
     put('$initial_call', trans_init(M, F, A)),
     init_p_do_apply(M, F, A).
@@ -147,6 +184,8 @@ init_p_do_apply(M, F, A) ->
 	Class:Reason ->
 	    exit_p(Class, Reason)
     end.
+
+-spec wake_up(atom(), atom(), [term()]) -> term().
 
 wake_up(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
     try
@@ -169,26 +208,38 @@ exit_p(Class, Reason) ->
 	    exit(Reason)
     end.
 
-start(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
-    start(M,F,A,infinity).
+-spec start(atom(), atom(), [term()]) -> term().
 
-start(M,F,A,Timeout) when is_atom(M), is_atom(F), is_list(A) ->
-    Pid = proc_lib:spawn(M,F,A),
+start(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
+    start(M, F, A, infinity).
+
+-spec start(atom(), atom(), [term()], timeout()) -> term().
+
+start(M, F, A, Timeout) when is_atom(M), is_atom(F), is_list(A) ->
+    Pid = ?MODULE:spawn(M, F, A),
     sync_wait(Pid, Timeout).
 
-start(M,F,A,Timeout,SpawnOpts) when is_atom(M), is_atom(F), is_list(A) ->
-    Pid = proc_lib:spawn_opt(M, F, A, SpawnOpts),
+-spec start(atom(), atom(), [term()], timeout(), [spawn_option()]) -> term().
+
+start(M, F, A, Timeout, SpawnOpts) when is_atom(M), is_atom(F), is_list(A) ->
+    Pid = ?MODULE:spawn_opt(M, F, A, SpawnOpts),
     sync_wait(Pid, Timeout).
 
-start_link(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
-    start_link(M,F,A,infinity).
+-spec start_link(atom(), atom(), [term()]) -> term().
 
-start_link(M,F,A,Timeout) when is_atom(M), is_atom(F), is_list(A) ->
-    Pid = proc_lib:spawn_link(M,F,A),
+start_link(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
+    start_link(M, F, A, infinity).
+
+-spec start_link(atom(), atom(), [term()], timeout()) -> term().
+
+start_link(M, F, A, Timeout) when is_atom(M), is_atom(F), is_list(A) ->
+    Pid = ?MODULE:spawn_link(M, F, A),
     sync_wait(Pid, Timeout).
+
+-spec start_link(atom(),atom(),[term()],timeout(),[spawn_option()]) -> term().
 
 start_link(M,F,A,Timeout,SpawnOpts) when is_atom(M), is_atom(F), is_list(A) ->
-    Pid = proc_lib:spawn_opt(M, F, A, ensure_link(SpawnOpts)),
+    Pid = ?MODULE:spawn_opt(M, F, A, ensure_link(SpawnOpts)),
     sync_wait(Pid, Timeout).
 
 sync_wait(Pid, Timeout) ->
@@ -204,6 +255,8 @@ sync_wait(Pid, Timeout) ->
 	    {error, timeout}
     end.
 
+-spec flush(pid()) -> 'true'.
+
 flush(Pid) ->
     receive
 	{'EXIT', Pid, _} ->
@@ -211,10 +264,14 @@ flush(Pid) ->
     after 0 ->
 	    true
     end.
-    
-init_ack(Parent, Return) ->
-    Parent ! {ack, self(), Return}.
 
+-spec init_ack(pid(), term()) -> 'ok'.
+
+init_ack(Parent, Return) ->
+    Parent ! {ack, self(), Return},
+    ok.
+
+-spec init_ack(term()) -> 'ok'.
 init_ack(Return) ->
     [Parent|_] = get('$ancestors'),
     init_ack(Parent, Return).
@@ -222,6 +279,8 @@ init_ack(Return) ->
 %% -----------------------------------------------------
 %% Fetch the initial call of a proc_lib spawned process.
 %% -----------------------------------------------------
+
+-spec initial_call(dict_or_pid()) -> {atom(), atom(), [atom()]} | 'false'.
 
 initial_call(DictOrPid) ->
     case raw_initial_call(DictOrPid) of
@@ -244,12 +303,14 @@ make_dummy_args(N, Acc) ->
 %% This function is typically called from c:i() and c:regs().
 %% -----------------------------------------------------
 
+-spec translate_initial_call(dict_or_pid()) -> mfa().
+
 translate_initial_call(DictOrPid) ->
     case raw_initial_call(DictOrPid) of
 	{_,_,_}=MFA ->
 	    MFA;
 	false ->
-	    {proc_lib,init_p,5}
+	    {?MODULE,init_p,5}
     end.
 
 %% -----------------------------------------------------
@@ -257,26 +318,26 @@ translate_initial_call(DictOrPid) ->
 %% in the process dictionary.
 %% -----------------------------------------------------
 
-raw_initial_call({X,Y,Z}) when is_integer(X),is_integer(Y),is_integer(Z) ->
+raw_initial_call({X,Y,Z}) when is_integer(X), is_integer(Y), is_integer(Z) ->
     raw_initial_call(c:pid(X,Y,Z));
 raw_initial_call(Pid) when is_pid(Pid) ->
-    case get_process_info(Pid,dictionary) of
+    case get_process_info(Pid, dictionary) of
 	{dictionary,Dict} ->
 	    raw_init_call(Dict);
 	_ ->
 	    false
     end;
 raw_initial_call(ProcInfo) when is_list(ProcInfo) ->
-    case lists:keysearch(dictionary,1,ProcInfo) of
-	{value,{dictionary,Dict}} ->
+    case lists:keyfind(dictionary, 1, ProcInfo) of
+	{dictionary,Dict} ->
 	    raw_init_call(Dict);
 	_ ->
 	    false
     end.
 
 raw_init_call(Dict) ->
-    case lists:keysearch('$initial_call', 1, Dict) of
-	{value,{_,{_,_,_}=MFA}} ->
+    case lists:keyfind('$initial_call', 1, Dict) of
+	{_,{_,_,_}=MFA} ->
 	    MFA;
 	_ ->
 	    false
@@ -340,6 +401,8 @@ my_info_1(Class, Reason) ->
      get_process_info(self(), reductions)
     ].
 
+-spec get_ancestors(pid()) -> {'ancestors', [pid()]}.
+
 get_ancestors(Pid) ->
     case get_dictionary(Pid,'$ancestors') of
 	{'$ancestors',Ancestors} ->
@@ -373,21 +436,20 @@ get_dictionary(Pid,Tag) ->
 	_ ->
 	    undefined
     end.
-	
 
 linked_info(Pid) ->
   make_neighbour_reports1(neighbours(Pid)).
   
-make_neighbour_reports1([P| Ps]) ->
+make_neighbour_reports1([P|Ps]) ->
   ReportBody = make_neighbour_report(P),
-  %
-  %  Process P might have been deleted.
-  %
+  %%
+  %%  Process P might have been deleted.
+  %%
   case lists:member(undefined, ReportBody) of
     true ->
       make_neighbour_reports1(Ps);
     false ->
-      [{neighbour, ReportBody}| make_neighbour_reports1(Ps)]
+      [{neighbour, ReportBody}|make_neighbour_reports1(Ps)]
   end;
 make_neighbour_reports1([]) ->
   [].
@@ -409,56 +471,59 @@ make_neighbour_report(Pid) ->
   ].
  
 get_initial_call(Pid) ->
-    case get_dictionary(Pid,'$initial_call') of
-	{'$initial_call',{M,F,A}} ->
-	    {initial_call,{M,F,make_dummy_args(A, [])}};
+    case get_dictionary(Pid, '$initial_call') of
+	{'$initial_call', {M, F, A}} ->
+	    {initial_call, {M, F, make_dummy_args(A, [])}};
 	_ ->
-	    get_process_info(Pid,initial_call)
+	    get_process_info(Pid, initial_call)
     end.
 
-%  neighbours(Pid) = list of Pids
-%
-%  Get the neighbours of Pid. A neighbour is a process which is 
-%  linked to Pid and does not trap exit; or a neigbour of a 
-%  neighbour etc.
-% 
-%  A breadth-first search is performed.
-%
+%%  neighbours(Pid) = list of Pids
+%%
+%%  Get the neighbours of Pid. A neighbour is a process which is 
+%%  linked to Pid and does not trap exit; or a neigbour of a 
+%%  neighbour etc.
+%% 
+%%  A breadth-first search is performed.
 
-max_neighbours() -> 15.
+-spec neighbours(pid()) -> [pid()].
 
 neighbours(Pid) ->
     {_, Visited} = visit(adjacents(Pid), {max_neighbours(), [Pid]}),
-    lists:delete(Pid,Visited).
+    lists:delete(Pid, Visited).
 
-%
-% visit(Ps, {N, Vs}, Max) = {N0, V0s}
-%
-% A breadth-first search of neighbours.
-%    Ps   processes,
-%    Vs   visited processes,
-%    N    max number to visit.
-%   
-visit([P| Ps], {N, Vs}) when N > 0 ->
+max_neighbours() -> 15.
+
+%%
+%% visit(Ps, {N, Vs}) = {N0, V0s}
+%%
+%% A breadth-first search of neighbours.
+%%    Ps   processes,
+%%    Vs   visited processes,
+%%    N    max number to visit.
+%%   
+visit([P|Ps], {N, Vs} = NVs) when N > 0 ->
   case lists:member(P, Vs) of
-    false -> visit(adjacents(P), visit(Ps, {N-1, [P| Vs]}));
-    true  -> visit(Ps, {N, Vs})
+    false -> visit(adjacents(P), visit(Ps, {N-1, [P|Vs]}));
+    true  -> visit(Ps, NVs)
   end;
-visit(_, {N, Vs}) ->
-  {N, Vs}.
-  
-%
-% adjacents(Pid) = AdjacencyList
-% 
+visit(_, {_N, _Vs} = NVs) ->
+  NVs.
+
+%%
+%% adjacents(Pid) = AdjacencyList
+%% 
+-spec adjacents(pid()) -> [pid()].
+
 adjacents(Pid) ->
   case catch proc_info(Pid, links) of
     {links, Links} -> no_trap(Links);
     _              -> []
   end.
   
-no_trap([P| Ps]) ->
+no_trap([P|Ps]) ->
   case catch proc_info(P, trap_exit) of
-    {trap_exit, false} -> [P| no_trap(Ps)];
+    {trap_exit, false} -> [P|no_trap(Ps)];
     _                  -> no_trap(Ps)
   end;
 no_trap([]) ->
@@ -484,10 +549,12 @@ get_my_name() ->
 	_                      -> self()
     end.
 
+-spec get_ancestors() -> [pid()].
+
 get_ancestors() ->
     case get('$ancestors') of
 	A when is_list(A) -> A;
-	_              -> []
+	_                 -> []
     end.
 
 proc_info(Pid,Item) when node(Pid) =:= node() ->
@@ -508,16 +575,18 @@ check(Res)               -> Res.
 %%% Format (and write) a generated crash info structure.
 %%% -----------------------------------------------------------
 
+-spec format([term()]) -> string().
+
 format([OwnReport,LinkReport]) ->
     OwnFormat = format_report(OwnReport),
     LinkFormat = format_report(LinkReport),
-    io_lib:format("  crasher:~n~s  neighbours:~n~s",
-		  [OwnFormat,LinkFormat]).
+    S = io_lib:format("  crasher:~n~s  neighbours:~n~s",[OwnFormat,LinkFormat]),
+    lists:flatten(S).
 
 format_report(Rep) when is_list(Rep) ->
     format_rep(Rep);
 format_report(Rep) ->
-    io_lib:format("~p~n",[Rep]).
+    io_lib:format("~p~n", [Rep]).
 
 format_rep([{initial_call,InitialCall}|Rep]) ->
     [format_mfa(InitialCall)|format_rep(Rep)];
@@ -552,4 +621,4 @@ pp_fun() ->
     end.
 
 format_tag(Tag, Data) ->
-    io_lib:format("    ~p: ~80.18p~n", [Tag,Data]).
+    io_lib:format("    ~p: ~80.18p~n", [Tag, Data]).

@@ -407,8 +407,6 @@ call_to_primop(erlang, exit, 1) -> {yes, ?PRIMOP_EXIT};
 call_to_primop(erlang, throw, 1) -> {yes, ?PRIMOP_THROW};
 call_to_primop(erlang, error, 1) -> {yes, ?PRIMOP_ERROR};
 call_to_primop(erlang, error, 2) -> {yes, ?PRIMOP_ERROR};
-call_to_primop(erlang, fault, 1) -> {yes, ?PRIMOP_ERROR};
-call_to_primop(erlang, fault, 2) -> {yes, ?PRIMOP_ERROR};
 call_to_primop(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> no.
 
 %% Also, some primops (introduced by Erlang to Core Erlang translation

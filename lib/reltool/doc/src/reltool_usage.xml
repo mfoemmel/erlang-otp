@@ -174,8 +174,11 @@
 	</item>
 	<item>
 	  <p><c>Save configuration</c> - Saves the current
-	  configuration to file. Only configuration parameters with
-	  values that differs from their defaults are saved.</p>
+	  configuration to file. Normally, only the explictit
+	  configuration parameters with values that differs from their
+	  defaults are saved. But the configuration with or without
+	  default values and with or without derived values may also
+	  be saved.</p>
 	</item>
 	<item>
 	  <p><c>Generate rel, script and boot files</c></p>
